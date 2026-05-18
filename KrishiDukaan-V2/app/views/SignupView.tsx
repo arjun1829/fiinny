@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { ICONS } from "../constants";
-import { Leaf, Store, Factory, CheckCircle2 } from "lucide-react";
+import { Tractor, Store, Factory, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth, saveUserProfile } from "../firebase";
@@ -174,6 +174,17 @@ export default function SignupView({
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-md rounded-3xl border border-surface-container bg-white p-8 shadow-ambient"
       >
+        <div className="flex flex-col items-center mb-8">
+          <img 
+            src="/images/krishidukan icon.webp" 
+            alt="KrishiDukan" 
+            className="w-20 h-20 object-contain mb-2"
+          />
+          <span className="font-black text-2xl text-primary">
+            Krishi<span className="text-secondary">Dukan</span>
+          </span>
+        </div>
+
         <button
           type="button"
           onClick={onBack}
@@ -235,7 +246,7 @@ export default function SignupView({
                   [
                     {
                       value: "customer" as const,
-                      icon: Leaf,
+                      icon: Tractor,
                       label: "Farmer",
                       sub: "Buy products online",
                       color: "text-green-600",
@@ -254,7 +265,7 @@ export default function SignupView({
                     {
                       value: "manufacturer" as const,
                       icon: Factory,
-                      label: "Distributor",
+                      label: "Manufacturer",
                       sub: "Supply & distribute",
                       color: "text-orange-600",
                       bg: "bg-orange-50",

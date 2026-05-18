@@ -302,7 +302,7 @@ export default function ProfilePage() {
 
   return (
     <>
-      <PageHeader title="Profile" description={pageDescription} />
+      <PageHeader title="Profile" description={pageDescription} helperKey="dashProfile" />
 
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-6">
         {loading ? (

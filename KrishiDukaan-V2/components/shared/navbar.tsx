@@ -298,10 +298,17 @@ export function Navbar({
     <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
       <div className="flex justify-between items-center gap-4">
         <div
-          className="font-bold text-xl text-primary tracking-tight cursor-pointer hover:scale-105 transition-transform shrink-0"
+          className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
           onClick={() => navigate('home')}
         >
-          Krishidukan
+          <img 
+            src="/images/krishidukan icon.webp" 
+            alt="KrishiDukan Logo" 
+            className="w-8 h-8 md:w-10 md:h-10 object-contain"
+          />
+          <span className="font-black text-xl md:text-2xl text-primary group-hover:text-primary/90 transition-colors">
+            Krishi<span className="text-secondary">Dukan</span>
+          </span>
         </div>
 
         {/* Desktop Nav */}

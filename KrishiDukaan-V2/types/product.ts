@@ -7,22 +7,28 @@ export type MarketplaceProduct = {
   category: string;
   description: string;
   image: string;
-  /** Ownership */
+  
+  /** Ownership — primary query fields */
   ownerId?: string;
   ownerType?: "manufacturer" | "retailer";
   createdBy?: string;
   source?: string;
-  /** Back-compat / reference fields */
+
+  /** Reference / Back-compat fields */
   manufacturerId?: string;
-  sellMode?: "online_delivery" | "offline_store_only";
-  isOnline?: boolean;
   manufacturerProductId?: string;
   retailerId?: string;
   retailerDocId?: string;
+
+  /** Market display & Delivery fields */
+  sellMode?: "online_delivery" | "offline_store_only";
+  isOnline?: boolean;
+  
   /** Legacy display fields — present on older documents only */
   stock?: string;
   store?: string;
   distance?: string;
+
   availability?: {
     storeId: string;
     stockLevel: string;

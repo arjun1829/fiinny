@@ -34,24 +34,13 @@ type AddProductInventoryFormProps = {
   seatStats: SeatStats;
 };
 
-const emptyForm: {
-  name: string;
-  category: typeof CATEGORIES[number];
-  unit: string;
-  sellingPrice: string;
-  stockQuantity: string;
-  description: string;
-  imageUrl: string;
-  sellMode: "offline_store_only" | "online_delivery";
-} = {
+const emptyForm = {
   name: "",
   category: CATEGORIES[0],
   unit: "pkt",
   sellingPrice: "",
-  stockQuantity: "",
   description: "",
   imageUrl: "",
-  sellMode: "offline_store_only" as "online_delivery" | "offline_store_only",
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -224,38 +213,6 @@ export function AddProductInventoryForm({
 
         {/* Price */}
         <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Sell mode</span>
-          <select
-            required
-            disabled={isDisabled}
-            className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50 appearance-none"
-            value={form.sellMode}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                sellMode: e.target.value as "online_delivery" | "offline_store_only",
-              }))
-            }
-          >
-            <option value="offline_store_only">Offline store only</option>
-            <option value="online_delivery">Online + Delivery</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Stock quantity</span>
-          <input
-            required
-            type="number"
-            min={0}
-            step={1}
-            disabled={isDisabled}
-            className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-            value={form.stockQuantity}
-            onChange={(e) => setForm((f) => ({ ...f, stockQuantity: e.target.value }))}
-          />
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Selling price</span>
           <span className="font-medium text-on-surface">Price (₹)</span>
           <input
             required

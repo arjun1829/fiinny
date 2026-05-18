@@ -9,6 +9,10 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "KrishiDukan - AI Agri-Commerce",
   description: "Connecting farmers with retailers and manufacturers",
+  icons: {
+    icon: "/images/krishidukan icon.webp",
+    apple: "/images/krishidukan icon.webp",
+  }
 };
 
 export default function RootLayout({

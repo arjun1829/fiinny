@@ -13,6 +13,7 @@ export default function ReviewsPage() {
       <PageHeader
         title="Reviews"
         description="Monitor shopper sentiment and follow up on recent feedback."
+        helperKey="dashReviews"
       />
       <ReviewsFullList seed={recentReviews} />
     </>

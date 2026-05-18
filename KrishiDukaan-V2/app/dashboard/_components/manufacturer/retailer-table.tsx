@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import { cn } from "../../_lib/cn";
+import { HelperTooltip } from "../../../../components/helpers";
 import {
   buildInviteShareMessage,
   buildMailtoInviteUrl,
@@ -251,14 +252,16 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {canAssign ? (
-                          <button
-                            type="button"
-                            onClick={() => onAssignProduct(row)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                          >
-                            <PackagePlus className="h-3.5 w-3.5" />
-                            Assign product
-                          </button>
+                          <HelperTooltip side="left" textKey="dashAssignProduct">
+                            <button
+                              type="button"
+                              onClick={() => onAssignProduct(row)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                            >
+                              <PackagePlus className="h-3.5 w-3.5" />
+                              Assign product
+                            </button>
+                          </HelperTooltip>
                         ) : null}
                         {onRemove ? (
                           <RemoveAction row={row} onRemove={onRemove} />

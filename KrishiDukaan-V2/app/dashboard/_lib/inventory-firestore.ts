@@ -53,11 +53,8 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     createdAt: (data.createdAt as Timestamp) ?? null,
     updatedAt: (data.updatedAt as Timestamp) ?? null,
     isActive: data.isActive !== false,
-    retailerId: String(data.retailerId ?? ""),
-    store: String(data.store ?? ""),
-    sellMode:
-      data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
-    isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+    
+    // Ownership — primary query fields
     ownerId: data.ownerId ? String(data.ownerId) : undefined,
     ownerType:
       data.ownerType === "manufacturer"
@@ -71,6 +68,13 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
       ? String(data.manufacturerProductId)
       : undefined,
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : undefined,
+
+    // Market display fields
+    retailerId: data.retailerId ? String(data.retailerId) : undefined,
+    store: String(data.store ?? ""),
+    sellMode:
+      data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+    isOnline: data.isOnline === true || data.sellMode === "online_delivery",
   };
 }
 
@@ -279,6 +283,8 @@ export async function createProductAndInventory(
     source: "retailer_inventory",
     createdAt: now,
     updatedAt: now,
+    
+    // Market display fields
     retailerId: ownerId,
     store: input.storeName || "Local Store",
     stock: "In Stock",

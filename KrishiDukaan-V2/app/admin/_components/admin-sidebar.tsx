@@ -35,12 +35,23 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
         )}
       >
         <div className="flex h-14 items-center justify-between gap-2 border-b border-outline-variant/30 px-4 md:h-16">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <Link href="/admin" className="font-bold text-primary text-sm" onClick={onClose}>
-              Admin Panel
-            </Link>
-          </div>
+          <Link 
+            href="/admin" 
+            className="flex items-center gap-2 hover:scale-[1.02] transition-transform" 
+            onClick={onClose}
+          >
+            <img 
+              src="/images/krishidukan icon.webp" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain"
+            />
+            <div className="flex flex-col -gap-1">
+              <span className="font-black text-sm text-primary tracking-tight leading-none">
+                Krishi<span className="text-secondary">Dukan</span>
+              </span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant leading-none">Admin</span>
+            </div>
+          </Link>
           <button
             type="button"
             className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-container md:hidden"

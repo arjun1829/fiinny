@@ -32,7 +32,16 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <h3 className="text-2xl font-black text-primary mb-3">Krishidukan</h3>
+            <div className="flex items-center gap-2 mb-4 group cursor-pointer" onClick={() => onNavigate?.('home')}>
+              <img 
+                src="/images/krishidukan icon.webp" 
+                alt="Logo" 
+                className="w-10 h-10 object-contain"
+              />
+              <h3 className="text-2xl font-black text-primary tracking-tight">
+                Krishi<span className="text-secondary">Dukan</span>
+              </h3>
+            </div>
             <p className="text-on-surface-variant text-sm leading-relaxed mb-4">
               {t('footerTagline')}
             </p>
@@ -111,7 +120,7 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
 
         {/* Bottom bar */}
         <div className="mt-10 pt-6 border-t border-surface-container flex flex-col md:flex-row items-center justify-between gap-3 text-[11px] text-outline">
-          <p>© {new Date().getFullYear()} Krishidukan. {t('footerRights')}</p>
+          <p>© {new Date().getFullYear()} KrishiDukan. {t('footerRights')}</p>
           <div className="flex gap-4">
             <button className="hover:text-on-surface transition-colors font-semibold">{t('footerPrivacy')}</button>
             <button className="hover:text-on-surface transition-colors font-semibold">{t('footerTerms')}</button>

@@ -17,6 +17,8 @@ import {
   isSubscriptionActive,
 } from "../_lib/subscriptions-firestore";
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
+import { HelperIcon, HelperTooltip } from "../../../components/helpers";
+import { HelperTextKey } from "../../i18n/helperTexts";
 
 type Role = "manufacturer" | "retailer";
 type AccessState = "checking" | "ready" | "denied";
@@ -26,15 +28,28 @@ function SeatStatTile({
   value,
   sub,
   highlight,
+  helperKey,
 }: {
   label: string;
   value: number | string;
   sub?: string;
   highlight?: "primary" | "harvest";
+  helperKey?: HelperTextKey;
 }) {
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-5">
-      <p className="text-sm font-medium text-on-surface-variant">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm font-medium text-on-surface-variant">{label}</p>
+        {helperKey ? (
+          <HelperIcon
+            size="xs"
+            variant="ghost"
+            side="bottom"
+            textKey={helperKey}
+            ariaLabel={`${label} help`}
+          />
+        ) : null}
+      </div>
       <p
         className={[
           "mt-2 text-3xl font-bold tabular-nums",
@@ -193,14 +208,17 @@ export default function SubscriptionPage() {
         <PageHeader
           title="Subscription"
           description="1 seat = 1 active product listing. Seats are consumed when you create a product or assign one to a retailer."
+          helperKey="dashSubscription"
         />
-        <a
-          href="/dashboard/upgrade"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all shrink-0"
-        >
-          <CreditCard className="h-4 w-4" />
-          Buy seats
-        </a>
+        <HelperTooltip side="bottom" textKey="dashBuySeats">
+          <a
+            href="/dashboard/upgrade"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all shrink-0"
+          >
+            <CreditCard className="h-4 w-4" />
+            Buy seats
+          </a>
+        </HelperTooltip>
       </div>
 
       {error ? (
@@ -221,12 +239,14 @@ export default function SubscriptionPage() {
               label="Seats purchased"
               value={stats?.totalPurchased ?? 0}
               sub="From active subscriptions"
+              helperKey="dashSeatsPurchased"
             />
             <SeatStatTile
               label="Seats used"
               value={stats?.activeUsed ?? 0}
               highlight="primary"
               sub="Active product listings"
+              helperKey="dashSeatsUsed"
             />
             <SeatStatTile
               label="Available"
@@ -237,19 +257,30 @@ export default function SubscriptionPage() {
                   : undefined
               }
               sub="Ready to use"
+              helperKey="dashSeatsAvailable"
             />
             <SeatStatTile
               label="Expiring soon"
               value={stats?.expiringSoon ?? 0}
               highlight={(stats?.expiringSoon ?? 0) > 0 ? "harvest" : undefined}
               sub="Subscriptions in 30 days"
+              helperKey="dashSeatsExpiring"
             />
           </div>
 
           {/* ── Subscription history ── */}
           <section aria-label="Subscription history" className="mb-8">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-on-surface">Subscription history</h2>
+              <h2 className="text-base font-semibold text-on-surface inline-flex items-center gap-1.5">
+                Subscription history
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="dashSubHistory"
+                  ariaLabel="Subscription history help"
+                />
+              </h2>
               <button
                 type="button"
                 onClick={() => uid && loadAll(uid, role)}
@@ -312,8 +343,15 @@ export default function SubscriptionPage() {
           {/* ── Active seat listings (own) ── */}
           <section aria-label="Your seat listings" className="mb-8">
             <div className="mb-3">
-              <h2 className="text-base font-semibold text-on-surface">
+              <h2 className="text-base font-semibold text-on-surface inline-flex items-center gap-1.5">
                 Active listings
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="dashActiveListings"
+                  ariaLabel="Active listings help"
+                />
               </h2>
               <p className="text-sm text-on-surface-variant">
                 Each row consumes one seat from your subscription.

@@ -22,6 +22,7 @@ import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
 import { PlusCircle, Zap } from "lucide-react";
 import Link from "next/link";
+import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,15 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
   return (
     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 min-w-[180px]">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold uppercase tracking-wider text-primary">
+        <span className="text-xs font-bold uppercase tracking-wider text-primary inline-flex items-center gap-1">
           Listing Seats
+          <HelperIcon
+            size="xs"
+            variant="ghost"
+            side="bottom"
+            textKey="dashSeatInfo"
+            ariaLabel="Listing seats help"
+          />
         </span>
         <span
           className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
@@ -81,13 +89,15 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
           <Zap className="w-3 h-3" /> {stats.expiringSoon} sub expiring soon
         </p>
       )}
-      <Link
-        href="/dashboard/upgrade"
-        className="mt-3 flex items-center justify-center gap-1.5 w-full py-1.5 bg-white border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/5 transition-colors"
-      >
-        <PlusCircle className="w-3 h-3" />
-        Buy More Seats
-      </Link>
+      <HelperTooltip side="top" textKey="dashSeatBuyMore">
+        <Link
+          href="/dashboard/upgrade"
+          className="mt-3 flex items-center justify-center gap-1.5 w-full py-1.5 bg-white border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/5 transition-colors"
+        >
+          <PlusCircle className="w-3 h-3" />
+          Buy More Seats
+        </Link>
+      </HelperTooltip>
     </div>
   );
 }
@@ -188,7 +198,7 @@ export default function InventoryPage() {
   if (!userId) {
     return (
       <>
-        <PageHeader title="Inventory" description="Sign in to manage your inventory." />
+        <PageHeader title="Inventory" description="Sign in to manage your inventory." helperKey="dashInventory" />
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           You are not signed in.
         </p>
@@ -209,6 +219,7 @@ export default function InventoryPage() {
               ? "Manage your product catalogue. Products are visible to retailers you assign them to."
               : "Your store's stock — own products and manufacturer-assigned items."
           }
+          helperKey="dashInventory"
         />
         <SeatInfoCard stats={seatStats} />
       </div>

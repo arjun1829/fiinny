@@ -71,6 +71,7 @@ export default function OrdersPage() {
       <PageHeader
         title="Incoming Orders"
         description="Orders placed by farmers for your online-delivery products."
+        helperKey="dashOrders"
       />
 
       {!uid || !sellerType ? (

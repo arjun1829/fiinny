@@ -54,7 +54,18 @@ export default function LoginView({ onBack, onNavigateToSignup, onSuccess }: Log
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white p-8 rounded-3xl shadow-ambient w-full max-w-md border border-surface-container"
       >
-        <button onClick={onBack} className="mb-6 flex items-center gap-2 text-primary font-bold hover:translate-x-1 transition-transform">
+        <div className="flex flex-col items-center mb-8">
+          <img 
+            src="/images/krishidukan icon.webp" 
+            alt="KrishiDukan" 
+            className="w-20 h-20 object-contain mb-2"
+          />
+          <span className="font-black text-2xl text-primary">
+            Krishi<span className="text-secondary">Dukan</span>
+          </span>
+        </div>
+
+        <button onClick={onBack} className="mb-6 flex items-center gap-2 text-primary font-bold hover:translate-x-1 transition-transform text-sm">
           <ICONS.ChevronRight className="w-4 h-4 rotate-180" /> {t('backToStore')}
         </button>
 

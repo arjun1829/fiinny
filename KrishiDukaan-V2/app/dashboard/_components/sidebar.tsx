@@ -39,6 +39,31 @@ const manufacturerExtras = [
   { href: "/dashboard/manufacturer/retailers", label: "Retailer network", icon: UsersRound },
 ] as const;
 
+function hrefToTourKey(href: string): string {
+  switch (href) {
+    case "/dashboard":
+      return "overview";
+    case "/dashboard/analytics":
+      return "analytics";
+    case "/dashboard/inventory":
+      return "inventory";
+    case "/dashboard/subscription":
+      return "subscription";
+    case "/dashboard/orders":
+      return "orders";
+    case "/dashboard/reviews":
+      return "reviews";
+    case "/dashboard/profile":
+      return "profile";
+    case "/dashboard/settings":
+      return "settings";
+    case "/dashboard/manufacturer/retailers":
+      return "retailer-network";
+    default:
+      return "";
+  }
+}
+
 type SidebarProps = {
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -103,10 +128,17 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         <div className="flex h-14 items-center justify-between gap-2 border-b border-outline-variant/30 px-4 md:h-16">
           <Link
             href="/dashboard"
-            className="font-semibold text-primary"
+            className="flex items-center gap-2 hover:scale-[1.02] transition-transform"
             onClick={() => onMobileOpenChange(false)}
           >
-            Shop Dashboard
+            <img 
+              src="/images/krishidukan icon.webp" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain"
+            />
+            <span className="font-black text-sm text-primary tracking-tight">
+              Krishi<span className="text-secondary">Dukan</span>
+            </span>
           </Link>
           <button
             type="button"
@@ -124,10 +156,12 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
               href === "/dashboard"
                 ? pathname === "/dashboard"
                 : pathname.startsWith(href);
+            const tourKey = hrefToTourKey(href);
             return (
               <Link
                 key={href}
                 href={href}
+                data-tour-dash={tourKey}
                 onClick={() => onMobileOpenChange(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",

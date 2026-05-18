@@ -413,6 +413,554 @@ export const HELPER_TEXTS = {
       hi: 'किसी क्षेत्र को देखने के लिए ज़ूम इन करें या अधिक दुकानें एक साथ देखने के लिए ज़ूम आउट करें।',
     },
   },
+
+  // --- Home page extensions ---
+  homeHeroCta: {
+    title: { en: 'Banner action', mr: 'बॅनर क्रिया', hi: 'बैनर क्रिया' },
+    body: {
+      en: 'Opens the highlighted product, hub, or programme tied to this banner.',
+      mr: 'या बॅनरशी संबंधित निवडक उत्पादन, हब किंवा कार्यक्रम उघडते.',
+      hi: 'इस बैनर से जुड़ा चयनित उत्पाद, हब या कार्यक्रम खोलता है।',
+    },
+  },
+  homeCategories: {
+    title: { en: 'Shop by category', mr: 'श्रेणीनुसार खरेदी', hi: 'श्रेणी के अनुसार खरीदें' },
+    body: {
+      en: 'Jump straight into a product type — seeds, fertilizers, pesticides, sprayers or tools.',
+      mr: 'थेट उत्पादन प्रकारात जा — बियाणे, खते, कीटकनाशके, फवारणी यंत्रे किंवा साधने.',
+      hi: 'सीधे किसी उत्पाद प्रकार में जाएँ — बीज, उर्वरक, कीटनाशक, स्प्रेयर या उपकरण।',
+    },
+  },
+  homeTrending: {
+    title: { en: 'Trending near you', mr: 'जवळ ट्रेंडिंग', hi: 'आसपास ट्रेंडिंग' },
+    body: {
+      en: 'Most ordered products from stores around your selected location this week.',
+      mr: 'या आठवड्यात तुमच्या निवडलेल्या स्थानाजवळील दुकानांकडून सर्वाधिक मागवली गेलेली उत्पादने.',
+      hi: 'इस सप्ताह आपके चयनित स्थान के आसपास की दुकानों से सबसे अधिक मंगाए गए उत्पाद।',
+    },
+  },
+  homePowerPlus: {
+    title: { en: 'Direct from manufacturer', mr: 'थेट उत्पादकाकडून', hi: 'सीधे निर्माता से' },
+    body: {
+      en: 'KaranArjun Power Plus™ ships directly from the maker — no middlemen, factory-fresh price.',
+      mr: 'करणअर्जुन पॉवर प्लस™ थेट उत्पादकाकडून पाठवले जाते — मध्यस्थ नाही, कारखाना ताजी किंमत.',
+      hi: 'करणअर्जुन पॉवर प्लस™ सीधे निर्माता से भेजा जाता है — कोई बिचौलिया नहीं, फ़ैक्टरी-ताज़ा कीमत।',
+    },
+  },
+  homeServicePowerPlus: {
+    title: { en: 'Order Power Plus', mr: 'पॉवर प्लस ऑर्डर करा', hi: 'पॉवर प्लस ऑर्डर करें' },
+    body: {
+      en: 'Choose 1 L, 3 L or 5 L packs shipped straight from the manufacturer.',
+      mr: '१ लि, ३ लि किंवा ५ लि पॅक थेट उत्पादकाकडून पाठवले जातील.',
+      hi: '1 ली, 3 ली या 5 ली पैक सीधे निर्माता से भेजे जाते हैं।',
+    },
+  },
+  homeServiceRetailer: {
+    title: { en: 'Become a retailer', mr: 'विक्रेता बना', hi: 'खुदरा विक्रेता बनें' },
+    body: {
+      en: 'List your shop, manage inventory, and get discovered by nearby farmers.',
+      mr: 'तुमचे दुकान नोंदवा, साठा व्यवस्थापित करा आणि जवळील शेतकऱ्यांपर्यंत पोहोचा.',
+      hi: 'अपनी दुकान सूचीबद्ध करें, इन्वेंट्री प्रबंधित करें और नज़दीकी किसानों तक पहुँचें।',
+    },
+  },
+  homeServiceAdvisory: {
+    title: { en: 'Free crop advisory', mr: 'मोफत पीक सल्ला', hi: 'मुफ़्त फसल सलाह' },
+    body: {
+      en: 'Crop-specific hubs with dosage, spray schedules, and soil-care guidance.',
+      mr: 'पीकनिहाय हब — प्रमाण, फवारणी वेळापत्रक आणि माती-संगोपन मार्गदर्शनासह.',
+      hi: 'फसल-विशिष्ट हब — मात्रा, स्प्रे शेड्यूल और मिट्टी-देखभाल मार्गदर्शन के साथ।',
+    },
+  },
+
+  // --- Hub page extensions ---
+  hubCropProfile: {
+    title: { en: 'Crop profile', mr: 'पीक प्रोफाइल', hi: 'फसल प्रोफ़ाइल' },
+    body: {
+      en: 'Quick facts — climate, soil, water and season — that suit this crop best.',
+      mr: 'या पिकाला सर्वात अनुकूल असे संक्षिप्त तथ्य — हवामान, माती, पाणी आणि हंगाम.',
+      hi: 'इस फसल के लिए सबसे उपयुक्त त्वरित तथ्य — जलवायु, मिट्टी, पानी और मौसम।',
+    },
+  },
+  hubGrowthJourney: {
+    title: { en: 'Growth journey', mr: 'वाढीचा प्रवास', hi: 'वृद्धि यात्रा' },
+    body: {
+      en: 'Every stage from seed to harvest with the inputs recommended at each step.',
+      mr: 'बियाण्यापासून कापणीपर्यंत प्रत्येक टप्पा, सोबत प्रत्येक टप्प्यासाठी शिफारस केलेले इनपुट.',
+      hi: 'बीज से कटाई तक हर चरण, साथ ही हर चरण के लिए अनुशंसित इनपुट।',
+    },
+  },
+  hubGrowthStage: {
+    title: { en: 'Stage details', mr: 'टप्प्याचे तपशील', hi: 'चरण विवरण' },
+    body: {
+      en: 'Phase length, what happens, and the products that support this stage best.',
+      mr: 'टप्प्याची लांबी, काय घडते आणि या टप्प्याला सर्वोत्तम मदत करणारी उत्पादने.',
+      hi: 'चरण की अवधि, क्या होता है, और इस चरण को सबसे अच्छा समर्थन देने वाले उत्पाद।',
+    },
+  },
+  hubSeeds: {
+    title: { en: 'Premium seeds', mr: 'प्रीमियम बियाणे', hi: 'प्रीमियम बीज' },
+    body: {
+      en: 'Verified varieties known to perform reliably for this crop in this region.',
+      mr: 'या प्रदेशात या पिकासाठी विश्वासार्ह कामगिरी देणाऱ्या पडताळणी केलेल्या जाती.',
+      hi: 'इस क्षेत्र में इस फसल के लिए विश्वसनीय प्रदर्शन के लिए जानी जाने वाली सत्यापित किस्में।',
+    },
+  },
+  hubMistakes: {
+    title: { en: 'Avoid these mistakes', mr: 'या चुका टाळा', hi: 'इन गलतियों से बचें' },
+    body: {
+      en: 'Common pitfalls real farmers report — quick wins if you avoid them.',
+      mr: 'खरे शेतकरी सांगणाऱ्या सामान्य चुका — टाळल्यास झटपट फायदा.',
+      hi: 'असली किसानों द्वारा बताई गई आम गलतियाँ — इनसे बचने पर त्वरित लाभ।',
+    },
+  },
+  hubAdvisory: {
+    title: { en: 'Agronomy alert', mr: 'कृषी सल्ला सूचना', hi: 'कृषि सलाह अलर्ट' },
+    body: {
+      en: 'Timely guidance from agronomists on issues likely to hit this crop right now.',
+      mr: 'सध्या या पिकावर येण्याची शक्यता असलेल्या समस्यांवर कृषितज्ज्ञांचे वेळेवर मार्गदर्शन.',
+      hi: 'अभी इस फसल पर आने वाली संभावित समस्याओं पर कृषि विशेषज्ञों का समय पर मार्गदर्शन।',
+    },
+  },
+  hubConsult: {
+    title: { en: 'Consult specialist', mr: 'तज्ज्ञांचा सल्ला घ्या', hi: 'विशेषज्ञ से सलाह लें' },
+    body: {
+      en: 'Talk to a crop specialist about your field and get a tailored plan.',
+      mr: 'तुमच्या शेताबद्दल पीक तज्ज्ञाशी बोला आणि अनुरूप योजना मिळवा.',
+      hi: 'अपने खेत के बारे में फसल विशेषज्ञ से बात करें और अनुकूल योजना पाएँ।',
+    },
+  },
+  hubDownloadGuide: {
+    title: { en: 'Download guide', mr: 'मार्गदर्शक डाउनलोड करा', hi: 'गाइड डाउनलोड करें' },
+    body: {
+      en: 'Save the full hub as a printable PDF for offline reference in the field.',
+      mr: 'शेतात ऑफलाइन वापरासाठी संपूर्ण हब छापण्यायोग्य PDF म्हणून जतन करा.',
+      hi: 'खेत में ऑफ़लाइन उपयोग के लिए पूरे हब को प्रिंट करने योग्य PDF के रूप में सहेजें।',
+    },
+  },
+  hubFaq: {
+    title: { en: "Farmer's wisdom", mr: 'शेतकरी ज्ञान', hi: 'किसान ज्ञान' },
+    body: {
+      en: 'Quick answers to the most common questions about growing this crop.',
+      mr: 'हे पीक घेण्याबद्दलच्या सर्वात सामान्य प्रश्नांची झटपट उत्तरे.',
+      hi: 'इस फसल को उगाने के बारे में सबसे सामान्य प्रश्नों के त्वरित उत्तर।',
+    },
+  },
+
+  // --- Dashboard: section helpers ---
+  dashOverview: {
+    title: { en: 'Overview', mr: 'सारांश', hi: 'अवलोकन' },
+    body: {
+      en: 'Performance snapshot for your storefront — views, interactions, inventory, and recent reviews at a glance.',
+      mr: 'तुमच्या स्टोअरफ्रंटसाठी कार्यप्रदर्शनाचा झलक — दृश्ये, संवाद, साठा आणि अलीकडील पुनरावलोकने एका दृष्टीक्षेपात.',
+      hi: 'आपके स्टोरफ्रंट का प्रदर्शन सारांश — व्यूज़, इंटरैक्शन, इन्वेंट्री और हाल की समीक्षाएँ एक नज़र में।',
+    },
+  },
+  dashAnalytics: {
+    title: { en: 'Analytics', mr: 'विश्लेषण', hi: 'विश्लेषण' },
+    body: {
+      en: 'Track impressions, CTR, calls, and direction requests so you can see what farmers are doing with your listing.',
+      mr: 'इंप्रेशन, CTR, कॉल आणि दिशा विनंत्या ट्रॅक करा — शेतकरी तुमच्या लिस्टिंगसोबत काय करत आहेत ते पाहा.',
+      hi: 'इंप्रेशन, CTR, कॉल और दिशा अनुरोध ट्रैक करें — किसान आपकी लिस्टिंग के साथ क्या कर रहे हैं देखें।',
+    },
+  },
+  dashInventory: {
+    title: { en: 'Inventory', mr: 'साठा', hi: 'इन्वेंट्री' },
+    body: {
+      en: 'Your stock list — own products and manufacturer-assigned items. Update quantities and track stock health here.',
+      mr: 'तुमची साठा यादी — स्वतःची आणि उत्पादकाने नेमून दिलेली उत्पादने. इथे प्रमाण अद्ययावत करा आणि साठ्याची स्थिती तपासा.',
+      hi: 'आपकी स्टॉक सूची — स्वयं के और निर्माता द्वारा सौंपे गए उत्पाद. यहाँ मात्रा अपडेट करें और स्टॉक स्वास्थ्य ट्रैक करें।',
+    },
+  },
+  dashSubscription: {
+    title: { en: 'Subscription seats', mr: 'सबस्क्रिप्शन सीट्स', hi: 'सब्सक्रिप्शन सीट्स' },
+    body: {
+      en: '1 seat = 1 active product listing. Seats are consumed when you publish a product or assign one to a retailer.',
+      mr: '१ सीट = १ सक्रिय उत्पादन लिस्टिंग. उत्पादन प्रकाशित केल्यावर किंवा विक्रेत्याला नेमून दिल्यावर सीट वापरली जाते.',
+      hi: '1 सीट = 1 सक्रिय उत्पाद लिस्टिंग। उत्पाद प्रकाशित करने पर या किसी विक्रेता को सौंपने पर सीट उपयोग होती है।',
+    },
+  },
+  dashBuySeats: {
+    title: { en: 'Buy more seats', mr: 'अधिक सीट्स घ्या', hi: 'और सीट्स खरीदें' },
+    body: {
+      en: 'Each seat lets you keep one extra product listed. Buy seats in bundles to scale your catalogue.',
+      mr: 'प्रत्येक सीट तुम्हाला एक अतिरिक्त उत्पादन सूचीबद्ध ठेवू देते. कॅटलॉग वाढवण्यासाठी सीट्स बंडलमध्ये घ्या.',
+      hi: 'हर सीट आपको एक अतिरिक्त उत्पाद सूचीबद्ध रखने देती है। कैटलॉग बढ़ाने के लिए सीट्स बंडल में खरीदें।',
+    },
+  },
+  dashOrders: {
+    title: { en: 'Incoming orders', mr: 'येणाऱ्या ऑर्डर्स', hi: 'आने वाले ऑर्डर' },
+    body: {
+      en: 'Orders placed by farmers for your online-delivery products. Confirm, pack, and dispatch from here.',
+      mr: 'तुमच्या ऑनलाइन-डिलिव्हरी उत्पादांसाठी शेतकऱ्यांनी दिलेल्या ऑर्डर्स. इथून पुष्टी करा, पॅक करा आणि पाठवा.',
+      hi: 'आपके ऑनलाइन-डिलीवरी उत्पादों के लिए किसानों द्वारा दिए गए ऑर्डर। यहाँ से पुष्टि करें, पैक करें और भेजें।',
+    },
+  },
+  dashReviews: {
+    title: { en: 'Reviews', mr: 'पुनरावलोकने', hi: 'समीक्षाएँ' },
+    body: {
+      en: 'Customer feedback linked to your products. Respond quickly to build trust and improve ratings.',
+      mr: 'तुमच्या उत्पादांशी जोडलेले ग्राहक अभिप्राय. विश्वास निर्माण करण्यासाठी आणि रेटिंग सुधारण्यासाठी पटकन प्रतिसाद द्या.',
+      hi: 'आपके उत्पादों से जुड़ी ग्राहक प्रतिक्रिया. विश्वास बनाने और रेटिंग सुधारने के लिए जल्दी जवाब दें।',
+    },
+  },
+  dashProfile: {
+    title: { en: 'Business profile', mr: 'व्यवसाय प्रोफाइल', hi: 'व्यवसाय प्रोफ़ाइल' },
+    body: {
+      en: 'How your shop appears to farmers. Use Google Maps search to auto-fill your address for accurate distance.',
+      mr: 'शेतकऱ्यांना तुमचे दुकान कसे दिसते. अचूक अंतरासाठी पत्ता आपोआप भरण्यासाठी Google Maps शोध वापरा.',
+      hi: 'किसानों को आपकी दुकान कैसे दिखती है. सटीक दूरी के लिए पता स्वतः भरने के लिए Google Maps खोज का उपयोग करें।',
+    },
+  },
+  dashSettings: {
+    title: { en: 'Settings', mr: 'सेटिंग्ज', hi: 'सेटिंग्स' },
+    body: {
+      en: 'Shop profile, contact channels, address, and business preferences in one place.',
+      mr: 'दुकानाची प्रोफाइल, संपर्क चॅनेल, पत्ता आणि व्यवसाय प्राधान्ये एकाच ठिकाणी.',
+      hi: 'दुकान की प्रोफ़ाइल, संपर्क चैनल, पता और व्यवसाय प्राथमिकताएँ एक ही जगह।',
+    },
+  },
+  dashInventoryHealth: {
+    title: { en: 'Inventory health', mr: 'साठा स्थिती', hi: 'इन्वेंट्री स्वास्थ्य' },
+    body: {
+      en: 'Share of in-stock SKUs out of your total catalogue. Aim for 80%+ to stay discoverable.',
+      mr: 'तुमच्या एकूण कॅटलॉगपैकी साठ्यात असलेल्या SKUs चे प्रमाण. शोधण्यायोग्य राहण्यासाठी ८०%+ लक्ष्य ठेवा.',
+      hi: 'आपके पूरे कैटलॉग में स्टॉक में मौजूद SKUs का अनुपात. खोज में बने रहने के लिए 80%+ का लक्ष्य रखें।',
+    },
+  },
+  dashQuickActions: {
+    title: { en: 'Quick actions', mr: 'त्वरित क्रिया', hi: 'त्वरित क्रियाएँ' },
+    body: {
+      en: 'Shortcuts to the tasks you do most — add product, adjust stock, view analytics, manage orders.',
+      mr: 'सर्वाधिक केल्या जाणाऱ्या कामांसाठी शॉर्टकट — उत्पादन जोडा, साठा समायोजित करा, विश्लेषण पाहा, ऑर्डर्स व्यवस्थापित करा.',
+      hi: 'सबसे ज़्यादा किए जाने वाले कामों के लिए शॉर्टकट — उत्पाद जोड़ें, स्टॉक समायोजित करें, विश्लेषण देखें, ऑर्डर प्रबंधित करें।',
+    },
+  },
+  dashImpressions: {
+    title: { en: 'Impressions', mr: 'इंप्रेशन', hi: 'इंप्रेशन' },
+    body: {
+      en: 'How many times your store appeared in farmers’ search results.',
+      mr: 'शेतकऱ्यांच्या शोध निकालांमध्ये तुमचे दुकान किती वेळा दिसले.',
+      hi: 'किसानों के खोज परिणामों में आपकी दुकान कितनी बार दिखी।',
+    },
+  },
+  dashCtr: {
+    title: { en: 'CTR (Click-through rate)', mr: 'CTR (क्लिक-थ्रू रेट)', hi: 'CTR (क्लिक-थ्रू रेट)' },
+    body: {
+      en: 'Share of impressions that became clicks. Higher CTR = more relevant listings.',
+      mr: 'इंप्रेशनपैकी क्लिक झालेले प्रमाण. जास्त CTR = अधिक संबंधित लिस्टिंग.',
+      hi: 'इंप्रेशन में से क्लिक बने अनुपात. अधिक CTR = ज़्यादा प्रासंगिक लिस्टिंग।',
+    },
+  },
+  dashAvgPosition: {
+    title: { en: 'Avg. position', mr: 'सरासरी स्थान', hi: 'औसत स्थिति' },
+    body: {
+      en: 'Your average rank in search results — lower is better, 1.0 is the top spot.',
+      mr: 'शोध निकालांमधील तुमची सरासरी रँक — कमी जास्त चांगले, १.० म्हणजे सर्वोच्च स्थान.',
+      hi: 'खोज परिणामों में आपकी औसत रैंक — कम बेहतर है, 1.0 शीर्ष स्थान है।',
+    },
+  },
+  dashListingSeats: {
+    title: { en: 'Listing seats', mr: 'लिस्टिंग सीट्स', hi: 'लिस्टिंग सीट्स' },
+    body: {
+      en: 'Available product slots from your subscription. Buy more seats to publish additional products.',
+      mr: 'तुमच्या सबस्क्रिप्शनमधून उपलब्ध उत्पादन स्लॉट. अतिरिक्त उत्पादने प्रकाशित करण्यासाठी अधिक सीट्स घ्या.',
+      hi: 'आपके सब्सक्रिप्शन से उपलब्ध उत्पाद स्लॉट. अतिरिक्त उत्पाद प्रकाशित करने के लिए और सीट्स खरीदें।',
+    },
+  },
+  dashRetailerNetwork: {
+    title: { en: 'Retailer network', mr: 'विक्रेता नेटवर्क', hi: 'विक्रेता नेटवर्क' },
+    body: {
+      en: 'Add retailers to your network and assign your products to them. Each product assignment uses one seat (1 month validity).',
+      mr: 'तुमच्या नेटवर्कमध्ये विक्रेते जोडा आणि त्यांना तुमची उत्पादने नेमून द्या. प्रत्येक उत्पादन नेमणूक एक सीट वापरते (१ महिना वैधता).',
+      hi: 'अपने नेटवर्क में विक्रेताओं को जोड़ें और उन्हें अपने उत्पाद सौंपें। प्रत्येक उत्पाद असाइनमेंट एक सीट का उपयोग करता है (1 माह वैधता)।',
+    },
+  },
+  dashAddRetailer: {
+    title: { en: 'Add retailer', mr: 'विक्रेता जोडा', hi: 'विक्रेता जोड़ें' },
+    body: {
+      en: 'Pre-create a retailer profile and generate a signup invite link. Use Google Maps to auto-fill the shop address.',
+      mr: 'विक्रेत्याची प्रोफाइल आधीच तयार करा आणि साइनअप आमंत्रण लिंक तयार करा. दुकानाचा पत्ता आपोआप भरण्यासाठी Google Maps वापरा.',
+      hi: 'विक्रेता की प्रोफ़ाइल पहले से बनाएँ और साइनअप आमंत्रण लिंक उत्पन्न करें। दुकान का पता स्वतः भरने के लिए Google Maps का उपयोग करें।',
+    },
+  },
+  dashAssignProduct: {
+    title: { en: 'Assign product', mr: 'उत्पादन नेमून द्या', hi: 'उत्पाद असाइन करें' },
+    body: {
+      en: 'Push one of your manufactured products into a retailer’s inventory so it appears in their listings.',
+      mr: 'तुमचे उत्पादित उत्पादन विक्रेत्याच्या साठ्यात पाठवा जेणेकरून ते त्यांच्या लिस्टिंगमध्ये दिसेल.',
+      hi: 'अपना निर्मित उत्पाद किसी विक्रेता की इन्वेंट्री में भेजें ताकि वह उनकी लिस्टिंग में दिखे।',
+    },
+  },
+
+  // --- Dashboard tour steps ---
+  tourDashWelcome: {
+    title: {
+      en: 'Welcome to your dashboard',
+      mr: 'तुमच्या डॅशबोर्डमध्ये स्वागत आहे',
+      hi: 'आपके डैशबोर्ड में स्वागत है',
+    },
+    body: {
+      en: 'Your control centre for the shop. Let’s walk through the key sections — it only takes a moment.',
+      mr: 'दुकानासाठी तुमचे नियंत्रण केंद्र. चला महत्त्वाच्या विभागांचा फेरफटका मारू — फक्त एक क्षण लागेल.',
+      hi: 'आपकी दुकान का कंट्रोल सेंटर। चलिए मुख्य अनुभागों का दौरा करते हैं — बस एक क्षण लगेगा।',
+    },
+  },
+  tourDashOverview: {
+    title: { en: 'Overview', mr: 'सारांश', hi: 'अवलोकन' },
+    body: {
+      en: 'Daily snapshot of views, interactions, directions, and listed products.',
+      mr: 'दृश्ये, संवाद, दिशा आणि सूचीबद्ध उत्पादांचा रोजचा झलक.',
+      hi: 'व्यूज़, इंटरैक्शन, दिशा और सूचीबद्ध उत्पादों का दैनिक स्नैपशॉट।',
+    },
+  },
+  tourDashAnalytics: {
+    title: { en: 'Analytics', mr: 'विश्लेषण', hi: 'विश्लेषण' },
+    body: {
+      en: 'Track impressions, CTR, calls, and direction requests over time.',
+      mr: 'काळानुसार इंप्रेशन, CTR, कॉल आणि दिशा विनंत्या ट्रॅक करा.',
+      hi: 'समय के साथ इंप्रेशन, CTR, कॉल और दिशा अनुरोध ट्रैक करें।',
+    },
+  },
+  tourDashInventory: {
+    title: { en: 'Inventory', mr: 'साठा', hi: 'इन्वेंट्री' },
+    body: {
+      en: 'Manage your products, stock levels, and seat usage from a single page.',
+      mr: 'एकाच पानावरून तुमची उत्पादने, साठा पातळी आणि सीट वापर व्यवस्थापित करा.',
+      hi: 'अपने उत्पाद, स्टॉक स्तर और सीट उपयोग एक ही पेज से प्रबंधित करें।',
+    },
+  },
+  tourDashSubscription: {
+    title: { en: 'Subscription', mr: 'सबस्क्रिप्शन', hi: 'सब्सक्रिप्शन' },
+    body: {
+      en: '1 seat = 1 active product. Check seat balance and buy more when you scale.',
+      mr: '१ सीट = १ सक्रिय उत्पादन. सीट शिल्लक तपासा आणि वाढ करताना अधिक घ्या.',
+      hi: '1 सीट = 1 सक्रिय उत्पाद. सीट बैलेंस देखें और बढ़ाते समय और खरीदें।',
+    },
+  },
+  tourDashOrders: {
+    title: { en: 'Orders', mr: 'ऑर्डर्स', hi: 'ऑर्डर' },
+    body: {
+      en: 'Incoming farmer orders for your online-delivery products land here.',
+      mr: 'तुमच्या ऑनलाइन-डिलिव्हरी उत्पादांसाठी शेतकऱ्यांच्या ऑर्डर्स इथे येतात.',
+      hi: 'आपके ऑनलाइन-डिलीवरी उत्पादों के लिए किसानों के ऑर्डर यहाँ आते हैं।',
+    },
+  },
+  tourDashReviews: {
+    title: { en: 'Reviews', mr: 'पुनरावलोकने', hi: 'समीक्षाएँ' },
+    body: {
+      en: 'Read shopper feedback and follow up to keep your rating strong.',
+      mr: 'खरेदीदार अभिप्राय वाचा आणि तुमची रेटिंग टिकवण्यासाठी पाठपुरावा करा.',
+      hi: 'खरीदारों की प्रतिक्रिया पढ़ें और रेटिंग मज़बूत रखने के लिए फ़ॉलो-अप करें।',
+    },
+  },
+  tourDashProfile: {
+    title: { en: 'Profile', mr: 'प्रोफाइल', hi: 'प्रोफ़ाइल' },
+    body: {
+      en: 'Complete your shop profile — name, contact, and Google Maps location — so farmers can find you.',
+      mr: 'तुमची दुकान प्रोफाइल पूर्ण करा — नाव, संपर्क आणि Google Maps स्थान — जेणेकरून शेतकरी तुम्हाला शोधू शकतील.',
+      hi: 'अपनी दुकान प्रोफ़ाइल पूरी करें — नाम, संपर्क और Google Maps स्थान — ताकि किसान आपको ढूँढ सकें।',
+    },
+  },
+  tourDashSettings: {
+    title: { en: 'Settings', mr: 'सेटिंग्ज', hi: 'सेटिंग्स' },
+    body: {
+      en: 'Update contact channels, address, and business preferences anytime.',
+      mr: 'संपर्क चॅनेल, पत्ता आणि व्यवसाय प्राधान्ये कधीही अद्ययावत करा.',
+      hi: 'संपर्क चैनल, पता और व्यवसाय प्राथमिकताएँ कभी भी अपडेट करें।',
+    },
+  },
+  tourDashRetailerNetwork: {
+    title: { en: 'Retailer network', mr: 'विक्रेता नेटवर्क', hi: 'विक्रेता नेटवर्क' },
+    body: {
+      en: 'Add retailers, send signup invites, and assign your products to expand your distribution.',
+      mr: 'विक्रेते जोडा, साइनअप आमंत्रणे पाठवा आणि वितरण वाढवण्यासाठी तुमची उत्पादने नेमून द्या.',
+      hi: 'विक्रेताओं को जोड़ें, साइनअप आमंत्रण भेजें और वितरण बढ़ाने के लिए अपने उत्पाद असाइन करें।',
+    },
+  },
+
+  // --- Dashboard: feature-level micro helpers ---
+  dashMetricViews: {
+    title: { en: 'Total Views', mr: 'एकूण दृश्ये', hi: 'कुल व्यूज़' },
+    body: {
+      en: 'Times your store or products were shown to nearby farmers.',
+      mr: 'जवळील शेतकऱ्यांना तुमचे दुकान किंवा उत्पादने किती वेळा दाखवली गेली.',
+      hi: 'नज़दीकी किसानों को आपकी दुकान या उत्पाद कितनी बार दिखाए गए।',
+    },
+  },
+  dashMetricInteractions: {
+    title: { en: 'Interactions', mr: 'इंटरॅक्शन', hi: 'इंटरैक्शन' },
+    body: {
+      en: 'Clicks, calls, and product opens from farmers — your real engagement.',
+      mr: 'शेतकऱ्यांकडून क्लिक, कॉल आणि उत्पादन उघडणे — तुमचा खरा सहभाग.',
+      hi: 'किसानों के क्लिक, कॉल और प्रोडक्ट ओपन — आपकी वास्तविक एंगेजमेंट।',
+    },
+  },
+  dashMetricDirections: {
+    title: { en: 'Directions', mr: 'दिशा', hi: 'दिशा-निर्देश' },
+    body: {
+      en: 'Turn-by-turn route requests to your shop from Google Maps.',
+      mr: 'Google Maps वरून तुमच्या दुकानापर्यंतच्या वळण-वळण मार्ग विनंत्या.',
+      hi: 'Google Maps से आपकी दुकान तक मोड़-दर-मोड़ रूट अनुरोध।',
+    },
+  },
+  dashMetricProductsListed: {
+    title: { en: 'Products Listed', mr: 'सूचीबद्ध उत्पादने', hi: 'सूचीबद्ध उत्पाद' },
+    body: {
+      en: 'Active product listings in your catalogue — each consumes one seat.',
+      mr: 'तुमच्या कॅटलॉगमधील सक्रिय उत्पादन लिस्टिंग — प्रत्येक एक सीट वापरते.',
+      hi: 'आपके कैटलॉग में सक्रिय उत्पाद लिस्टिंग — प्रत्येक एक सीट उपयोग करती है।',
+    },
+  },
+  dashChartViews: {
+    title: { en: 'Views over time', mr: 'काळानुसार दृश्ये', hi: 'समय के अनुसार व्यूज़' },
+    body: {
+      en: 'Daily impressions for the last week — spot trends and busy days.',
+      mr: 'मागील आठवड्यासाठी रोजचे इंप्रेशन — ट्रेंड आणि व्यस्त दिवस ओळखा.',
+      hi: 'पिछले सप्ताह के दैनिक इंप्रेशन — ट्रेंड और व्यस्त दिनों को पहचानें।',
+    },
+  },
+  dashChartCalls: {
+    title: { en: 'Calls made', mr: 'केलेले कॉल्स', hi: 'किए गए कॉल' },
+    body: {
+      en: 'Tap-to-call clicks straight from your listing.',
+      mr: 'तुमच्या लिस्टिंगवरून थेट टॅप-टू-कॉल क्लिक.',
+      hi: 'आपकी लिस्टिंग से सीधे टैप-टू-कॉल क्लिक।',
+    },
+  },
+  dashChartDirections: {
+    title: { en: 'Direction requests', mr: 'दिशा विनंत्या', hi: 'दिशा अनुरोध' },
+    body: {
+      en: 'How often farmers opened directions to your shop.',
+      mr: 'शेतकऱ्यांनी तुमच्या दुकानाच्या दिशा किती वेळा उघडल्या.',
+      hi: 'किसानों ने आपकी दुकान की दिशा कितनी बार खोली।',
+    },
+  },
+  dashInsights: {
+    title: { en: 'Insights', mr: 'अंतर्दृष्टी', hi: 'इनसाइट्स' },
+    body: {
+      en: 'Personalized takeaways from your live metrics — what to do next.',
+      mr: 'तुमच्या थेट मेट्रिक्समधून वैयक्तिकृत निष्कर्ष — पुढे काय करायचे.',
+      hi: 'आपके लाइव मेट्रिक्स से वैयक्तिकृत निष्कर्ष — आगे क्या करना है।',
+    },
+  },
+
+  // --- Inventory tiles ---
+  dashInvInStock: {
+    title: { en: 'In stock', mr: 'साठ्यात', hi: 'स्टॉक में' },
+    body: {
+      en: 'Products currently available for farmers to discover and buy.',
+      mr: 'शेतकऱ्यांना शोधण्यासाठी आणि खरेदी करण्यासाठी सध्या उपलब्ध उत्पादने.',
+      hi: 'किसानों को खोजने और खरीदने के लिए अभी उपलब्ध उत्पाद।',
+    },
+  },
+  dashInvLowStock: {
+    title: { en: 'Low stock', mr: 'कमी साठा', hi: 'कम स्टॉक' },
+    body: {
+      en: 'Items running low — restock soon to avoid losing customers.',
+      mr: 'कमी होत असलेल्या वस्तू — ग्राहक गमावू नये म्हणून लवकरच पुन्हा साठा करा.',
+      hi: 'कम होती वस्तुएँ — ग्राहक खोने से बचने के लिए जल्द ही पुनः स्टॉक करें।',
+    },
+  },
+  dashInvOutOfStock: {
+    title: { en: 'Out of stock', mr: 'साठा संपला', hi: 'स्टॉक खत्म' },
+    body: {
+      en: 'Listed but currently unavailable — mark as in-stock once restocked.',
+      mr: 'सूचीबद्ध पण सध्या अनुपलब्ध — साठा भरल्यावर साठ्यात असल्याचे चिन्हांकित करा.',
+      hi: 'सूचीबद्ध लेकिन अभी अनुपलब्ध — स्टॉक भरने पर इन-स्टॉक के रूप में चिह्नित करें।',
+    },
+  },
+  dashInvHealthScore: {
+    title: { en: 'Health score', mr: 'आरोग्य स्कोअर', hi: 'हेल्थ स्कोर' },
+    body: {
+      en: 'Share of in-stock products. Aim for 80%+ to stay visible in search.',
+      mr: 'साठ्यातील उत्पादांचे प्रमाण. शोधात दिसण्यासाठी ८०%+ लक्ष्य ठेवा.',
+      hi: 'स्टॉक में मौजूद उत्पादों का अनुपात. खोज में दिखने के लिए 80%+ का लक्ष्य रखें।',
+    },
+  },
+  dashSeatInfo: {
+    title: { en: 'Listing seats', mr: 'लिस्टिंग सीट्स', hi: 'लिस्टिंग सीट्स' },
+    body: {
+      en: 'Available product slots from your subscription. Each new listing uses one seat.',
+      mr: 'तुमच्या सबस्क्रिप्शनमधून उपलब्ध उत्पादन स्लॉट. प्रत्येक नवीन लिस्टिंग एक सीट वापरते.',
+      hi: 'आपके सब्सक्रिप्शन से उपलब्ध उत्पाद स्लॉट. हर नई लिस्टिंग एक सीट उपयोग करती है।',
+    },
+  },
+  dashSeatBuyMore: {
+    title: { en: 'Buy more seats', mr: 'अधिक सीट्स घ्या', hi: 'और सीट्स खरीदें' },
+    body: {
+      en: 'Top up your plan to publish more products without removing existing ones.',
+      mr: 'अस्तित्वातील उत्पादने काढून न टाकता अधिक उत्पादने प्रकाशित करण्यासाठी तुमचा प्लॅन वाढवा.',
+      hi: 'मौजूदा उत्पाद हटाए बिना अधिक उत्पाद प्रकाशित करने के लिए अपने प्लान को टॉप-अप करें।',
+    },
+  },
+
+  // --- Subscription tiles ---
+  dashSeatsPurchased: {
+    title: { en: 'Seats purchased', mr: 'खरेदी केलेल्या सीट्स', hi: 'खरीदी गई सीट्स' },
+    body: {
+      en: 'Total seats across all your active subscriptions.',
+      mr: 'तुमच्या सर्व सक्रिय सबस्क्रिप्शनमधील एकूण सीट्स.',
+      hi: 'आपके सभी सक्रिय सब्सक्रिप्शन में कुल सीट्स।',
+    },
+  },
+  dashSeatsUsed: {
+    title: { en: 'Seats used', mr: 'वापरलेल्या सीट्स', hi: 'उपयोग की गई सीट्स' },
+    body: {
+      en: 'Seats currently held by active product listings or retailer assignments.',
+      mr: 'सक्रिय उत्पादन लिस्टिंग किंवा विक्रेता नेमणूकींद्वारे सध्या वापरल्या जाणाऱ्या सीट्स.',
+      hi: 'सक्रिय उत्पाद लिस्टिंग या विक्रेता असाइनमेंट द्वारा अभी उपयोग में सीट्स।',
+    },
+  },
+  dashSeatsAvailable: {
+    title: { en: 'Available seats', mr: 'उपलब्ध सीट्स', hi: 'उपलब्ध सीट्स' },
+    body: {
+      en: 'Ready-to-use seats for new listings or retailer assignments.',
+      mr: 'नवीन लिस्टिंग किंवा विक्रेता नेमणूकीसाठी वापरण्यास तयार सीट्स.',
+      hi: 'नई लिस्टिंग या विक्रेता असाइनमेंट के लिए तैयार सीट्स।',
+    },
+  },
+  dashSeatsExpiring: {
+    title: { en: 'Expiring soon', mr: 'लवकरच संपणाऱ्या', hi: 'जल्द समाप्त होने वाली' },
+    body: {
+      en: 'Seats on subscriptions that expire within the next 30 days. Renew to keep listings live.',
+      mr: 'पुढील ३० दिवसांत संपणाऱ्या सबस्क्रिप्शनवरील सीट्स. लिस्टिंग चालू ठेवण्यासाठी नूतनीकरण करा.',
+      hi: 'अगले 30 दिनों में समाप्त होने वाले सब्सक्रिप्शन की सीट्स. लिस्टिंग सक्रिय रखने के लिए रिन्यू करें।',
+    },
+  },
+  dashSubHistory: {
+    title: { en: 'Subscription history', mr: 'सबस्क्रिप्शन इतिहास', hi: 'सब्सक्रिप्शन इतिहास' },
+    body: {
+      en: 'All your past and current plans, payment IDs, and expiry dates.',
+      mr: 'तुमचे सर्व मागील आणि सध्याचे प्लॅन्स, पेमेंट ID आणि कालबाह्य तारखा.',
+      hi: 'आपके सभी पिछले और मौजूदा प्लान, पेमेंट ID और समाप्ति तारीखें।',
+    },
+  },
+  dashActiveListings: {
+    title: { en: 'Active listings', mr: 'सक्रिय लिस्टिंग', hi: 'सक्रिय लिस्टिंग' },
+    body: {
+      en: 'Products currently consuming your seats. Each row = one seat.',
+      mr: 'सध्या तुमच्या सीट्स वापरणारी उत्पादने. प्रत्येक पंक्ती = एक सीट.',
+      hi: 'अभी आपकी सीट्स का उपयोग कर रहे उत्पाद. प्रत्येक पंक्ति = एक सीट।',
+    },
+  },
+
+  // --- Manufacturer-specific ---
+  dashRetailerInvite: {
+    title: { en: 'Invite link', mr: 'आमंत्रण लिंक', hi: 'इनवाइट लिंक' },
+    body: {
+      en: 'Share this signup link so the retailer can claim their pre-created profile.',
+      mr: 'विक्रेता त्यांची आधीच तयार केलेली प्रोफाइल हक्काने मिळवू शकेल यासाठी ही साइनअप लिंक शेअर करा.',
+      hi: 'इस साइनअप लिंक को साझा करें ताकि विक्रेता अपनी पहले से बनाई गई प्रोफ़ाइल का दावा कर सके।',
+    },
+  },
+  dashRetailerSeats: {
+    title: { en: 'Seats remaining', mr: 'शिल्लक सीट्स', hi: 'बची हुई सीट्स' },
+    body: {
+      en: 'Each retailer product assignment consumes one seat for one month.',
+      mr: 'प्रत्येक विक्रेता उत्पादन नेमणूक एक महिन्यासाठी एक सीट वापरते.',
+      hi: 'प्रत्येक विक्रेता उत्पाद असाइनमेंट एक माह के लिए एक सीट उपयोग करता है।',
+    },
+  },
 } as const;
 
 export type HelperTextKey = keyof typeof HELPER_TEXTS;

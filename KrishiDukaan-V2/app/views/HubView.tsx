@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { ICONS } from '../constants';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { fetchHubs, Hub } from '../firebase';
-import { HelperIcon } from '../../components/helpers';
+import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
+import { generateHubPDF } from '../utils/pdf-generator';
 
 const FALLBACK_HUBS: Hub[] = [
   {
@@ -339,6 +340,47 @@ const FALLBACK_HUBS: Hub[] = [
       'Neglecting thrips control in early stages.',
       'High nitrogen application during bulb storage preparation.'
     ]
+  },
+  {
+    id: 'orange',
+    name: 'Orange',
+    heroImage: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&q=80',
+    tagline: 'Advanced Citrus Management for Vibrant Color and High Brix Value.',
+    idealClimate: 'Warm temperate to Tropical (15°C - 35°C)',
+    soilType: 'Deep, well-drained loamy soil',
+    waterNeeds: 'Moderate but Regular',
+    bestSeason: 'Spring Flowering',
+    seeds: [
+      { name: 'Nagpur Mandarin', price: 120, img: 'https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&q=80' },
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+    ],
+    nutrition: [
+      { name: 'Zinc Sulphate', desc: 'Prevents interveinal chlorosis and mottling', icon: 'Science' },
+      { name: 'Potassium Nitrate', desc: 'Improves fruit weight and rind quality', icon: 'Water' }
+    ],
+    irrigation: {
+      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&q=80',
+      items: [
+        { name: 'Micro-sprinklers', price: '₹85/pc' },
+        { name: 'Filter Unit', price: '₹3500/pc' }
+      ]
+    },
+    advisory: {
+      title: 'Citrus Dieback Prevention Strategy',
+      description: 'Dieback is often caused by root rot and micronutrient deficiency. Ensure your drainage is perfect. Use Bordeaux mixture as a protective spray after every pruning session.'
+    },
+    growthStages: [
+      { phase: 'Dormancy', duration: 'Winter', description: 'The tree stores energy; ideal time for corrective pruning.', products: ['Bordeaux Mixture'] },
+      { phase: 'Flowering', duration: 'Spring', description: 'Main bloom period; sensitive to sudden temperature shifts.', products: ['Zinc', 'Boron'] },
+      { phase: 'Fruit Set', duration: 'Late Spring', description: 'Initial fruit drop is normal; maintain consistent moisture.', products: ['Potassium Nitrate'] },
+      { phase: 'Color Break', duration: 'Autumn', description: 'Fruit turns from green to orange as temperatures drop.', products: ['Calcium Nitrate'] },
+      { phase: 'Harvest', duration: 'Winter', description: 'Harvest once the Brix-Acid ratio is optimal for taste.', products: ['Power Plus'] }
+    ],
+    commonMistakes: [
+      'Neglecting the removal of "Water Sprouts" (vigorous non-fruiting stems).',
+      'Over-irrigation leading to Phytophthora root rot.',
+      'Late-season nitrogen application reducing cold hardiness.'
+    ]
   }
 ];
 
@@ -443,28 +485,30 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
     <div className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 flex flex-col gap-12">
       
       {/* Hub Selector */}
-      <div className="flex items-center gap-2" data-tour="hub-tabs">
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide flex-1">
+      <div className="flex items-center gap-3 sticky top-[72px] z-30 py-4 bg-surface/80 backdrop-blur-md -mx-4 px-4 md:-mx-10 md:px-10 border-b border-surface-container" data-tour="hub-tabs">
+        <div className="flex gap-2 overflow-x-auto pb-1 flex-1 hide-scrollbar scroll-smooth whitespace-nowrap">
         {filteredHubs.map((hub) => (
           <button
             key={hub.id}
             onClick={() => setSelectedHub(hub)}
-            className={`flex-shrink-0 px-6 py-3 rounded-full font-bold transition-all ${
+            className={`flex-shrink-0 px-5 py-2.5 rounded-xl text-sm font-bold transition-all border ${
               selectedHub.id === hub.id 
-                ? 'bg-primary text-white shadow-lg shadow-primary/30' 
-                : 'bg-white text-on-surface border border-surface-container hover:border-primary'
+                ? 'bg-primary border-primary text-white shadow-md shadow-primary/20' 
+                : 'bg-white text-on-surface border-surface-container hover:border-primary/50'
             }`}
           >
-            {hub.name} {t('hubSuffix')}
+            {hub.name}
           </button>
         ))}
         </div>
-        <HelperIcon
-          size="sm"
-          side="left"
-          textKey="hubTabs"
-          ariaLabel="Hub tabs help"
-        />
+        <div className="shrink-0">
+          <HelperIcon
+            size="sm"
+            side="left"
+            textKey="hubTabs"
+            ariaLabel="Hub tabs help"
+          />
+        </div>
       </div>
 
       {/* Hero */}
@@ -478,21 +522,28 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-90" />
         </div>
         <div className="relative z-10">
-          <motion.div
+          <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-2 mb-4"
           >
-            <span className="bg-primary text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-full inline-block shadow-lg border border-white/20">Official Crop Hub</span>
+            <span className="bg-primary text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-full inline-block shadow-lg border border-white/20">{t('featuredCrop')}</span>
+            <HelperIcon
+              size="xs"
+              variant="onDark"
+              side="right"
+              textKey="hubFeatured"
+              ariaLabel="Featured crop help"
+            />
           </motion.div>
-          <motion.h1
+          <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="text-5xl md:text-7xl font-black text-white tracking-tight leading-tight"
           >
-            {selectedHub.name} <span className="text-primary-container">Hub</span>
+            {selectedHub.name} <span className="text-primary-container">{t('hubSuffix')}</span>
           </motion.h1>
-          <motion.p
+          <motion.p 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
@@ -506,24 +557,25 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
       {/* Crop Profile & Quick Stats */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
         {[
-          { label: 'Ideal Climate', value: selectedHub.idealClimate || 'Tropical', icon: ICONS.Efficiency, color: 'text-orange-500 bg-orange-50' },
-          { label: 'Soil Type', value: selectedHub.soilType || 'Loamy', icon: ICONS.Sprout, color: 'text-brown-500 bg-amber-50' },
-          { label: 'Water Needs', value: selectedHub.waterNeeds || 'Moderate', icon: ICONS.Water, color: 'text-blue-500 bg-blue-50' },
-          { label: 'Best Season', value: selectedHub.bestSeason || 'Spring', icon: ICONS.Home, color: 'text-green-500 bg-green-50' }
+          { label: t('idealClimate'), value: selectedHub.idealClimate || 'Tropical', icon: ICONS.Efficiency, color: 'text-orange-500 bg-orange-50' },
+          { label: t('soilType'), value: selectedHub.soilType || 'Loamy', icon: ICONS.Sprout, color: 'text-brown-500 bg-amber-50' },
+          { label: t('waterNeeds'), value: selectedHub.waterNeeds || 'Moderate', icon: ICONS.Water, color: 'text-blue-500 bg-blue-50' },
+          { label: t('bestSeason'), value: selectedHub.bestSeason || 'Spring', icon: ICONS.Home, color: 'text-green-500 bg-green-50' }
         ].map((stat, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-6 rounded-[32px] border border-surface-container shadow-sm flex flex-col items-center text-center group hover:border-primary transition-all cursor-default"
-          >
-            <div className={`w-12 h-12 rounded-2xl ${stat.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-              <stat.icon className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">{stat.label}</span>
-            <span className="text-sm font-bold text-on-surface line-clamp-1">{stat.value}</span>
-          </motion.div>
+          <HelperTooltip key={i} side="bottom" textKey="hubCropProfile">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.1 }}
+              className="bg-white p-6 rounded-[32px] border border-surface-container shadow-sm flex flex-col items-center text-center group hover:border-primary transition-all cursor-default"
+            >
+              <div className={`w-12 h-12 rounded-2xl ${stat.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                <stat.icon className="w-6 h-6" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">{stat.label}</span>
+              <span className="text-sm font-bold text-on-surface line-clamp-1">{stat.value}</span>
+            </motion.div>
+          </HelperTooltip>
         ))}
       </section>
 
@@ -531,13 +583,22 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
       {selectedHub.growthStages && selectedHub.growthStages.length > 0 && (
         <section className="flex flex-col gap-6">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-black text-on-surface tracking-tight">Growth Journey</h2>
-              <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest mt-1">From seed to harvest — step by step</p>
+            <div className="flex items-start gap-2">
+              <div>
+                <h2 className="text-3xl font-black text-on-surface tracking-tight">{t('growthJourney')}</h2>
+                <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest mt-1">{t('fromSeedToHarvest')}</p>
+              </div>
+              <HelperIcon
+                size="sm"
+                variant="ghost"
+                side="right"
+                textKey="hubGrowthJourney"
+                ariaLabel="Growth journey help"
+              />
             </div>
             <div className="hidden md:flex items-center gap-2 bg-secondary/10 text-secondary px-4 py-2 rounded-2xl border border-secondary/20">
               <ICONS.Sprout className="w-4 h-4" />
-              <span className="text-xs font-black uppercase tracking-widest">Complete Cycle</span>
+              <span className="text-xs font-black uppercase tracking-widest">{t('completeCycle')}</span>
             </div>
           </div>
 
@@ -565,22 +626,24 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
                     )}
                   </div>
                   
-                  <div className="bg-white p-5 rounded-3xl border border-surface-container shadow-sm group-hover:shadow-ambient transition-shadow w-full flex-grow">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-on-surface text-base">{stage.phase}</h3>
-                      <span className="text-[10px] font-black text-secondary bg-secondary/5 px-2 py-0.5 rounded-full">{stage.duration}</span>
-                    </div>
-                    <p className="text-xs text-on-surface-variant leading-relaxed mb-4">{stage.description}</p>
-                    
-                    <div className="space-y-2">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-primary">Recommended Products</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {stage.products.map((p, pi) => (
-                          <span key={pi} className="text-[10px] bg-surface-container px-2 py-1 rounded-lg font-bold text-on-surface">{p}</span>
-                        ))}
+                  <HelperTooltip side="top" textKey="hubGrowthStage">
+                    <div className="bg-white p-5 rounded-3xl border border-surface-container shadow-sm group-hover:shadow-ambient transition-shadow w-full flex-grow cursor-help">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-on-surface text-base">{stage.phase}</h3>
+                        <span className="text-[10px] font-black text-secondary bg-secondary/5 px-2 py-0.5 rounded-full">{stage.duration}</span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant leading-relaxed mb-4">{stage.description}</p>
+
+                      <div className="space-y-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-primary">{t('recommendedProducts')}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {stage.products.map((p, pi) => (
+                            <span key={pi} className="text-[10px] bg-surface-container px-2 py-1 rounded-lg font-bold text-on-surface">{p}</span>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </HelperTooltip>
                 </motion.div>
               ))}
             </div>
@@ -593,7 +656,16 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
         {/* Seeds */}
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-surface-container flex flex-col hover:shadow-ambient transition-shadow">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-black text-on-surface tracking-tight">Premium Seeds</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-black text-on-surface tracking-tight">{t('premiumSeeds')}</h2>
+              <HelperIcon
+                size="xs"
+                variant="ghost"
+                side="right"
+                textKey="hubSeeds"
+                ariaLabel="Premium seeds help"
+              />
+            </div>
             <div className="w-12 h-12 rounded-2xl bg-secondary-container/30 flex items-center justify-center">
               <ICONS.Sprout className="text-secondary w-7 h-7" />
             </div>
@@ -605,18 +677,18 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
                   <img src={seed.img} alt={seed.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <span className="font-bold text-on-surface text-sm line-clamp-1 group-hover:text-primary transition-colors">{seed.name}</span>
-                <span className="text-secondary font-black text-xs mt-1">₹{seed.price}/unit</span>
+                <span className="text-secondary font-black text-xs mt-1">₹{seed.price}/{t('perUnit')}</span>
               </div>
             ))}
           </div>
-          <button className="mt-8 py-4 border-2 border-surface-container hover:border-primary text-on-surface font-bold rounded-2xl transition-all uppercase text-xs tracking-widest">View Collection</button>
+          <button className="mt-8 py-4 border-2 border-surface-container hover:border-primary text-on-surface font-bold rounded-2xl transition-all uppercase text-xs tracking-widest">{t('viewAllSeeds')}</button>
         </div>
 
         {/* Nutrition */}
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-surface-container flex flex-col hover:shadow-ambient transition-shadow">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-black text-on-surface tracking-tight">Nutrition</h2>
+              <h2 className="text-2xl font-black text-on-surface tracking-tight">{t('targetedNutrition')}</h2>
               <HelperIcon
                 size="xs"
                 variant="ghost"
@@ -646,14 +718,14 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
               );
             })}
           </div>
-          <button className="mt-8 py-4 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:bg-primary-container transition-all uppercase text-xs tracking-widest">Explore All</button>
+          <button className="mt-8 py-4 bg-primary text-white font-bold rounded-2xl shadow-lg shadow-primary/20 hover:bg-primary-container transition-all uppercase text-xs tracking-widest">{t('exploreFertilizers')}</button>
         </div>
 
         {/* Irrigation */}
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-surface-container flex flex-col hover:shadow-ambient transition-shadow">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-black text-on-surface tracking-tight">Irrigation</h2>
+              <h2 className="text-2xl font-black text-on-surface tracking-tight">{t('irrigationTools')}</h2>
               <HelperIcon
                 size="xs"
                 variant="ghost"
@@ -671,7 +743,7 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
             <div className="absolute inset-0 bg-primary/20 mix-blend-overlay" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
             <div className="absolute bottom-4 left-4">
-              <span className="text-white text-[10px] font-black uppercase tracking-widest bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/30">System Setup</span>
+              <span className="text-white text-[10px] font-black uppercase tracking-widest bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/30">{t('systemSetup')}</span>
             </div>
           </div>
           <div className="flex flex-col gap-4 flex-grow">
@@ -693,13 +765,22 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
           
           <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 bg-red-500/20 text-red-300 px-4 py-2 rounded-2xl border border-red-500/30 mb-6">
-                <ICONS.X className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-widest">Pro Tip: Avoid These</span>
+              <div className="inline-flex items-center gap-2 mb-6">
+                <div className="inline-flex items-center gap-2 bg-red-500/20 text-red-300 px-4 py-2 rounded-2xl border border-red-500/30">
+                  <ICONS.X className="w-4 h-4" />
+                  <span className="text-xs font-black uppercase tracking-widest">{t('proTipAvoid')}</span>
+                </div>
+                <HelperIcon
+                  size="xs"
+                  variant="onDark"
+                  side="right"
+                  textKey="hubMistakes"
+                  ariaLabel="Mistakes to avoid help"
+                />
               </div>
-              <h2 className="text-4xl font-black mb-4 tracking-tight">Mistakes to Avoid</h2>
+              <h2 className="text-4xl font-black mb-4 tracking-tight">{t('mistakesToAvoid')}</h2>
               <p className="text-surface-container-low/70 leading-relaxed mb-8">
-                Based on years of agronomy data, these are the most common pitfalls farmers face with {selectedHub.name.toLowerCase()}. Avoiding these can increase your yield by up to 25%.
+                {t('agronomyMistakesIntro').replace('{crop}', selectedHub.name.toLowerCase())}
               </p>
               
               <div className="space-y-4">
@@ -733,7 +814,7 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
                     <div className="w-16 h-16 bg-white text-on-surface rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl">
                       <ICONS.Check className="w-8 h-8" />
                     </div>
-                    <p className="font-black text-xl">Grow like a Pro</p>
+                    <p className="font-black text-xl">{t('growLikeAPro')}</p>
                   </div>
                 </div>
               </div>
@@ -750,19 +831,29 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
         </div>
         <div className="relative z-10 flex-grow">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full">Agronomy Expert Insight</span>
+            <HelperTooltip side="bottom" textKey="hubAdvisory">
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full cursor-help">{t('agronomyAlert')}</span>
+            </HelperTooltip>
+            <div className="w-2 h-2 rounded-full bg-harvest animate-pulse" />
           </div>
           <h2 className="text-3xl font-black text-on-surface mb-3 tracking-tight">{selectedHub.advisory.title}</h2>
           <p className="text-on-surface-variant max-w-3xl leading-relaxed text-base">
             {selectedHub.advisory.description}
           </p>
           <div className="flex flex-wrap gap-4 mt-8">
-            <button className="flex items-center gap-3 bg-primary text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-primary/30 hover:bg-primary-container hover:scale-105 transition-all uppercase text-xs tracking-widest">
-              <ICONS.Chat className="w-4 h-4" /> Consult Specialist
-            </button>
-            <button className="flex items-center gap-3 bg-white text-on-surface font-black px-8 py-4 rounded-2xl border border-surface-container hover:bg-surface-container transition-all uppercase text-xs tracking-widest">
-              Download Guide (PDF)
-            </button>
+            <HelperTooltip side="top" textKey="hubConsult">
+              <button className="flex items-center gap-3 bg-primary text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-primary/30 hover:bg-primary-container hover:scale-105 transition-all uppercase text-xs tracking-widest">
+                <ICONS.Chat className="w-4 h-4" /> {t('consultSpecialist')}
+              </button>
+            </HelperTooltip>
+            <HelperTooltip side="top" textKey="hubDownloadGuide">
+              <button
+                onClick={() => selectedHub && generateHubPDF(selectedHub)}
+                className="flex items-center gap-3 bg-white text-on-surface font-black px-8 py-4 rounded-2xl border border-surface-container hover:bg-surface-container transition-all uppercase text-xs tracking-widest"
+              >
+                {t('downloadGuide')}
+              </button>
+            </HelperTooltip>
           </div>
         </div>
       </section>
@@ -770,16 +861,25 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
       {/* Expert Wisdom / FAQ */}
       <section className="bg-white rounded-[40px] border border-surface-container p-8 md:p-12">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-black text-on-surface tracking-tight mb-2">Farmer&apos;s Wisdom</h2>
-          <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest">Essential knowledge for {selectedHub.name} growers</p>
+          <div className="inline-flex items-center gap-2">
+            <h2 className="text-3xl font-black text-on-surface tracking-tight mb-2">{t('farmersWisdom')}</h2>
+            <HelperIcon
+              size="sm"
+              variant="ghost"
+              side="right"
+              textKey="hubFaq"
+              ariaLabel="Farmer's wisdom help"
+            />
+          </div>
+          <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest">{t('essentialKnowledge').replace('{crop}', selectedHub.name)}</p>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[
-            { q: `What is the best time to plant ${selectedHub.name}?`, a: `For optimal results, planting should occur during the ${selectedHub.bestSeason?.toLowerCase() || 'early spring'} when the soil temperature is stable.` },
-            { q: `How often should I water my ${selectedHub.name} crop?`, a: `Under normal conditions, it requires ${selectedHub.waterNeeds?.toLowerCase() || 'moderate'} watering. However, frequency should increase during fruit set and high-temperature days.` },
-            { q: `What soil pH is ideal for ${selectedHub.name}?`, a: `Most varieties thrive in ${selectedHub.soilType?.toLowerCase() || 'well-drained'} soil with a pH range of 6.0 to 7.5.` },
-            { q: `Can I grow ${selectedHub.name} in a greenhouse?`, a: `Yes, ${selectedHub.name} can be successfully cultivated in controlled environments if temperature and light are precisely managed according to the growth stages.` }
+            { q: t('faqPlantingTime').replace('{crop}', selectedHub.name), a: t('faqPlantingTimeAns').replace('{crop}', selectedHub.name).replace('{season}', selectedHub.bestSeason?.toLowerCase() || 'early spring') },
+            { q: t('faqWateringFreq').replace('{crop}', selectedHub.name), a: t('faqWateringFreqAns').replace('{crop}', selectedHub.name).replace('{needs}', selectedHub.waterNeeds?.toLowerCase() || 'moderate') },
+            { q: t('faqSoilPh').replace('{crop}', selectedHub.name), a: t('faqSoilPhAns').replace('{crop}', selectedHub.name).replace('{type}', selectedHub.soilType?.toLowerCase() || 'well-drained') },
+            { q: t('faqGreenhouse').replace('{crop}', selectedHub.name), a: t('faqGreenhouseAns').replace('{crop}', selectedHub.name) }
           ].map((faq, i) => (
             <motion.div 
               key={i}

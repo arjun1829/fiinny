@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { auth, getUserProfile, fetchManufacturerProducts } from "../../../firebase";
 import { PageHeader } from "../../_components/page-header";
+import { HelperIcon, HelperTooltip } from "../../../../components/helpers";
 import { RetailerTable } from "../../_components/manufacturer/retailer-table";
 import { AddRetailerModal } from "../../_components/manufacturer/add-retailer-form";
 import { AssignProductModal } from "../../_components/manufacturer/assign-product-modal";
@@ -135,20 +136,30 @@ export default function ManufacturerRetailersPage() {
         <PageHeader
           title="Retailer Network"
           description="Add retailers to your network, then assign your products to them. Each product assignment consumes one seat (1 month validity)."
+          helperKey="dashRetailerNetwork"
         />
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setAddModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all"
-          >
-            <UserPlus className="h-4 w-4" />
-            Add Retailer
-          </button>
+          <HelperTooltip side="bottom" textKey="dashAddRetailer">
+            <button
+              type="button"
+              onClick={() => setAddModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add Retailer
+            </button>
+          </HelperTooltip>
           {totalPurchased > 0 ? (
-            <p className="text-xs text-on-surface-variant">
+            <p className="text-xs text-on-surface-variant inline-flex items-center gap-1">
               {Math.max(0, seatsRemaining)} of {totalPurchased} seat
               {totalPurchased !== 1 ? "s" : ""} remaining
+              <HelperIcon
+                size="xs"
+                variant="ghost"
+                side="bottom"
+                textKey="dashRetailerSeats"
+                ariaLabel="Seats remaining help"
+              />
             </p>
           ) : (
             <p className="text-xs text-harvest">No active subscription</p>

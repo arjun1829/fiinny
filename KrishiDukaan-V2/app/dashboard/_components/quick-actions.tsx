@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Package, PlusCircle, BarChart3, ReceiptText } from "lucide-react";
+import { HelperIcon } from "../../../components/helpers";
 
 const actions = [
   {
@@ -31,7 +32,16 @@ const actions = [
 export function QuickActions() {
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-5">
-      <h2 className="text-base font-semibold text-on-surface">Quick actions</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-base font-semibold text-on-surface">Quick actions</h2>
+        <HelperIcon
+          size="xs"
+          variant="ghost"
+          side="right"
+          textKey="dashQuickActions"
+          ariaLabel="Quick actions help"
+        />
+      </div>
       <p className="mt-1 text-sm text-on-surface-variant">
         Shortcuts to common shop tasks
       </p>

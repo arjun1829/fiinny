@@ -625,7 +625,10 @@ export default function App() {
           <HomeView
             products={homeProducts}
             onProductClick={navigateToProduct}
-            onHubClick={() => navigate('hub')}
+            onHubClick={(hubId) => {
+              setProductSearch('');
+              navigate('hub', { hubId });
+            }}
             onCategoryClick={(cat) => {
               setSelectedCategory(cat);
               navigate('market');
@@ -730,7 +733,10 @@ export default function App() {
           <HomeView
             products={homeProducts}
             onProductClick={navigateToProduct}
-            onHubClick={() => navigate('hub')}
+            onHubClick={(hubId) => {
+              setProductSearch('');
+              navigate('hub', { hubId });
+            }}
             onCategoryClick={(cat) => {
               setSelectedCategory(cat);
               navigate('market');

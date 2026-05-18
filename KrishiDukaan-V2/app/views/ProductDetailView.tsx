@@ -15,14 +15,6 @@ type StoreListItem = {
   stock?: string[];
 };
 
-// type StoreListItem = {
-//   id: string;
-//   name: string;
-//   distance?: string;
-//   status?: string;
-//   stock?: string[];
-// };
-
 interface ProductDetailViewProps {
   products?: MarketplaceProduct[];
   stores?: StoreListItem[];
@@ -200,9 +192,23 @@ export default function ProductDetailView({
                         </div>
                         <div className="flex gap-2">
                           <HelperTooltip side="top" textKey="storeCallAction">
-                            <button className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5">
-                              <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
-                            </button>
+                            {(store as any).phone ? (
+                              <a
+                                href={`tel:${(store as any).phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="w-full border border-outline-variant text-on-surface-variant py-2.5 rounded-xl text-xs font-black uppercase tracking-widest opacity-60 cursor-not-allowed flex items-center justify-center gap-1.5"
+                              >
+                                <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
+                              </button>
+                            )}
                           </HelperTooltip>
                         </div>
                       </div>
@@ -275,18 +281,15 @@ export default function ProductDetailView({
                 onClick={() => onAddToCart?.(product)}
                 className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
               >
-                <ICONS.AddToCart className="w-5 h-5" /> Add to Cart
+                <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
               </button>
             ) : (
-              <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
-                <ICONS.Phone className="w-5 h-5" /> In-store Only
-              </button>
+              <HelperTooltip side="top" textKey="productContact">
+                <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
+                  <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
+                </button>
+              </HelperTooltip>
             )}
-            <HelperTooltip side="top" textKey="productContact">
-              <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
-                <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
-              </button>
-            </HelperTooltip>
           </div>
         </div>
       </div>

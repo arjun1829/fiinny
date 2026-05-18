@@ -12,6 +12,7 @@ export default function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Shop profile, contact channels, address, and business preferences."
+        helperKey="dashSettings"
       />
       <SettingsSections />
     </>

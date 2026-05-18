@@ -89,12 +89,23 @@ export default function DashboardPage() {
       <PageHeader
         title="Overview"
         description="Performance snapshot for your storefront and operations."
+        helperKey="dashOverview"
       />
 
       <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((m) => (
-          <StatCard key={m.id} metric={m} />
-        ))}
+        {stats.map((m) => {
+          const helperKey =
+            m.id === "views"
+              ? ("dashMetricViews" as const)
+              : m.id === "calls"
+                ? ("dashMetricInteractions" as const)
+                : m.id === "directions"
+                  ? ("dashMetricDirections" as const)
+                  : m.id === "products"
+                    ? ("dashMetricProductsListed" as const)
+                    : undefined;
+          return <StatCard key={m.id} metric={m} helperKey={helperKey} />;
+        })}
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
