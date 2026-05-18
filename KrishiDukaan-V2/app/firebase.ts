@@ -619,6 +619,7 @@ export interface Hub {
   id: string;
   name: string;
   heroImage: string;
+  iconImage?: string; // New field for Home page tile icon
   tagline: string;
   seeds: { name: string; price: number; img: string }[];
   nutrition: { name: string; desc: string; icon: string }[];

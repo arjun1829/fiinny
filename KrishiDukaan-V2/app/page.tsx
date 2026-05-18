@@ -624,6 +624,7 @@ export default function App() {
         return (
           <HomeView
             products={homeProducts}
+            hubs={hubs}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -732,6 +733,7 @@ export default function App() {
         return (
           <HomeView
             products={homeProducts}
+            hubs={hubs}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
