@@ -78,6 +78,7 @@ export async function createManufacturerProduct(
     retailerDocId: null,
     retailerId: null,
     productId: productRef.id,
+    manufacturerProductId: null,
     listingType: "own",
     expiresAt: subExpiry,
   });
@@ -121,6 +122,7 @@ export async function fetchOwnProductListings(
         retailerDocId: raw.retailerDocId ? String(raw.retailerDocId) : null,
         retailerId: raw.retailerId ? String(raw.retailerId) : null,
         productId: String(raw.productId ?? ""),
+        manufacturerProductId: null,
         listingType: "own" as const,
         status: (status === "released" || status === "expired" ? status : "active") as RetailerSeatListing["status"],
         assignedAt: raw.assignedAt as RetailerSeatListing["assignedAt"],

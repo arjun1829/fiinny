@@ -176,6 +176,7 @@ export default function ManufacturerRetailersPage() {
       <section aria-label="Retailer list">
         <RetailerTable
           rows={rows}
+          seatListings={seatListings}
           loading={listLoading}
           onRemove={handleRemove}
           onAssignProduct={(row) => setAssignTarget(row)}

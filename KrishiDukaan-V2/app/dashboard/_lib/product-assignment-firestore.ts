@@ -60,12 +60,13 @@ export async function assignProductToRetailer(
   if (!productSnap.exists()) throw new Error("Product not found.");
   const src = productSnap.data() as Record<string, unknown>;
 
-  // Guard against duplicate active assignment (keyed on retailerDocId — works pre-signup)
+  // Guard against duplicate active assignment using manufacturerProductId (the original product,
+  // not the copy). Works pre-signup because it's keyed on retailerDocId, not retailerId.
   const dupQ = query(
     collection(db, SEAT_LISTINGS),
     where("ownerId", "==", input.manufacturerId),
     where("retailerDocId", "==", input.retailerDocId),
-    where("productId", "==", input.productId),
+    where("manufacturerProductId", "==", input.productId),
     where("status", "==", "active"),
   );
   if (!(await getDocs(dupQ)).empty) {
@@ -121,6 +122,7 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? null,
     productId: retailerProductRef.id,
+    manufacturerProductId: input.productId,
     listingType: "assigned",
     expiresAt: subExpiry,
   });
@@ -179,6 +181,7 @@ export async function fetchAssignmentsForRetailer(
         retailerDocId: raw.retailerDocId ? String(raw.retailerDocId) : null,
         retailerId: raw.retailerId ? String(raw.retailerId) : null,
         productId: String(raw.productId ?? ""),
+        manufacturerProductId: raw.manufacturerProductId ? String(raw.manufacturerProductId) : null,
         listingType: "assigned" as const,
         status: (status === "released" || status === "expired" ? status : "active") as RetailerSeatListing["status"],
         assignedAt: raw.assignedAt as RetailerSeatListing["assignedAt"],

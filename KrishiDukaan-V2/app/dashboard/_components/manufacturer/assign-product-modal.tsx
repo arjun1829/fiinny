@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, PackagePlus, X } from "lucide-react";
-import { assignProductToRetailer } from "../../_lib/product-assignment-firestore";
+import { AlertTriangle, Loader2, PackagePlus, Trash2, X } from "lucide-react";
+import {
+  assignProductToRetailer,
+  removeProductAssignment,
+} from "../../_lib/product-assignment-firestore";
 import { canAssignSeat } from "../../_lib/subscriptions-firestore";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
@@ -27,19 +30,39 @@ export function AssignProductModal({
   onAssigned,
   onClose,
 }: AssignProductModalProps) {
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  // Active listings for this retailer — keyed by retailerDocId (works pre-signup)
+  const activeListingsForRetailer = seatListings.filter(
+    (l) => l.retailerDocId === retailer.retailerDocId && l.status === "active",
+  );
+
+  // Set of manufacturer product IDs already actively assigned to this retailer
+  const assignedMfrProductIds = new Set(
+    activeListingsForRetailer
+      .map((l) => l.manufacturerProductId)
+      .filter((id): id is string => !!id),
+  );
+
+  // Hydrate selectedProductId from the first active assigned listing so reopening
+  // the modal shows the already-assigned product as selected.
+  const hydratedSelection =
+    activeListingsForRetailer.length > 0
+      ? (activeListingsForRetailer[0].manufacturerProductId ?? null)
+      : null;
+
+  // Map from mfrProductId → seatListingId for confirming removal
+  const listingIdByMfrProductId = new Map(
+    activeListingsForRetailer
+      .filter((l): l is typeof l & { manufacturerProductId: string } => !!l.manufacturerProductId)
+      .map((l) => [l.manufacturerProductId, l.id]),
+  );
+
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(hydratedSelection);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmRemoveProductId, setConfirmRemoveProductId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hasSeats = canAssignSeat(subs, seatListings);
-
-  // Products already actively assigned to this retailer — keyed by retailerDocId
-  // so it works before the retailer has signed up.
-  const assignedProductIds = new Set(
-    seatListings
-      .filter((l) => l.retailerDocId === retailer.retailerDocId && l.status === "active")
-      .map((l) => l.productId),
-  );
 
   // Assigned copies now have ownerId = retailer, so ownerId == manufacturerId
   // already gives only this manufacturer's own catalogue.
@@ -134,35 +157,100 @@ export function AssignProductModal({
 
             <ul className="flex-1 overflow-y-auto divide-y divide-outline-variant/20 px-2 pb-2">
               {manufacturerProducts.map((product) => {
-                const alreadyAssigned = assignedProductIds.has(product.id);
+                const alreadyAssigned = assignedMfrProductIds.has(product.id);
                 const selected = selectedProductId === product.id;
+                const isConfirmingRemove = confirmRemoveProductId === product.id;
+                const seatListingId = listingIdByMfrProductId.get(product.id);
+
+                const productThumb = product.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
+                    <PackagePlus className="h-5 w-5" />
+                  </div>
+                );
+
+                if (alreadyAssigned) {
+                  return (
+                    <li key={product.id} className="px-3 py-3">
+                      <div className="flex items-center gap-3">
+                        {productThumb}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-on-surface truncate">{product.name}</p>
+                          <p className="text-xs text-on-surface-variant">
+                            {product.category}
+                            {product.price ? ` · ₹${product.price}` : ""}
+                          </p>
+                        </div>
+                        {isConfirmingRemove ? (
+                          <div className="flex items-center gap-1.5 shrink-0 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" />
+                            <span className="text-xs font-medium text-red-700">Free seat?</span>
+                            <button
+                              type="button"
+                              disabled={removing}
+                              onClick={async () => {
+                                if (!seatListingId) return;
+                                setRemoving(true);
+                                setError(null);
+                                try {
+                                  await removeProductAssignment(seatListingId);
+                                  await onAssigned();
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : "Failed to remove.");
+                                  setRemoving(false);
+                                  setConfirmRemoveProductId(null);
+                                }
+                              }}
+                              className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+                            >
+                              {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                              {removing ? "Removing…" : "Confirm"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={removing}
+                              onClick={() => setConfirmRemoveProductId(null)}
+                              className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRemoveProductId(product.id)}
+                            disabled={submitting || removing}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Remove listing
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                }
+
                 return (
                   <li key={product.id}>
                     <button
                       type="button"
-                      disabled={alreadyAssigned || submitting}
-                      onClick={() => !alreadyAssigned && setSelectedProductId(product.id)}
+                      disabled={submitting}
+                      onClick={() => setSelectedProductId(product.id)}
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-                        alreadyAssigned
-                          ? "opacity-40 cursor-not-allowed"
-                          : selected
-                            ? "bg-primary/10 ring-1 ring-primary/30"
-                            : "hover:bg-surface-container",
+                        selected
+                          ? "bg-primary/10 ring-1 ring-primary/30"
+                          : "hover:bg-surface-container",
                       ].join(" ")}
                     >
-                      {product.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
-                          <PackagePlus className="h-5 w-5" />
-                        </div>
-                      )}
+                      {productThumb}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-on-surface truncate">{product.name}</p>
                         <p className="text-xs text-on-surface-variant">
@@ -170,11 +258,7 @@ export function AssignProductModal({
                           {product.price ? ` · ₹${product.price}` : ""}
                         </p>
                       </div>
-                      {alreadyAssigned ? (
-                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                          Assigned
-                        </span>
-                      ) : selected ? (
+                      {selected ? (
                         <span className="shrink-0 h-4 w-4 rounded-full bg-primary ring-2 ring-primary/40" />
                       ) : (
                         <span className="shrink-0 h-4 w-4 rounded-full border-2 border-outline-variant/40" />

@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  Clock,
   Copy,
   Loader2,
   Mail,
@@ -15,6 +14,8 @@ import {
   XCircle,
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
+import type { RetailerSeatListing } from "../../_types/subscriptions";
+import { isListingActive } from "../../_lib/subscriptions-firestore";
 import { cn } from "../../_lib/cn";
 import {
   buildInviteShareMessage,
@@ -25,13 +26,23 @@ import {
 
 type RetailerTableProps = {
   rows: ManufacturerRetailerRow[];
+  seatListings?: RetailerSeatListing[];
   loading?: boolean;
   onRemove?: (row: ManufacturerRetailerRow) => Promise<void>;
   onAssignProduct?: (row: ManufacturerRetailerRow) => void;
 };
 
-function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
-  if (status === "active") {
+function NetworkStatusBadge({
+  retailerDocId,
+  seatListings,
+}: {
+  retailerDocId: string;
+  seatListings: RetailerSeatListing[];
+}) {
+  const hasActive = seatListings.some(
+    (l) => l.retailerDocId === retailerDocId && isListingActive(l),
+  );
+  if (hasActive) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
@@ -39,18 +50,10 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
       </span>
     );
   }
-  if (status === "removed") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-        <XCircle className="h-3 w-3" />
-        Removed
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
-      <Clock className="h-3 w-3" />
-      Pending
+    <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
+      <XCircle className="h-3 w-3" />
+      Inactive
     </span>
   );
 }
@@ -177,7 +180,7 @@ function RemoveAction({
   );
 }
 
-export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: RetailerTableProps) {
+export function RetailerTable({ rows, seatListings = [], loading, onRemove, onAssignProduct }: RetailerTableProps) {
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -208,7 +211,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
               <th className="whitespace-nowrap px-4 py-3 font-medium">Shop name</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Owner</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Phone</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Onboarding</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Invite actions</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Added</th>
               {hasActions ? (
@@ -239,7 +242,10 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                     {row.retailerPhone || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <OnboardingBadge status={row.onboardingStatus} />
+                    <NetworkStatusBadge
+                      retailerDocId={row.retailerDocId}
+                      seatListings={seatListings}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <RowInviteActions row={row} />

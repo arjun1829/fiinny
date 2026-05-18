@@ -157,6 +157,23 @@ async function fetchProductsByIds(ids: string[]): Promise<Map<string, ProductDoc
 
 // ─── Public fetch functions ───────────────────────────────────────────────────
 
+/** Batch-fetch product names by doc IDs. Returns a map of id → name. */
+export async function fetchProductNames(productIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = Array.from(new Set(productIds.filter(Boolean)));
+  const chunkSize = 10;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    if (!chunk.length) continue;
+    const q = query(collection(db, "products"), where(documentId(), "in", chunk));
+    const snap = await getDocs(q);
+    snap.docs.forEach((d) => {
+      map.set(d.id, String(d.data().name ?? ""));
+    });
+  }
+  return map;
+}
+
 /**
  * Fetch inventory rows for a RETAILER.
  *
@@ -167,7 +184,7 @@ async function fetchProductsByIds(ids: string[]): Promise<Map<string, ProductDoc
  *   3. Join and return InventoryRow[]
  */
 export async function fetchRetailerInventoryRows(ownerId: string): Promise<InventoryRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "retailer");
+  const products = (await fetchProductsByOwner(ownerId, "retailer")).filter((p) => p.isActive);
   if (!products.length) return [];
 
   const productIds = products.map((p) => p.id);
@@ -207,7 +224,7 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
 ): Promise<ManufacturerProductRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "manufacturer");
+  const products = (await fetchProductsByOwner(ownerId, "manufacturer")).filter((p) => p.isActive);
 
   const rows: ManufacturerProductRow[] = products.map((p) => ({
     productId: p.id,
@@ -311,6 +328,7 @@ export async function createProductAndInventory(
     retailerDocId: null,
     retailerId: ownerId,
     productId: productRef.id,
+    manufacturerProductId: null,
     listingType: "own",
     expiresAt: subExpiry,
   });
@@ -343,4 +361,56 @@ export async function updateInventoryRecord(
     isAvailable: patch.stockQuantity > 0,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Soft-deletes a manufacturer's own product.
+ * Marks the product inactive and releases its seat listing (if active).
+ */
+export async function deleteManufacturerProduct(
+  productId: string,
+  manufacturerId: string,
+): Promise<void> {
+  const allListings = await fetchSeatListingsForOwner(manufacturerId);
+  const listing = allListings.find(
+    (l) => l.productId === productId && l.status === "active",
+  );
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: false, updatedAt: now });
+  if (listing) {
+    batch.update(doc(db, "retailerSeatListings", listing.id), {
+      status: "released",
+      releasedAt: now,
+    });
+  }
+  await batch.commit();
+}
+
+/**
+ * Soft-deletes a retailer's own product.
+ * Marks the product inactive, sets inventory unavailable, and releases the seat listing.
+ */
+export async function deleteRetailerProduct(
+  productId: string,
+  inventoryId: string,
+  ownerId: string,
+): Promise<void> {
+  const allListings = await fetchSeatListingsForOwner(ownerId);
+  const listing = allListings.find(
+    (l) => l.productId === productId && l.status === "active",
+  );
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: false, updatedAt: now });
+  if (inventoryId) {
+    batch.update(doc(db, "inventory", inventoryId), { isAvailable: false, updatedAt: now });
+  }
+  if (listing) {
+    batch.update(doc(db, "retailerSeatListings", listing.id), {
+      status: "released",
+      releasedAt: now,
+    });
+  }
+  await batch.commit();
 }

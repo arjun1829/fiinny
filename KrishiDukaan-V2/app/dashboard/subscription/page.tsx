@@ -16,6 +16,8 @@ import {
   isListingActive,
   isSubscriptionActive,
 } from "../_lib/subscriptions-firestore";
+import { fetchProductNames } from "../_lib/inventory-firestore";
+import { fetchManufacturerRetailers } from "../_lib/manufacturer-retailers-firestore";
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
 
 type Role = "manufacturer" | "retailer";
@@ -60,7 +62,7 @@ function SubStatusBadge({ sub }: { sub: Subscription }) {
       </span>
     );
   }
-  if (isExpiringSoon(sub, 30)) {
+  if (isExpiringSoon(sub, 5)) {
     return (
       <span className="inline-flex items-center rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
         Expiring soon
@@ -97,15 +99,26 @@ function ListingBadge({ listing }: { listing: RetailerSeatListing }) {
   );
 }
 
-function ListingTypeBadge({ type }: { type: RetailerSeatListing["listingType"] }) {
-  return type === "assigned" ? (
-    <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-      Assigned to retailer
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-      Own product
-    </span>
+function ListingTypeCell({
+  listing,
+  productName,
+  shopName,
+}: {
+  listing: RetailerSeatListing;
+  productName?: string;
+  shopName?: string;
+}) {
+  return (
+    <div>
+      <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
+        {listing.listingType === "assigned"
+          ? `Assigned to: ${shopName || listing.retailerDocId || "retailer"}`
+          : "Own Product"}
+      </span>
+      {productName ? (
+        <p className="mt-0.5 text-xs text-on-surface-variant truncate max-w-[200px]">{productName}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -121,6 +134,9 @@ export default function SubscriptionPage() {
   // Listings assigned TO this retailer by manufacturers (informational only)
   const [assignedToMe, setAssignedToMe] = useState<RetailerSeatListing[]>([]);
   const [stats, setStats] = useState<SeatStats | null>(null);
+  // Enrichment maps for the listings table
+  const [productNamesMap, setProductNamesMap] = useState<Map<string, string>>(new Map());
+  const [shopNamesMap, setShopNamesMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,12 +153,21 @@ export default function SubscriptionPage() {
       setOwnListings(ownData);
       setStats(computeSeatStats(subsData, ownData));
 
+      // Enrich listings with product names
+      const productIds = ownData.map((l) => l.productId).filter(Boolean);
+      const namesMap = await fetchProductNames(productIds);
+      setProductNamesMap(namesMap);
+
       // Retailers also see what manufacturers have assigned to them
       if (userRole === "retailer") {
         const assigned = await fetchSeatListingsForRetailer(userId);
         setAssignedToMe(assigned);
       } else {
         setAssignedToMe([]);
+        // For manufacturers: build retailerDocId → shopName map
+        const retailers = await fetchManufacturerRetailers(userId);
+        const shopMap = new Map(retailers.map((r) => [r.retailerDocId, r.shopName || r.ownerName]));
+        setShopNamesMap(shopMap);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load subscription data.");
@@ -242,7 +267,7 @@ export default function SubscriptionPage() {
               label="Expiring soon"
               value={stats?.expiringSoon ?? 0}
               highlight={(stats?.expiringSoon ?? 0) > 0 ? "harvest" : undefined}
-              sub="Subscriptions in 30 days"
+              sub="Subscriptions in 5 days"
             />
           </div>
 
@@ -355,7 +380,11 @@ export default function SubscriptionPage() {
                           }
                         >
                           <td className="px-4 py-3">
-                            <ListingTypeBadge type={listing.listingType} />
+                            <ListingTypeCell
+                              listing={listing}
+                              productName={productNamesMap.get(listing.productId)}
+                              shopName={listing.retailerDocId ? shopNamesMap.get(listing.retailerDocId) : undefined}
+                            />
                           </td>
                           <td className="px-4 py-3">
                             <ListingBadge listing={listing} />
