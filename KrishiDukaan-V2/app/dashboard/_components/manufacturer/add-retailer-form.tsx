@@ -16,6 +16,7 @@ declare global {
 
 type AddRetailerModalProps = {
   manufacturerId: string;
+  manufacturerName: string;
   /** totalSeats - non-revoked row count. Negative means no subscription. */
   seatsRemaining: number;
   onRetailerAdded: (payload: {
@@ -71,6 +72,7 @@ function extractAddressFields(place: {
 
 export function AddRetailerModal({
   manufacturerId,
+  manufacturerName,
   seatsRemaining,
   onRetailerAdded,
   onClose,
@@ -228,10 +230,26 @@ export function AddRetailerModal({
         geo,
       });
 
+      const trimmedEmail = email.trim().toLowerCase();
+
+      // Fire-and-forget: send invite email if retailer has an email address
+      if (trimmedEmail) {
+        fetch("/api/email/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            retailerEmail: trimmedEmail,
+            shopName: shopName.trim(),
+            inviteCode,
+            manufacturerName,
+          }),
+        }).catch(() => {/* email failure is non-fatal */});
+      }
+
       await onRetailerAdded({
         inviteCode,
         shopName: shopName.trim(),
-        retailerEmail: email.trim().toLowerCase(),
+        retailerEmail: trimmedEmail,
         retailerPhone: trimmedPhone,
       });
     } catch (err) {

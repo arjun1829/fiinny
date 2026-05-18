@@ -37,6 +37,7 @@ export default function ManufacturerRetailersPage() {
   const router = useRouter();
   const [access, setAccess] = useState<AccessState>("checking");
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
+  const [manufacturerName, setManufacturerName] = useState<string>("KrishiDukan Manufacturer");
 
   const [rows, setRows] = useState<ManufacturerRetailerRow[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -83,6 +84,8 @@ export default function ManufacturerRetailersPage() {
         const profile = await getUserProfile(user.uid);
         if (profile?.role === "manufacturer") {
           setManufacturerId(user.uid);
+          const name = (profile.shopName || profile.ownerName) as string | undefined;
+          if (name) setManufacturerName(name);
           setAccess("allowed");
           await loadAll(user.uid);
         } else {
@@ -185,6 +188,7 @@ export default function ManufacturerRetailersPage() {
       {addModalOpen && manufacturerId ? (
         <AddRetailerModal
           manufacturerId={manufacturerId}
+          manufacturerName={manufacturerName}
           seatsRemaining={seatsRemaining}
           onRetailerAdded={handleRetailerAdded}
           onClose={() => setAddModalOpen(false)}
@@ -194,6 +198,7 @@ export default function ManufacturerRetailersPage() {
       {assignTarget && manufacturerId ? (
         <AssignProductModal
           manufacturerId={manufacturerId}
+          manufacturerName={manufacturerName}
           retailer={assignTarget}
           products={products}
           subs={subs}

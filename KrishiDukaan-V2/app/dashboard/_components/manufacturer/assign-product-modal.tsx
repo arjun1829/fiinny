@@ -10,6 +10,7 @@ import type { MarketplaceProduct } from "../../../../types/product";
 
 type AssignProductModalProps = {
   manufacturerId: string;
+  manufacturerName: string;
   retailer: ManufacturerRetailerRow;
   products: MarketplaceProduct[];
   subs: Subscription[];
@@ -20,6 +21,7 @@ type AssignProductModalProps = {
 
 export function AssignProductModal({
   manufacturerId,
+  manufacturerName,
   retailer,
   products,
   subs,
@@ -59,6 +61,24 @@ export function AssignProductModal({
         retailerId: retailer.retailerId || undefined,
         productId: selectedProductId,
       });
+
+      // Fire-and-forget: notify retailer by email about the new product assignment
+      const retailerEmail = retailer.retailerEmail?.trim().toLowerCase();
+      if (retailerEmail) {
+        const assignedProduct = manufacturerProducts.find((p) => p.id === selectedProductId);
+        fetch("/api/email/product-assigned", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            retailerEmail,
+            shopName: retailer.shopName || retailer.ownerName,
+            productName: assignedProduct?.name ?? "a new product",
+            manufacturerName,
+            signupLink: process.env.NEXT_PUBLIC_BASE_URL ?? "/",
+          }),
+        }).catch(() => {/* email failure is non-fatal */});
+      }
+
       await onAssigned();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to assign product.");

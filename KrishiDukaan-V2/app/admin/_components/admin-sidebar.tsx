@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Box, LayoutDashboard, Layers, Users, X, ShieldCheck } from "lucide-react";
+import { Box, LayoutDashboard, Layers, Users, X, Mail } from "lucide-react";
 import { cn } from "../../dashboard/_lib/cn";
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/admin/users", label: "Users & Roles", icon: Users },
   { href: "/admin/products", label: "Products", icon: Box },
   { href: "/admin/hubs", label: "Hubs", icon: Layers },
+  { href: "/admin/reports", label: "Reports", icon: Mail },
 ] as const;
 
 type Props = { mobileOpen: boolean; onClose: () => void };
