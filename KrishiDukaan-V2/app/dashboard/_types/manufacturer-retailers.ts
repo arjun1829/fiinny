@@ -1,7 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
 
 export type ManufacturerRetailerStatus = "invited" | "active" | "revoked";
-export type RetailerOnboardingStatus = "pending" | "active" | "removed";
+export type RetailerOnboardingStatus = "pending" | "active" | "removed" | "inactive";
 
 /** Document in `manufacturerRetailers` — `id` is the Firestore document ID. */
 export interface ManufacturerRetailerDoc {
@@ -23,6 +23,8 @@ export interface ManufacturerRetailerDoc {
   seatAssignedAt?: Timestamp | null;
   createdBy: string;
   addedAt?: Timestamp | null;
+  /** Set to true when manufacturer has manually deactivated this retailer (reversible). */
+  manuallyDeactivated?: boolean;
 }
 
 export interface ManufacturerRetailerRow extends ManufacturerRetailerDoc {

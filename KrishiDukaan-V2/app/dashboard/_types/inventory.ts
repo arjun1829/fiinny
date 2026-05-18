@@ -61,6 +61,8 @@ export interface InventoryRow {
   sellingPrice: number;
   reorderThreshold: number;
   status: StockStatus;
+  isActive: boolean;
+  assignedByManufacturer: boolean;
   updatedAt: Date | null;
   /** 'retailer_inventory' | 'manufacturer_assigned' */
   source?: string;

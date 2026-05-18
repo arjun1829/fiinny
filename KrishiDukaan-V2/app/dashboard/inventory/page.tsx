@@ -11,6 +11,9 @@ import { AddProductInventoryForm } from "../_components/add-product-inventory-fo
 import {
   fetchRetailerInventoryRows,
   fetchManufacturerCatalogueRows,
+  activateProduct,
+  deactivateProduct,
+  deleteProduct,
 } from "../_lib/inventory-firestore";
 import {
   fetchSubscriptions,
@@ -175,6 +178,56 @@ export default function InventoryPage() {
     if (userId) await load(userId, role);
   }, [userId, role, load]);
 
+  // ─── Product lifecycle handlers ───────────────────────────────────────────
+
+  // Manufacturer: toggle active state on a catalogue product
+  const handleMfrToggleActive = useCallback(
+    async (productId: string, isActive: boolean) => {
+      if (!userId) return;
+      if (isActive) {
+        await deactivateProduct(productId, userId);
+      } else {
+        await activateProduct(productId, userId, "manufacturer");
+      }
+      await refresh();
+    },
+    [userId, refresh],
+  );
+
+  // Manufacturer: hard-delete a catalogue product
+  const handleMfrDelete = useCallback(
+    async (productId: string) => {
+      if (!userId) return;
+      await deleteProduct(productId, userId);
+      await refresh();
+    },
+    [userId, refresh],
+  );
+
+  // Retailer: toggle active state (own products only — assigned products not toggleable)
+  const handleRetailerToggleActive = useCallback(
+    async (productId: string, inventoryId: string, isActive: boolean) => {
+      if (!userId) return;
+      if (isActive) {
+        await deactivateProduct(productId, userId, inventoryId);
+      } else {
+        await activateProduct(productId, userId, "retailer", inventoryId);
+      }
+      await refresh();
+    },
+    [userId, refresh],
+  );
+
+  // Retailer: hard-delete own product + inventory record
+  const handleRetailerDelete = useCallback(
+    async (productId: string, inventoryId: string) => {
+      if (!userId) return;
+      await deleteProduct(productId, userId, inventoryId);
+      await refresh();
+    },
+    [userId, refresh],
+  );
+
   // ─── Auth states ──────────────────────────────────────────────────────────
 
   if (!authReady) {
@@ -246,9 +299,18 @@ export default function InventoryPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
           ) : isManufacturer ? (
-            <ManufacturerCatalogueTable rows={catalogueRows} />
+            <ManufacturerCatalogueTable
+              rows={catalogueRows}
+              onToggleActive={handleMfrToggleActive}
+              onDelete={handleMfrDelete}
+            />
           ) : (
-            <InventoryManagementTable rows={retailerRows} onUpdated={refresh} />
+            <InventoryManagementTable
+              rows={retailerRows}
+              onUpdated={refresh}
+              onToggleActive={handleRetailerToggleActive}
+              onDelete={handleRetailerDelete}
+            />
           )}
         </div>
       </section>
