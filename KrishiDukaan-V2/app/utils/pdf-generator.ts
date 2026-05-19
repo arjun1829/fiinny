@@ -43,7 +43,7 @@ export const generateHubPDF = (hub: Hub) => {
       hub.bestSeason || 'Spring'
     ]],
     theme: 'grid',
-    headStyles: { fillStyle: 'F', fillColor: [21, 66, 18], textColor: [255, 255, 255], fontStyle: 'bold' },
+    headStyles: { fillColor: [21, 66, 18], textColor: [255, 255, 255], fontStyle: 'bold' },
     styles: { fontSize: 10, cellPadding: 5 }
   });
 
