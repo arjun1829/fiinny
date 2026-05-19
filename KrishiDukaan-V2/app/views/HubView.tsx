@@ -390,7 +390,9 @@ interface HubViewProps {
 }
 
 export default function HubView({ searchQuery = '', initialHubId = null }: HubViewProps) {
-  const { t } = useI18n();
+  const { t: _t } = useI18n();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const t = (key: string, params?: Record<string, string | number>) => _t(key as any, params);
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [loading, setLoading] = useState(true);

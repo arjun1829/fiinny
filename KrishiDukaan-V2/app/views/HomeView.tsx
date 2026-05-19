@@ -450,7 +450,7 @@ export default function HomeView({
           </HelperTooltip>
           <HelperTooltip side="top" textKey="homeServiceAdvisory">
             <button
-              onClick={onHubClick}
+              onClick={() => onHubClick()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-sky-500 to-indigo-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
               <ICONS.Science className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
