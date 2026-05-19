@@ -15,6 +15,7 @@ import {
   type ProfileFormValues,
   type RetailerProfileExtras,
 } from "../_lib/profile-persistence";
+import { useI18n } from "../../i18n/I18nContext";
 
 declare global {
   interface Window {
@@ -273,7 +274,7 @@ export default function ProfilePage() {
     try {
       if (userRole === "manufacturer") {
         await saveManufacturerProfile(uid, form, geo, manufacturerCreatedAt);
-        setStatus({ type: "success", message: "Profile saved successfully." });
+        setStatus({ type: "success", message: t('profileSaved') });
       } else {
         const extras = retailerExtras ?? {
           createdAt: null,
@@ -283,7 +284,7 @@ export default function ProfilePage() {
           subscriptionStatus: "free",
         };
         await saveRetailerProfile(uid, form, geo, extras);
-        setStatus({ type: "success", message: "Profile saved successfully." });
+        setStatus({ type: "success", message: t('profileSaved') });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save profile.";
@@ -293,82 +294,83 @@ export default function ProfilePage() {
     }
   };
 
+  const { t } = useI18n();
   const pageDescription =
     userRole === "manufacturer"
-      ? "Manage your business profile, address, and mapped location."
+      ? t('profileDescMfg')
       : userRole === "retailer"
-        ? "Manage your shop profile, address, and mapped location."
-        : "Manage your profile, address, and mapped location.";
+        ? t('profileDescRetailer')
+        : t('profileDescGeneral');
 
   return (
     <>
-      <PageHeader title="Profile" description={pageDescription} helperKey="dashProfile" />
+      <PageHeader title={t('profileTitle')} description={pageDescription} helperKey="dashProfile" />
 
       <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-6">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-on-surface-variant">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading profile…
+            {t('loadingProfile')}
           </div>
         ) : !uid ? (
-          <p className="text-sm text-red-600">You must be signed in to access this page.</p>
+          <p className="text-sm text-red-600">{t('signInRequired')}</p>
         ) : !userRole ? (
           <p className="text-sm text-on-surface-variant">
-            This page is available for retailer and manufacturer accounts only.
+            {t('retailerMfgOnly')}
           </p>
         ) : (
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSave}>
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Business name</span>
+              <span className="font-medium text-on-surface">{t('businessNameLabel')}</span>
               <input
                 required
                 value={form.businessName}
                 onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder={userRole === "retailer" ? "Shop or business name" : "Registered business name"}
+                placeholder={userRole === "retailer" ? t('businessNamePlaceholderRetailer') : t('businessNamePlaceholderMfg')}
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Owner name</span>
+              <span className="font-medium text-on-surface">{t('ownerNameLabel')}</span>
               <input
                 required
                 value={form.ownerName}
                 onChange={(e) => setForm((p) => ({ ...p, ownerName: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="Owner or primary contact"
+                placeholder={t('ownerNamePlaceholder')}
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Phone</span>
+              <span className="font-medium text-on-surface">{t('phoneLabelDash')}</span>
               <input
                 required
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="+91…"
+                placeholder={t('phonePlaceholder')}
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Email</span>
+              <span className="font-medium text-on-surface">{t('emailLabelDash')}</span>
               <input
                 required
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="email@example.com"
+                placeholder={t('emailPlaceholder')}
               />
             </label>
 
             <label className="md:col-span-2 flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-on-surface">
-                Search business on Google Maps
+                {t('searchBusinessMaps')}
                 <span className="ml-1 font-normal text-on-surface-variant">
-                  — auto-fills name & address
+                  {t('autoFillsHint')}
                 </span>
               </span>
               <input
@@ -377,41 +379,41 @@ export default function ProfilePage() {
                 value={form.line1}
                 onChange={(e) => setForm((p) => ({ ...p, line1: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="Type your business name or address to search Google Maps"
+                placeholder={t('searchBusinessPlaceholder')}
                 autoComplete="off"
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">City</span>
+              <span className="font-medium text-on-surface">{t('cityLabel')}</span>
               <input
                 required
                 value={form.city}
                 onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="City"
+                placeholder={t('cityPlaceholder')}
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">State</span>
+              <span className="font-medium text-on-surface">{t('stateLabel')}</span>
               <input
                 required
                 value={form.state}
                 onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="State"
+                placeholder={t('statePlaceholder')}
               />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Pincode</span>
+              <span className="font-medium text-on-surface">{t('pincodeLabel')}</span>
               <input
                 required
                 value={form.pincode}
                 onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))}
                 className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="PIN or postal code"
+                placeholder={t('pincodePlaceholder')}
               />
             </label>
 
@@ -423,7 +425,7 @@ export default function ProfilePage() {
                 className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-70"
               >
                 {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-                Use current location
+                {t('useCurrentLocation')}
               </button>
               {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
             </div>
@@ -432,7 +434,7 @@ export default function ProfilePage() {
               <div className="md:col-span-2 space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                   <MapPin className="h-3.5 w-3.5" />
-                  Location selected
+                  {t('locationSelected')}
                 </div>
                 <div className="overflow-hidden rounded-xl border border-outline-variant/30">
                   <iframe
@@ -453,7 +455,7 @@ export default function ProfilePage() {
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? "Saving…" : "Save profile"}
+                {saving ? t('savingProfile') : t('saveProfile')}
               </button>
             </div>
           </form>

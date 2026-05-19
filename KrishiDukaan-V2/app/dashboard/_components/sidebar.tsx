@@ -18,26 +18,27 @@ import {
 } from "lucide-react";
 import { auth, getUserProfile } from "../../firebase";
 import { cn } from "../_lib/cn";
+import { useI18n } from "../../i18n/I18nContext";
 
-const baseNav = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/dashboard/inventory", label: "Inventory", icon: Package },
-  { href: "/dashboard/orders", label: "Orders", icon: ReceiptText },
-  { href: "/dashboard/reviews", label: "Reviews", icon: Star },
-  { href: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
-] as const;
+const baseNavKeys = [
+  { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
+  { href: "/dashboard/analytics", labelKey: "sideAnalytics" as const, icon: BarChart3 },
+  { href: "/dashboard/inventory", labelKey: "sideInventory" as const, icon: Package },
+  { href: "/dashboard/orders", labelKey: "sideOrders" as const, icon: ReceiptText },
+  { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+  { href: "/dashboard/profile", labelKey: "sideProfile" as const, icon: UserCircle2 },
+  { href: "/dashboard/settings", labelKey: "sideSettings" as const, icon: Settings },
+];
 
-const subscriptionNav = {
+const subscriptionNavKey = {
   href: "/dashboard/subscription",
-  label: "Subscription",
+  labelKey: "sideSubscription" as const,
   icon: CreditCard,
-} as const;
+};
 
-const manufacturerExtras = [
-  { href: "/dashboard/manufacturer/retailers", label: "Retailer network", icon: UsersRound },
-] as const;
+const manufacturerExtrasKeys = [
+  { href: "/dashboard/manufacturer/retailers", labelKey: "sideRetailerNetwork" as const, icon: UsersRound },
+];
 
 function hrefToTourKey(href: string): string {
   switch (href) {
@@ -71,6 +72,7 @@ type SidebarProps = {
 
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
 
   useEffect(() => {
@@ -91,19 +93,17 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   }, []);
 
   const nav = (() => {
-    const base = [...baseNav];
+    const base = [...baseNavKeys];
     if (role === "manufacturer") {
-      // Insert: retailer network + subscription after Inventory (index 2)
       return [
         ...base.slice(0, 3),
-        ...manufacturerExtras,
-        subscriptionNav,
+        ...manufacturerExtrasKeys,
+        subscriptionNavKey,
         ...base.slice(3),
       ];
     }
     if (role === "retailer") {
-      // Insert: subscription after Inventory (index 2)
-      return [...base.slice(0, 3), subscriptionNav, ...base.slice(3)];
+      return [...base.slice(0, 3), subscriptionNavKey, ...base.slice(3)];
     }
     return base;
   })();
@@ -151,7 +151,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {nav.map(({ href, label, icon: Icon }) => {
+          {nav.map(({ href, labelKey, icon: Icon }) => {
             const active =
               href === "/dashboard"
                 ? pathname === "/dashboard"
@@ -171,7 +171,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0 opacity-90" />
-                {label}
+                {t(labelKey)}
               </Link>
             );
           })}

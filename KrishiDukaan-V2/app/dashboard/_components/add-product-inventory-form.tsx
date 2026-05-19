@@ -5,6 +5,7 @@ import { Loader2, PackagePlus } from "lucide-react";
 import Link from "next/link";
 import { createManufacturerProduct } from "../_lib/manufacturer-products-firestore";
 import type { SeatStats } from "../_types/subscriptions";
+import { useI18n } from "../../i18n/I18nContext";
 
 // ─── Category options ─────────────────────────────────────────────────────────
 
@@ -34,7 +35,14 @@ type AddProductInventoryFormProps = {
   seatStats: SeatStats;
 };
 
-const emptyForm = {
+const emptyForm: {
+  name: string;
+  category: typeof CATEGORIES[number];
+  unit: string;
+  sellingPrice: string;
+  description: string;
+  imageUrl: string;
+} = {
   name: "",
   category: CATEGORIES[0],
   unit: "pkt",
@@ -52,6 +60,7 @@ export function AddProductInventoryForm({
   onCreated,
   seatStats,
 }: AddProductInventoryFormProps) {
+  const { t } = useI18n();
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -111,8 +120,7 @@ export function AddProductInventoryForm({
   if (!isManufacturer) {
     return (
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center text-sm text-on-surface-variant">
-        Products are assigned to your account by manufacturers. Contact your manufacturer partner to
-        have products listed in your store.
+        {t('retailerProductInfo')}
       </div>
     );
   }
@@ -124,16 +132,16 @@ export function AddProductInventoryForm({
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-on-surface">Add product to catalogue</h2>
+        <h2 className="text-base font-semibold text-on-surface">{t('addToCatalogue')}</h2>
         <span className="rounded-full bg-surface-container px-2 py-0.5 text-xs text-on-surface-variant">
-          {seatStats.available} seat{seatStats.available !== 1 ? "s" : ""} available
+          {seatStats.available} {seatStats.available !== 1 ? t('seatsAvailableLabel') : t('seatAvailableLabel')}
         </span>
       </div>
 
       {/* Seat warnings */}
       {noSubscription && (
         <p className="mt-2 text-sm font-bold text-red-600">
-          No active subscription. Purchase a plan to start listing products.
+          {t('noActiveSubMsg')}
         </p>
       )}
       {!noSubscription && !hasSeats && (
@@ -159,20 +167,20 @@ export function AddProductInventoryForm({
       <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
         {/* Product name */}
         <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
-          <span className="font-medium text-on-surface">Product name</span>
+          <span className="font-medium text-on-surface">{t('productNameLabel')}</span>
           <input
             required
             disabled={isDisabled}
             className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="e.g. Hybrid Tomato Seeds"
+            placeholder={t('productNamePlaceholder')}
           />
         </label>
 
         {/* Category — dropdown */}
         <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Category</span>
+          <span className="font-medium text-on-surface">{t('categoryLabel')}</span>
           <select
             required
             disabled={isDisabled}
@@ -188,7 +196,7 @@ export function AddProductInventoryForm({
 
         {/* Unit */}
         <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Unit</span>
+          <span className="font-medium text-on-surface">{t('unitLabel')}</span>
           <select
             required
             disabled={isDisabled}
@@ -213,7 +221,7 @@ export function AddProductInventoryForm({
 
         {/* Price */}
         <label className="flex flex-col gap-1.5 text-sm">
-          <span className="font-medium text-on-surface">Price (₹)</span>
+          <span className="font-medium text-on-surface">{t('priceLabel')}</span>
           <input
             required
             type="number"
@@ -228,20 +236,20 @@ export function AddProductInventoryForm({
 
         {/* Description */}
         <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
-          <span className="font-medium text-on-surface">Description</span>
+          <span className="font-medium text-on-surface">{t('descriptionLabel')}</span>
           <textarea
             rows={3}
             disabled={isDisabled}
             className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            placeholder="Product details for retailers and buyers"
+            placeholder={t('descriptionPlaceholder')}
           />
         </label>
 
         {/* Image URL */}
         <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
-          <span className="font-medium text-on-surface">Image URL (optional)</span>
+          <span className="font-medium text-on-surface">{t('imageUrlLabel')}</span>
           <input
             type="url"
             disabled={isDisabled}
@@ -264,7 +272,7 @@ export function AddProductInventoryForm({
             ) : (
               <PackagePlus className="h-4 w-4" />
             )}
-            {!hasSeats ? "No seats available" : submitting ? "Saving…" : "Add to catalogue"}
+            {!hasSeats ? t('noSeatsBtn') : submitting ? t('savingBtn') : t('addToCatalogueBtn')}
           </button>
 
           {(!hasSeats) && (
@@ -272,7 +280,7 @@ export function AddProductInventoryForm({
               href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl border border-primary text-primary px-4 py-2.5 text-sm font-bold hover:bg-primary/5 transition-all"
             >
-              Buy More Seats
+              {t('buyMoreSeats')}
             </Link>
           )}
         </div>

@@ -6,6 +6,7 @@ import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
 import { updateInventoryRecord } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
+import { useI18n } from "../../i18n/I18nContext";
 
 type RowDraft = {
   stockQuantity: number;
@@ -35,6 +36,7 @@ export function InventoryManagementTable({
   disabled,
   onUpdated,
 }: InventoryManagementTableProps) {
+  const { t } = useI18n();
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +101,7 @@ export function InventoryManagementTable({
   if (!hasRows) {
     return (
       <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 px-4 py-12 text-center text-sm text-on-surface-variant">
-        No inventory yet. Add a product using the form below, or wait for a manufacturer to assign one.
+        {t('noInventoryYet')}
       </div>
     );
   }
@@ -116,15 +118,15 @@ export function InventoryManagementTable({
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
               <tr>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Product Name</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Category</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Unit</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Stock Qty</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Selling Price</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Reorder At</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Status</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Last Updated</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Actions</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('productNameCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('categoryCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('unitCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('stockQtyCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('sellingPriceCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('reorderAtCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('statusCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('lastUpdatedCol')}</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('actionsCol')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/20">
@@ -228,7 +230,7 @@ export function InventoryManagementTable({
                         ) : (
                           <Save className="h-3.5 w-3.5" />
                         )}
-                        Save
+                        {t('saveBtn')}
                       </button>
                     </td>
                   </tr>
@@ -239,8 +241,7 @@ export function InventoryManagementTable({
         </div>
       </div>
       <p className="text-xs text-on-surface-variant">
-        Save applies stock, selling price, and reorder threshold. Status follows your rules (0 → out
-        of stock; ≤ threshold → low stock).
+        {t('inventoryTableHint')}
       </p>
     </div>
   );

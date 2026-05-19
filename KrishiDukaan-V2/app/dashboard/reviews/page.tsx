@@ -1,18 +1,17 @@
-import type { Metadata } from "next";
+"use client";
+
 import { recentReviews } from "../_data/mock";
 import { PageHeader } from "../_components/page-header";
 import { ReviewsFullList } from "../_components/reviews-full-list";
-
-export const metadata: Metadata = {
-  title: "Reviews",
-};
+import { useI18n } from "../../i18n/I18nContext";
 
 export default function ReviewsPage() {
+  const { t } = useI18n();
   return (
     <>
       <PageHeader
-        title="Reviews"
-        description="Monitor shopper sentiment and follow up on recent feedback."
+        title={t('reviewsTitle')}
+        description={t('reviewsDesc')}
         helperKey="dashReviews"
       />
       <ReviewsFullList seed={recentReviews} />

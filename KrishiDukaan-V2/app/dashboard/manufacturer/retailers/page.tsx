@@ -24,6 +24,7 @@ import {
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
+import { useI18n } from "../../../i18n/I18nContext";
 
 type AccessState = "checking" | "allowed" | "denied";
 
@@ -35,6 +36,7 @@ type ToastPayload = {
 };
 
 export default function ManufacturerRetailersPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [access, setAccess] = useState<AccessState>("checking");
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
@@ -122,7 +124,7 @@ export default function ManufacturerRetailersPage() {
     return (
       <div className="flex min-h-[320px] flex-col items-center justify-center gap-3">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm font-medium text-on-surface-variant">Checking access…</p>
+        <p className="text-sm font-medium text-on-surface-variant">{t('checkingAccessText')}</p>
       </div>
     );
   }
@@ -134,8 +136,8 @@ export default function ManufacturerRetailersPage() {
       {/* Header row */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <PageHeader
-          title="Retailer Network"
-          description="Add retailers to your network, then assign your products to them. Each product assignment consumes one seat (1 month validity)."
+          title={t('retailerNetworkTitle')}
+          description={t('retailerNetworkDesc')}
           helperKey="dashRetailerNetwork"
         />
         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -146,7 +148,7 @@ export default function ManufacturerRetailersPage() {
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all"
             >
               <UserPlus className="h-4 w-4" />
-              Add Retailer
+              {t('addRetailerBtn')}
             </button>
           </HelperTooltip>
           {totalPurchased > 0 ? (

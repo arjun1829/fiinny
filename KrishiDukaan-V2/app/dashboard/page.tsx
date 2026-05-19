@@ -10,8 +10,10 @@ import { RecentReviews } from "./_components/recent-reviews";
 import { DashboardInventoryHealth } from "./_components/dashboard-inventory-health";
 import { fetchRetailerAnalytics } from "./_lib/analytics-firestore";
 import type { StatMetric, ReviewItem, InventoryProduct } from "./_data/mock";
+import { useI18n } from "../i18n/I18nContext";
 
 export default function DashboardPage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatMetric[]>([]);
   const [inventoryHealth, setInventoryHealth] = useState<any>(null);
@@ -39,10 +41,10 @@ export default function DashboardPage() {
             const outOfStock = productCount - inStock;
 
             setStats([
-              { id: "views", label: "Total Views", value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "calls", label: "Interactions", value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "directions", label: "Directions", value: "0", change: "0.0%", trend: "neutral" },
-              { id: "products", label: "Products Listed", value: productCount.toString(), change: "0", trend: "neutral" },
+              { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
+              { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
+              { id: "directions", label: t('directionsLabel'), value: "0", change: "0.0%", trend: "neutral" },
+              { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
             ]);
 
             setInventoryHealth({
@@ -50,7 +52,7 @@ export default function DashboardPage() {
               lowStock,
               outOfStock,
               score: productCount > 0 ? Math.round((inStock / productCount) * 100) : 100,
-              label: productCount > 0 ? (inStock / productCount > 0.8 ? "Healthy" : "Attention needed") : "No data",
+              label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
             });
 
             // Mock reviews for now as we don't have a reviews collection yet
@@ -87,8 +89,8 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Overview"
-        description="Performance snapshot for your storefront and operations."
+        title={t('overviewTitle')}
+        description={t('overviewDesc')}
         helperKey="dashOverview"
       />
 
