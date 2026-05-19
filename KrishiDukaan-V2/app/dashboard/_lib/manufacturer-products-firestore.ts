@@ -3,8 +3,10 @@ import {
   doc,
   getDocs,
   increment,
+  orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -19,13 +21,21 @@ import {
   isListingActive,
 } from "./subscriptions-firestore";
 
+export type ProductVariant = {
+  unit: string;
+  price: number;
+};
+
 export type ManufacturerProductInput = {
   name: string;
   category: string;
   unit: string;
   price: number;
+  variants: ProductVariant[];
+  stockQuantity?: number;
   description: string;
   image?: string;
+  images?: string[];
 };
 
 /**
@@ -59,8 +69,10 @@ export async function createManufacturerProduct(
     category: input.category.trim(),
     unit: input.unit.trim(),
     price: input.price,
+    variants: input.variants,
     description: input.description.trim(),
     image: (input.image ?? "").trim(),
+    images: input.images ?? [],
     isActive: true,
     ownerId: manufacturerId,
     ownerType: "manufacturer",
@@ -130,4 +142,45 @@ export async function fetchOwnProductListings(
     })
     .filter(isListingActive)
     .sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
+}
+
+/** Update editable fields of a manufacturer's own product. */
+export async function updateManufacturerProduct(
+  productId: string,
+  input: Partial<ManufacturerProductInput>,
+): Promise<void> {
+  const ref = doc(db, "products", productId);
+  const patch: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (input.name !== undefined)        patch.name        = input.name.trim();
+  if (input.category !== undefined)    patch.category    = input.category.trim();
+  if (input.unit !== undefined)        patch.unit        = input.unit.trim();
+  if (input.price !== undefined)       patch.price       = input.price;
+  if (input.variants !== undefined)       patch.variants       = input.variants;
+  if (input.stockQuantity !== undefined)  patch.stockQuantity  = input.stockQuantity;
+  if (input.description !== undefined) patch.description = input.description.trim();
+  if (input.image !== undefined)       patch.image       = (input.image ?? "").trim();
+  if (input.images !== undefined)      patch.images      = input.images;
+  await updateDoc(ref, patch);
+}
+
+/** Toggle a product's isActive flag. */
+export async function toggleProductActive(productId: string, isActive: boolean): Promise<void> {
+  await updateDoc(doc(db, "products", productId), { isActive, updatedAt: serverTimestamp() });
+}
+
+/**
+ * Search all products in the catalogue by name (prefix/contains match, client-side).
+ * Returns up to 10 results sorted by name.
+ */
+export async function searchProductsByName(term: string): Promise<Array<{
+  id: string; name: string; category: string; unit: string; price: number;
+  description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
+}>> {
+  if (!term.trim()) return [];
+  const snap = await getDocs(query(collection(db, "products"), orderBy("name")));
+  const lower = term.toLowerCase();
+  return snap.docs
+    .map((d) => { const r = d.data() as any; return { id: d.id, name: String(r.name ?? ""), category: String(r.category ?? ""), unit: String(r.unit ?? ""), price: Number(r.price ?? 0), description: String(r.description ?? ""), image: String(r.image ?? ""), images: Array.isArray(r.images) ? r.images : [], variants: Array.isArray(r.variants) ? r.variants : [] }; })
+    .filter((p) => p.name.toLowerCase().includes(lower))
+    .slice(0, 10);
 }

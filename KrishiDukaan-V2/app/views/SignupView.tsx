@@ -118,17 +118,16 @@ export default function SignupView({
 
     const normalizedPhone = normalizePhone(phone);
 
-    let authEmail = email.trim().toLowerCase();
-    let profileEmail = authEmail;
-    if (effectiveRole === "customer") {
-      if (normalizedPhone.length < 10) {
-        setError("Please enter a valid mobile number.");
-        setLoading(false);
-        return;
-      }
-      authEmail = customerAuthEmailFromPhone(normalizedPhone);
-      profileEmail = authEmail;
+    if (normalizedPhone.length < 10) {
+      setError("Please enter a valid 10-digit mobile number.");
+      setLoading(false);
+      return;
     }
+
+    // Phone is the universal login key — derive auth email from it for all roles.
+    // This lets anyone log in with just their phone number (no email required).
+    const authEmail = `${normalizedPhone}@krishidukan.local`;
+    const profileEmail = email.trim().toLowerCase() || authEmail;
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
@@ -153,6 +152,10 @@ export default function SignupView({
           setError(
             `${result.message} Your retailer account was created, but the invite could not be linked automatically.`,
           );
+        } else {
+          // Manufacturer already paid for this retailer's seat — mark as paid immediately
+          // so the paywall does not trigger on first login.
+          (profile as any).isPaid = true;
         }
       }
 
@@ -331,40 +334,19 @@ export default function SignupView({
           </div>
 
           <div className="space-y-2">
-            {role === "customer" && (
-              <>
-                <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">
-                  Mobile Number
-                </label>
-                <input
-                  type="tel"
-                  required
-                  disabled={loading}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="10-digit mobile number"
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-5 py-4 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
-                />
-              </>
-            )}
-          </div>
-
-          {role !== "customer" && (
-            <div className="space-y-2">
             <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">
-              {t("emailAddress")}
+              Mobile Number
             </label>
             <input
-              type="email"
+              type="tel"
               required
               disabled={loading}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="10-digit mobile number"
               className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-5 py-4 text-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             />
-            </div>
-          )}
+          </div>
 
           <div className="space-y-2">
             <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">

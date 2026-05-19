@@ -1,10 +1,13 @@
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
   serverTimestamp,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -125,6 +128,12 @@ export async function assignProductToRetailer(
     expiresAt: subExpiry,
   });
 
+  // 4. Update manufacturer product's availability so the retailer's store appears
+  //    in the marketplace product detail page.
+  batch.update(doc(db, "products", input.productId), {
+    availability: arrayUnion({ storeId: input.retailerDocId, stockLevel: "In Stock" }),
+  });
+
   await batch.commit();
   return { seatListingId, retailerProductId: retailerProductRef.id };
 }
@@ -143,11 +152,26 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
   const retailerProductId = String(data.productId ?? "");
+  const retailerDocId     = String(data.retailerDocId ?? "");
   if (retailerProductId) {
     batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
   }
 
   await batch.commit();
+
+  // Remove the retailer's store from the manufacturer product's availability array.
+  // We look up the retailer product copy to find the manufacturer's original product ID.
+  if (retailerProductId && retailerDocId) {
+    try {
+      const copySnap = await getDoc(doc(db, "products", retailerProductId));
+      const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
+      if (mfgProductId) {
+        await updateDoc(doc(db, "products", mfgProductId), {
+          availability: arrayRemove({ storeId: retailerDocId, stockLevel: "In Stock" }),
+        });
+      }
+    } catch { /* non-critical — product may already be deleted */ }
+  }
 }
 
 /** All assignments made by a manufacturer (all statuses). */

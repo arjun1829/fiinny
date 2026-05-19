@@ -7,10 +7,12 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Info,
   Loader2,
   Mail,
   MessageCircle,
   PackagePlus,
+  Pencil,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -29,6 +31,8 @@ type RetailerTableProps = {
   loading?: boolean;
   onRemove?: (row: ManufacturerRetailerRow) => Promise<void>;
   onAssignProduct?: (row: ManufacturerRetailerRow) => void;
+  onEdit?: (row: ManufacturerRetailerRow) => void;
+  onDetails?: (row: ManufacturerRetailerRow) => void;
 };
 
 function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
@@ -57,7 +61,8 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
 }
 
 function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   if (row.status === "revoked") {
     return <span className="text-xs text-on-surface-variant">—</span>;
@@ -69,14 +74,20 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   const link = buildSignupInviteUrl(row.inviteCode);
   const message = buildInviteShareMessage(link);
 
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(row.inviteCode);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch { setCopiedCode(false); }
+  };
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch { setCopiedLink(false); }
   };
 
   const whatsappHref = buildWhatsAppShareUrl(message);
@@ -87,33 +98,51 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   });
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={copyLink}
-        className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
-        Copy link
-      </button>
-      <a
-        href={whatsappHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
-      >
-        <MessageCircle className="h-3.5 w-3.5" />
-        WhatsApp
-      </a>
-      {row.retailerEmail ? (
-        <a
-          href={mailtoHref}
+    <div className="flex flex-col gap-1.5">
+      {/* Invite code chip */}
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-xs font-bold tracking-widest text-primary bg-primary/10 border border-primary/20 rounded-lg px-2 py-0.5 select-all">
+          {row.inviteCode}
+        </span>
+        <button
+          type="button"
+          onClick={copyCode}
+          title="Copy invite code"
+          className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/40 bg-surface-container-low px-1.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+        >
+          {copiedCode ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+          {copiedCode ? "Copied!" : "Code"}
+        </button>
+      </div>
+      {/* Share actions */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={copyLink}
           className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
-          <Mail className="h-3.5 w-3.5" />
-          Email
+          {copiedLink ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+          Copy link
+        </button>
+        <a
+          href={whatsappHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          WhatsApp
         </a>
-      ) : null}
+        {row.retailerEmail ? (
+          <a
+            href={mailtoHref}
+            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email
+          </a>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -178,7 +207,7 @@ function RemoveAction({
   );
 }
 
-export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: RetailerTableProps) {
+export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails }: RetailerTableProps) {
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -198,7 +227,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
     );
   }
 
-  const hasActions = !!(onRemove || onAssignProduct);
+  const hasActions = !!(onRemove || onAssignProduct || onEdit || onDetails);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -251,21 +280,31 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                   {hasActions ? (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Details */}
+                        {onDetails && (
+                          <button type="button" onClick={() => onDetails(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                            <Info className="h-3.5 w-3.5" /> Details
+                          </button>
+                        )}
+                        {/* Edit */}
+                        {onEdit && !isRevoked && (
+                          <button type="button" onClick={() => onEdit(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </button>
+                        )}
+                        {/* Assign product */}
                         {canAssign ? (
                           <HelperTooltip side="left" textKey="dashAssignProduct">
-                            <button
-                              type="button"
-                              onClick={() => onAssignProduct(row)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                            >
-                              <PackagePlus className="h-3.5 w-3.5" />
-                              Assign product
+                            <button type="button" onClick={() => onAssignProduct(row)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                              <PackagePlus className="h-3.5 w-3.5" /> Assign product
                             </button>
                           </HelperTooltip>
                         ) : null}
-                        {onRemove ? (
-                          <RemoveAction row={row} onRemove={onRemove} />
-                        ) : null}
+                        {/* Remove */}
+                        {onRemove ? <RemoveAction row={row} onRemove={onRemove} /> : null}
                       </div>
                     </td>
                   ) : null}

@@ -16,7 +16,10 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
+  updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import {
@@ -46,7 +49,7 @@ export async function findInviteByCode(
 }
 
 export type AcceptInviteResult =
-  | { ok: true; alreadyActive: boolean }
+  | { ok: true; alreadyActive: boolean; backfillError?: string }
   | { ok: false; message: string };
 
 /**
@@ -62,7 +65,16 @@ export async function acceptManufacturerInvite(params: {
     return { ok: false, message: "Missing invite code." };
   }
 
-  const initial = await findInviteByCode(code);
+  let initial: ManufacturerRetailerInviteSnapshot | null;
+  try {
+    initial = await findInviteByCode(code);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("permission") || msg.includes("insufficient")) {
+      return { ok: false, message: "Permission error — Firestore rules not deployed yet. Ask your admin to run: firebase deploy --only firestore:rules" };
+    }
+    return { ok: false, message: "Could not look up invite code. Try again." };
+  }
   const pre = precheckInviteForAcceptance(initial, params.uid);
   if (!pre.ok) {
     return { ok: false, message: mapInviteAcceptanceError((pre as { ok: false; reason: any }).reason) };
@@ -117,5 +129,70 @@ export async function acceptManufacturerInvite(params: {
     };
   }
 
-  return { ok: true, alreadyActive: wasAlreadyActive };
+  // After successful invite acceptance, backfill product/inventory/listing records.
+  // Products store retailerDocId = the `retailerDocId` FIELD on the manufacturerRetailers doc
+  // (a retailers collection doc ID), NOT the manufacturerRetailers doc's own ID.
+  const retailerDocId = initial!.retailerDocId;
+  const backfillError = await backfillRetailerAfterInvite(params.uid, retailerDocId);
+
+  return { ok: true, alreadyActive: wasAlreadyActive, backfillError };
+}
+
+async function backfillRetailerAfterInvite(uid: string, retailerDocId: string): Promise<string | undefined> {
+  if (!retailerDocId) {
+    return "retailerDocId is empty — cannot sync products. Contact your manufacturer.";
+  }
+  try {
+    const now = serverTimestamp();
+
+    // 1. Mark the retailer's user profile as paid (merge so it never overwrites the full doc).
+    //    This also sets retailerDocId on users/{uid} which the Firestore rules use to authorize
+    //    product/inventory updates below.
+    await setDoc(doc(db, "users", uid), {
+      isPaid: true,
+      retailerDocId,
+      updatedAt: now,
+    }, { merge: true });
+
+    // 2. Fetch product copies created before the retailer signed up (ownerId = retailerDocId placeholder)
+    const [productsSnap, inventorySnap, listingsSnap] = await Promise.all([
+      getDocs(query(collection(db, "products"),            where("retailerDocId", "==", retailerDocId))),
+      getDocs(query(collection(db, "inventory"),           where("retailerDocId", "==", retailerDocId))),
+      getDocs(query(collection(db, "retailerSeatListings"),where("retailerDocId", "==", retailerDocId))),
+    ]);
+
+    if (productsSnap.empty && inventorySnap.empty && listingsSnap.empty) {
+      return `No products found with retailerDocId="${retailerDocId}". The manufacturer may not have assigned any products yet.`;
+    }
+
+    // Batch all writes (Firestore limit: 500 per batch)
+    const batch = writeBatch(db);
+
+    productsSnap.docs.forEach((d) => {
+      const data = d.data() as Record<string, unknown>;
+      if (String(data.ownerId ?? "") === retailerDocId) {
+        batch.update(d.ref, { ownerId: uid, retailerId: uid, updatedAt: now });
+      } else {
+        batch.update(d.ref, { retailerId: uid, updatedAt: now });
+      }
+    });
+
+    inventorySnap.docs.forEach((d) => {
+      batch.update(d.ref, { retailerId: uid, updatedAt: now });
+    });
+
+    listingsSnap.docs.forEach((d) => {
+      const data = d.data() as Record<string, unknown>;
+      if (!data.retailerId || data.retailerId === retailerDocId) {
+        batch.update(d.ref, { retailerId: uid });
+      }
+    });
+
+    await batch.commit();
+    return undefined; // success
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("Retailer backfill after invite acceptance failed:", msg);
+    return `Sync failed: ${msg}`;
+  }
 }

@@ -8,9 +8,9 @@ import {
   BarChart3,
   CreditCard,
   LayoutDashboard,
+  Lock,
   Package,
   ReceiptText,
-  Settings,
   Star,
   UserCircle2,
   UsersRound,
@@ -26,7 +26,6 @@ const baseNav = [
   { href: "/dashboard/orders", label: "Orders", icon: ReceiptText },
   { href: "/dashboard/reviews", label: "Reviews", icon: Star },
   { href: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const subscriptionNav = {
@@ -72,19 +71,23 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
+  const [onlineDelivery, setOnlineDelivery] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole(null);
+        setOnlineDelivery(false);
         return;
       }
       try {
         const profile = await getUserProfile(user.uid);
         const r = profile?.role;
         setRole(r === "manufacturer" || r === "retailer" ? r : null);
+        setOnlineDelivery(!!(profile as any)?.onlineDelivery);
       } catch {
         setRole(null);
+        setOnlineDelivery(false);
       }
     });
     return () => unsub();
@@ -157,6 +160,25 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 ? pathname === "/dashboard"
                 : pathname.startsWith(href);
             const tourKey = hrefToTourKey(href);
+            const isOrdersLocked = href === "/dashboard/orders" && !onlineDelivery;
+
+            if (isOrdersLocked) {
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  data-tour-dash={tourKey}
+                  onClick={() => onMobileOpenChange(false)}
+                  title="Enable Online Delivery in Profile → Settings"
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-on-surface-variant/50 hover:bg-surface-container/50"
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <span>{label}</span>
+                  <Lock className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+                </Link>
+              );
+            }
+
             return (
               <Link
                 key={href}

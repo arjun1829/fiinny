@@ -3,6 +3,13 @@ import type { Timestamp } from "firebase/firestore";
 export type ManufacturerRetailerStatus = "invited" | "active" | "revoked";
 export type RetailerOnboardingStatus = "pending" | "active" | "removed";
 
+export interface RetailerAddress {
+  line1: string;
+  city: string;
+  state: string;
+  pincode: string;
+}
+
 /** Document in `manufacturerRetailers` — `id` is the Firestore document ID. */
 export interface ManufacturerRetailerDoc {
   id: string;
@@ -23,6 +30,8 @@ export interface ManufacturerRetailerDoc {
   seatAssignedAt?: Timestamp | null;
   createdBy: string;
   addedAt?: Timestamp | null;
+  address?: RetailerAddress | null;
+  geo?: { latitude: number; longitude: number } | null;
 }
 
 export interface ManufacturerRetailerRow extends ManufacturerRetailerDoc {

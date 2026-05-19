@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -17,10 +17,11 @@ import {
   fetchSeatListingsForOwner,
   computeSeatStats,
 } from "../_lib/subscriptions-firestore";
+import { acceptManufacturerInvite } from "../../lib/invite/invite-acceptance-service";
 import type { InventoryRow, ManufacturerProductRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { PlusCircle, Zap } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, PlusCircle, Zap } from "lucide-react";
 import Link from "next/link";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 
@@ -99,6 +100,84 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
         </Link>
       </HelperTooltip>
     </div>
+  );
+}
+
+// ─── Invite code sync card (retailer only) ────────────────────────────────────
+
+function InviteCodeSync({ uid, onSynced }: { uid: string; onSynced: () => void }) {
+  const [code, setCode] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSync = async () => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) { inputRef.current?.focus(); return; }
+    setSyncing(true);
+    setStatus(null);
+    try {
+      const result = await acceptManufacturerInvite({ uid, inviteCode: trimmed });
+      if (result.ok) {
+        if (result.backfillError) {
+          // Invite linked but product sync had an issue — show the exact reason
+          setStatus({ type: "error", message: `Linked, but sync failed: ${result.backfillError}` });
+        } else {
+          setStatus({ type: "success", message: result.alreadyActive ? "Already linked — products refreshed!" : "Invite accepted! Products synced." });
+          setCode("");
+        }
+        // Refresh inventory regardless — products may already be correct
+        onSynced();
+      } else {
+        setStatus({ type: "error", message: (result as { ok: false; message: string }).message });
+      }
+    } catch (e) {
+      setStatus({ type: "error", message: e instanceof Error ? e.message : "Failed to sync. Try again." });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <section className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <KeyRound className="h-4 w-4 text-primary shrink-0" />
+        <h2 className="text-sm font-bold text-on-surface">Have an invite code?</h2>
+      </div>
+      <p className="text-xs text-on-surface-variant mb-4">
+        Enter the code your manufacturer gave you to instantly link your account and pull all assigned products.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && handleSync()}
+          placeholder="e.g. KD-ABCD1234"
+          maxLength={20}
+          className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm font-mono font-bold tracking-widest text-on-surface outline-none ring-primary/30 focus:ring-2 w-48 uppercase"
+          disabled={syncing}
+        />
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing || !code.trim()}
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60"
+        >
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+          {syncing ? "Syncing…" : "Sync products"}
+        </button>
+      </div>
+      {status && (
+        <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${
+          status.type === "success" ? "bg-primary/10 text-primary border border-primary/20" : "bg-red-50 text-red-700 border border-red-200"
+        }`}>
+          {status.type === "success" && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+          {status.message}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -230,15 +309,18 @@ export default function InventoryPage() {
         </div>
       ) : null}
 
-      {/* Retailer-only: health cards */}
-      {!isManufacturer && (
-        <InventoryHealthCards
-          inStock={health.inStock}
-          lowStock={health.lowStock}
-          outOfStock={health.outOfStock}
-          score={health.score}
-          label={health.label}
-        />
+      {/* Retailer-only: invite code sync + health cards */}
+      {!isManufacturer && userId && (
+        <>
+          <InviteCodeSync uid={userId} onSynced={refresh} />
+          <InventoryHealthCards
+            inStock={health.inStock}
+            lowStock={health.lowStock}
+            outOfStock={health.outOfStock}
+            score={health.score}
+            label={health.label}
+          />
+        </>
       )}
 
       {/* Product table */}
@@ -257,7 +339,7 @@ export default function InventoryPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
           ) : isManufacturer ? (
-            <ManufacturerCatalogueTable rows={catalogueRows} />
+            <ManufacturerCatalogueTable rows={catalogueRows} onRefresh={refresh} />
           ) : (
             <InventoryManagementTable rows={retailerRows} onUpdated={refresh} />
           )}
@@ -277,19 +359,6 @@ export default function InventoryPage() {
         </section>
       )}
 
-      {/* Retailer: show upgrade CTA if no seats */}
-      {!isManufacturer && seatStats.available === 0 && seatStats.totalPurchased === 0 && (
-        <section className="mt-8">
-          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
-            <p className="text-sm font-semibold text-on-surface mb-1">
-              Products are assigned to your store by manufacturers.
-            </p>
-            <p className="text-xs text-on-surface-variant mb-4">
-              Contact your manufacturer partner to assign products to your account.
-            </p>
-          </div>
-        </section>
-      )}
     </>
   );
 }

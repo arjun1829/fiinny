@@ -10,6 +10,8 @@ import { HelperIcon, HelperTooltip } from "../../../../components/helpers";
 import { RetailerTable } from "../../_components/manufacturer/retailer-table";
 import { AddRetailerModal } from "../../_components/manufacturer/add-retailer-form";
 import { AssignProductModal } from "../../_components/manufacturer/assign-product-modal";
+import { EditRetailerModal } from "../../_components/manufacturer/edit-retailer-modal";
+import { RetailerDetailsModal } from "../../_components/manufacturer/retailer-details-modal";
 import { InviteCard } from "../../_components/manufacturer/invite-card";
 import {
   fetchManufacturerRetailers,
@@ -47,8 +49,10 @@ export default function ManufacturerRetailersPage() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [assignTarget, setAssignTarget] = useState<ManufacturerRetailerRow | null>(null);
+  const [addModalOpen,   setAddModalOpen]   = useState(false);
+  const [assignTarget,   setAssignTarget]   = useState<ManufacturerRetailerRow | null>(null);
+  const [editTarget,     setEditTarget]     = useState<ManufacturerRetailerRow | null>(null);
+  const [detailsTarget,  setDetailsTarget]  = useState<ManufacturerRetailerRow | null>(null);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
   const loadAll = useCallback(async (uid: string) => {
@@ -190,6 +194,8 @@ export default function ManufacturerRetailersPage() {
           loading={listLoading}
           onRemove={handleRemove}
           onAssignProduct={(row) => setAssignTarget(row)}
+          onEdit={(row) => setEditTarget(row)}
+          onDetails={(row) => setDetailsTarget(row)}
         />
       </section>
 
@@ -213,6 +219,23 @@ export default function ManufacturerRetailersPage() {
           onClose={() => setAssignTarget(null)}
         />
       ) : null}
+
+      {editTarget && (
+        <EditRetailerModal
+          row={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={async () => { if (manufacturerId) await loadAll(manufacturerId); }}
+        />
+      )}
+
+      {detailsTarget && manufacturerId && (
+        <RetailerDetailsModal
+          row={detailsTarget}
+          manufacturerId={manufacturerId}
+          onClose={() => setDetailsTarget(null)}
+          onAssignProduct={() => { setAssignTarget(detailsTarget); setDetailsTarget(null); }}
+        />
+      )}
     </>
   );
 }

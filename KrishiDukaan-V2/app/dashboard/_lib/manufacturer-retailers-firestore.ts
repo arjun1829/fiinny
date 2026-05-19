@@ -1,12 +1,14 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   GeoPoint,
   limit,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type Timestamp,
@@ -45,6 +47,8 @@ function parseOnboardingStatus(value: unknown): RetailerOnboardingStatus {
 }
 
 function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailerDoc {
+  const rawAddr = data.address as Record<string, unknown> | null | undefined;
+  const rawGeo  = data.geo as { latitude?: number; longitude?: number } | null | undefined;
   return {
     id,
     manufacturerId: String(data.manufacturerId ?? ""),
@@ -62,6 +66,17 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
     seatAssignedAt: (data.seatAssignedAt as Timestamp) ?? null,
     createdBy: String(data.createdBy ?? ""),
     addedAt: (data.addedAt as Timestamp) ?? null,
+    address: rawAddr
+      ? {
+          line1:   String(rawAddr.line1   ?? ""),
+          city:    String(rawAddr.city    ?? ""),
+          state:   String(rawAddr.state   ?? ""),
+          pincode: String(rawAddr.pincode ?? ""),
+        }
+      : null,
+    geo: rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number"
+      ? { latitude: rawGeo.latitude, longitude: rawGeo.longitude }
+      : null,
   };
 }
 
@@ -179,7 +194,7 @@ export async function createNetworkRetailer(
 
   // Invite row — links manufacturer to the pre-created retailer
   const inviteRef = doc(collection(db, COLLECTION));
-  batch.set(inviteRef, {
+  const invitePayload: Record<string, unknown> = {
     id: inviteRef.id,
     manufacturerId: input.manufacturerId,
     retailerDocId: retailerRef.id,
@@ -196,7 +211,15 @@ export async function createNetworkRetailer(
     seatAssignedAt: now,
     createdBy: input.manufacturerId,
     addedAt: now,
-  });
+    address: {
+      line1:   input.address.line1.trim(),
+      city:    input.address.city.trim(),
+      state:   input.address.state.trim(),
+      pincode: input.address.pincode.trim(),
+    },
+  };
+  if (input.geo) invitePayload.geo = input.geo;
+  batch.set(inviteRef, invitePayload);
 
   await batch.commit();
   return { retailerDocId: retailerRef.id, inviteCode };
@@ -239,6 +262,91 @@ export async function removeNetworkRetailer(
   }
 
   await batch.commit();
+}
+
+export type UpdateNetworkRetailerPatch = {
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  email: string;
+  address?: { line1: string; city: string; state: string; pincode: string };
+  geo?: GeoPoint | null;
+};
+
+/**
+ * Update editable fields of a retailer.
+ * Only writes to `manufacturerRetailers` (the manufacturer's own collection)
+ * to avoid Firestore permission errors on the shared `retailers` collection.
+ */
+export async function updateNetworkRetailer(
+  inviteDocId: string,
+  _retailerDocId: string,
+  patch: UpdateNetworkRetailerPatch,
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    shopName:      patch.shopName.trim(),
+    ownerName:     patch.ownerName.trim(),
+    retailerPhone: patch.phone.trim(),
+    retailerEmail: patch.email.trim().toLowerCase(),
+    updatedAt:     serverTimestamp(),
+  };
+  if (patch.address) update.address = patch.address;
+  if (patch.geo !== undefined) update.geo = patch.geo;
+  await updateDoc(doc(db, COLLECTION, inviteDocId), update);
+}
+
+export type AssignedProductRow = {
+  listingId: string;
+  productId: string;
+  productName: string;
+  category: string;
+  unit: string;
+  price: number;
+  image: string;
+  status: "active" | "released" | "expired";
+  assignedAt: Date | null;
+  expiresAt: Date | null;
+};
+
+/** Fetch all products assigned by a manufacturer to a specific retailer (by retailerDocId). */
+export async function fetchRetailerAssignedProducts(
+  manufacturerId: string,
+  retailerDocId: string,
+): Promise<AssignedProductRow[]> {
+  const q = query(
+    collection(db, "retailerSeatListings"),
+    where("ownerId",       "==", manufacturerId),
+    where("retailerDocId", "==", retailerDocId),
+    where("listingType",   "==", "assigned"),
+  );
+  const snap = await getDocs(q);
+  const rows: AssignedProductRow[] = [];
+  await Promise.all(snap.docs.map(async (d) => {
+    const r    = d.data() as any;
+    const status: "active" | "released" | "expired" =
+      r.status === "released" ? "released" : r.status === "expired" ? "expired" : "active";
+    let productName = "—", category = "—", unit = "—", price = 0, image = "";
+    try {
+      const pSnap = await getDoc(doc(db, "products", String(r.productId ?? "")));
+      if (pSnap.exists()) {
+        const p = pSnap.data() as any;
+        productName = String(p.name ?? "—");
+        category    = String(p.category ?? "—");
+        unit        = String(p.unit ?? "—");
+        price       = Number(p.price ?? 0);
+        image       = String(p.image ?? "");
+      }
+    } catch { /* skip */ }
+    rows.push({
+      listingId:   d.id,
+      productId:   String(r.productId ?? ""),
+      productName, category, unit, price, image,
+      status,
+      assignedAt:  r.assignedAt?.toDate?.() ?? null,
+      expiresAt:   r.expiresAt?.toDate?.()  ?? null,
+    });
+  }));
+  return rows.sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0));
 }
 
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */

@@ -213,16 +213,24 @@ export async function fetchManufacturerCatalogueRows(
 ): Promise<ManufacturerProductRow[]> {
   const products = await fetchProductsByOwner(ownerId, "manufacturer");
 
-  const rows: ManufacturerProductRow[] = products.map((p) => ({
-    productId: p.id,
-    productName: p.name,
-    category: p.category,
-    unit: p.unit,
-    price: p.price,
-    source: p.source ?? "manufacturer_inventory",
-    isActive: p.isActive,
-    updatedAt: timestampToDate(p.updatedAt),
-  }));
+  const rows: ManufacturerProductRow[] = products.map((p) => {
+    const raw = p as any;
+    return {
+      productId: p.id,
+      productName: p.name,
+      category: p.category,
+      unit: p.unit,
+      price: p.price,
+      description: p.description ?? "",
+      image: p.image ?? "",
+      images: Array.isArray(raw.images) ? raw.images : (p.image ? [p.image] : []),
+      variants: Array.isArray(raw.variants) ? raw.variants : [{ unit: p.unit, price: p.price }],
+      stockQuantity: typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0,
+      source: p.source ?? "manufacturer_inventory",
+      isActive: p.isActive,
+      updatedAt: timestampToDate(p.updatedAt),
+    };
+  });
 
   rows.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
   return rows;
