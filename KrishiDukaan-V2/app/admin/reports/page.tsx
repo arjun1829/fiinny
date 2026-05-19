@@ -140,8 +140,8 @@ export default function AdminReportsPage() {
         <div>
           <h1 className="text-xl font-black text-on-surface">Weekly Reports</h1>
           <p className="mt-0.5 text-sm text-on-surface-variant">
-            Send weekly network summaries to manufacturers — retailer count, product assignments,
-            seat usage, and this week's activity.
+            Send weekly network summaries to manufacturers &mdash; retailer count, product assignments,
+            seat usage, and this week&apos;s activity.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

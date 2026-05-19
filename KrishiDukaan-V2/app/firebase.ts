@@ -368,6 +368,20 @@ export async function updateSubscriptionStatus(
   return { profileUpdated: true, paymentLogged: false };
 }
 
+export async function fetchAllMarketplaceProducts(): Promise<MarketplaceProduct[]> {
+  try {
+    const q = query(
+      collection(db, 'products'),
+      where('isActive', '==', true)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketplaceProduct));
+  } catch (error) {
+    console.error('Error fetching all products:', error);
+    throw error;
+  }
+}
+
 export async function fetchManufacturerProducts(manufacturerId: string): Promise<MarketplaceProduct[]> {
   try {
     // ownerId == manufacturerId returns only own products — assigned copies now belong to retailer
@@ -699,6 +713,23 @@ export async function fetchAllPayments(): Promise<any[]> {
 
 export async function promoteToAdmin(uid: string): Promise<void> {
   await setDoc(doc(db, 'users', uid), { role: 'admin', isPaid: true, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function adminUpdateUser(uid: string, updates: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}): Promise<void> {
+  const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (updates.name !== undefined) payload.name = updates.name.trim();
+  if (updates.email !== undefined) payload.email = updates.email.trim().toLowerCase();
+  if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+  if (updates.role !== undefined) {
+    payload.role = updates.role;
+    if (updates.role === 'admin') payload.isPaid = true;
+  }
+  await setDoc(doc(db, 'users', uid), payload, { merge: true });
 }
 
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {

@@ -346,19 +346,37 @@ export default function InventoryPage() {
         </div>
       </section>
 
-      {/* Add product form — manufacturers only (retailers no longer have create permission) */}
-      {isManufacturer && (
-        <section className="mt-8" aria-label="Add product">
-          <AddProductInventoryForm
-            userId={userId}
-            role="manufacturer"
-            disabled={loading}
-            onCreated={refresh}
-            seatStats={seatStats}
-          />
+      {/* Add product form — both manufacturers and retailers can now add products */}
+      <section className="mt-8" aria-label="Add product">
+        <AddProductInventoryForm
+          userId={userId}
+          role={role}
+          disabled={loading}
+          onCreated={refresh}
+          seatStats={seatStats}
+          storeName={profile?.shopName}
+        />
+      </section>
+
+      {/* Retailer: show upgrade CTA if no seats and no subscription */}
+      {!isManufacturer && seatStats.available === 0 && seatStats.totalPurchased === 0 && (
+        <section className="mt-8">
+          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
+            <p className="text-sm font-semibold text-on-surface mb-1">
+              Want to list your own products or products of others?
+            </p>
+            <p className="text-xs text-on-surface-variant mb-4">
+              Purchase a subscription to unlock product listing seats.
+            </p>
+            <Link
+              href="/dashboard/upgrade"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95"
+            >
+              Get Seats
+            </Link>
+          </div>
         </section>
       )}
-
     </>
   );
 }

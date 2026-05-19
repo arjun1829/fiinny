@@ -7,9 +7,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../../firebase";
+import { storage, fetchAllMarketplaceProducts } from "../../firebase";
 import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
+import { createProductAndInventory } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
+import type { MarketplaceProduct } from "../../../types/product";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -74,16 +76,29 @@ type SearchResult = {
   description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
 };
 
-type Props = {
+type AddProductInventoryFormProps = {
   userId: string | null;
+  /** Both manufacturer and retailer can now add products. */
   role: "manufacturer" | "retailer";
   disabled?: boolean;
   onCreated: () => Promise<void>;
+  /** Real seat availability derived from active subscriptions minus active listings. */
   seatStats: SeatStats;
+  /** Optional store name for retailers */
+  storeName?: string;
 };
 
 const newVariant = (unit = "1kg"): Variant => ({ unit, customUnit: "", price: "", stock: "" });
 const newSlot    = (): ImageSlot => ({ mode: "url", url: "", uploading: false, error: "" });
+
+function useAllProducts(userId: string | null) {
+  const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  useEffect(() => {
+    if (!userId) return;
+    fetchAllMarketplaceProducts().then(setProducts).catch(() => {});
+  }, [userId]);
+  return products;
+}
 
 // ─── Image Card ───────────────────────────────────────────────────────────────
 
@@ -166,7 +181,14 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
 
 // ─── Main Form ────────────────────────────────────────────────────────────────
 
-export function AddProductInventoryForm({ userId, role, disabled, onCreated, seatStats }: Props) {
+export function AddProductInventoryForm({
+  userId,
+  role,
+  disabled,
+  onCreated,
+  seatStats,
+  storeName,
+}: AddProductInventoryFormProps) {
   // Basic fields
   const [name,        setName]        = useState("");
   const [category,    setCategory]    = useState<string>(CATEGORIES[0]);
@@ -193,7 +215,7 @@ export function AddProductInventoryForm({ userId, role, disabled, onCreated, sea
   const isManufacturer = role === "manufacturer";
   const hasSeats       = seatStats.available > 0;
   const noSubscription = seatStats.totalPurchased === 0;
-  const isDisabled     = disabled || submitting || !userId || !hasSeats || !isManufacturer;
+  const isDisabled     = disabled || submitting || !userId || !hasSeats;
 
   // ── Search ───────────────────────────────────────────────────────────────────
   const handleNameChange = useCallback((val: string) => {
@@ -271,7 +293,7 @@ export function AddProductInventoryForm({ userId, role, disabled, onCreated, sea
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!userId || !isManufacturer) return;
+    if (!userId) return;
     if (!hasSeats) { setMessage({ type: "err", text: "No seats available. Buy more seats." }); return; }
     if (!name.trim() || !category) { setMessage({ type: "err", text: "Product name and category are required." }); return; }
 
@@ -292,17 +314,32 @@ export function AddProductInventoryForm({ userId, role, disabled, onCreated, sea
     setSubmitting(true);
     setMessage(null);
     try {
-      await createManufacturerProduct(userId, {
-        name,
-        category,
-        unit: parsed[0].unit,
-        price: parsed[0].price,
-        variants: parsed,
-        description,
-        image: imageUrls[0] ?? undefined,
-        images: imageUrls,
-      });
-      setMessage({ type: "ok", text: "Product added to your catalogue." });
+      if (isManufacturer) {
+        await createManufacturerProduct(userId, {
+          name,
+          category,
+          unit: parsed[0].unit,
+          price: parsed[0].price,
+          variants: parsed,
+          description,
+          image: imageUrls[0] ?? undefined,
+          images: imageUrls,
+        });
+      } else {
+        await createProductAndInventory(userId, {
+          name,
+          category,
+          unit: parsed[0].unit,
+          stockQuantity: Number(variants[0].stock) || 1,
+          sellingPrice: parsed[0].price,
+          reorderThreshold: 0,
+          description,
+          imageUrl: imageUrls[0] ?? undefined,
+          storeName: storeName || "My Store",
+          sellMode: "offline_store_only",
+        });
+      }
+      setMessage({ type: "ok", text: isManufacturer ? "Product added to your catalogue." : "Product added to your inventory." });
       setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false);
       setVariants([newVariant()]);
       setImages(Array.from({ length: MAX_IMAGES }, newSlot));
@@ -314,21 +351,15 @@ export function AddProductInventoryForm({ userId, role, disabled, onCreated, sea
     }
   };
 
-  if (!isManufacturer) {
-    return (
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center text-sm text-on-surface-variant">
-        Products are assigned to your account by manufacturers. Contact your manufacturer partner.
-      </div>
-    );
-  }
-
   return (
     <div className={`rounded-2xl border p-5 shadow-ambient ${
       !hasSeats ? "border-red-200 bg-red-50/30" : "border-outline-variant/30 bg-surface-container-lowest"
     }`}>
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-base font-semibold text-on-surface">Add product to catalogue</h2>
+        <h2 className="text-base font-semibold text-on-surface">
+          {isManufacturer ? "Add product to catalogue" : "Add product to inventory"}
+        </h2>
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
           hasSeats ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"
         }`}>
@@ -569,7 +600,7 @@ export function AddProductInventoryForm({ userId, role, disabled, onCreated, sea
           <button type="submit" disabled={isDisabled}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 transition-all">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
-            {!hasSeats ? "No seats available" : submitting ? "Saving…" : "Add to catalogue"}
+            {!hasSeats ? "No seats available" : submitting ? "Saving…" : isManufacturer ? "Add to catalogue" : "Add to inventory"}
           </button>
           {!hasSeats && (
             <Link href="/dashboard/upgrade"

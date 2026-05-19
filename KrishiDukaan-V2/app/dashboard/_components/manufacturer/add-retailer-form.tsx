@@ -2,11 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint } from "firebase/firestore";
-import { Loader2, LocateFixed, MapPin, UserPlus, X } from "lucide-react";
+import { Link2, Loader2, LocateFixed, MapPin, Search, UserPlus, X } from "lucide-react";
 import {
   createNetworkRetailer,
+  linkExistingRetailerToNetwork,
   type NetworkRetailerAddress,
 } from "../../_lib/manufacturer-retailers-firestore";
+import { fetchAllUsers, fetchAllRetailers, fetchStores } from "../../../firebase";
 
 declare global {
   interface Window {
@@ -93,6 +95,18 @@ function extractAddressFields(place: {
   return fields;
 }
 
+type Tab = "new" | "existing";
+
+type RegisteredRetailer = {
+  id: string;
+  name?: string;
+  shopName?: string;
+  ownerName?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+};
+
 export function AddRetailerModal({
   manufacturerId,
   manufacturerName,
@@ -100,6 +114,9 @@ export function AddRetailerModal({
   onRetailerAdded,
   onClose,
 }: AddRetailerModalProps) {
+  const [tab, setTab] = useState<Tab>("new");
+
+  // "New retailer" state
   const [shopName, setShopName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -107,10 +124,136 @@ export function AddRetailerModal({
   const [address, setAddress] = useState<NetworkRetailerAddress>(emptyAddress);
   const [geo, setGeo] = useState<GeoPoint | null>(null);
 
+  // "Link existing" state
+  const [existingUsers, setExistingUsers] = useState<RegisteredRetailer[]>([]);
+  const [existingSearch, setExistingSearch] = useState("");
+  const [selectedExisting, setSelectedExisting] = useState<RegisteredRetailer | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Load registered retailers on mount for suggestions
+  useEffect(() => {
+    setLoadingExisting(true);
+    const load = async () => {
+      try {
+        const [users, retailers, stores] = await Promise.all([
+          fetchAllUsers().catch(() => []),
+          fetchAllRetailers().catch(() => []),
+          fetchStores().catch(() => [])
+        ]);
+        
+        const map = new Map<string, RegisteredRetailer>();
+        
+        // Process users with retailer role
+        users.forEach((u: any) => {
+          if (u.role === "retailer") {
+            const id = u.id || u.uid || u.docId; // Support multiple possible ID fields
+            if (!id) return;
+            
+            const email = (u.email || "").toLowerCase();
+            const phone = u.phone || "";
+            const key = id;
+            map.set(key, {
+              id: id,
+              name: u.name,
+              shopName: u.shopName || u.name,
+              ownerName: u.ownerName || u.name,
+              email: u.email,
+              phone: u.phone,
+              role: u.role
+            });
+          }
+        });
+
+        // Add from retailers collection
+        retailers.forEach((r: any) => {
+          const id = r.id || r.uid || r.docId;
+          if (!id) return;
+          
+          const email = (r.email || "").toLowerCase();
+          const phone = r.phone || "";
+          const key = id;
+          if (!map.has(key)) {
+            map.set(key, {
+              id: id,
+              shopName: r.shopName,
+              ownerName: r.ownerName,
+              email: r.email,
+              phone: r.phone,
+              role: "retailer"
+            });
+          }
+        });
+
+        // Add from stores collection (seeded stores often go here)
+        stores.forEach((s: any) => {
+          const id = s.id || s.uid || s.docId;
+          if (!id) return;
+          
+          const key = id;
+          if (!map.has(key)) {
+            map.set(key, {
+              id: id,
+              shopName: s.name,
+              ownerName: s.ownerName || s.name,
+              phone: s.phone,
+              email: s.email,
+              role: "retailer"
+            });
+          }
+        });
+        
+        setExistingUsers(Array.from(map.values()));
+      } catch (err) {
+        console.error("Failed to load existing retailers", err);
+      } finally {
+        setLoadingExisting(false);
+      }
+    };
+    load();
+  }, []);
+
+  const filteredExisting = existingUsers.filter((u) => {
+    const q = (tab === "existing" ? existingSearch : shopName).toLowerCase();
+    if (!q) return false;
+    // Don't suggest if it's an exact match already (prevents redundant dropdown)
+    if (tab === "new" && u.shopName?.toLowerCase() === shopName.toLowerCase()) return true; 
+    return [u.shopName, u.ownerName, u.name, u.email, u.phone].join(" ").toLowerCase().includes(q);
+  });
+
+  const handleLinkExisting = async (retailerToLink?: RegisteredRetailer) => {
+    const target = retailerToLink || selectedExisting;
+    console.log("Linking retailer:", { manufacturerId, target });
+    if (!target) return;
+    setError(null);
+    setSubmitting(true);
+    setShowSuggestions(false);
+    try {
+      await linkExistingRetailerToNetwork({
+        manufacturerId,
+        manufacturerName,
+        retailerUid: target.id,
+        shopName: target.shopName || target.name || "Retailer",
+        ownerName: target.ownerName || target.name || "",
+        email: target.email || "",
+        phone: target.phone || "",
+      });
+      await onRetailerAdded({
+        inviteCode: "",
+        shopName: target.shopName || target.name || "Retailer",
+        retailerEmail: target.email || "",
+        retailerPhone: target.phone || "",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to link retailer.");
+      setSubmitting(false);
+    }
+  };
 
   const addressInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteListenerRef = useRef<unknown>(null);
@@ -314,8 +457,31 @@ export function AddRetailerModal({
           </button>
         </div>
 
-        {/* Seat guard */}
-        {seatsRemaining <= 0 ? (
+        {/* Tabs */}
+        <div className="flex border-b border-outline-variant/20 shrink-0">
+          {(["new", "existing"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => { setTab(t); setError(null); }}
+              className={[
+                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                tab === t
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-on-surface-variant hover:text-on-surface",
+              ].join(" ")}
+            >
+              {t === "new" ? (
+                <><UserPlus className="h-4 w-4" /> New Retailer</>
+              ) : (
+                <><Link2 className="h-4 w-4" /> Link Existing</>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Seat guard (new retailer tab only) */}
+        {tab === "new" && seatsRemaining <= 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <div className="rounded-full bg-harvest/10 p-3">
               <UserPlus className="h-6 w-6 text-harvest" />
@@ -334,6 +500,78 @@ export function AddRetailerModal({
               Upgrade subscription
             </a>
           </div>
+        ) : tab === "existing" ? (
+          /* ── Link existing registered retailer ── */
+          <div className="flex flex-col gap-4 overflow-y-auto px-5 py-5">
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+            )}
+            <p className="text-sm text-on-surface-variant">
+              Search for a retailer who already has a KrishiDukan account and link them to your network.
+            </p>
+            <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2">
+              <Search className="h-4 w-4 text-outline shrink-0" />
+              <input
+                type="text"
+                placeholder="Search by name, shop, or email…"
+                value={existingSearch}
+                onChange={(e) => setExistingSearch(e.target.value)}
+                className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
+              />
+            </div>
+            {loadingExisting ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-outline-variant/30 divide-y divide-outline-variant/10">
+                {filteredExisting.length === 0 ? (
+                  <p className="px-4 py-6 text-center text-sm text-on-surface-variant">
+                    {existingSearch ? "No matching retailers found." : "No registered retailers on the platform yet."}
+                  </p>
+                ) : (
+                  filteredExisting.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setSelectedExisting(u)}
+                      className={[
+                        "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors",
+                        selectedExisting?.id === u.id ? "bg-primary/10" : "hover:bg-surface-container",
+                      ].join(" ")}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-on-surface truncate">
+                          {u.shopName || u.name || "Retailer"}
+                        </p>
+                        <p className="text-xs text-on-surface-variant truncate">
+                          {u.ownerName || u.name} {u.email ? `· ${u.email}` : ""}
+                        </p>
+                      </div>
+                      {selectedExisting?.id === u.id && (
+                        <span className="text-xs font-bold text-primary shrink-0 mt-0.5">Selected</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 pt-4">
+              <button type="button" onClick={onClose} disabled={submitting}
+                className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+                Cancel
+              </button>
+              <button type="button" onClick={() => handleLinkExisting()}
+                disabled={!selectedExisting || submitting}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60">
+                {submitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Linking…</>
+                ) : (
+                  <><Link2 className="h-4 w-4" /> Link to Network</>
+                )}
+              </button>
+            </div>
+          </div>
         ) : (
           <form
             onSubmit={handleSubmit}
@@ -347,16 +585,49 @@ export function AddRetailerModal({
 
             {/* Row 1: Shop name + Owner name */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className={labelCls}>
+              <label className={labelCls + " relative"}>
                 <span className="font-medium text-on-surface">Shop name</span>
                 <input
                   required
                   disabled={submitting}
                   value={shopName}
-                  onChange={(e) => setShopName(e.target.value)}
+                  onChange={(e) => {
+                    setShopName(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="Retailer shop name"
                   className={inputCls}
                 />
+                {tab === "new" && showSuggestions && shopName && filteredExisting.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/40 bg-white shadow-lg">
+                    <p className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant bg-surface-container-low border-b border-outline-variant/10">
+                      Existing retailers found
+                    </p>
+                    <ul className="divide-y divide-outline-variant/10">
+                      {filteredExisting.map((u) => (
+                        <li key={u.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleLinkExisting(u)}
+                            className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-primary/5 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-on-surface truncate">
+                                {u.shopName || u.name}
+                              </p>
+                              <p className="text-[10px] text-on-surface-variant truncate">
+                                {u.ownerName || u.name} · {u.phone}
+                              </p>
+                            </div>
+                            <span className="text-[9px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">Link</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </label>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">Owner name</span>

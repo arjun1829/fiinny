@@ -19,6 +19,7 @@ import {
   fetchSeatListingsForOwner,
   fetchSubscriptions,
   getSubscriptionExpiryDate,
+  getAvailableSeats,
 } from "./subscriptions-firestore";
 
 const SEAT_LISTINGS = "retailerSeatListings";
@@ -82,6 +83,7 @@ export async function assignProductToRetailer(
   const retailerProductRef = doc(collection(db, "products"));
   const retailerOwnerId = input.retailerId || input.retailerDocId;
   batch.set(retailerProductRef, {
+    id: retailerProductRef.id,
     name: String(src.name ?? ""),
     category: String(src.category ?? ""),
     description: String(src.description ?? ""),
@@ -97,6 +99,14 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
     source: "manufacturer_assigned",
+    
+    // Market display fields
+    store: String(src.store || "Local Store"),
+    stock: "In Stock",
+    distance: "Nearby",
+    sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+    isOnline: src.isOnline === true || src.sellMode === "online_delivery",
+    
     createdAt: now,
     updatedAt: now,
   });
@@ -104,6 +114,10 @@ export async function assignProductToRetailer(
   // 2. Inventory record — retailer manages stock; linked by retailerDocId pre-signup
   const inventoryRef = doc(collection(db, "inventory"));
   batch.set(inventoryRef, {
+    id: inventoryRef.id,
+    ownerId: retailerOwnerId,
+    ownerType: "retailer",
+    manufacturerId: input.manufacturerId,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
     productId: retailerProductRef.id,
@@ -124,6 +138,7 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? null,
     productId: retailerProductRef.id,
+    manufacturerProductId: input.productId,
     listingType: "assigned",
     expiresAt: subExpiry,
   });
@@ -179,6 +194,154 @@ export async function fetchAssignmentsForManufacturer(
   manufacturerId: string,
 ): Promise<RetailerSeatListing[]> {
   return fetchSeatListingsForOwner(manufacturerId);
+}
+
+export type BulkAssignInput = {
+  manufacturerId: string;
+  retailerDocId: string;
+  retailerId?: string;
+  /** Array of manufacturer product IDs to assign. Already-assigned ones are skipped. */
+  productIds: string[];
+};
+
+export type BulkAssignResult = {
+  assigned: string[];   // product IDs successfully assigned
+  skipped: string[];    // product IDs skipped (already assigned)
+  failed: string[];     // product IDs that errored
+};
+
+/**
+ * Assigns multiple manufacturer products to a retailer in a single batch.
+ * Validates that enough seats are available for all new assignments before writing.
+ * Already-assigned products (active listing exists) are silently skipped.
+ */
+export async function bulkAssignProductsToRetailer(
+  input: BulkAssignInput,
+): Promise<BulkAssignResult> {
+  const { manufacturerId, retailerDocId, retailerId, productIds } = input;
+
+  const [subs, existingListings] = await Promise.all([
+    fetchSubscriptions(manufacturerId),
+    fetchSeatListingsForOwner(manufacturerId),
+  ]);
+
+  const subExpiry = getSubscriptionExpiryDate(subs);
+  if (!subExpiry) throw new Error("No active subscription found.");
+
+  // Determine which products are already actively assigned to this retailer
+  const alreadyAssigned = new Set(
+    existingListings
+      .filter(
+        (l) =>
+          l.retailerDocId === retailerDocId &&
+          l.status === "active" &&
+          l.manufacturerProductId,
+      )
+      .map((l) => l.manufacturerProductId!),
+  );
+
+  const toAssign = productIds.filter((id) => !alreadyAssigned.has(id));
+  const skipped = productIds.filter((id) => alreadyAssigned.has(id));
+
+  if (toAssign.length === 0) {
+    return { assigned: [], skipped, failed: [] };
+  }
+
+  const available = getAvailableSeats(subs, existingListings);
+  if (available < toAssign.length) {
+    throw new Error(
+      `Not enough seats. Need ${toAssign.length} but only ${available} available.`,
+    );
+  }
+
+  // Fetch all product docs in one batch
+  const productSnaps = await Promise.all(
+    toAssign.map((id) => getDoc(doc(db, "products", id))),
+  );
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  const assigned: string[] = [];
+  const failed: string[] = [];
+
+  for (let i = 0; i < toAssign.length; i++) {
+    const productId = toAssign[i];
+    const snap = productSnaps[i];
+    if (!snap.exists()) {
+      failed.push(productId);
+      continue;
+    }
+    const src = snap.data() as Record<string, unknown>;
+    const retailerOwnerId = retailerId || retailerDocId;
+
+    // 1. Product copy
+    const retailerProductRef = doc(collection(db, "products"));
+    batch.set(retailerProductRef, {
+      id: retailerProductRef.id,
+      name: String(src.name ?? ""),
+      category: String(src.category ?? ""),
+      description: String(src.description ?? ""),
+      image: String(src.image ?? ""),
+      unit: String(src.unit ?? ""),
+      price: typeof src.price === "number" ? src.price : 0,
+      isActive: true,
+      ownerId: retailerOwnerId,
+      ownerType: "retailer",
+      createdBy: manufacturerId,
+      manufacturerId,
+      manufacturerProductId: productId,
+      retailerDocId,
+      retailerId: retailerId ?? "",
+      source: "manufacturer_assigned",
+      
+      // Market display fields
+      store: String(src.store || "Local Store"),
+      stock: "In Stock",
+      distance: "Nearby",
+      sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+      isOnline: src.isOnline === true || src.sellMode === "online_delivery",
+      
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 2. Inventory record
+    const inventoryRef = doc(collection(db, "inventory"));
+    batch.set(inventoryRef, {
+      id: inventoryRef.id,
+      ownerId: retailerOwnerId,
+      ownerType: "retailer",
+      manufacturerId,
+      retailerDocId,
+      retailerId: retailerId ?? "",
+      productId: retailerProductRef.id,
+      manufacturerProductId: productId,
+      assignedByManufacturer: true,
+      stockQuantity: 0,
+      sellingPrice: typeof src.price === "number" ? src.price : 0,
+      reorderThreshold: 5,
+      isAvailable: false,
+      updatedAt: now,
+    });
+
+    // 3. Seat listing
+    addSeatListingToBatch(batch, {
+      ownerId: manufacturerId,
+      ownerType: "manufacturer",
+      manufacturerId,
+      retailerDocId,
+      retailerId: retailerId ?? null,
+      productId: retailerProductRef.id,
+      manufacturerProductId: productId,
+      listingType: "assigned",
+      expiresAt: subExpiry,
+    });
+
+    assigned.push(productId);
+  }
+
+  await batch.commit();
+  return { assigned, skipped, failed };
 }
 
 /** All assignment listings received by a retailer (assigned to them by manufacturers). */

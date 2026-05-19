@@ -70,7 +70,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const handleSeatInput = (val: string) => {
     setSeatInput(val);
     const n = parseInt(val, 10);
-    if (!isNaN(n) && n >= 1 && n <= 10000) setSeatCount(n);
+    if (!isNaN(n) && n >= 1 && n <= 10000) {
+      setSeatCount(n);
+    }
   };
 
   const adjustSeats = (delta: number) => {
@@ -162,6 +164,29 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
             if (!updateResult.paymentLogged && updateResult.paymentLogError) {
               console.warn('Non-blocking payment log error:', updateResult.paymentLogError);
             }
+
+            // Fire-and-forget subscription confirmation email
+            if (user.email) {
+              const now = new Date();
+              const expiry = new Date(now);
+              expiry.setMonth(expiry.getMonth() + duration.months);
+              fetch('/api/email/subscription-confirmation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userEmail: user.email,
+                  userName: user.displayName || '',
+                  seatsPurchased: verifyData.seatCount || seatCount,
+                  amountPaid: finalTotal,
+                  planName: 'Standard',
+                  startDate: now.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+                  expiryDate: expiry.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+                  razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                  razorpayOrderId: paymentResponse.razorpay_order_id,
+                }),
+              }).catch(() => {/* email failure is non-fatal */});
+            }
+
             await onSuccess();
           } catch (err: any) {
             const latestProfile = await getUserProfile(user.uid);
@@ -359,7 +384,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                     disabled={loading}
                     className="w-full bg-primary text-white text-[11px] md:text-xs font-black uppercase tracking-widest py-3 md:py-3.5 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 active:shadow-primary/10 transition-all disabled:opacity-70 disabled:hover:translate-y-0"
                   >
-                    {loading ? t('processing') : `Pay ₹${finalTotal} · ${seatCount} seat${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
+                    {loading ? t('processing') : `Pay ₹${finalTotal} · ${seatCount} seat${seatCount !== 1 ? 's' : ''} · {duration.label}`}
                   </button>
                   <div className="mt-4 flex flex-col items-center gap-3">
                     <p className="text-[9px] md:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest flex items-center gap-1 opacity-70">

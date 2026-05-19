@@ -349,6 +349,80 @@ export async function fetchRetailerAssignedProducts(
   return rows.sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0));
 }
 
+/**
+ * Links an already-registered retailer (Firebase Auth user) to this manufacturer's network.
+ * No invite code needed — the retailer already has an account.
+ * Creates a `manufacturerRetailers` doc with status='active' and retailerId pre-filled.
+ */
+export async function linkExistingRetailerToNetwork(input: {
+  manufacturerId: string;
+  manufacturerName: string;
+  retailerUid: string;
+  shopName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+}): Promise<{ inviteDocId: string }> {
+  if (!input.manufacturerId) {
+    console.error("Missing manufacturerId for linking");
+    throw new Error("Your session ID is missing. Please refresh and try again.");
+  }
+  if (!input.retailerUid) {
+    console.error("Missing retailerUid for linking", input);
+    throw new Error("The selected retailer's unique ID is missing. Please contact support.");
+  }
+
+  // Check for existing relationship
+  const q = query(
+    collection(db, COLLECTION),
+    where("manufacturerId", "==", input.manufacturerId),
+    where("retailerDocId", "==", input.retailerUid),
+    where("status", "in", ["active", "invited"])
+  );
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    throw new Error("This retailer is already in your network.");
+  }
+
+  const inviteCode = await generateUniqueInviteCode();
+  const now = serverTimestamp();
+  const ref = doc(collection(db, COLLECTION));
+  await setDoc(ref, {
+    id: ref.id,
+    manufacturerId: input.manufacturerId,
+    retailerDocId: input.retailerUid,
+    retailerId: input.retailerUid,
+    shopName: input.shopName.trim(),
+    ownerName: input.ownerName.trim(),
+    retailerEmail: input.email.trim().toLowerCase(),
+    retailerPhone: input.phone.trim(),
+    inviteCode,
+    status: "active",
+    claimable: false,
+    onboardingStatus: "active",
+    assignedSeat: false,
+    createdBy: input.manufacturerId,
+    addedAt: now,
+  });
+
+  // Trigger notification email (fire-and-forget)
+  const trimmedEmail = input.email.trim().toLowerCase();
+  if (trimmedEmail) {
+    fetch("/api/email/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        retailerEmail: trimmedEmail,
+        shopName: input.shopName.trim(),
+        inviteCode: "", // No invite code needed for existing accounts
+        manufacturerName: input.manufacturerName,
+      }),
+    }).catch(() => {/* email failure is non-fatal */});
+  }
+
+  return { inviteDocId: ref.id };
+}
+
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */
 export type CreateManufacturerRetailerInviteInput = {
   manufacturerId: string;

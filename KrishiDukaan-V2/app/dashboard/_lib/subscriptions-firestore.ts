@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  documentId,
   getDocs,
   query,
   serverTimestamp,
@@ -125,6 +126,32 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
     createdAt: ts,
     updatedAt: ts,
   });
+
+  // Trigger subscription confirmation email (fire-and-forget)
+  try {
+    const userSnap = await getDocs(query(collection(db, "users"), where(documentId(), "==", input.ownerId)));
+    const userData = userSnap.docs[0]?.data();
+    if (userData?.email) {
+      fetch("/api/email/subscription-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: userData.email,
+          userName: userData.name || "",
+          seatsPurchased: input.seatsPurchased,
+          amountPaid: input.amountPaid,
+          planName: input.planName ?? "Standard",
+          startDate: now.toLocaleDateString("en-IN", { dateStyle: "medium" }),
+          expiryDate: expiry.toLocaleDateString("en-IN", { dateStyle: "medium" }),
+          razorpayPaymentId: input.razorpayPaymentId,
+          razorpayOrderId: input.razorpayOrderId,
+        }),
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn("Failed to send subscription email trigger:", e);
+  }
+
   return ref.id;
 }
 
