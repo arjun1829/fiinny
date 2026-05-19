@@ -349,7 +349,7 @@ function ProfilePageInner() {
               <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
                 <Truck className="h-4 w-4" /> Online Delivery
               </h2>
-              <p className="mb-4 text-xs text-on-surface-variant">Enable to accept online orders and show the Orders screen. Your products must have "Online delivery" sell mode.</p>
+              <p className="mb-4 text-xs text-on-surface-variant">Enable to accept online orders and show the Orders screen. Your products must have &quot;Online delivery&quot; sell mode.</p>
               <label className="flex items-center gap-3 cursor-pointer w-fit">
                 <div className="relative">
                   <input type="checkbox" className="sr-only" checked={onlineDelivery}

@@ -120,7 +120,7 @@ export function RetailerDetailsModal({ row, manufacturerId, onClose, onAssignPro
               <Package className="h-10 w-10 text-on-surface-variant/30 mb-3" />
               <p className="text-sm font-semibold text-on-surface">No products assigned yet</p>
               <p className="text-xs text-on-surface-variant mt-1">
-                Click "Assign product" to add products to this retailer's store.
+                Click &quot;Assign product&quot; to add products to this retailer&apos;s store.
               </p>
             </div>
           ) : (
