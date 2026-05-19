@@ -47,20 +47,26 @@ export function buildInviteEmail(params: {
   const { shopName, inviteCode, inviteLink, manufacturerName } = params;
   const displayName = shopName || "your shop";
 
+  const isExisting = !inviteCode;
+
   const html = wrapper(`
-    <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827;">You're invited to KrishiDukan!</h2>
+    <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827;">${isExisting ? "You've been added to a new network!" : "You're invited to KrishiDukan!"}</h2>
     <p style="margin:0 0 20px;font-size:15px;color:#374151;">
       <strong>${manufacturerName}</strong> has added <strong>${displayName}</strong> to their retailer network on KrishiDukan.
-      Create your free account to start selling their products directly to farmers.
+      ${isExisting ? "Log in to your account to start selling their products directly to farmers." : "Create your free account to start selling their products directly to farmers."}
     </p>
 
+    ${!isExisting ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
       <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#166534;text-transform:uppercase;letter-spacing:0.05em;">Your Invite Code</p>
       <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:4px;color:#15803d;font-family:monospace;">${inviteCode}</p>
     </div>
-
     <p style="margin:0 0 4px;font-size:14px;color:#6b7280;">Or click the button below — the code is pre-filled for you:</p>
-    ${button(inviteLink, "Create my account →")}
+    ` : `
+    <p style="margin:0 0 4px;font-size:14px;color:#6b7280;">Click the button below to log in and access your new products:</p>
+    `}
+    
+    ${button(inviteLink, isExisting ? "Log in to my account →" : "Create my account →")}
 
     <hr style="margin:28px 0;border:none;border-top:1px solid #e5e7eb;" />
     <p style="margin:0;font-size:13px;color:#9ca3af;">
@@ -68,7 +74,9 @@ export function buildInviteEmail(params: {
     </p>
   `);
 
-  const text = `You're invited to KrishiDukan!\n\n${manufacturerName} has added ${displayName} to their retailer network.\n\nYour invite code: ${inviteCode}\n\nSign up here: ${inviteLink}`;
+  const text = isExisting
+    ? `You've been added to a new network!\n\n${manufacturerName} has added ${displayName} to their retailer network.\n\nLog in here: ${inviteLink}`
+    : `You're invited to KrishiDukan!\n\n${manufacturerName} has added ${displayName} to their retailer network.\n\nYour invite code: ${inviteCode}\n\nSign up here: ${inviteLink}`;
 
   return { html, text };
 }
@@ -144,9 +152,9 @@ export function buildProductAssignedEmail(params: {
   shopName: string;
   productName: string;
   manufacturerName: string;
-  signupLink: string;
+  dashboardLink: string;
 }) {
-  const { shopName, productName, manufacturerName, signupLink } = params;
+  const { shopName, productName, manufacturerName, dashboardLink } = params;
   const displayName = shopName || "your shop";
 
   const html = wrapper(`
@@ -165,7 +173,7 @@ export function buildProductAssignedEmail(params: {
     <p style="margin:0 0 4px;font-size:14px;color:#374151;">
       Log in to your KrishiDukan dashboard to manage your inventory and start selling this product.
     </p>
-    ${button(signupLink, "Go to my dashboard →")}
+    ${button(dashboardLink, "Go to my inventory →")}
 
     <hr style="margin:28px 0;border:none;border-top:1px solid #e5e7eb;" />
     <p style="margin:0;font-size:13px;color:#9ca3af;">
@@ -173,7 +181,7 @@ export function buildProductAssignedEmail(params: {
     </p>
   `);
 
-  const text = `New product assigned: "${productName}" by ${manufacturerName}.\n\nYou have been opted in for production notifications for this product.\n\nLog in here: ${signupLink}`;
+  const text = `New product assigned: "${productName}" by ${manufacturerName}.\n\nYou have been opted in for production notifications for this product.\n\nLog in to your inventory here: ${dashboardLink}`;
 
   return { html, text };
 }

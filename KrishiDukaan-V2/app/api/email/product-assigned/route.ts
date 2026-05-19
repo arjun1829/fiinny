@@ -17,14 +17,15 @@ export async function POST(request: Request) {
       shopName = "",
       productName = "a new product",
       manufacturerName = "Your manufacturer",
-      signupLink = process.env.NEXT_PUBLIC_BASE_URL ?? "/",
     } = body;
 
     if (!retailerEmail) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const { html, text } = buildProductAssignedEmail({ shopName, productName, manufacturerName, signupLink });
+    const dashboardLink = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app'}/dashboard/inventory`;
+
+    const { html, text } = buildProductAssignedEmail({ shopName, productName, manufacturerName, dashboardLink });
 
     await sendEmail({
       to: retailerEmail,

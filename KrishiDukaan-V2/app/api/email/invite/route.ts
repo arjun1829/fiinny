@@ -18,7 +18,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const inviteLink = buildSignupInviteUrl(inviteCode);
+    const inviteLink = inviteCode 
+      ? buildSignupInviteUrl(inviteCode) 
+      : `${process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app'}/?view=login`;
+      
     const { html, text } = buildInviteEmail({ shopName, inviteCode, inviteLink, manufacturerName });
 
     await sendEmail({
