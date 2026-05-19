@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GeoPoint } from "firebase/firestore";
+import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GeoPoint, doc, getDoc, updateDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { Loader2, LocateFixed, MapPin, Save } from "lucide-react";
-import { auth } from "../../firebase";
+import { useSearchParams } from "next/navigation";
+import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X } from "lucide-react";
+import { auth, db } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import {
   fetchDashboardUserRole,
@@ -15,236 +16,247 @@ import {
   type ProfileFormValues,
   type RetailerProfileExtras,
 } from "../_lib/profile-persistence";
+import { fetchManufacturerCatalogueRows } from "../_lib/inventory-firestore";
+import type { ManufacturerProductRow } from "../_types/inventory";
 
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
+declare global { interface Window { google?: any; } }
 
 const initialForm: ProfileFormValues = {
-  businessName: "",
-  ownerName: "",
-  phone: "",
-  email: "",
-  line1: "",
-  city: "",
-  state: "",
-  pincode: "",
+  businessName: "", ownerName: "", phone: "", email: "",
+  line1: "", city: "", state: "", pincode: "",
 };
 
-/** Parse Google Places `address_components` into line1 / city / state / pincode. */
+type SocialLinks = {
+  instagram: string;
+  facebook:  string;
+  whatsapp:  string;
+  youtube:   string;
+};
+
+const emptySocial: SocialLinks = { instagram: "", facebook: "", whatsapp: "", youtube: "" };
+
 function extractAddressFields(place: {
   formatted_address?: string;
   address_components?: { long_name: string; short_name: string; types: string[] }[];
 }): Partial<ProfileFormValues> {
   const fields: Partial<ProfileFormValues> = {};
   const parts = place?.address_components || [];
-
-  const cityTypePriority = [
-    "locality",
-    "postal_town",
-    "sublocality_level_1",
-    "administrative_area_level_2",
-    "neighborhood",
-  ];
-  for (const want of cityTypePriority) {
-    for (const part of parts) {
-      if (part.types?.includes(want) && part.long_name) {
-        fields.city = part.long_name;
-        break;
-      }
+  const cityPriority = ["locality", "postal_town", "sublocality_level_1", "administrative_area_level_2", "neighborhood"];
+  for (const want of cityPriority) {
+    for (const p of parts) {
+      if (p.types?.includes(want) && p.long_name) { fields.city = p.long_name; break; }
     }
     if (fields.city) break;
   }
-
-  for (const part of parts) {
-    const types = part.types || [];
-    if (types.includes("administrative_area_level_1")) fields.state = part.long_name;
-    if (types.includes("postal_code")) fields.pincode = part.long_name;
+  for (const p of parts) {
+    if (p.types?.includes("administrative_area_level_1")) fields.state = p.long_name;
+    if (p.types?.includes("postal_code")) fields.pincode = p.long_name;
   }
-
-  if (place?.formatted_address) {
-    fields.line1 = place.formatted_address;
-  }
-
+  if (place?.formatted_address) fields.line1 = place.formatted_address;
   return fields;
 }
 
-export default function ProfilePage() {
-  const [uid, setUid] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<DashboardProfileRole | null>(null);
-  const [form, setForm] = useState<ProfileFormValues>(initialForm);
-  const [geo, setGeo] = useState<GeoPoint | null>(null);
-  const [retailerExtras, setRetailerExtras] = useState<RetailerProfileExtras | null>(null);
-  const [manufacturerCreatedAt, setManufacturerCreatedAt] = useState<unknown | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [locating, setLocating] = useState(false);
+function initials(name: string): string {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+}
+
+function SocialBadge({ href, icon: Icon, label, colorClass }: { href: string; icon: any; label: string; colorClass: string }) {
+  if (!href) return null;
+  const url = href.startsWith("http") ? href : `https://${href}`;
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-80 ${colorClass}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </a>
+  );
+}
+
+function ProductCard({ product }: { product: ManufacturerProductRow }) {
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient hover:shadow-md transition-shadow">
+      <div className="aspect-square bg-surface-container flex items-center justify-center overflow-hidden">
+        {product.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={product.image} alt={product.productName}
+            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        ) : (
+          <span className="text-3xl text-on-surface-variant/20">🌿</span>
+        )}
+      </div>
+      <div className="p-3">
+        <p className="text-xs font-semibold text-on-surface truncate">{product.productName}</p>
+        <p className="text-[10px] text-on-surface-variant">{product.category}</p>
+        <p className="text-xs font-bold text-primary mt-0.5">₹{product.price.toFixed(0)}</p>
+        {!product.isActive && (
+          <span className="mt-1 inline-block text-[9px] rounded-full bg-surface-container px-1.5 py-0.5 text-on-surface-variant">
+            Inactive
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ActiveTab = "profile" | "settings";
+
+function ProfilePageInner() {
+  const searchParams = useSearchParams();
+  const [activeTab,  setActiveTab] = useState<ActiveTab>(
+    searchParams?.get("tab") === "settings" ? "settings" : "profile",
+  );
+  const [uid,       setUid]       = useState<string | null>(null);
+  const [userRole,  setUserRole]  = useState<DashboardProfileRole | null>(null);
+  const [form,      setForm]      = useState<ProfileFormValues>(initialForm);
+  const [social,    setSocial]    = useState<SocialLinks>(emptySocial);
+  const [geo,       setGeo]       = useState<GeoPoint | null>(null);
+  const [retailerExtras,         setRetailerExtras]         = useState<RetailerProfileExtras | null>(null);
+  const [manufacturerCreatedAt,  setManufacturerCreatedAt]  = useState<unknown | null>(null);
+  const [products,  setProducts]  = useState<ManufacturerProductRow[]>([]);
+  const [onlineDelivery, setOnlineDelivery] = useState(false);
+  const [tagline,        setTagline]        = useState("");
+
+  const [loading,   setLoading]   = useState(true);
+  const [saving,    setSaving]    = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [locating,  setLocating]  = useState(false);
+  const [editMode,  setEditMode]  = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
-  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const addressInputRef         = useRef<HTMLInputElement | null>(null);
   const autocompleteListenerRef = useRef<unknown>(null);
 
   const applyPlaceGeometry = useCallback((place: { geometry?: { location?: { lat: () => number; lng: () => number } } }) => {
     const lat = place?.geometry?.location?.lat?.();
     const lng = place?.geometry?.location?.lng?.();
-    if (typeof lat === "number" && typeof lng === "number") {
-      setGeo(new GeoPoint(lat, lng));
-    }
+    if (typeof lat === "number" && typeof lng === "number") setGeo(new GeoPoint(lat, lng));
+  }, []);
+
+  // Load social links, tagline, onlineDelivery from Firestore
+  const loadSocial = useCallback(async (userId: string, role: DashboardProfileRole) => {
+    try {
+      const col = role === "manufacturer" ? "manufacturers" : "retailers";
+      const snap = await getDoc(doc(db, col, userId));
+      if (snap.exists()) {
+        const d = snap.data() as any;
+        setSocial({
+          instagram: d.socialLinks?.instagram ?? "",
+          facebook:  d.socialLinks?.facebook  ?? "",
+          whatsapp:  d.socialLinks?.whatsapp  ?? "",
+          youtube:   d.socialLinks?.youtube   ?? "",
+        });
+        setTagline(d.tagline ?? "");
+      }
+      // onlineDelivery is stored on the user's profile doc
+      const userSnap = await getDoc(doc(db, "users", userId));
+      if (userSnap.exists()) {
+        setOnlineDelivery(!!(userSnap.data() as any).onlineDelivery);
+      }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setUid(null);
-        setUserRole(null);
-        setLoading(false);
-        return;
-      }
-
+      if (!user) { setLoading(false); return; }
       setUid(user.uid);
       setLoading(true);
       setStatus(null);
-
       try {
         const role = await fetchDashboardUserRole(user.uid);
         setUserRole(role);
+        if (!role) return;
 
-        if (!role) {
-          setStatus({
-            type: "error",
-            message: "Profile is only available for retailer or manufacturer accounts.",
-          });
-          setForm((prev) => ({ ...prev, email: user.email || prev.email }));
-          setGeo(null);
-          setRetailerExtras(null);
-          setManufacturerCreatedAt(null);
-          return;
-        }
-
-        const loaded = await loadProfileState(user.uid, role, user.email);
+        const [loaded] = await Promise.all([
+          loadProfileState(user.uid, role, user.email),
+          loadSocial(user.uid, role),
+        ]);
         setForm(loaded.form);
         setGeo(loaded.geo);
         setRetailerExtras(loaded.retailerExtras);
         setManufacturerCreatedAt(loaded.manufacturerCreatedAt);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load profile.";
-        setStatus({ type: "error", message });
+
+        // Fetch products for manufacturer profile grid
+        if (role === "manufacturer") {
+          try {
+            const prods = await fetchManufacturerCatalogueRows(user.uid);
+            setProducts(prods.filter((p) => p.isActive));
+          } catch { /* non-critical */ }
+        }
+      } catch (err) {
+        setStatus({ type: "error", message: err instanceof Error ? err.message : "Failed to load profile." });
       } finally {
         setLoading(false);
       }
     });
-
     return () => unsub();
-  }, []);
+  }, [loadSocial]);
 
+  // Google Maps Autocomplete (only in edit mode)
   useEffect(() => {
-    if (loading || !uid || !userRole) return;
-
+    if (!editMode || !uid || !userRole) return;
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      setMapsError("Google Maps key not configured. Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.");
-      return;
-    }
+    if (!apiKey) { setMapsError("Google Maps key not configured."); return; }
 
     const setupAutocomplete = () => {
       if (!addressInputRef.current || !window.google?.maps?.places) return;
-
-      if (autocompleteListenerRef.current && window.google?.maps?.event) {
+      if (autocompleteListenerRef.current && window.google?.maps?.event)
         window.google.maps.event.removeListener(autocompleteListenerRef.current);
-      }
       autocompleteListenerRef.current = null;
-
-      // Include establishment type so users can search their own business by name.
-      // place.name auto-fills businessName; address_components fill address fields.
-      const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
+      const ac = new window.google.maps.places.Autocomplete(addressInputRef.current, {
         fields: ["name", "formatted_address", "geometry", "address_components"],
         types: ["establishment", "geocode"],
       });
-
-      const listener = autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
+      const listener = ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
         if (!place) return;
-        if (place.name) {
-          setForm((prev) => ({ ...prev, businessName: place.name }));
-        }
-        if (place.address_components?.length) {
-          const nextFields = extractAddressFields(place as Parameters<typeof extractAddressFields>[0]);
-          setForm((prev) => ({ ...prev, ...nextFields }));
-        }
+        if (place.name) setForm((p) => ({ ...p, businessName: place.name }));
+        if (place.address_components?.length)
+          setForm((p) => ({ ...p, ...extractAddressFields(place as any) }));
         applyPlaceGeometry(place);
       });
-
       autocompleteListenerRef.current = listener;
     };
 
     const scriptId = "google-maps-places-script";
     const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+    const runWhenReady = () => requestAnimationFrame(() => setupAutocomplete());
 
-    const runWhenReady = () => {
-      requestAnimationFrame(() => setupAutocomplete());
-    };
-
-    if (window.google?.maps?.places) {
-      runWhenReady();
-    } else if (existing) {
-      if (existing.dataset.loaded === "true") {
-        runWhenReady();
-      } else {
-        existing.addEventListener("load", runWhenReady, { once: true });
-      }
+    if (window.google?.maps?.places) { runWhenReady(); }
+    else if (existing) {
+      if (existing.dataset.loaded === "true") runWhenReady();
+      else existing.addEventListener("load", runWhenReady, { once: true });
     } else {
       const script = document.createElement("script");
       script.id = scriptId;
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        script.dataset.loaded = "true";
-        runWhenReady();
-      };
-      script.onerror = () => setMapsError("Unable to load Google Maps Places.");
+      script.async = true; script.defer = true;
+      script.onload = () => { script.dataset.loaded = "true"; runWhenReady(); };
+      script.onerror = () => setMapsError("Unable to load Google Maps.");
       document.head.appendChild(script);
     }
 
     return () => {
-      if (autocompleteListenerRef.current && window.google?.maps?.event) {
+      if (autocompleteListenerRef.current && window.google?.maps?.event)
         window.google.maps.event.removeListener(autocompleteListenerRef.current);
-      }
       autocompleteListenerRef.current = null;
     };
-  }, [loading, uid, userRole, applyPlaceGeometry]);
+  }, [editMode, uid, userRole, applyPlaceGeometry]);
 
-  const handleUseCurrentLocation = async () => {
-    if (!navigator.geolocation) {
-      setStatus({ type: "error", message: "Geolocation is not supported in this browser." });
-      return;
-    }
-
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) { setStatus({ type: "error", message: "Geolocation not supported." }); return; }
     setLocating(true);
-    setStatus(null);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+      (pos) => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
         setGeo(new GeoPoint(lat, lng));
-
-        if (window.google?.maps?.Geocoder) {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode({ location: { lat, lng } }, (results, geoStatus) => {
-            if (geoStatus === "OK" && results?.[0]) {
-              const parsed = extractAddressFields(results[0] as Parameters<typeof extractAddressFields>[0]);
-              setForm((prev) => ({ ...prev, ...parsed }));
-            }
+        if (window.google?.maps?.Geocoder)
+          new window.google.maps.Geocoder().geocode({ location: { lat, lng } }, (results: any, status: string) => {
+            if (status === "OK" && results?.[0]) setForm((p) => ({ ...p, ...extractAddressFields(results[0]) }));
           });
-        }
         setLocating(false);
       },
-      (error) => {
-        setLocating(false);
-        setStatus({ type: "error", message: error.message || "Unable to access current location." });
-      },
+      (err) => { setLocating(false); setStatus({ type: "error", message: err.message || "Unable to access location." }); },
       { enableHighAccuracy: true, timeout: 10000 },
     );
   };
@@ -254,223 +266,352 @@ export default function ProfilePage() {
     return `https://maps.google.com/maps?q=${geo.latitude},${geo.longitude}&z=15&output=embed`;
   }, [geo]);
 
-  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!uid || !userRole) {
-      setStatus({ type: "error", message: "Please sign in to save your profile." });
-      return;
-    }
-    if (!geo) {
-      setStatus({
-        type: "error",
-        message: "Please select an address from autocomplete or use current location.",
-      });
-      return;
-    }
-
-    setSaving(true);
-    setStatus(null);
+  const handleSave = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!uid || !userRole) return;
+    if (!geo) { setStatus({ type: "error", message: "Please select an address from autocomplete or use current location." }); return; }
+    setSaving(true); setStatus(null);
     try {
+      const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
+      // Save social links alongside profile
+      await setDoc(doc(db, col, uid), { socialLinks: social, updatedAt: serverTimestamp() }, { merge: true });
+
       if (userRole === "manufacturer") {
         await saveManufacturerProfile(uid, form, geo, manufacturerCreatedAt);
-        setStatus({ type: "success", message: "Profile saved successfully." });
       } else {
-        const extras = retailerExtras ?? {
-          createdAt: null,
-          onboardingType: null,
-          manufacturerId: null,
-          active: true,
-          subscriptionStatus: "free",
-        };
-        await saveRetailerProfile(uid, form, geo, extras);
-        setStatus({ type: "success", message: "Profile saved successfully." });
+        await saveRetailerProfile(uid, form, geo, retailerExtras ?? {
+          createdAt: null, onboardingType: null, manufacturerId: null, active: true, subscriptionStatus: "free",
+        });
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save profile.";
-      setStatus({ type: "error", message });
+      setStatus({ type: "success", message: "Profile saved successfully." });
+      setEditMode(false);
+    } catch (err) {
+      setStatus({ type: "error", message: err instanceof Error ? err.message : "Failed to save profile." });
     } finally {
       setSaving(false);
     }
   };
 
-  const pageDescription =
-    userRole === "manufacturer"
-      ? "Manage your business profile, address, and mapped location."
-      : userRole === "retailer"
-        ? "Manage your shop profile, address, and mapped location."
-        : "Manage your profile, address, and mapped location.";
+  const inputCls = "rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2 w-full text-sm";
 
+  if (loading) return (
+    <div className="flex min-h-[300px] items-center justify-center gap-2 text-sm text-on-surface-variant">
+      <Loader2 className="h-5 w-5 animate-spin" /> Loading profile…
+    </div>
+  );
+
+  const handleSettingsSave = async () => {
+    if (!uid || !userRole) return;
+    setSettingsSaving(true);
+    setStatus(null);
+    try {
+      const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
+      // Use setDoc with merge:true so it works even if the doc doesn't exist yet
+      await setDoc(doc(db, col, uid), { tagline, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, "users", uid), { onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
+      setStatus({ type: "success", message: "Settings saved." });
+    } catch (err) {
+      setStatus({ type: "error", message: err instanceof Error ? err.message : "Failed to save settings." });
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  // ── Tab bar ─────────────────────────────────────────────────────────────────
+  const TabBar = () => (
+    <div className="mb-6 flex gap-1 rounded-2xl border border-outline-variant/30 bg-surface-container-low p-1 w-fit">
+      {([["profile", "Profile"] as const, ["settings", "Settings"] as const]).map(([tab, label]) => (
+        <button key={tab} type="button" onClick={() => { setActiveTab(tab); setEditMode(false); setStatus(null); }}
+          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+            activeTab === tab ? "bg-white shadow-sm text-on-surface" : "text-on-surface-variant hover:text-on-surface"
+          }`}>
+          {tab === "settings" ? <Settings className="h-3.5 w-3.5" /> : null}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── View mode ──────────────────────────────────────────────────────────────
+  if (!editMode && !loading) {
+    if (activeTab === "settings") {
+      return (
+        <>
+          <TabBar />
+          {status && (
+            <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
+              status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
+            }`}>{status.message}</div>
+          )}
+          <div className="space-y-6">
+            {/* Online delivery toggle */}
+            <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
+              <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
+                <Truck className="h-4 w-4" /> Online Delivery
+              </h2>
+              <p className="mb-4 text-xs text-on-surface-variant">Enable to accept online orders and show the Orders screen. Your products must have &quot;Online delivery&quot; sell mode.</p>
+              <label className="flex items-center gap-3 cursor-pointer w-fit">
+                <div className="relative">
+                  <input type="checkbox" className="sr-only" checked={onlineDelivery}
+                    onChange={(e) => setOnlineDelivery(e.target.checked)} />
+                  <div className={`h-6 w-11 rounded-full transition-colors ${onlineDelivery ? "bg-primary" : "bg-surface-container-highest"}`} />
+                  <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`} />
+                </div>
+                <span className="text-sm font-medium text-on-surface">{onlineDelivery ? "Enabled" : "Disabled"}</span>
+              </label>
+            </section>
+
+            {/* Tagline */}
+            <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
+              <h2 className="mb-1 text-sm font-semibold text-on-surface">Shop tagline</h2>
+              <p className="mb-3 text-xs text-on-surface-variant">A short phrase that appears below your shop name in the marketplace.</p>
+              <input type="text" value={tagline}
+                onChange={(e) => setTagline(e.target.value)}
+                className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                placeholder="e.g. Trusted inputs for progressive farmers" maxLength={80} />
+            </section>
+
+            <button type="button" onClick={handleSettingsSave} disabled={settingsSaving}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70">
+              {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {settingsSaving ? "Saving…" : "Save settings"}
+            </button>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <TabBar />
+        {status && (
+          <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
+            status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
+          }`}>{status.message}</div>
+        )}
+
+        {/* Profile header card */}
+        <div className="mb-6 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
+          {/* Cover band */}
+          <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/5" />
+
+          <div className="px-5 pb-5">
+            {/* Avatar + edit button row */}
+            <div className="flex items-end justify-between -mt-10 mb-4">
+              <div className="h-20 w-20 rounded-full border-4 border-white bg-primary flex items-center justify-center shadow-lg">
+                <span className="text-xl font-bold text-white">
+                  {initials(form.businessName || form.ownerName || "?")}
+                </span>
+              </div>
+              <button type="button" onClick={() => setEditMode(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
+                <Pencil className="h-3.5 w-3.5" /> Edit profile
+              </button>
+            </div>
+
+            {/* Name & info */}
+            <div className="mb-3">
+              <h1 className="text-lg font-bold text-on-surface">{form.businessName || "—"}</h1>
+              {form.ownerName && <p className="text-sm text-on-surface-variant">{form.ownerName}</p>}
+              {(form.city || form.state) && (
+                <div className="mt-1 inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                  <MapPin className="h-3 w-3" />
+                  {[form.city, form.state].filter(Boolean).join(", ")}
+                </div>
+              )}
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-on-surface-variant">
+                {form.phone && <span>{form.phone}</span>}
+                {form.email && <span>{form.email}</span>}
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div className="flex gap-6 mb-4 py-3 border-y border-outline-variant/20">
+              <div className="text-center">
+                <p className="text-base font-bold text-on-surface">{products.length}</p>
+                <p className="text-[10px] text-on-surface-variant">Products</p>
+              </div>
+              <div className="text-center">
+                <p className="text-base font-bold text-on-surface capitalize">{userRole ?? "—"}</p>
+                <p className="text-[10px] text-on-surface-variant">Account type</p>
+              </div>
+            </div>
+
+            {/* Social links */}
+            <div className="flex flex-wrap gap-2">
+              <SocialBadge href={social.instagram} icon={Instagram} label="Instagram"
+                colorClass="bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-pink-600 border border-pink-200" />
+              <SocialBadge href={social.facebook} icon={Facebook} label="Facebook"
+                colorClass="bg-blue-50 text-blue-600 border border-blue-200" />
+              <SocialBadge href={social.whatsapp} icon={MessageCircle} label="WhatsApp"
+                colorClass="bg-green-50 text-green-600 border border-green-200" />
+              <SocialBadge href={social.youtube} icon={Youtube} label="YouTube"
+                colorClass="bg-red-50 text-red-600 border border-red-200" />
+              {!social.instagram && !social.facebook && !social.whatsapp && !social.youtube && (
+                <button type="button" onClick={() => setEditMode(true)}
+                  className="text-xs text-on-surface-variant underline underline-offset-2 hover:text-primary">
+                  + Add social links
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Products grid */}
+        {userRole === "manufacturer" && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-on-surface">
+              Your Products{products.length > 0 ? ` · ${products.length}` : ""}
+            </h2>
+            {products.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-12 text-center">
+                <p className="text-sm text-on-surface-variant">No active products yet. Add products from the Inventory screen.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {products.map((p) => <ProductCard key={p.productId} product={p} />)}
+              </div>
+            )}
+          </section>
+        )}
+      </>
+    );
+  }
+
+  // ── Edit mode ──────────────────────────────────────────────────────────────
   return (
     <>
-      <PageHeader title="Profile" description={pageDescription} />
+      <TabBar />
+      <div className="mb-6 flex items-center justify-between">
+        <PageHeader title="Edit Profile" description="Update your business details and social links." helperKey="dashProfile" />
+        <button type="button" onClick={() => setEditMode(false)}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container">
+          <X className="h-4 w-4" /> Cancel
+        </button>
+      </div>
 
-      <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-6">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading profile…
-          </div>
-        ) : !uid ? (
-          <p className="text-sm text-red-600">You must be signed in to access this page.</p>
-        ) : !userRole ? (
-          <p className="text-sm text-on-surface-variant">
-            This page is available for retailer and manufacturer accounts only.
-          </p>
-        ) : (
-          <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSave}>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Business name</span>
-              <input
-                required
-                value={form.businessName}
-                onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder={userRole === "retailer" ? "Shop or business name" : "Registered business name"}
-              />
-            </label>
+      {status && (
+        <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
+          status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
+        }`}>{status.message}</div>
+      )}
 
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Owner name</span>
-              <input
-                required
-                value={form.ownerName}
-                onChange={(e) => setForm((p) => ({ ...p, ownerName: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="Owner or primary contact"
-              />
-            </label>
+      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient md:p-6">
+        <form className="flex flex-col gap-6" onSubmit={handleSave}>
+          {/* Basic info */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Basic info</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Business name</span>
+                <input required value={form.businessName} onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
+                  className={inputCls} placeholder={userRole === "retailer" ? "Shop or business name" : "Registered business name"} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Owner name</span>
+                <input required value={form.ownerName} onChange={(e) => setForm((p) => ({ ...p, ownerName: e.target.value }))}
+                  className={inputCls} placeholder="Owner or primary contact" />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Phone</span>
+                <input required type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                  className={inputCls} placeholder="+91…" />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Email</span>
+                <input required type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                  className={inputCls} />
+              </label>
+            </div>
+          </section>
 
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Phone</span>
-              <input
-                required
-                type="tel"
-                value={form.phone}
-                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="+91…"
-              />
-            </label>
+          {/* Social links */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Social links</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {([
+                { key: "instagram", icon: Instagram, label: "Instagram", placeholder: "instagram.com/yourpage" },
+                { key: "facebook",  icon: Facebook,  label: "Facebook",  placeholder: "facebook.com/yourpage" },
+                { key: "whatsapp",  icon: MessageCircle, label: "WhatsApp", placeholder: "+91 98765 43210" },
+                { key: "youtube",   icon: Youtube,   label: "YouTube",   placeholder: "youtube.com/@channel" },
+              ] as const).map(({ key, icon: Icon, label, placeholder }) => (
+                <label key={key} className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface flex items-center gap-1.5">
+                    <Icon className="h-3.5 w-3.5" /> {label}
+                  </span>
+                  <input type="text" value={social[key]}
+                    onChange={(e) => setSocial((p) => ({ ...p, [key]: e.target.value }))}
+                    className={inputCls} placeholder={placeholder} />
+                </label>
+              ))}
+            </div>
+          </section>
 
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Email</span>
-              <input
-                required
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="email@example.com"
-              />
-            </label>
-
-            <label className="md:col-span-2 flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">
-                Search business on Google Maps
-                <span className="ml-1 font-normal text-on-surface-variant">
-                  — auto-fills name & address
+          {/* Location */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Location</h3>
+            <div className="flex flex-col gap-4">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">
+                  Search on Google Maps
+                  <span className="ml-1 font-normal text-on-surface-variant">— auto-fills address</span>
                 </span>
-              </span>
-              <input
-                ref={addressInputRef}
-                required
-                value={form.line1}
-                onChange={(e) => setForm((p) => ({ ...p, line1: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="Type your business name or address to search Google Maps"
-                autoComplete="off"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">City</span>
-              <input
-                required
-                value={form.city}
-                onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="City"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">State</span>
-              <input
-                required
-                value={form.state}
-                onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="State"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Pincode</span>
-              <input
-                required
-                value={form.pincode}
-                onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))}
-                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="PIN or postal code"
-              />
-            </label>
-
-            <div className="md:col-span-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleUseCurrentLocation}
-                disabled={locating}
-                className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-70"
-              >
-                {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-                Use current location
-              </button>
-              {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
-            </div>
-
-            {geo ? (
-              <div className="md:col-span-2 space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                  <MapPin className="h-3.5 w-3.5" />
-                  Location selected
-                </div>
-                <div className="overflow-hidden rounded-xl border border-outline-variant/30">
-                  <iframe
-                    title="Selected location preview"
-                    src={mapUrl}
-                    className="h-52 w-full"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
+                <input ref={addressInputRef} required value={form.line1} autoComplete="off"
+                  onChange={(e) => setForm((p) => ({ ...p, line1: e.target.value }))}
+                  className={inputCls} placeholder="Type your business name or address" />
+              </label>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">City</span>
+                  <input required value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} className={inputCls} placeholder="City" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">State</span>
+                  <input required value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))} className={inputCls} placeholder="State" />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">Pincode</span>
+                  <input required value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))} className={inputCls} placeholder="PIN" />
+                </label>
               </div>
-            ) : null}
-
-            <div className="md:col-span-2 pt-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? "Saving…" : "Save profile"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={handleUseCurrentLocation} disabled={locating}
+                  className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-70">
+                  {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+                  Use current location
+                </button>
+                {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
+              </div>
+              {geo && (
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                    <MapPin className="h-3.5 w-3.5" /> Location selected
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-outline-variant/30">
+                    <iframe title="Location preview" src={mapUrl} className="h-48 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                  </div>
+                </div>
+              )}
             </div>
-          </form>
-        )}
-      </section>
+          </section>
 
-      {status ? (
-        <div
-          className={`mt-4 rounded-xl px-4 py-3 text-sm font-medium ${
-            status.type === "success"
-              ? "border border-primary/30 bg-primary/10 text-primary"
-              : "border border-red-200 bg-red-50 text-red-700"
-          }`}
-        >
-          {status.message}
-        </div>
-      ) : null}
+          <div className="pt-2 border-t border-outline-variant/20">
+            <button type="submit" disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? "Saving…" : "Save profile"}
+            </button>
+          </div>
+        </form>
+      </div>
     </>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense>
+      <ProfilePageInner />
+    </Suspense>
   );
 }

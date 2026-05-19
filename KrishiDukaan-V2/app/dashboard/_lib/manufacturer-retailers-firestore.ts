@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   GeoPoint,
   limit,
@@ -42,11 +43,12 @@ function parseStatus(value: unknown): ManufacturerRetailerStatus {
 function parseOnboardingStatus(value: unknown): RetailerOnboardingStatus {
   if (value === "active") return "active";
   if (value === "removed") return "removed";
-  if (value === "inactive") return "inactive";
   return "pending";
 }
 
 function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailerDoc {
+  const rawAddr = data.address as Record<string, unknown> | null | undefined;
+  const rawGeo  = data.geo as { latitude?: number; longitude?: number } | null | undefined;
   return {
     id,
     manufacturerId: String(data.manufacturerId ?? ""),
@@ -64,7 +66,17 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
     seatAssignedAt: (data.seatAssignedAt as Timestamp) ?? null,
     createdBy: String(data.createdBy ?? ""),
     addedAt: (data.addedAt as Timestamp) ?? null,
-    manuallyDeactivated: data.manuallyDeactivated === true,
+    address: rawAddr
+      ? {
+          line1:   String(rawAddr.line1   ?? ""),
+          city:    String(rawAddr.city    ?? ""),
+          state:   String(rawAddr.state   ?? ""),
+          pincode: String(rawAddr.pincode ?? ""),
+        }
+      : null,
+    geo: rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number"
+      ? { latitude: rawGeo.latitude, longitude: rawGeo.longitude }
+      : null,
   };
 }
 
@@ -182,7 +194,7 @@ export async function createNetworkRetailer(
 
   // Invite row — links manufacturer to the pre-created retailer
   const inviteRef = doc(collection(db, COLLECTION));
-  batch.set(inviteRef, {
+  const invitePayload: Record<string, unknown> = {
     id: inviteRef.id,
     manufacturerId: input.manufacturerId,
     retailerDocId: retailerRef.id,
@@ -199,7 +211,15 @@ export async function createNetworkRetailer(
     seatAssignedAt: now,
     createdBy: input.manufacturerId,
     addedAt: now,
-  });
+    address: {
+      line1:   input.address.line1.trim(),
+      city:    input.address.city.trim(),
+      state:   input.address.state.trim(),
+      pincode: input.address.pincode.trim(),
+    },
+  };
+  if (input.geo) invitePayload.geo = input.geo;
+  batch.set(inviteRef, invitePayload);
 
   await batch.commit();
   return { retailerDocId: retailerRef.id, inviteCode };
@@ -213,36 +233,16 @@ export async function createNetworkRetailer(
  */
 /**
  * Soft-removes a retailer from the manufacturer's network.
- *
- * Atomically:
- *   1. Marks the `manufacturerRetailers` link as "revoked" (status + onboardingStatus).
- *   2. Releases all active assigned seat listings for this retailer (status → "released").
- *   3. Deactivates the corresponding retailer product copies (isActive → false).
- *
- * Does NOT write to `retailers/` — the manufacturer has no permission to modify
- * another user's retailer profile document.
+ * Revokes the invite row and marks the retailers doc as inactive.
+ * Product assignment seats are released separately via removeProductAssignment.
  */
 export async function removeNetworkRetailer(
   inviteDocId: string,
   retailerDocId: string,
-  manufacturerId: string,
 ): Promise<void> {
+  const batch = writeBatch(db);
   const now = serverTimestamp();
 
-  // Fetch all active assigned listings for this retailer under this manufacturer
-  const listingsSnap = await getDocs(
-    query(
-      collection(db, "retailerSeatListings"),
-      where("ownerId", "==", manufacturerId),
-      where("retailerDocId", "==", retailerDocId),
-      where("listingType", "==", "assigned"),
-      where("status", "==", "active"),
-    ),
-  );
-
-  const batch = writeBatch(db);
-
-  // 1. Mark the network link as revoked
   batch.update(doc(db, COLLECTION, inviteDocId), {
     status: "revoked",
     claimable: false,
@@ -251,93 +251,102 @@ export async function removeNetworkRetailer(
     removedAt: now,
   });
 
-  // 2. Release each active listing + deactivate the product copy
-  listingsSnap.docs.forEach((listingDoc) => {
-    batch.update(listingDoc.ref, {
-      status: "released",
-      releasedAt: now,
+  if (retailerDocId) {
+    batch.update(doc(db, "retailers", retailerDocId), {
+      active: false,
+      onboardingStatus: "removed",
+      assignedSeat: false,
+      seatReleasedAt: now,
+      updatedAt: now,
     });
-
-    const productId = String(listingDoc.data().productId ?? "");
-    if (productId) {
-      batch.update(doc(db, "products", productId), {
-        isActive: false,
-        updatedAt: now,
-      });
-    }
-  });
+  }
 
   await batch.commit();
 }
 
+export type UpdateNetworkRetailerPatch = {
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  email: string;
+  address?: { line1: string; city: string; state: string; pincode: string };
+  geo?: GeoPoint | null;
+};
+
 /**
- * Manually deactivates a retailer WITHOUT permanently revoking them.
- *
- * Atomically:
- *   1. Releases all active assigned seat listings for this retailer.
- *   2. Deactivates the corresponding retailer product copies (isActive → false).
- *   3. Marks the `manufacturerRetailers` link as "inactive" (reversible).
- *
- * The retailer document itself is NOT modified — the manufacturer lacks
- * permission to write to another user's retailer profile.
+ * Update editable fields of a retailer.
+ * Only writes to `manufacturerRetailers` (the manufacturer's own collection)
+ * to avoid Firestore permission errors on the shared `retailers` collection.
  */
-export async function deactivateNetworkRetailer(
+export async function updateNetworkRetailer(
   inviteDocId: string,
-  retailerDocId: string,
-  manufacturerId: string,
+  _retailerDocId: string,
+  patch: UpdateNetworkRetailerPatch,
 ): Promise<void> {
-  const now = serverTimestamp();
-
-  const listingsSnap = await getDocs(
-    query(
-      collection(db, "retailerSeatListings"),
-      where("ownerId", "==", manufacturerId),
-      where("retailerDocId", "==", retailerDocId),
-      where("listingType", "==", "assigned"),
-      where("status", "==", "active"),
-    ),
-  );
-
-  const batch = writeBatch(db);
-
-  // Mark the network link as manually inactive (reversible — not "revoked")
-  batch.update(doc(db, COLLECTION, inviteDocId), {
-    onboardingStatus: "inactive",
-    assignedSeat: false,
-    manuallyDeactivated: true,
-    deactivatedAt: now,
-  });
-
-  // Release each active listing and deactivate the product copy
-  listingsSnap.docs.forEach((listingDoc) => {
-    batch.update(listingDoc.ref, {
-      status: "released",
-      releasedAt: now,
-    });
-
-    const productId = String(listingDoc.data().productId ?? "");
-    if (productId) {
-      batch.update(doc(db, "products", productId), {
-        isActive: false,
-        updatedAt: now,
-      });
-    }
-  });
-
-  await batch.commit();
+  const update: Record<string, unknown> = {
+    shopName:      patch.shopName.trim(),
+    ownerName:     patch.ownerName.trim(),
+    retailerPhone: patch.phone.trim(),
+    retailerEmail: patch.email.trim().toLowerCase(),
+    updatedAt:     serverTimestamp(),
+  };
+  if (patch.address) update.address = patch.address;
+  if (patch.geo !== undefined) update.geo = patch.geo;
+  await updateDoc(doc(db, COLLECTION, inviteDocId), update);
 }
 
-/**
- * Resets a manually-deactivated retailer back to "active" onboarding status.
- * Called after the manufacturer assigns at least one product to re-activate.
- */
-export async function reactivateNetworkRetailer(inviteDocId: string): Promise<void> {
-  await updateDoc(doc(db, COLLECTION, inviteDocId), {
-    onboardingStatus: "active",
-    assignedSeat: true,
-    manuallyDeactivated: false,
-    reactivatedAt: serverTimestamp(),
-  });
+export type AssignedProductRow = {
+  listingId: string;
+  productId: string;
+  productName: string;
+  category: string;
+  unit: string;
+  price: number;
+  image: string;
+  status: "active" | "released" | "expired";
+  assignedAt: Date | null;
+  expiresAt: Date | null;
+};
+
+/** Fetch all products assigned by a manufacturer to a specific retailer (by retailerDocId). */
+export async function fetchRetailerAssignedProducts(
+  manufacturerId: string,
+  retailerDocId: string,
+): Promise<AssignedProductRow[]> {
+  const q = query(
+    collection(db, "retailerSeatListings"),
+    where("ownerId",       "==", manufacturerId),
+    where("retailerDocId", "==", retailerDocId),
+    where("listingType",   "==", "assigned"),
+  );
+  const snap = await getDocs(q);
+  const rows: AssignedProductRow[] = [];
+  await Promise.all(snap.docs.map(async (d) => {
+    const r    = d.data() as any;
+    const status: "active" | "released" | "expired" =
+      r.status === "released" ? "released" : r.status === "expired" ? "expired" : "active";
+    let productName = "—", category = "—", unit = "—", price = 0, image = "";
+    try {
+      const pSnap = await getDoc(doc(db, "products", String(r.productId ?? "")));
+      if (pSnap.exists()) {
+        const p = pSnap.data() as any;
+        productName = String(p.name ?? "—");
+        category    = String(p.category ?? "—");
+        unit        = String(p.unit ?? "—");
+        price       = Number(p.price ?? 0);
+        image       = String(p.image ?? "");
+      }
+    } catch { /* skip */ }
+    rows.push({
+      listingId:   d.id,
+      productId:   String(r.productId ?? ""),
+      productName, category, unit, price, image,
+      status,
+      assignedAt:  r.assignedAt?.toDate?.() ?? null,
+      expiresAt:   r.expiresAt?.toDate?.()  ?? null,
+    });
+  }));
+  return rows.sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0));
 }
 
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */

@@ -1,19 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Check, Loader2, PackagePlus, Trash2, X } from "lucide-react";
-import {
-  bulkAssignProductsToRetailer,
-  removeProductAssignment,
-} from "../../_lib/product-assignment-firestore";
-import { canAssignSeat } from "../../_lib/subscriptions-firestore";
+import { Check, CheckSquare, Loader2, PackagePlus, Square, X } from "lucide-react";
+import { assignProductToRetailer } from "../../_lib/product-assignment-firestore";
+import { canAssignSeat, getAvailableSeats } from "../../_lib/subscriptions-firestore";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
 
 type AssignProductModalProps = {
   manufacturerId: string;
-  manufacturerName: string;
   retailer: ManufacturerRetailerRow;
   products: MarketplaceProduct[];
   subs: Subscription[];
@@ -24,7 +20,6 @@ type AssignProductModalProps = {
 
 export function AssignProductModal({
   manufacturerId,
-  manufacturerName,
   retailer,
   products,
   subs,
@@ -32,98 +27,81 @@ export function AssignProductModal({
   onAssigned,
   onClose,
 }: AssignProductModalProps) {
-  // Active listings for this retailer keyed by manufacturerProductId
-  const activeListingsForRetailer = seatListings.filter(
-    (l) => l.retailerDocId === retailer.retailerDocId && l.status === "active",
-  );
-  const listingIdByMfrProductId = new Map(
-    activeListingsForRetailer
-      .filter((l): l is typeof l & { manufacturerProductId: string } => !!l.manufacturerProductId)
-      .map((l) => [l.manufacturerProductId, l.id]),
-  );
-  const assignedMfrProductIds = new Set(listingIdByMfrProductId.keys());
-
-  // Multi-select: set of newly-selected product IDs (excludes already-assigned)
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [submitting, setSubmitting] = useState(false);
-  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [submitting,  setSubmitting]  = useState(false);
+  const [progress,    setProgress]    = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const hasSeats = canAssignSeat(subs, seatListings);
+  const availableSeats = getAvailableSeats(subs, seatListings);
+
+  // Products already actively assigned to this retailer (pre-signup safe: keyed by retailerDocId)
+  const assignedProductIds = new Set(
+    seatListings
+      .filter((l) => l.retailerDocId === retailer.retailerDocId && l.status === "active")
+      .map((l) => l.productId),
+  );
 
   const manufacturerProducts = products.filter(
     (p) => p.ownerId === manufacturerId && p.ownerType === "manufacturer",
   );
 
-  const toggleSelect = (productId: string) => {
-    setSelected((prev) => {
+  // Assignable = not yet assigned
+  const assignable = manufacturerProducts.filter((p) => !assignedProductIds.has(p.id));
+
+  const toggle = (id: string) => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(productId)) {
-        next.delete(productId);
-      } else {
-        next.add(productId);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  const handleAssign = async () => {
-    if (selected.size === 0) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await bulkAssignProductsToRetailer({
-        manufacturerId,
-        retailerDocId: retailer.retailerDocId,
-        retailerId: retailer.retailerId || undefined,
-        productIds: Array.from(selected),
-      });
-
-      // Fire-and-forget: notify retailer by email about the new product assignment
-      const retailerEmail = retailer.retailerEmail?.trim().toLowerCase();
-      if (retailerEmail) {
-        const assignedProduct = manufacturerProducts.find((p) => p.id === selectedProductId);
-        fetch("/api/email/product-assigned", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            retailerEmail,
-            shopName: retailer.shopName || retailer.ownerName,
-            productName: assignedProduct?.name ?? "a new product",
-            manufacturerName,
-            signupLink: process.env.NEXT_PUBLIC_BASE_URL ?? "/",
-          }),
-        }).catch(() => {/* email failure is non-fatal */});
-      }
-
-      await onAssigned();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to assign products.");
-      setSubmitting(false);
+  const toggleAll = () => {
+    if (selectedIds.size === assignable.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(assignable.map((p) => p.id)));
     }
   };
 
-  const handleRemove = async (productId: string) => {
-    const listingId = listingIdByMfrProductId.get(productId);
-    if (!listingId) return;
-    setRemoving(true);
+  const exceedsSeats = selectedIds.size > availableSeats;
+
+  const handleAssign = async () => {
+    if (selectedIds.size === 0) return;
+    if (exceedsSeats) {
+      setError(`Only ${availableSeats} seat${availableSeats !== 1 ? "s" : ""} available. Deselect ${selectedIds.size - availableSeats} product${selectedIds.size - availableSeats !== 1 ? "s" : ""}.`);
+      return;
+    }
     setError(null);
+    setSubmitting(true);
+    const ids = Array.from(selectedIds);
+    setProgress({ done: 0, total: ids.length });
     try {
-      await removeProductAssignment(listingId);
+      for (let i = 0; i < ids.length; i++) {
+        await assignProductToRetailer({
+          manufacturerId,
+          retailerDocId: retailer.retailerDocId,
+          retailerId: retailer.retailerId || undefined,
+          productId: ids[i]!,
+        });
+        setProgress({ done: i + 1, total: ids.length });
+      }
       await onAssigned();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove listing.");
-      setRemoving(false);
-      setConfirmRemoveId(null);
+      setError(e instanceof Error ? e.message : "Failed to assign product.");
+      setSubmitting(false);
+      setProgress(null);
     }
   };
 
   const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
+    if (e.target === e.currentTarget && !submitting) onClose();
   };
 
-  const newAssignCount = selected.size;
+  const allSelected = assignable.length > 0 && selectedIds.size === assignable.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
 
   return (
     <div
@@ -142,15 +120,16 @@ export function AssignProductModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container"
+            disabled={submitting}
+            className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container disabled:opacity-60"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Body */}
-        {!hasSeats && assignedMfrProductIds.size === 0 ? (
+        {/* Content */}
+        {!hasSeats ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <div className="rounded-full bg-harvest/10 p-3">
               <PackagePlus className="h-6 w-6 text-harvest" />
@@ -183,136 +162,93 @@ export function AssignProductModal({
               </div>
             ) : null}
 
-            <p className="px-5 pt-4 pb-2 text-xs font-medium text-on-surface-variant">
-              Select products to assign · 1 seat per product per month
-              {newAssignCount > 0 ? (
-                <span className="ml-1 font-semibold text-primary">
-                  ({newAssignCount} selected)
-                </span>
-              ) : null}
-            </p>
+            {/* Info row + select-all */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-2">
+              <p className="text-xs font-medium text-on-surface-variant">
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} selected · ${selectedIds.size} seat${selectedIds.size !== 1 ? "s" : ""} will be consumed`
+                  : `Select products to assign · 1 seat per product · ${availableSeats} seat${availableSeats !== 1 ? "s" : ""} available`}
+              </p>
+              {assignable.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  disabled={submitting}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5 disabled:opacity-60"
+                >
+                  {allSelected
+                    ? <CheckSquare className="h-3.5 w-3.5" />
+                    : someSelected
+                      ? <CheckSquare className="h-3.5 w-3.5 opacity-50" />
+                      : <Square className="h-3.5 w-3.5" />}
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+              )}
+            </div>
+
+            {/* Seat warning */}
+            {exceedsSeats && (
+              <div className="mx-5 mb-2 rounded-xl border border-harvest/30 bg-harvest/10 px-3 py-2 text-xs font-medium text-harvest">
+                Only {availableSeats} seat{availableSeats !== 1 ? "s" : ""} available — deselect {selectedIds.size - availableSeats} product{selectedIds.size - availableSeats !== 1 ? "s" : ""} to continue.
+              </div>
+            )}
 
             <ul className="flex-1 overflow-y-auto divide-y divide-outline-variant/20 px-2 pb-2">
               {manufacturerProducts.map((product) => {
-                const isAssigned = assignedMfrProductIds.has(product.id);
-                const isSelected = selected.has(product.id);
-                const isConfirmingRemove = confirmRemoveId === product.id;
-
-                const thumb = product.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
-                  />
-                ) : (
-                  <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
-                    <PackagePlus className="h-5 w-5" />
-                  </div>
-                );
-
-                // Already-assigned row: shows remove action
-                if (isAssigned) {
-                  return (
-                    <li key={product.id} className="px-3 py-3">
-                      <div className="flex items-center gap-3">
-                        {thumb}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-on-surface truncate">
-                            {product.name}
-                          </p>
-                          <p className="text-xs text-on-surface-variant">
-                            {product.category}
-                            {product.price ? ` · ₹${product.price}` : ""}
-                          </p>
-                        </div>
-
-                        {isConfirmingRemove ? (
-                          <div className="flex items-center gap-1 shrink-0 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
-                            <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-                            <span className="text-xs font-medium text-red-700">Free seat?</span>
-                            <button
-                              type="button"
-                              disabled={removing}
-                              onClick={() => handleRemove(product.id)}
-                              className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
-                            >
-                              {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                              {removing ? "Removing…" : "Confirm"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={removing}
-                              onClick={() => setConfirmRemoveId(null)}
-                              className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                              Assigned
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmRemoveId(product.id)}
-                              disabled={submitting || removing}
-                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Remove
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  );
-                }
-
-                // Unassigned row: multi-select checkbox
+                const alreadyAssigned = assignedProductIds.has(product.id);
+                const selected = selectedIds.has(product.id);
                 return (
                   <li key={product.id}>
                     <button
                       type="button"
-                      disabled={submitting || (!hasSeats && !isSelected)}
-                      onClick={() => toggleSelect(product.id)}
+                      disabled={alreadyAssigned || submitting}
+                      onClick={() => !alreadyAssigned && toggle(product.id)}
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-                        isSelected
-                          ? "bg-primary/10 ring-1 ring-primary/30"
-                          : !hasSeats
-                            ? "opacity-40 cursor-not-allowed"
+                        alreadyAssigned
+                          ? "opacity-40 cursor-not-allowed"
+                          : selected
+                            ? "bg-primary/10 ring-1 ring-primary/30"
                             : "hover:bg-surface-container",
                       ].join(" ")}
                     >
-                      {thumb}
+                      {product.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
+                          <PackagePlus className="h-5 w-5" />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-on-surface truncate">
-                          {product.name}
-                        </p>
+                        <p className="text-sm font-medium text-on-surface truncate">{product.name}</p>
                         <p className="text-xs text-on-surface-variant">
                           {product.category}
                           {product.price ? ` · ₹${product.price}` : ""}
                         </p>
                       </div>
-                      <span
-                        className={[
-                          "shrink-0 h-4 w-4 rounded flex items-center justify-center border-2 transition-colors",
-                          isSelected
-                            ? "bg-primary border-primary"
-                            : "border-outline-variant/40",
-                        ].join(" ")}
-                      >
-                        {isSelected ? <Check className="h-3 w-3 text-white" /> : null}
-                      </span>
+                      {alreadyAssigned ? (
+                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
+                          Assigned
+                        </span>
+                      ) : selected ? (
+                        <span className="shrink-0 h-5 w-5 rounded-md bg-primary flex items-center justify-center">
+                          <Check className="h-3 w-3 text-white" />
+                        </span>
+                      ) : (
+                        <span className="shrink-0 h-5 w-5 rounded-md border-2 border-outline-variant/40" />
+                      )}
                     </button>
                   </li>
                 );
               })}
             </ul>
 
-            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0">
+            <div className="flex items-center justify-between gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
@@ -324,18 +260,20 @@ export function AssignProductModal({
               <button
                 type="button"
                 onClick={handleAssign}
-                disabled={newAssignCount === 0 || submitting}
+                disabled={selectedIds.size === 0 || submitting || exceedsSeats}
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
               >
-                {submitting ? (
+                {submitting && progress ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Assigning…
+                    Assigning {progress.done}/{progress.total}…
                   </>
                 ) : (
                   <>
                     <PackagePlus className="h-4 w-4" />
-                    Assign {newAssignCount > 0 ? `${newAssignCount} product${newAssignCount > 1 ? "s" : ""}` : "Products"}
+                    {selectedIds.size > 0
+                      ? `Assign ${selectedIds.size} Product${selectedIds.size !== 1 ? "s" : ""}`
+                      : "Assign Products"}
                   </>
                 )}
               </button>

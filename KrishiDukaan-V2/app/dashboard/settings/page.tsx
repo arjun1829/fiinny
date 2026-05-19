@@ -1,19 +1,13 @@
-import type { Metadata } from "next";
-import { PageHeader } from "../_components/page-header";
-import { SettingsSections } from "../_components/settings-sections";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Settings",
-};
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default function SettingsPage() {
-  return (
-    <>
-      <PageHeader
-        title="Settings"
-        description="Shop profile, contact channels, address, and business preferences."
-      />
-      <SettingsSections />
-    </>
-  );
+// Settings have been merged into the Profile page (Settings tab).
+export default function SettingsRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/dashboard/profile?tab=settings");
+  }, [router]);
+  return null;
 }

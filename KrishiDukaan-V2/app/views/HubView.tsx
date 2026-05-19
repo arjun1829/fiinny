@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ICONS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchHubs, Hub } from '../firebase';
-import { HelperIcon } from '../../components/helpers';
+import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import { generateHubPDF } from '../utils/pdf-generator';
 
@@ -390,7 +390,8 @@ interface HubViewProps {
 }
 
 export default function HubView({ searchQuery = '', initialHubId = null }: HubViewProps) {
-  const { t } = useI18n();
+  const { t: _t } = useI18n();
+  const t = (key: string, params?: Record<string, string | number>) => _t(key as any, params); // new hub keys not yet in i18n type
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [loading, setLoading] = useState(true);
@@ -562,19 +563,20 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
           { label: t('waterNeeds'), value: selectedHub.waterNeeds || 'Moderate', icon: ICONS.Water, color: 'text-blue-500 bg-blue-50' },
           { label: t('bestSeason'), value: selectedHub.bestSeason || 'Spring', icon: ICONS.Home, color: 'text-green-500 bg-green-50' }
         ].map((stat, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-6 rounded-[32px] border border-surface-container shadow-sm flex flex-col items-center text-center group hover:border-primary transition-all cursor-default"
-          >
-            <div className={`w-12 h-12 rounded-2xl ${stat.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-              <stat.icon className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">{stat.label}</span>
-            <span className="text-sm font-bold text-on-surface line-clamp-1">{stat.value}</span>
-          </motion.div>
+          <HelperTooltip key={i} side="bottom" textKey="hubCropProfile">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.1 }}
+              className="bg-white p-6 rounded-[32px] border border-surface-container shadow-sm flex flex-col items-center text-center group hover:border-primary transition-all cursor-default"
+            >
+              <div className={`w-12 h-12 rounded-2xl ${stat.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                <stat.icon className="w-6 h-6" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">{stat.label}</span>
+              <span className="text-sm font-bold text-on-surface line-clamp-1">{stat.value}</span>
+            </motion.div>
+          </HelperTooltip>
         ))}
       </section>
 
@@ -582,9 +584,18 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
       {selectedHub.growthStages && selectedHub.growthStages.length > 0 && (
         <section className="flex flex-col gap-6">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-black text-on-surface tracking-tight">{t('growthJourney')}</h2>
-              <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest mt-1">{t('fromSeedToHarvest')}</p>
+            <div className="flex items-start gap-2">
+              <div>
+                <h2 className="text-3xl font-black text-on-surface tracking-tight">{t('growthJourney')}</h2>
+                <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest mt-1">{t('fromSeedToHarvest')}</p>
+              </div>
+              <HelperIcon
+                size="sm"
+                variant="ghost"
+                side="right"
+                textKey="hubGrowthJourney"
+                ariaLabel="Growth journey help"
+              />
             </div>
             <div className="hidden md:flex items-center gap-2 bg-secondary/10 text-secondary px-4 py-2 rounded-2xl border border-secondary/20">
               <ICONS.Sprout className="w-4 h-4" />
@@ -616,22 +627,24 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
                     )}
                   </div>
                   
-                  <div className="bg-white p-5 rounded-3xl border border-surface-container shadow-sm group-hover:shadow-ambient transition-shadow w-full flex-grow">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-on-surface text-base">{stage.phase}</h3>
-                      <span className="text-[10px] font-black text-secondary bg-secondary/5 px-2 py-0.5 rounded-full">{stage.duration}</span>
-                    </div>
-                    <p className="text-xs text-on-surface-variant leading-relaxed mb-4">{stage.description}</p>
-                    
-                    <div className="space-y-2">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-primary">{t('recommendedProducts')}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {stage.products.map((p, pi) => (
-                          <span key={pi} className="text-[10px] bg-surface-container px-2 py-1 rounded-lg font-bold text-on-surface">{p}</span>
-                        ))}
+                  <HelperTooltip side="top" textKey="hubGrowthStage">
+                    <div className="bg-white p-5 rounded-3xl border border-surface-container shadow-sm group-hover:shadow-ambient transition-shadow w-full flex-grow cursor-help">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-on-surface text-base">{stage.phase}</h3>
+                        <span className="text-[10px] font-black text-secondary bg-secondary/5 px-2 py-0.5 rounded-full">{stage.duration}</span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant leading-relaxed mb-4">{stage.description}</p>
+
+                      <div className="space-y-2">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-primary">{t('recommendedProducts')}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {stage.products.map((p, pi) => (
+                            <span key={pi} className="text-[10px] bg-surface-container px-2 py-1 rounded-lg font-bold text-on-surface">{p}</span>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </HelperTooltip>
                 </motion.div>
               ))}
             </div>
@@ -644,7 +657,16 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
         {/* Seeds */}
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-surface-container flex flex-col hover:shadow-ambient transition-shadow">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-black text-on-surface tracking-tight">{t('premiumSeeds')}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-black text-on-surface tracking-tight">{t('premiumSeeds')}</h2>
+              <HelperIcon
+                size="xs"
+                variant="ghost"
+                side="right"
+                textKey="hubSeeds"
+                ariaLabel="Premium seeds help"
+              />
+            </div>
             <div className="w-12 h-12 rounded-2xl bg-secondary-container/30 flex items-center justify-center">
               <ICONS.Sprout className="text-secondary w-7 h-7" />
             </div>
@@ -744,9 +766,18 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
           
           <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 bg-red-500/20 text-red-300 px-4 py-2 rounded-2xl border border-red-500/30 mb-6">
-                <ICONS.X className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-widest">{t('proTipAvoid')}</span>
+              <div className="inline-flex items-center gap-2 mb-6">
+                <div className="inline-flex items-center gap-2 bg-red-500/20 text-red-300 px-4 py-2 rounded-2xl border border-red-500/30">
+                  <ICONS.X className="w-4 h-4" />
+                  <span className="text-xs font-black uppercase tracking-widest">{t('proTipAvoid')}</span>
+                </div>
+                <HelperIcon
+                  size="xs"
+                  variant="onDark"
+                  side="right"
+                  textKey="hubMistakes"
+                  ariaLabel="Mistakes to avoid help"
+                />
               </div>
               <h2 className="text-4xl font-black mb-4 tracking-tight">{t('mistakesToAvoid')}</h2>
               <p className="text-surface-container-low/70 leading-relaxed mb-8">
@@ -801,7 +832,9 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
         </div>
         <div className="relative z-10 flex-grow">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full">{t('agronomyAlert')}</span>
+            <HelperTooltip side="bottom" textKey="hubAdvisory">
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full cursor-help">{t('agronomyAlert')}</span>
+            </HelperTooltip>
             <div className="w-2 h-2 rounded-full bg-harvest animate-pulse" />
           </div>
           <h2 className="text-3xl font-black text-on-surface mb-3 tracking-tight">{selectedHub.advisory.title}</h2>
@@ -809,15 +842,19 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
             {selectedHub.advisory.description}
           </p>
           <div className="flex flex-wrap gap-4 mt-8">
-            <button className="flex items-center gap-3 bg-primary text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-primary/30 hover:bg-primary-container hover:scale-105 transition-all uppercase text-xs tracking-widest">
-              <ICONS.Chat className="w-4 h-4" /> {t('consultSpecialist')}
-            </button>
-            <button 
-              onClick={() => selectedHub && generateHubPDF(selectedHub)}
-              className="flex items-center gap-3 bg-white text-on-surface font-black px-8 py-4 rounded-2xl border border-surface-container hover:bg-surface-container transition-all uppercase text-xs tracking-widest"
-            >
-              {t('downloadGuide')}
-            </button>
+            <HelperTooltip side="top" textKey="hubConsult">
+              <button className="flex items-center gap-3 bg-primary text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-primary/30 hover:bg-primary-container hover:scale-105 transition-all uppercase text-xs tracking-widest">
+                <ICONS.Chat className="w-4 h-4" /> {t('consultSpecialist')}
+              </button>
+            </HelperTooltip>
+            <HelperTooltip side="top" textKey="hubDownloadGuide">
+              <button
+                onClick={() => selectedHub && generateHubPDF(selectedHub)}
+                className="flex items-center gap-3 bg-white text-on-surface font-black px-8 py-4 rounded-2xl border border-surface-container hover:bg-surface-container transition-all uppercase text-xs tracking-widest"
+              >
+                {t('downloadGuide')}
+              </button>
+            </HelperTooltip>
           </div>
         </div>
       </section>
@@ -825,7 +862,16 @@ export default function HubView({ searchQuery = '', initialHubId = null }: HubVi
       {/* Expert Wisdom / FAQ */}
       <section className="bg-white rounded-[40px] border border-surface-container p-8 md:p-12">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-black text-on-surface tracking-tight mb-2">{t('farmersWisdom')}</h2>
+          <div className="inline-flex items-center gap-2">
+            <h2 className="text-3xl font-black text-on-surface tracking-tight mb-2">{t('farmersWisdom')}</h2>
+            <HelperIcon
+              size="sm"
+              variant="ghost"
+              side="right"
+              textKey="hubFaq"
+              ariaLabel="Farmer's wisdom help"
+            />
+          </div>
           <p className="text-on-surface-variant text-sm font-bold uppercase tracking-widest">{t('essentialKnowledge').replace('{crop}', selectedHub.name)}</p>
         </div>
         

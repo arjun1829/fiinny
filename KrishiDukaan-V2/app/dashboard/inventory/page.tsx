@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -11,20 +11,19 @@ import { AddProductInventoryForm } from "../_components/add-product-inventory-fo
 import {
   fetchRetailerInventoryRows,
   fetchManufacturerCatalogueRows,
-  activateProduct,
-  deactivateProduct,
-  deleteProduct,
 } from "../_lib/inventory-firestore";
 import {
   fetchSubscriptions,
   fetchSeatListingsForOwner,
   computeSeatStats,
 } from "../_lib/subscriptions-firestore";
+import { acceptManufacturerInvite } from "../../lib/invite/invite-acceptance-service";
 import type { InventoryRow, ManufacturerProductRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { PlusCircle, Zap } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, PlusCircle, Zap } from "lucide-react";
 import Link from "next/link";
+import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,8 +55,15 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
   return (
     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 min-w-[180px]">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold uppercase tracking-wider text-primary">
+        <span className="text-xs font-bold uppercase tracking-wider text-primary inline-flex items-center gap-1">
           Listing Seats
+          <HelperIcon
+            size="xs"
+            variant="ghost"
+            side="bottom"
+            textKey="dashSeatInfo"
+            ariaLabel="Listing seats help"
+          />
         </span>
         <span
           className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
@@ -84,14 +90,94 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
           <Zap className="w-3 h-3" /> {stats.expiringSoon} sub expiring soon
         </p>
       )}
-      <Link
-        href="/dashboard/upgrade"
-        className="mt-3 flex items-center justify-center gap-1.5 w-full py-1.5 bg-white border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/5 transition-colors"
-      >
-        <PlusCircle className="w-3 h-3" />
-        Buy More Seats
-      </Link>
+      <HelperTooltip side="top" textKey="dashSeatBuyMore">
+        <Link
+          href="/dashboard/upgrade"
+          className="mt-3 flex items-center justify-center gap-1.5 w-full py-1.5 bg-white border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary/5 transition-colors"
+        >
+          <PlusCircle className="w-3 h-3" />
+          Buy More Seats
+        </Link>
+      </HelperTooltip>
     </div>
+  );
+}
+
+// ─── Invite code sync card (retailer only) ────────────────────────────────────
+
+function InviteCodeSync({ uid, onSynced }: { uid: string; onSynced: () => void }) {
+  const [code, setCode] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSync = async () => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) { inputRef.current?.focus(); return; }
+    setSyncing(true);
+    setStatus(null);
+    try {
+      const result = await acceptManufacturerInvite({ uid, inviteCode: trimmed });
+      if (result.ok) {
+        if (result.backfillError) {
+          // Invite linked but product sync had an issue — show the exact reason
+          setStatus({ type: "error", message: `Linked, but sync failed: ${result.backfillError}` });
+        } else {
+          setStatus({ type: "success", message: result.alreadyActive ? "Already linked — products refreshed!" : "Invite accepted! Products synced." });
+          setCode("");
+        }
+        // Refresh inventory regardless — products may already be correct
+        onSynced();
+      } else {
+        setStatus({ type: "error", message: (result as { ok: false; message: string }).message });
+      }
+    } catch (e) {
+      setStatus({ type: "error", message: e instanceof Error ? e.message : "Failed to sync. Try again." });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <section className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <KeyRound className="h-4 w-4 text-primary shrink-0" />
+        <h2 className="text-sm font-bold text-on-surface">Have an invite code?</h2>
+      </div>
+      <p className="text-xs text-on-surface-variant mb-4">
+        Enter the code your manufacturer gave you to instantly link your account and pull all assigned products.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && handleSync()}
+          placeholder="e.g. KD-ABCD1234"
+          maxLength={20}
+          className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm font-mono font-bold tracking-widest text-on-surface outline-none ring-primary/30 focus:ring-2 w-48 uppercase"
+          disabled={syncing}
+        />
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing || !code.trim()}
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60"
+        >
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+          {syncing ? "Syncing…" : "Sync products"}
+        </button>
+      </div>
+      {status && (
+        <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${
+          status.type === "success" ? "bg-primary/10 text-primary border border-primary/20" : "bg-red-50 text-red-700 border border-red-200"
+        }`}>
+          {status.type === "success" && <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+          {status.message}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -178,56 +264,6 @@ export default function InventoryPage() {
     if (userId) await load(userId, role);
   }, [userId, role, load]);
 
-  // ─── Product lifecycle handlers ───────────────────────────────────────────
-
-  // Manufacturer: toggle active state on a catalogue product
-  const handleMfrToggleActive = useCallback(
-    async (productId: string, isActive: boolean) => {
-      if (!userId) return;
-      if (isActive) {
-        await deactivateProduct(productId, userId);
-      } else {
-        await activateProduct(productId, userId, "manufacturer");
-      }
-      await refresh();
-    },
-    [userId, refresh],
-  );
-
-  // Manufacturer: hard-delete a catalogue product
-  const handleMfrDelete = useCallback(
-    async (productId: string) => {
-      if (!userId) return;
-      await deleteProduct(productId, userId);
-      await refresh();
-    },
-    [userId, refresh],
-  );
-
-  // Retailer: toggle active state (own products only — assigned products not toggleable)
-  const handleRetailerToggleActive = useCallback(
-    async (productId: string, inventoryId: string, isActive: boolean) => {
-      if (!userId) return;
-      if (isActive) {
-        await deactivateProduct(productId, userId, inventoryId);
-      } else {
-        await activateProduct(productId, userId, "retailer", inventoryId);
-      }
-      await refresh();
-    },
-    [userId, refresh],
-  );
-
-  // Retailer: hard-delete own product + inventory record
-  const handleRetailerDelete = useCallback(
-    async (productId: string, inventoryId: string) => {
-      if (!userId) return;
-      await deleteProduct(productId, userId, inventoryId);
-      await refresh();
-    },
-    [userId, refresh],
-  );
-
   // ─── Auth states ──────────────────────────────────────────────────────────
 
   if (!authReady) {
@@ -241,7 +277,7 @@ export default function InventoryPage() {
   if (!userId) {
     return (
       <>
-        <PageHeader title="Inventory" description="Sign in to manage your inventory." />
+        <PageHeader title="Inventory" description="Sign in to manage your inventory." helperKey="dashInventory" />
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           You are not signed in.
         </p>
@@ -262,6 +298,7 @@ export default function InventoryPage() {
               ? "Manage your product catalogue. Products are visible to retailers you assign them to."
               : "Your store's stock — own products and manufacturer-assigned items."
           }
+          helperKey="dashInventory"
         />
         <SeatInfoCard stats={seatStats} />
       </div>
@@ -272,15 +309,18 @@ export default function InventoryPage() {
         </div>
       ) : null}
 
-      {/* Retailer-only: health cards */}
-      {!isManufacturer && (
-        <InventoryHealthCards
-          inStock={health.inStock}
-          lowStock={health.lowStock}
-          outOfStock={health.outOfStock}
-          score={health.score}
-          label={health.label}
-        />
+      {/* Retailer-only: invite code sync + health cards */}
+      {!isManufacturer && userId && (
+        <>
+          <InviteCodeSync uid={userId} onSynced={refresh} />
+          <InventoryHealthCards
+            inStock={health.inStock}
+            lowStock={health.lowStock}
+            outOfStock={health.outOfStock}
+            score={health.score}
+            label={health.label}
+          />
+        </>
       )}
 
       {/* Product table */}
@@ -299,18 +339,9 @@ export default function InventoryPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
           ) : isManufacturer ? (
-            <ManufacturerCatalogueTable
-              rows={catalogueRows}
-              onToggleActive={handleMfrToggleActive}
-              onDelete={handleMfrDelete}
-            />
+            <ManufacturerCatalogueTable rows={catalogueRows} onRefresh={refresh} />
           ) : (
-            <InventoryManagementTable
-              rows={retailerRows}
-              onUpdated={refresh}
-              onToggleActive={handleRetailerToggleActive}
-              onDelete={handleRetailerDelete}
-            />
+            <InventoryManagementTable rows={retailerRows} onUpdated={refresh} />
           )}
         </div>
       </section>
@@ -328,19 +359,6 @@ export default function InventoryPage() {
         </section>
       )}
 
-      {/* Retailer: show upgrade CTA if no seats */}
-      {!isManufacturer && seatStats.available === 0 && seatStats.totalPurchased === 0 && (
-        <section className="mt-8">
-          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
-            <p className="text-sm font-semibold text-on-surface mb-1">
-              Products are assigned to your store by manufacturers.
-            </p>
-            <p className="text-xs text-on-surface-variant mb-4">
-              Contact your manufacturer partner to assign products to your account.
-            </p>
-          </div>
-        </section>
-      )}
     </>
   );
 }

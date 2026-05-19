@@ -192,9 +192,23 @@ export default function ProductDetailView({
                         </div>
                         <div className="flex gap-2">
                           <HelperTooltip side="top" textKey="storeCallAction">
-                            <button className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5">
-                              <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
-                            </button>
+                            {(store as any).phone ? (
+                              <a
+                                href={`tel:${(store as any).phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="w-full border border-outline-variant text-on-surface-variant py-2.5 rounded-xl text-xs font-black uppercase tracking-widest opacity-60 cursor-not-allowed flex items-center justify-center gap-1.5"
+                              >
+                                <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
+                              </button>
+                            )}
                           </HelperTooltip>
                         </div>
                       </div>

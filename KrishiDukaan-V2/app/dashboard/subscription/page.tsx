@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { CreditCard, RefreshCw } from "lucide-react";
-import { auth, getUserProfile } from "../../firebase";
+import { AlertTriangle, CheckSquare, ChevronLeft, ChevronRight, CreditCard, Filter, Loader2, RefreshCw, Search, Square, Trash2, X } from "lucide-react";
+import { collection, documentId, getDocs, query, where } from "firebase/firestore";
+import { auth, db, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import {
   computeSeatStats,
@@ -16,9 +17,11 @@ import {
   isListingActive,
   isSubscriptionActive,
 } from "../_lib/subscriptions-firestore";
-import { fetchProductNames } from "../_lib/inventory-firestore";
+import { removeProductAssignment } from "../_lib/product-assignment-firestore";
 import { fetchManufacturerRetailers } from "../_lib/manufacturer-retailers-firestore";
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
+import { HelperIcon, HelperTooltip } from "../../../components/helpers";
+import { HelperTextKey } from "../../i18n/helperTexts";
 
 type Role = "manufacturer" | "retailer";
 type AccessState = "checking" | "ready" | "denied";
@@ -28,15 +31,28 @@ function SeatStatTile({
   value,
   sub,
   highlight,
+  helperKey,
 }: {
   label: string;
   value: number | string;
   sub?: string;
   highlight?: "primary" | "harvest";
+  helperKey?: HelperTextKey;
 }) {
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-5">
-      <p className="text-sm font-medium text-on-surface-variant">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm font-medium text-on-surface-variant">{label}</p>
+        {helperKey ? (
+          <HelperIcon
+            size="xs"
+            variant="ghost"
+            side="bottom"
+            textKey={helperKey}
+            ariaLabel={`${label} help`}
+          />
+        ) : null}
+      </div>
       <p
         className={[
           "mt-2 text-3xl font-bold tabular-nums",
@@ -62,7 +78,7 @@ function SubStatusBadge({ sub }: { sub: Subscription }) {
       </span>
     );
   }
-  if (isExpiringSoon(sub, 5)) {
+  if (isExpiringSoon(sub, 30)) {
     return (
       <span className="inline-flex items-center rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
         Expiring soon
@@ -99,26 +115,450 @@ function ListingBadge({ listing }: { listing: RetailerSeatListing }) {
   );
 }
 
-function ListingTypeCell({
+function ListingTypeBadge({ type }: { type: RetailerSeatListing["listingType"] }) {
+  return type === "assigned" ? (
+    <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
+      Assigned to retailer
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
+      Own product
+    </span>
+  );
+}
+
+// ─── Advanced listings section ────────────────────────────────────────────────
+
+function ReleaseAction({
   listing,
-  productName,
-  shopName,
+  onReleased,
 }: {
   listing: RetailerSeatListing;
-  productName?: string;
-  shopName?: string;
+  onReleased: (id: string) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [releasing,  setReleasing]  = useState(false);
+
+  if (!isListingActive(listing)) return null;
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1">
+        <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
+        <span className="text-xs font-medium text-red-700">Release?</span>
+        <button type="button" disabled={releasing}
+          onClick={async () => {
+            setReleasing(true);
+            try { await removeProductAssignment(listing.id); onReleased(listing.id); }
+            catch { /* swallow — parent will refresh */ }
+            finally { setReleasing(false); setConfirming(false); }
+          }}
+          className="rounded px-1.5 py-0.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60">
+          {releasing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes"}
+        </button>
+        <button type="button" disabled={releasing} onClick={() => setConfirming(false)}
+          className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60">No</button>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-        {listing.listingType === "assigned"
-          ? `Assigned to: ${shopName || listing.retailerDocId || "retailer"}`
-          : "Own Product"}
-      </span>
-      {productName ? (
-        <p className="mt-0.5 text-xs text-on-surface-variant truncate max-w-[200px]">{productName}</p>
-      ) : null}
-    </div>
+    <button type="button" onClick={() => setConfirming(true)}
+      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+      <Trash2 className="h-3 w-3" /> Release
+    </button>
+  );
+}
+
+const PAGE_SIZE = 20;
+
+function ActiveListingsSection({
+  listings,
+  isManufacturer,
+  retailerMap,
+  productMap,
+  onRefresh,
+}: {
+  listings: RetailerSeatListing[];
+  isManufacturer: boolean;
+  retailerMap: Map<string, string>;
+  productMap: Map<string, { name: string; image: string }>;
+  onRefresh: () => void;
+}) {
+  const [page, setPage] = useState(1);
+  const [search,       setSearch]       = useState("");
+  const [typeFilter,   setTypeFilter]   = useState<"all" | "own" | "assigned">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "released" | "expired">("all");
+  const [shopFilter,   setShopFilter]   = useState("all");
+  const [assignedFrom, setAssignedFrom] = useState("");
+  const [assignedTo,   setAssignedTo]   = useState("");
+  const [expiresFrom,  setExpiresFrom]  = useState("");
+  const [expiresTo,    setExpiresTo]    = useState("");
+  const [showFilters,  setShowFilters]  = useState(false);
+
+  // Multi-select
+  const [selected,     setSelected]     = useState<Set<string>>(new Set());
+  const [bulkReleasing, setBulkReleasing] = useState(false);
+  const [bulkError,    setBulkError]    = useState<string | null>(null);
+
+  // Unique shop names for filter dropdown
+  const shopNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const l of listings) {
+      if (l.listingType === "assigned" && l.retailerDocId) {
+        const name = retailerMap.get(l.retailerDocId);
+        if (name) names.add(name);
+      }
+    }
+    return Array.from(names).sort();
+  }, [listings, retailerMap]);
+
+  const filtered = useMemo(() => {
+    return listings.filter((l) => {
+      if (typeFilter !== "all" && l.listingType !== typeFilter) return false;
+      if (statusFilter === "active"   && !isListingActive(l))    return false;
+      if (statusFilter === "released" && l.status !== "released") return false;
+      if (statusFilter === "expired"  && l.status !== "expired")  return false;
+      if (shopFilter !== "all") {
+        const name = l.retailerDocId ? retailerMap.get(l.retailerDocId) : undefined;
+        if (name !== shopFilter) return false;
+      }
+      if (assignedFrom && l.assignedAt) {
+        if (l.assignedAt.toDate() < new Date(assignedFrom)) return false;
+      }
+      if (assignedTo && l.assignedAt) {
+        if (l.assignedAt.toDate() > new Date(assignedTo + "T23:59:59")) return false;
+      }
+      if (expiresFrom && l.expiresAt) {
+        if (l.expiresAt.toDate() < new Date(expiresFrom)) return false;
+      }
+      if (expiresTo && l.expiresAt) {
+        if (l.expiresAt.toDate() > new Date(expiresTo + "T23:59:59")) return false;
+      }
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const shopName = l.retailerDocId ? (retailerMap.get(l.retailerDocId) ?? "") : "";
+        const hit = l.productId?.toLowerCase().includes(q)
+          || l.listingType.toLowerCase().includes(q)
+          || l.status.toLowerCase().includes(q)
+          || (l.retailerId ?? "").toLowerCase().includes(q)
+          || shopName.toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [listings, typeFilter, statusFilter, shopFilter, assignedFrom, assignedTo, expiresFrom, expiresTo, search, retailerMap]);
+
+  const hasActiveFilters = typeFilter !== "all" || statusFilter !== "all" || shopFilter !== "all"
+    || assignedFrom || assignedTo || expiresFrom || expiresTo || search.trim();
+
+  const clearAll = () => {
+    setSearch(""); setTypeFilter("all"); setStatusFilter("all"); setShopFilter("all");
+    setAssignedFrom(""); setAssignedTo(""); setExpiresFrom(""); setExpiresTo("");
+    setPage(1);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Multi-select helpers
+  const activeFiltered = filtered.filter((l) => isListingActive(l));
+  const allSelected  = activeFiltered.length > 0 && activeFiltered.every((l) => selected.has(l.id));
+  const someSelected = !allSelected && activeFiltered.some((l) => selected.has(l.id));
+
+  const toggleRow = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const toggleAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(activeFiltered.map((l) => l.id)));
+  };
+
+  const handleBulkRelease = async () => {
+    setBulkReleasing(true);
+    setBulkError(null);
+    const ids = Array.from(selected);
+    try {
+      await Promise.all(ids.map((id) => removeProductAssignment(id)));
+      setSelected(new Set());
+      onRefresh();
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : "Some releases failed.");
+    } finally {
+      setBulkReleasing(false);
+    }
+  };
+
+  const handleRowReleased = () => {
+    onRefresh();
+  };
+
+  const selectedCount = Array.from(selected).filter((id) => listings.some((l) => l.id === id)).length;
+
+  return (
+    <section aria-label="Your seat listings" className="mb-8">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-on-surface inline-flex items-center gap-1.5">
+            Active listings
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="dashActiveListings" ariaLabel="Active listings help" />
+          </h2>
+          <p className="text-sm text-on-surface-variant">
+            Each row consumes one seat from your subscription.
+            {isManufacturer
+              ? " Includes your own products and products you've assigned to retailers."
+              : " Your own products that consume your subscription seats."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-on-surface-variant">{filtered.length} of {listings.length} listings</span>
+          {totalPages > 1 && (
+            <span className="text-xs text-on-surface-variant">· Page {page}/{totalPages}</span>
+          )}
+          <button type="button" onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
+              showFilters || hasActiveFilters
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/30 hover:text-primary"
+            }`}>
+            <Filter className="h-3.5 w-3.5" />
+            Filters {hasActiveFilters ? "•" : ""}
+          </button>
+          {hasActiveFilters && (
+            <button type="button" onClick={clearAll}
+              className="flex items-center gap-1 rounded-xl border border-outline-variant/30 px-2.5 py-1.5 text-xs text-on-surface-variant hover:text-red-500 transition-colors">
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="mb-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+            <span className="font-medium text-on-surface-variant">Search</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant/50" />
+              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-outline-variant/40 bg-white pl-8 pr-3 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Product ID, shop name, status…" />
+            </div>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Type</span>
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
+              <option value="all">All types</option>
+              <option value="own">Own product</option>
+              <option value="assigned">Assigned to retailer</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Status</span>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="released">Released</option>
+              <option value="expired">Expired</option>
+            </select>
+          </label>
+
+          {isManufacturer && shopNames.length > 0 && (
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              <span className="font-medium text-on-surface-variant">Shop / Retailer</span>
+              <select value={shopFilter} onChange={(e) => setShopFilter(e.target.value)}
+                className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
+                <option value="all">All retailers</option>
+                {shopNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          )}
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Assigned from</span>
+            <input type="date" value={assignedFrom} onChange={(e) => setAssignedFrom(e.target.value)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Assigned to</span>
+            <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Expires from</span>
+            <input type="date" value={expiresFrom} onChange={(e) => setExpiresFrom(e.target.value)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Expires to</span>
+            <input type="date" value={expiresTo} onChange={(e) => setExpiresTo(e.target.value)}
+              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          </label>
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {selectedCount > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <span className="text-sm font-semibold text-primary">
+            {selectedCount} listing{selectedCount !== 1 ? "s" : ""} selected
+          </span>
+          <button type="button" onClick={handleBulkRelease} disabled={bulkReleasing}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60">
+            {bulkReleasing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            {bulkReleasing ? "Releasing…" : "Release selected"}
+          </button>
+          <button type="button" onClick={() => setSelected(new Set())}
+            className="rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container">
+            Deselect all
+          </button>
+          {bulkError && <span className="text-xs text-red-600">{bulkError}</span>}
+        </div>
+      )}
+
+      {listings.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-10 text-center">
+          <p className="text-base font-semibold text-on-surface">No listings yet</p>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            {isManufacturer
+              ? "Create products or assign products to retailers to consume seats."
+              : "Add products to your inventory to consume seats."}
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-8 text-center">
+          <p className="text-sm font-semibold text-on-surface">No listings match your filters</p>
+          <button type="button" onClick={clearAll}
+            className="mt-2 text-xs text-primary underline hover:no-underline">Clear all filters</button>
+        </div>
+      ) : (
+        <>
+        <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
+                <tr>
+                  {/* Select-all checkbox */}
+                  <th className="w-10 px-3 py-3">
+                    <button type="button" onClick={toggleAll}
+                      className="text-on-surface-variant hover:text-primary">
+                      {allSelected
+                        ? <CheckSquare className="h-4 w-4 text-primary" />
+                        : someSelected
+                          ? <CheckSquare className="h-4 w-4 text-primary/50" />
+                          : <Square className="h-4 w-4" />}
+                    </button>
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Type</th>
+                  {isManufacturer && <th className="whitespace-nowrap px-4 py-3 font-medium">Shop / Retailer</th>}
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Product</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Assigned</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Expires</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/20">
+                {paginated.map((listing) => {
+                  const active    = isListingActive(listing);
+                  const isChecked = selected.has(listing.id);
+                  const shopName  = listing.retailerDocId ? (retailerMap.get(listing.retailerDocId) ?? "—") : "—";
+                  const product   = productMap.get(listing.productId ?? "");
+                  return (
+                    <tr key={listing.id}
+                      className={[
+                        "transition-colors",
+                        !active ? "opacity-50" : "",
+                        isChecked ? "bg-primary/5" : "hover:bg-surface-container/50",
+                      ].join(" ")}>
+                      <td className="w-10 px-3 py-3">
+                        {active ? (
+                          <button type="button" onClick={() => toggleRow(listing.id)}
+                            className="text-on-surface-variant hover:text-primary">
+                            {isChecked
+                              ? <CheckSquare className="h-4 w-4 text-primary" />
+                              : <Square className="h-4 w-4" />}
+                          </button>
+                        ) : (
+                          <span className="inline-block h-4 w-4" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3"><ListingTypeBadge type={listing.listingType} /></td>
+                      {isManufacturer && (
+                        <td className="px-4 py-3 text-xs text-on-surface-variant max-w-[140px] truncate">
+                          {listing.listingType === "assigned" ? shopName : <span className="italic">—</span>}
+                        </td>
+                      )}
+                      {/* Product name + image */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 min-w-[140px] max-w-[200px]">
+                          {product?.image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={product.image} alt="" className="h-8 w-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                          ) : (
+                            <span className="h-8 w-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0 text-on-surface-variant/30 text-xs">🌿</span>
+                          )}
+                          <span className="text-xs font-medium text-on-surface truncate">
+                            {product?.name || <span className="font-mono text-on-surface-variant">{listing.productId?.slice(0, 8) ?? "—"}</span>}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3"><ListingBadge listing={listing} /></td>
+                      <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant text-xs">
+                        {listing.assignedAt ? listing.assignedAt.toDate().toLocaleDateString(undefined, { dateStyle: "medium" }) : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant text-xs">
+                        {listing.expiresAt ? listing.expiresAt.toDate().toLocaleDateString(undefined, { dateStyle: "medium" }) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <ReleaseAction listing={listing} onReleased={handleRowReleased} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-on-surface-variant">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-40">
+                <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button key={p} type="button" onClick={() => setPage(p)}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                    p === page
+                      ? "border-primary bg-primary text-white"
+                      : "border-outline-variant/40 text-on-surface-variant hover:bg-surface-container"
+                  }`}>
+                  {p}
+                </button>
+              ))}
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-40">
+                Next <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -129,14 +569,11 @@ export default function SubscriptionPage() {
   const [role, setRole] = useState<Role>("retailer");
 
   const [subs, setSubs] = useState<Subscription[]>([]);
-  // Listings owned by this user (their subscription pays)
   const [ownListings, setOwnListings] = useState<RetailerSeatListing[]>([]);
-  // Listings assigned TO this retailer by manufacturers (informational only)
   const [assignedToMe, setAssignedToMe] = useState<RetailerSeatListing[]>([]);
   const [stats, setStats] = useState<SeatStats | null>(null);
-  // Enrichment maps for the listings table
-  const [productNamesMap, setProductNamesMap] = useState<Map<string, string>>(new Map());
-  const [shopNamesMap, setShopNamesMap] = useState<Map<string, string>>(new Map());
+  const [retailerMap, setRetailerMap] = useState<Map<string, string>>(new Map());
+  const [productMap, setProductMap] = useState<Map<string, { name: string; image: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,7 +581,6 @@ export default function SubscriptionPage() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch subscriptions + own listings (ownerId = userId) for everyone
       const [subsData, ownData] = await Promise.all([
         fetchSubscriptions(userId),
         fetchSeatListingsForOwner(userId),
@@ -153,22 +589,39 @@ export default function SubscriptionPage() {
       setOwnListings(ownData);
       setStats(computeSeatStats(subsData, ownData));
 
-      // Enrich listings with product names
-      const productIds = ownData.map((l) => l.productId).filter(Boolean);
-      const namesMap = await fetchProductNames(productIds);
-      setProductNamesMap(namesMap);
-
-      // Retailers also see what manufacturers have assigned to them
       if (userRole === "retailer") {
         const assigned = await fetchSeatListingsForRetailer(userId);
         setAssignedToMe(assigned);
       } else {
         setAssignedToMe([]);
-        // For manufacturers: build retailerDocId → shopName map
-        const retailers = await fetchManufacturerRetailers(userId);
-        const shopMap = new Map(retailers.map((r) => [r.retailerDocId, r.shopName || r.ownerName]));
-        setShopNamesMap(shopMap);
+        // Build retailerDocId → shopName map for the listings table
+        try {
+          const retailers = await fetchManufacturerRetailers(userId);
+          setRetailerMap(new Map(retailers.map((r) => [r.retailerDocId, r.shopName || r.ownerName])));
+        } catch { /* non-critical, table degrades gracefully */ }
       }
+
+      // Fetch product name + image for all unique productIds in listings
+      try {
+        const allListings = [...ownData, ...(userRole === "retailer" ? [] : [])];
+        const productIds = Array.from(new Set(allListings.map((l) => l.productId).filter(Boolean))) as string[];
+        if (productIds.length > 0) {
+          const CHUNK = 30; // Firestore `in` limit
+          const pMap = new Map<string, { name: string; image: string }>();
+          for (let i = 0; i < productIds.length; i += CHUNK) {
+            const chunk = productIds.slice(i, i + CHUNK);
+            const snap = await getDocs(query(collection(db, "products"), where(documentId(), "in", chunk)));
+            snap.docs.forEach((d) => {
+              const data = d.data() as Record<string, unknown>;
+              pMap.set(d.id, {
+                name:  String(data.name  ?? ""),
+                image: String(data.image ?? ""),
+              });
+            });
+          }
+          setProductMap(pMap);
+        }
+      } catch { /* non-critical */ }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load subscription data.");
     } finally {
@@ -218,14 +671,17 @@ export default function SubscriptionPage() {
         <PageHeader
           title="Subscription"
           description="1 seat = 1 active product listing. Seats are consumed when you create a product or assign one to a retailer."
+          helperKey="dashSubscription"
         />
-        <a
-          href="/dashboard/upgrade"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all shrink-0"
-        >
-          <CreditCard className="h-4 w-4" />
-          Buy seats
-        </a>
+        <HelperTooltip side="bottom" textKey="dashBuySeats">
+          <a
+            href="/dashboard/upgrade"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all shrink-0"
+          >
+            <CreditCard className="h-4 w-4" />
+            Buy seats
+          </a>
+        </HelperTooltip>
       </div>
 
       {error ? (
@@ -246,12 +702,14 @@ export default function SubscriptionPage() {
               label="Seats purchased"
               value={stats?.totalPurchased ?? 0}
               sub="From active subscriptions"
+              helperKey="dashSeatsPurchased"
             />
             <SeatStatTile
               label="Seats used"
               value={stats?.activeUsed ?? 0}
               highlight="primary"
               sub="Active product listings"
+              helperKey="dashSeatsUsed"
             />
             <SeatStatTile
               label="Available"
@@ -262,19 +720,30 @@ export default function SubscriptionPage() {
                   : undefined
               }
               sub="Ready to use"
+              helperKey="dashSeatsAvailable"
             />
             <SeatStatTile
               label="Expiring soon"
               value={stats?.expiringSoon ?? 0}
               highlight={(stats?.expiringSoon ?? 0) > 0 ? "harvest" : undefined}
-              sub="Subscriptions in 5 days"
+              sub="Subscriptions in 30 days"
+              helperKey="dashSeatsExpiring"
             />
           </div>
 
           {/* ── Subscription history ── */}
           <section aria-label="Subscription history" className="mb-8">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-on-surface">Subscription history</h2>
+              <h2 className="text-base font-semibold text-on-surface inline-flex items-center gap-1.5">
+                Subscription history
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="dashSubHistory"
+                  ariaLabel="Subscription history help"
+                />
+              </h2>
               <button
                 type="button"
                 onClick={() => uid && loadAll(uid, role)}
@@ -334,83 +803,14 @@ export default function SubscriptionPage() {
             )}
           </section>
 
-          {/* ── Active seat listings (own) ── */}
-          <section aria-label="Your seat listings" className="mb-8">
-            <div className="mb-3">
-              <h2 className="text-base font-semibold text-on-surface">
-                Active listings
-              </h2>
-              <p className="text-sm text-on-surface-variant">
-                Each row consumes one seat from your subscription.
-                {isManufacturer
-                  ? " Includes your own products and products you've assigned to retailers."
-                  : " Your own products that consume your subscription seats."}
-              </p>
-            </div>
-
-            {ownListings.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-10 text-center">
-                <p className="text-base font-semibold text-on-surface">No listings yet</p>
-                <p className="mt-1 text-sm text-on-surface-variant">
-                  {isManufacturer
-                    ? "Create products or assign products to retailers to consume seats."
-                    : "Add products to your inventory to consume seats."}
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
-                      <tr>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Type</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Assigned</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Expires</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-outline-variant/20">
-                      {ownListings.map((listing) => (
-                        <tr
-                          key={listing.id}
-                          className={
-                            !isListingActive(listing)
-                              ? "opacity-50 hover:bg-surface-container/50"
-                              : "hover:bg-surface-container/50"
-                          }
-                        >
-                          <td className="px-4 py-3">
-                            <ListingTypeCell
-                              listing={listing}
-                              productName={productNamesMap.get(listing.productId)}
-                              shopName={listing.retailerDocId ? shopNamesMap.get(listing.retailerDocId) : undefined}
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <ListingBadge listing={listing} />
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
-                            {listing.assignedAt
-                              ? listing.assignedAt
-                                  .toDate()
-                                  .toLocaleDateString(undefined, { dateStyle: "medium" })
-                              : "—"}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
-                            {listing.expiresAt
-                              ? listing.expiresAt
-                                  .toDate()
-                                  .toLocaleDateString(undefined, { dateStyle: "medium" })
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
+          {/* ── Active seat listings (own) with advanced search ── */}
+          <ActiveListingsSection
+            listings={ownListings}
+            isManufacturer={isManufacturer}
+            retailerMap={retailerMap}
+            productMap={productMap}
+            onRefresh={() => uid && loadAll(uid, role)}
+          />
 
           {/* ── Products assigned to this retailer by manufacturers ── */}
           {!isManufacturer && assignedToMe.length > 0 ? (

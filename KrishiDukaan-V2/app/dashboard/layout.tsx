@@ -1,6 +1,7 @@
 'use client';
 
 import { DashboardShell } from "./_components/dashboard-shell";
+import { DashboardTour } from "./_components/dashboard-tour";
 import { auth, getUserProfile } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -41,11 +42,12 @@ export default function DashboardLayout({
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" data-tour="dash-shell">
       <Navbar isDashboard={true} />
       <div className="flex-1 flex overflow-hidden">
         <DashboardShell>{children}</DashboardShell>
       </div>
+      <DashboardTour />
     </div>
   );
 }

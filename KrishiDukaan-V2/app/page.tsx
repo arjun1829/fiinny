@@ -299,8 +299,11 @@ export default function App() {
             customerAddress: prev.customerAddress || profileData.address || "",
           }));
 
-          // Paywall logic: if retailer/manufacturer and NOT paid, force subscription view
-          if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid) {
+          // Paywall: only block if not paid AND not an invited retailer.
+          // Invited retailers have isPaid set to true by the backfill; if it hasn't
+          // propagated yet (race), also allow if they have a retailerDocId (invited).
+          const isInvitedRetailer = profileData.role === 'retailer' && !!(profileData as any).retailerDocId;
+          if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
             setCurrentView('subscription');
           }
         }
@@ -338,7 +341,8 @@ export default function App() {
       productCount: profile.productCount || 0
     });
 
-    if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
+    const isInvitedRetailer = profile.role === 'retailer' && !!(profile as any).isPaid;
+    if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
       navigate('subscription', { replace: true, clearInvite: true });
     } else {
       navigate('home', { replace: true, clearInvite: true });

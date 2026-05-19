@@ -19,19 +19,38 @@ export default function LoginView({ onBack, onNavigateToSignup, onSuccess }: Log
   const [error, setError] = useState<string | null>(null);
 
   const normalizePhone = (value: string) => value.replace(/\D/g, "");
-  const customerAuthEmailFromPhone = (value: string) => `customer.${normalizePhone(value)}@krishidukan.local`;
+
+  // Phone is the universal key. Try plain phone-derived email first (new accounts),
+  // then fall back to the old customer-prefixed format, then treat as raw email.
+  const authEmailCandidates = (raw: string): string[] => {
+    const trimmed = raw.trim().toLowerCase();
+    if (trimmed.includes('@')) return [trimmed];
+    const digits = normalizePhone(trimmed);
+    return [
+      `${digits}@krishidukan.local`,          // new universal format (retailers, manufacturers, customers)
+      `customer.${digits}@krishidukan.local`, // legacy customer format
+    ];
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
+
     try {
-      const trimmed = identifier.trim().toLowerCase();
-      const authEmail = trimmed.includes('@') ? trimmed : customerAuthEmailFromPhone(trimmed);
-      const userCredential = await signInWithEmailAndPassword(auth, authEmail, password);
+      const candidates = authEmailCandidates(identifier);
+      let userCredential: any = null;
+      let lastErr: any = null;
+      for (const authEmail of candidates) {
+        try {
+          userCredential = await signInWithEmailAndPassword(auth, authEmail, password);
+          break;
+        } catch (err: any) {
+          lastErr = err;
+        }
+      }
+      if (!userCredential) throw lastErr;
       const user = userCredential.user;
-      
       const profile = await getUserProfile(user.uid);
       if (profile) {
         onSuccess(user, profile);

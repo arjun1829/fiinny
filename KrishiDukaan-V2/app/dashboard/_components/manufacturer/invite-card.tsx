@@ -8,6 +8,7 @@ import {
   buildSignupInviteUrl,
   buildWhatsAppShareUrl,
 } from "../../../lib/invite/invite-utils";
+import { HelperIcon } from "../../../../components/helpers";
 
 type InviteCardProps = {
   inviteCode: string;
@@ -65,7 +66,16 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
         <X className="h-4 w-4" />
       </button>
 
-      <p className="pr-10 text-sm font-semibold text-primary">Retailer added</p>
+      <p className="pr-10 text-sm font-semibold text-primary inline-flex items-center gap-1.5">
+        Retailer added
+        <HelperIcon
+          size="xs"
+          variant="ghost"
+          side="right"
+          textKey="dashRetailerInvite"
+          ariaLabel="Invite link help"
+        />
+      </p>
       <p className="mt-1 text-sm text-on-surface-variant">
         Share this signup link with{" "}
         <span className="font-medium text-on-surface">{shopName || "the retailer"}</span> so they can

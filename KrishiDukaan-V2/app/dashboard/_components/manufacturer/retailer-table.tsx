@@ -5,20 +5,20 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
+  Info,
   Loader2,
   Mail,
   MessageCircle,
   PackagePlus,
-  PowerOff,
-  RefreshCw,
+  Pencil,
   Trash2,
   XCircle,
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
-import type { RetailerSeatListing } from "../../_types/subscriptions";
-import { isListingActive } from "../../_lib/subscriptions-firestore";
 import { cn } from "../../_lib/cn";
+import { HelperTooltip } from "../../../../components/helpers";
 import {
   buildInviteShareMessage,
   buildMailtoInviteUrl,
@@ -28,35 +28,15 @@ import {
 
 type RetailerTableProps = {
   rows: ManufacturerRetailerRow[];
-  seatListings?: RetailerSeatListing[];
   loading?: boolean;
   onRemove?: (row: ManufacturerRetailerRow) => Promise<void>;
   onAssignProduct?: (row: ManufacturerRetailerRow) => void;
-  onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
-  onActivate?: (row: ManufacturerRetailerRow) => void;
+  onEdit?: (row: ManufacturerRetailerRow) => void;
+  onDetails?: (row: ManufacturerRetailerRow) => void;
 };
 
-function NetworkStatusBadge({
-  retailerDocId,
-  seatListings,
-  isManuallyInactive,
-}: {
-  retailerDocId: string;
-  seatListings: RetailerSeatListing[];
-  isManuallyInactive?: boolean;
-}) {
-  if (isManuallyInactive) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-        <PowerOff className="h-3 w-3" />
-        Deactivated
-      </span>
-    );
-  }
-  const hasActive = seatListings.some(
-    (l) => l.retailerDocId === retailerDocId && isListingActive(l),
-  );
-  if (hasActive) {
+function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
+  if (status === "active") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
@@ -64,16 +44,25 @@ function NetworkStatusBadge({
       </span>
     );
   }
+  if (status === "removed") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
+        <XCircle className="h-3 w-3" />
+        Removed
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-      <XCircle className="h-3 w-3" />
-      Inactive
+    <span className="inline-flex items-center gap-1 rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
+      <Clock className="h-3 w-3" />
+      Pending
     </span>
   );
 }
 
 function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   if (row.status === "revoked") {
     return <span className="text-xs text-on-surface-variant">—</span>;
@@ -85,14 +74,20 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   const link = buildSignupInviteUrl(row.inviteCode);
   const message = buildInviteShareMessage(link);
 
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(row.inviteCode);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch { setCopiedCode(false); }
+  };
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch { setCopiedLink(false); }
   };
 
   const whatsappHref = buildWhatsAppShareUrl(message);
@@ -103,90 +98,52 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   });
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        onClick={copyLink}
-        className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
-        Copy link
-      </button>
-      <a
-        href={whatsappHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
-      >
-        <MessageCircle className="h-3.5 w-3.5" />
-        WhatsApp
-      </a>
-      {row.retailerEmail ? (
-        <a
-          href={mailtoHref}
-          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
-        >
-          <Mail className="h-3.5 w-3.5" />
-          Email
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
-function DeactivateAction({
-  row,
-  onDeactivate,
-}: {
-  row: ManufacturerRetailerRow;
-  onDeactivate: (row: ManufacturerRetailerRow) => Promise<void>;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const [deactivating, setDeactivating] = useState(false);
-
-  if (confirming) {
-    return (
-      <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-        <span className="text-xs font-medium text-amber-700">Deactivate?</span>
+    <div className="flex flex-col gap-1.5">
+      {/* Invite code chip */}
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-xs font-bold tracking-widest text-primary bg-primary/10 border border-primary/20 rounded-lg px-2 py-0.5 select-all">
+          {row.inviteCode}
+        </span>
         <button
           type="button"
-          disabled={deactivating}
-          onClick={async () => {
-            setDeactivating(true);
-            try {
-              await onDeactivate(row);
-            } finally {
-              setDeactivating(false);
-              setConfirming(false);
-            }
-          }}
-          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+          onClick={copyCode}
+          title="Copy invite code"
+          className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/40 bg-surface-container-low px-1.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
-          {deactivating ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          {deactivating ? "Deactivating…" : "Confirm"}
-        </button>
-        <button
-          type="button"
-          disabled={deactivating}
-          onClick={() => setConfirming(false)}
-          className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-100 disabled:opacity-60"
-        >
-          Cancel
+          {copiedCode ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
+          {copiedCode ? "Copied!" : "Code"}
         </button>
       </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setConfirming(true)}
-      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
-    >
-      <PowerOff className="h-3.5 w-3.5" />
-      Deactivate
-    </button>
+      {/* Share actions */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={copyLink}
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+        >
+          {copiedLink ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+          Copy link
+        </button>
+        <a
+          href={whatsappHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          WhatsApp
+        </a>
+        {row.retailerEmail ? (
+          <a
+            href={mailtoHref}
+            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email
+          </a>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -250,15 +207,7 @@ function RemoveAction({
   );
 }
 
-export function RetailerTable({
-  rows,
-  seatListings = [],
-  loading,
-  onRemove,
-  onAssignProduct,
-  onDeactivate,
-  onActivate,
-}: RetailerTableProps) {
+export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails }: RetailerTableProps) {
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -278,7 +227,7 @@ export function RetailerTable({
     );
   }
 
-  const hasActions = !!(onRemove || onAssignProduct || onDeactivate || onActivate);
+  const hasActions = !!(onRemove || onAssignProduct || onEdit || onDetails);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -289,7 +238,7 @@ export function RetailerTable({
               <th className="whitespace-nowrap px-4 py-3 font-medium">Shop name</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Owner</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Phone</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">Onboarding</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Invite actions</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Added</th>
               {hasActions ? (
@@ -300,26 +249,16 @@ export function RetailerTable({
           <tbody className="divide-y divide-outline-variant/20">
             {rows.map((row) => {
               const isRevoked = row.status === "revoked";
-              const isManuallyInactive = row.onboardingStatus === "inactive";
-              const hasActiveSeats = seatListings.some(
-                (l) => l.retailerDocId === row.retailerDocId && isListingActive(l),
-              );
-
-              // Assign: available for all non-revoked retailers (active or inactive)
+              // Seat assignment doesn't require retailer login — only that
+              // the retailer is linked to this manufacturer and not revoked.
               const canAssign = onAssignProduct && !isRevoked;
-              // Deactivate: only when active (has seats) and not already inactive
-              const canDeactivate =
-                onDeactivate && !isRevoked && !isManuallyInactive && hasActiveSeats;
-              // Activate: opens assign modal so manufacturer assigns at least one product
-              const canActivate = onActivate && isManuallyInactive;
 
               return (
                 <tr
                   key={row.id}
                   className={cn(
-                    "hover:bg-surface-container/50 transition-opacity",
+                    "hover:bg-surface-container/50",
                     isRevoked && "opacity-50",
-                    isManuallyInactive && !isRevoked && "opacity-60",
                   )}
                 >
                   <td className="px-4 py-3 font-medium text-on-surface">
@@ -330,11 +269,7 @@ export function RetailerTable({
                     {row.retailerPhone || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <NetworkStatusBadge
-                      retailerDocId={row.retailerDocId}
-                      seatListings={seatListings}
-                      isManuallyInactive={isManuallyInactive}
-                    />
+                    <OnboardingBadge status={row.onboardingStatus} />
                   </td>
                   <td className="px-4 py-3">
                     <RowInviteActions row={row} />
@@ -345,38 +280,31 @@ export function RetailerTable({
                   {hasActions ? (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {/* Reactivate: shown only for manually-deactivated retailers */}
-                        {canActivate ? (
-                          <button
-                            type="button"
-                            onClick={() => onActivate(row)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            Reactivate
+                        {/* Details */}
+                        {onDetails && (
+                          <button type="button" onClick={() => onDetails(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                            <Info className="h-3.5 w-3.5" /> Details
                           </button>
-                        ) : null}
-
-                        {/* Assign product: shown for non-revoked, non-deactivated retailers */}
-                        {canAssign && !isManuallyInactive ? (
-                          <button
-                            type="button"
-                            onClick={() => onAssignProduct(row)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                          >
-                            <PackagePlus className="h-3.5 w-3.5" />
-                            Assign product
+                        )}
+                        {/* Edit */}
+                        {onEdit && !isRevoked && (
+                          <button type="button" onClick={() => onEdit(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                            <Pencil className="h-3.5 w-3.5" /> Edit
                           </button>
+                        )}
+                        {/* Assign product */}
+                        {canAssign ? (
+                          <HelperTooltip side="left" textKey="dashAssignProduct">
+                            <button type="button" onClick={() => onAssignProduct(row)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                              <PackagePlus className="h-3.5 w-3.5" /> Assign product
+                            </button>
+                          </HelperTooltip>
                         ) : null}
-
-                        {/* Deactivate: only when retailer has active seat listings */}
-                        {canDeactivate ? (
-                          <DeactivateAction row={row} onDeactivate={onDeactivate} />
-                        ) : null}
-
-                        {onRemove ? (
-                          <RemoveAction row={row} onRemove={onRemove} />
-                        ) : null}
+                        {/* Remove */}
+                        {onRemove ? <RemoveAction row={row} onRemove={onRemove} /> : null}
                       </div>
                     </td>
                   ) : null}

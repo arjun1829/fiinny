@@ -35,6 +35,29 @@ const emptyAddress: NetworkRetailerAddress = {
   pincode: "",
 };
 
+/**
+ * Parse lat/lng from common Google Maps URL formats:
+ * - https://maps.google.com/?q=18.52,73.85
+ * - https://www.google.com/maps/@18.52,73.85,15z
+ * - https://www.google.com/maps/place/Name/@18.52,73.85,15z
+ * - https://maps.google.com/maps?q=18.52,73.85
+ */
+export function parseGoogleMapsUrl(url: string): { lat: number; lng: number } | null {
+  try {
+    const u = new URL(url);
+    // ?q=lat,lng
+    const q = u.searchParams.get("q");
+    if (q) {
+      const m = q.match(/^(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
+      if (m) return { lat: parseFloat(m[1]!), lng: parseFloat(m[2]!) };
+    }
+    // /@lat,lng,zoom or /@lat,lng,15z
+    const atMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (atMatch) return { lat: parseFloat(atMatch[1]!), lng: parseFloat(atMatch[2]!) };
+  } catch { /* invalid URL */ }
+  return null;
+}
+
 /** Extract structured address fields from a Google Places result. */
 function extractAddressFields(place: {
   formatted_address?: string;
@@ -126,8 +149,8 @@ export function AddRetailerModal({
       autocompleteListenerRef.current = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
-        // Auto-fill shop name from the business name returned by Places
-        if (place.name) setShopName(place.name);
+        // Only auto-fill shop name if the user hasn't typed one yet
+        if (place.name && !shopName.trim()) setShopName(place.name);
         if (place.address_components?.length) {
           const fields = extractAddressFields(
             place as Parameters<typeof extractAddressFields>[0],
@@ -455,6 +478,38 @@ export function AddRetailerModal({
                 <p className="text-xs text-harvest">{mapsError}</p>
               ) : null}
             </div>
+
+            {/* Paste Google Maps link */}
+            <label className={labelCls}>
+              <span className="font-medium text-on-surface">
+                Paste Google Maps link
+                <span className="ml-1 font-normal text-on-surface-variant">— pins location from a shared Maps URL</span>
+              </span>
+              <input
+                type="url"
+                disabled={submitting}
+                placeholder="https://maps.google.com/maps?q=18.52,73.85 or share link…"
+                className={inputCls}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData("text");
+                  const coords = parseGoogleMapsUrl(text);
+                  if (coords) {
+                    e.preventDefault();
+                    setGeo(new GeoPoint(coords.lat, coords.lng));
+                    (e.target as HTMLInputElement).value = text;
+                  }
+                }}
+                onChange={(e) => {
+                  const coords = parseGoogleMapsUrl(e.target.value);
+                  if (coords) setGeo(new GeoPoint(coords.lat, coords.lng));
+                }}
+              />
+              {geo ? (
+                <p className="text-xs text-primary">
+                  Coordinates detected: {geo.latitude.toFixed(5)}, {geo.longitude.toFixed(5)}
+                </p>
+              ) : null}
+            </label>
 
             {geo ? (
               <div className="space-y-2">

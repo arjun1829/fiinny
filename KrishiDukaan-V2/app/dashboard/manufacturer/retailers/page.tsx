@@ -6,15 +6,16 @@ import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { auth, getUserProfile, fetchManufacturerProducts } from "../../../firebase";
 import { PageHeader } from "../../_components/page-header";
+import { HelperIcon, HelperTooltip } from "../../../../components/helpers";
 import { RetailerTable } from "../../_components/manufacturer/retailer-table";
 import { AddRetailerModal } from "../../_components/manufacturer/add-retailer-form";
 import { AssignProductModal } from "../../_components/manufacturer/assign-product-modal";
+import { EditRetailerModal } from "../../_components/manufacturer/edit-retailer-modal";
+import { RetailerDetailsModal } from "../../_components/manufacturer/retailer-details-modal";
 import { InviteCard } from "../../_components/manufacturer/invite-card";
 import {
   fetchManufacturerRetailers,
   removeNetworkRetailer,
-  deactivateNetworkRetailer,
-  reactivateNetworkRetailer,
 } from "../../_lib/manufacturer-retailers-firestore";
 import {
   fetchSubscriptions,
@@ -39,7 +40,6 @@ export default function ManufacturerRetailersPage() {
   const router = useRouter();
   const [access, setAccess] = useState<AccessState>("checking");
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
-  const [manufacturerName, setManufacturerName] = useState<string>("KrishiDukan Manufacturer");
 
   const [rows, setRows] = useState<ManufacturerRetailerRow[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -49,8 +49,10 @@ export default function ManufacturerRetailersPage() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [assignTarget, setAssignTarget] = useState<ManufacturerRetailerRow | null>(null);
+  const [addModalOpen,   setAddModalOpen]   = useState(false);
+  const [assignTarget,   setAssignTarget]   = useState<ManufacturerRetailerRow | null>(null);
+  const [editTarget,     setEditTarget]     = useState<ManufacturerRetailerRow | null>(null);
+  const [detailsTarget,  setDetailsTarget]  = useState<ManufacturerRetailerRow | null>(null);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
   const loadAll = useCallback(async (uid: string) => {
@@ -86,8 +88,6 @@ export default function ManufacturerRetailersPage() {
         const profile = await getUserProfile(user.uid);
         if (profile?.role === "manufacturer") {
           setManufacturerId(user.uid);
-          const name = (profile.shopName || profile.ownerName) as string | undefined;
-          if (name) setManufacturerName(name);
           setAccess("allowed");
           await loadAll(user.uid);
         } else {
@@ -113,37 +113,13 @@ export default function ManufacturerRetailersPage() {
   };
 
   const handleRemove = async (row: ManufacturerRetailerRow) => {
-    if (!manufacturerId) return;
-    await removeNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
-    await loadAll(manufacturerId);
+    await removeNetworkRetailer(row.id, row.retailerDocId);
+    if (manufacturerId) await loadAll(manufacturerId);
   };
 
-  const handleDeactivate = async (row: ManufacturerRetailerRow) => {
-    if (!manufacturerId) return;
-    await deactivateNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
-    await loadAll(manufacturerId);
-  };
-
-  /**
-   * Called after a product is successfully assigned.
-   * If the assign target was manually deactivated, reset it back to active
-   * so the row reflects the new seat listing immediately.
-   */
   const handleAssigned = async () => {
-    if (!manufacturerId) return;
-    if (assignTarget?.onboardingStatus === "inactive") {
-      await reactivateNetworkRetailer(assignTarget.id);
-    }
-    await loadAll(manufacturerId);
+    if (manufacturerId) await loadAll(manufacturerId);
     setAssignTarget(null);
-  };
-
-  /**
-   * Opens the assign-product modal for a deactivated retailer so the
-   * manufacturer can assign at least one product to re-activate them.
-   */
-  const handleActivate = (row: ManufacturerRetailerRow) => {
-    setAssignTarget(row);
   };
 
   if (access === "checking") {
@@ -164,20 +140,30 @@ export default function ManufacturerRetailersPage() {
         <PageHeader
           title="Retailer Network"
           description="Add retailers to your network, then assign your products to them. Each product assignment consumes one seat (1 month validity)."
+          helperKey="dashRetailerNetwork"
         />
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setAddModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all"
-          >
-            <UserPlus className="h-4 w-4" />
-            Add Retailer
-          </button>
+          <HelperTooltip side="bottom" textKey="dashAddRetailer">
+            <button
+              type="button"
+              onClick={() => setAddModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add Retailer
+            </button>
+          </HelperTooltip>
           {totalPurchased > 0 ? (
-            <p className="text-xs text-on-surface-variant">
+            <p className="text-xs text-on-surface-variant inline-flex items-center gap-1">
               {Math.max(0, seatsRemaining)} of {totalPurchased} seat
               {totalPurchased !== 1 ? "s" : ""} remaining
+              <HelperIcon
+                size="xs"
+                variant="ghost"
+                side="bottom"
+                textKey="dashRetailerSeats"
+                ariaLabel="Seats remaining help"
+              />
             </p>
           ) : (
             <p className="text-xs text-harvest">No active subscription</p>
@@ -205,19 +191,17 @@ export default function ManufacturerRetailersPage() {
       <section aria-label="Retailer list">
         <RetailerTable
           rows={rows}
-          seatListings={seatListings}
           loading={listLoading}
           onRemove={handleRemove}
           onAssignProduct={(row) => setAssignTarget(row)}
-          onDeactivate={handleDeactivate}
-          onActivate={handleActivate}
+          onEdit={(row) => setEditTarget(row)}
+          onDetails={(row) => setDetailsTarget(row)}
         />
       </section>
 
       {addModalOpen && manufacturerId ? (
         <AddRetailerModal
           manufacturerId={manufacturerId}
-          manufacturerName={manufacturerName}
           seatsRemaining={seatsRemaining}
           onRetailerAdded={handleRetailerAdded}
           onClose={() => setAddModalOpen(false)}
@@ -227,7 +211,6 @@ export default function ManufacturerRetailersPage() {
       {assignTarget && manufacturerId ? (
         <AssignProductModal
           manufacturerId={manufacturerId}
-          manufacturerName={manufacturerName}
           retailer={assignTarget}
           products={products}
           subs={subs}
@@ -236,6 +219,23 @@ export default function ManufacturerRetailersPage() {
           onClose={() => setAssignTarget(null)}
         />
       ) : null}
+
+      {editTarget && (
+        <EditRetailerModal
+          row={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={async () => { if (manufacturerId) await loadAll(manufacturerId); }}
+        />
+      )}
+
+      {detailsTarget && manufacturerId && (
+        <RetailerDetailsModal
+          row={detailsTarget}
+          manufacturerId={manufacturerId}
+          onClose={() => setDetailsTarget(null)}
+          onAssignProduct={() => { setAssignTarget(detailsTarget); setDetailsTarget(null); }}
+        />
+      )}
     </>
   );
 }

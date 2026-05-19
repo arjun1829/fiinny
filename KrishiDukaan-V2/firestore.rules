@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Returns the retailerDocId stored on the user's profile (set after invite acceptance).
+    // Safe: returns '' if the user doc doesn't exist or field is missing.
+    function userRetailerDocId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('retailerDocId', '')
+        : '';
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ── Manufacturer profiles ─────────────────────────────────────────────────
+    match /manufacturers/{manufacturerId} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == manufacturerId;
+    }
+
+    // ── Retailer profiles ─────────────────────────────────────────────────────
+    match /retailers/{retailerId} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == retailerId;
+    }
+
+    // ── Manufacturer–Retailer invite docs ─────────────────────────────────────
+    match /manufacturerRetailers/{docId} {
+      // Manufacturer can CRUD their own rows
+      allow read, delete: if isSignedIn() &&
+        resource.data.manufacturerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.manufacturerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        // Manufacturer edits
+        resource.data.manufacturerId == request.auth.uid ||
+        // Retailer claims an unclaimed invite (invited → active)
+        (
+          resource.data.status    == 'invited' &&
+          resource.data.claimable == true      &&
+          request.resource.data.status      == 'active'                       &&
+          request.resource.data.retailerId  == request.auth.uid               &&
+          request.resource.data.claimable   == false                          &&
+          request.resource.data.manufacturerId == resource.data.manufacturerId &&
+          request.resource.data.inviteCode     == resource.data.inviteCode
+        )
+      );
+      // Anyone (including unauthenticated signup page) can query by invite code.
+      // Invite codes are opaque random strings — no sensitive PII is exposed.
+      allow list, get: if true;
+    }
+
+    // ── Products ──────────────────────────────────────────────────────────────
+    match /products/{productId} {
+      // Public read — marketplace
+      allow read: if true;
+
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        // Retailer backfill after invite claim
+        (
+          resource.data.retailerDocId != null &&
+          resource.data.retailerDocId != ''   &&
+          userRetailerDocId() == resource.data.retailerDocId
+        )
+      );
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── Inventory ─────────────────────────────────────────────────────────────
+    match /inventory/{docId} {
+      // isRetailerOwned: retailer reads their own docs, including pre-signup docs
+      // where retailerId is still "" but retailerDocId matches their profile.
+      allow read: if isSignedIn() && (
+        resource.data.retailerId     == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid ||
+        (
+          resource.data.retailerDocId != null &&
+          resource.data.retailerDocId != ''   &&
+          userRetailerDocId() == resource.data.retailerDocId
+        )
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.manufacturerId == request.auth.uid ||
+        request.resource.data.retailerId     == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        resource.data.retailerId     == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid ||
+        (
+          resource.data.retailerDocId != null &&
+          resource.data.retailerDocId != ''   &&
+          userRetailerDocId() == resource.data.retailerDocId
+        )
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.retailerId     == request.auth.uid
+      );
+    }
+
+    // ── Retailer seat listings ────────────────────────────────────────────────
+    match /retailerSeatListings/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.retailerId     == request.auth.uid ||
+        resource.data.ownerId        == request.auth.uid ||
+        (
+          resource.data.retailerDocId != null &&
+          resource.data.retailerDocId != ''   &&
+          userRetailerDocId() == resource.data.retailerDocId
+        )
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.manufacturerId == request.auth.uid ||
+        request.resource.data.ownerId        == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.ownerId        == request.auth.uid ||
+        (
+          resource.data.retailerDocId != null &&
+          resource.data.retailerDocId != ''   &&
+          userRetailerDocId() == resource.data.retailerDocId
+        )
+      );
+      allow delete: if isSignedIn() &&
+        resource.data.manufacturerId == request.auth.uid;
+    }
+
+    // ── Subscriptions ─────────────────────────────────────────────────────────
+    match /subscriptions/{docId} {
+      // Field is ownerId (set by createSubscription / updateSubscriptionStatus)
+      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── Payments ─────────────────────────────────────────────────────────────
+    match /payments/{docId} {
+      // Field is userId (set by updateSubscriptionStatus)
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── Promo codes (read-only for authenticated users) ───────────────────────
+    match /promoCodes/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── Stores (public marketplace listings) ─────────────────────────────────
+    match /stores/{storeId} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == storeId;
+    }
+
+    // ── Orders ───────────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        resource.data.retailerId  == request.auth.uid ||
+        resource.data.customerId  == request.auth.uid ||
+        resource.data.userId      == request.auth.uid
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.retailerId == request.auth.uid ||
+        resource.data.userId     == request.auth.uid
+      );
+      allow delete: if false;
+    }
+
+    // ── Hubs (market/trading hubs, public read) ───────────────────────────────
+    match /hubs/{hubId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // ── Reviews ───────────────────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Manufacturer contacts ─────────────────────────────────────────────────
+    match /manufacturer_contacts/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.userId         == request.auth.uid
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() &&
+        resource.data.manufacturerId == request.auth.uid;
+    }
+  }
+}

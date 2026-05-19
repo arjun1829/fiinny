@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HelperIcon } from "../../../components/helpers";
 
 interface InventoryHealthSummary {
   inStock: number;
@@ -22,7 +23,16 @@ export function DashboardInventoryHealth({ data }: { data?: InventoryHealthSumma
 ...
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold text-on-surface">Inventory health</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-on-surface">Inventory health</h2>
+            <HelperIcon
+              size="xs"
+              variant="ghost"
+              side="right"
+              textKey="dashInventoryHealth"
+              ariaLabel="Inventory health help"
+            />
+          </div>
           <p className="mt-1 text-sm text-on-surface-variant">
             Snapshot of stock levels across your catalog
           </p>

@@ -13,6 +13,7 @@ import { SimpleBarChart } from "../_components/simple-bar-chart";
 import { InsightCard } from "../_components/insight-card";
 import { fetchRetailerAnalytics } from "../_lib/analytics-firestore";
 import { auth } from "../../firebase";
+import { HelperIcon } from "../../../components/helpers";
 
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<any>(null);
@@ -50,6 +51,7 @@ export default function AnalyticsPage() {
       <PageHeader
         title="Analytics"
         description="Search visibility, engagement, and directional demand for your shop."
+        helperKey="dashAnalytics"
       />
 
       <section aria-label="Search appearance" className="grid gap-3 md:grid-cols-3">
@@ -57,12 +59,19 @@ export default function AnalyticsPage() {
           label="Impressions"
           value={appearance.impressions}
           hint="Appearances in search results"
+          helperKey="dashImpressions"
         />
-        <MetricTile label="CTR" value={appearance.ctr} hint="Click-through rate" />
+        <MetricTile
+          label="CTR"
+          value={appearance.ctr}
+          hint="Click-through rate"
+          helperKey="dashCtr"
+        />
         <MetricTile
           label="Avg. position"
           value={appearance.avgPosition}
           hint="Lower is better (1.0 is top)"
+          helperKey="dashAvgPosition"
         />
       </section>
 
@@ -72,12 +81,14 @@ export default function AnalyticsPage() {
           subtitle="Real data tracking started"
           data={stats?.viewsOverTime || viewsOverTime}
           accentClass="bg-primary"
+          helperKey="dashChartViews"
         />
         <SimpleBarChart
           title="Calls made"
           subtitle="Tap-to-call from your listing"
           data={stats?.callsOverTime || callsOverTime}
           accentClass="bg-secondary"
+          helperKey="dashChartCalls"
         />
       </div>
 
@@ -87,11 +98,21 @@ export default function AnalyticsPage() {
           subtitle="Turn-by-turn opens from maps"
           data={stats?.directionRequests || directionRequests}
           accentClass="bg-harvest"
+          helperKey="dashChartDirections"
         />
       </div>
 
       <section aria-label="Insights" className="mt-6">
-        <h2 className="text-lg font-semibold text-on-surface">Insights</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-on-surface">Insights</h2>
+          <HelperIcon
+            size="xs"
+            variant="ghost"
+            side="right"
+            textKey="dashInsights"
+            ariaLabel="Insights help"
+          />
+        </div>
         <p className="mt-1 text-sm text-on-surface-variant">
           Personalized takeaways from your live metrics
         </p>

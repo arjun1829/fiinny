@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
+import { Truck } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
@@ -20,6 +22,7 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [sellerType, setSellerType] = useState<"retailer" | "manufacturer" | null>(null);
+  const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
 
   const load = async (nextUid: string, nextSellerType: "retailer" | "manufacturer") => {
     setLoading(true);
@@ -47,10 +50,16 @@ export default function OrdersPage() {
       }
       const profile = await getUserProfile(user.uid);
       const role = profile?.role;
+      const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
+      setOnlineDelivery(hasOnlineDelivery);
       if (role === "retailer" || role === "manufacturer") {
         setUid(user.uid);
         setSellerType(role);
-        await load(user.uid, role);
+        if (hasOnlineDelivery) {
+          await load(user.uid, role);
+        } else {
+          setLoading(false);
+        }
       } else {
         setUid(null);
         setSellerType(null);
@@ -71,12 +80,29 @@ export default function OrdersPage() {
       <PageHeader
         title="Incoming Orders"
         description="Orders placed by farmers for your online-delivery products."
+        helperKey="dashOrders"
       />
 
       {!uid || !sellerType ? (
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           Sign in as retailer or manufacturer to view orders.
         </p>
+      ) : onlineDelivery === false ? (
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-16 text-center">
+          <div className="rounded-full bg-surface-container p-5">
+            <Truck className="h-9 w-9 text-on-surface-variant/40" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-on-surface">Online delivery not enabled</p>
+            <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
+              Enable online delivery in your Profile settings to start accepting online orders.
+            </p>
+          </div>
+          <Link href="/dashboard/profile?tab=settings"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+            Go to Settings
+          </Link>
+        </div>
       ) : loading ? (
         <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
