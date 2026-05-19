@@ -13,6 +13,8 @@ import { InviteCard } from "../../_components/manufacturer/invite-card";
 import {
   fetchManufacturerRetailers,
   removeNetworkRetailer,
+  deactivateNetworkRetailer,
+  reactivateNetworkRetailer,
 } from "../../_lib/manufacturer-retailers-firestore";
 import {
   fetchSubscriptions,
@@ -111,13 +113,37 @@ export default function ManufacturerRetailersPage() {
   };
 
   const handleRemove = async (row: ManufacturerRetailerRow) => {
-    await removeNetworkRetailer(row.id, row.retailerDocId);
-    if (manufacturerId) await loadAll(manufacturerId);
+    if (!manufacturerId) return;
+    await removeNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
+    await loadAll(manufacturerId);
   };
 
+  const handleDeactivate = async (row: ManufacturerRetailerRow) => {
+    if (!manufacturerId) return;
+    await deactivateNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
+    await loadAll(manufacturerId);
+  };
+
+  /**
+   * Called after a product is successfully assigned.
+   * If the assign target was manually deactivated, reset it back to active
+   * so the row reflects the new seat listing immediately.
+   */
   const handleAssigned = async () => {
-    if (manufacturerId) await loadAll(manufacturerId);
+    if (!manufacturerId) return;
+    if (assignTarget?.onboardingStatus === "inactive") {
+      await reactivateNetworkRetailer(assignTarget.id);
+    }
+    await loadAll(manufacturerId);
     setAssignTarget(null);
+  };
+
+  /**
+   * Opens the assign-product modal for a deactivated retailer so the
+   * manufacturer can assign at least one product to re-activate them.
+   */
+  const handleActivate = (row: ManufacturerRetailerRow) => {
+    setAssignTarget(row);
   };
 
   if (access === "checking") {
@@ -179,9 +205,12 @@ export default function ManufacturerRetailersPage() {
       <section aria-label="Retailer list">
         <RetailerTable
           rows={rows}
+          seatListings={seatListings}
           loading={listLoading}
           onRemove={handleRemove}
           onAssignProduct={(row) => setAssignTarget(row)}
+          onDeactivate={handleDeactivate}
+          onActivate={handleActivate}
         />
       </section>
 

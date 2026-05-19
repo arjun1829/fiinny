@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, PackagePlus, X } from "lucide-react";
-import { assignProductToRetailer } from "../../_lib/product-assignment-firestore";
+import { AlertTriangle, Check, Loader2, PackagePlus, Trash2, X } from "lucide-react";
+import {
+  bulkAssignProductsToRetailer,
+  removeProductAssignment,
+} from "../../_lib/product-assignment-firestore";
 import { canAssignSeat } from "../../_lib/subscriptions-firestore";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
@@ -29,37 +32,52 @@ export function AssignProductModal({
   onAssigned,
   onClose,
 }: AssignProductModalProps) {
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  // Active listings for this retailer keyed by manufacturerProductId
+  const activeListingsForRetailer = seatListings.filter(
+    (l) => l.retailerDocId === retailer.retailerDocId && l.status === "active",
+  );
+  const listingIdByMfrProductId = new Map(
+    activeListingsForRetailer
+      .filter((l): l is typeof l & { manufacturerProductId: string } => !!l.manufacturerProductId)
+      .map((l) => [l.manufacturerProductId, l.id]),
+  );
+  const assignedMfrProductIds = new Set(listingIdByMfrProductId.keys());
+
+  // Multi-select: set of newly-selected product IDs (excludes already-assigned)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hasSeats = canAssignSeat(subs, seatListings);
 
-  // Products already actively assigned to this retailer — keyed by retailerDocId
-  // so it works before the retailer has signed up.
-  const assignedProductIds = new Set(
-    seatListings
-      .filter((l) => l.retailerDocId === retailer.retailerDocId && l.status === "active")
-      .map((l) => l.productId),
-  );
-
-  // Assigned copies now have ownerId = retailer, so ownerId == manufacturerId
-  // already gives only this manufacturer's own catalogue.
   const manufacturerProducts = products.filter(
     (p) => p.ownerId === manufacturerId && p.ownerType === "manufacturer",
   );
 
+  const toggleSelect = (productId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
+  };
+
   const handleAssign = async () => {
-    if (!selectedProductId) return;
+    if (selected.size === 0) return;
     setError(null);
     setSubmitting(true);
     try {
-      await assignProductToRetailer({
+      await bulkAssignProductsToRetailer({
         manufacturerId,
         retailerDocId: retailer.retailerDocId,
-        // retailerId (auth uid) may be empty if retailer hasn't signed up yet — that's fine
         retailerId: retailer.retailerId || undefined,
-        productId: selectedProductId,
+        productIds: Array.from(selected),
       });
 
       // Fire-and-forget: notify retailer by email about the new product assignment
@@ -81,14 +99,31 @@ export function AssignProductModal({
 
       await onAssigned();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to assign product.");
+      setError(e instanceof Error ? e.message : "Failed to assign products.");
       setSubmitting(false);
+    }
+  };
+
+  const handleRemove = async (productId: string) => {
+    const listingId = listingIdByMfrProductId.get(productId);
+    if (!listingId) return;
+    setRemoving(true);
+    setError(null);
+    try {
+      await removeProductAssignment(listingId);
+      await onAssigned();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove listing.");
+      setRemoving(false);
+      setConfirmRemoveId(null);
     }
   };
 
   const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose();
   };
+
+  const newAssignCount = selected.size;
 
   return (
     <div
@@ -99,7 +134,7 @@ export function AssignProductModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-on-surface">Assign Product</h2>
+            <h2 className="text-base font-semibold text-on-surface">Assign Products</h2>
             <p className="text-xs text-on-surface-variant mt-0.5">
               To {retailer.shopName || retailer.ownerName}
             </p>
@@ -114,8 +149,8 @@ export function AssignProductModal({
           </button>
         </div>
 
-        {/* Content */}
-        {!hasSeats ? (
+        {/* Body */}
+        {!hasSeats && assignedMfrProductIds.size === 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <div className="rounded-full bg-harvest/10 p-3">
               <PackagePlus className="h-6 w-6 text-harvest" />
@@ -149,56 +184,128 @@ export function AssignProductModal({
             ) : null}
 
             <p className="px-5 pt-4 pb-2 text-xs font-medium text-on-surface-variant">
-              Select a product to assign (1 seat consumed per assignment · 1 month validity)
+              Select products to assign · 1 seat per product per month
+              {newAssignCount > 0 ? (
+                <span className="ml-1 font-semibold text-primary">
+                  ({newAssignCount} selected)
+                </span>
+              ) : null}
             </p>
 
             <ul className="flex-1 overflow-y-auto divide-y divide-outline-variant/20 px-2 pb-2">
               {manufacturerProducts.map((product) => {
-                const alreadyAssigned = assignedProductIds.has(product.id);
-                const selected = selectedProductId === product.id;
+                const isAssigned = assignedMfrProductIds.has(product.id);
+                const isSelected = selected.has(product.id);
+                const isConfirmingRemove = confirmRemoveId === product.id;
+
+                const thumb = product.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
+                    <PackagePlus className="h-5 w-5" />
+                  </div>
+                );
+
+                // Already-assigned row: shows remove action
+                if (isAssigned) {
+                  return (
+                    <li key={product.id} className="px-3 py-3">
+                      <div className="flex items-center gap-3">
+                        {thumb}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-on-surface truncate">
+                            {product.name}
+                          </p>
+                          <p className="text-xs text-on-surface-variant">
+                            {product.category}
+                            {product.price ? ` · ₹${product.price}` : ""}
+                          </p>
+                        </div>
+
+                        {isConfirmingRemove ? (
+                          <div className="flex items-center gap-1 shrink-0 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                            <span className="text-xs font-medium text-red-700">Free seat?</span>
+                            <button
+                              type="button"
+                              disabled={removing}
+                              onClick={() => handleRemove(product.id)}
+                              className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+                            >
+                              {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                              {removing ? "Removing…" : "Confirm"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={removing}
+                              onClick={() => setConfirmRemoveId(null)}
+                              className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
+                              Assigned
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRemoveId(product.id)}
+                              disabled={submitting || removing}
+                              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  );
+                }
+
+                // Unassigned row: multi-select checkbox
                 return (
                   <li key={product.id}>
                     <button
                       type="button"
-                      disabled={alreadyAssigned || submitting}
-                      onClick={() => !alreadyAssigned && setSelectedProductId(product.id)}
+                      disabled={submitting || (!hasSeats && !isSelected)}
+                      onClick={() => toggleSelect(product.id)}
                       className={[
                         "w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-                        alreadyAssigned
-                          ? "opacity-40 cursor-not-allowed"
-                          : selected
-                            ? "bg-primary/10 ring-1 ring-primary/30"
+                        isSelected
+                          ? "bg-primary/10 ring-1 ring-primary/30"
+                          : !hasSeats
+                            ? "opacity-40 cursor-not-allowed"
                             : "hover:bg-surface-container",
                       ].join(" ")}
                     >
-                      {product.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="h-10 w-10 rounded-lg object-cover shrink-0 bg-surface-container-low"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded-lg bg-surface-container-low shrink-0 flex items-center justify-center text-on-surface-variant">
-                          <PackagePlus className="h-5 w-5" />
-                        </div>
-                      )}
+                      {thumb}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-on-surface truncate">{product.name}</p>
+                        <p className="text-sm font-medium text-on-surface truncate">
+                          {product.name}
+                        </p>
                         <p className="text-xs text-on-surface-variant">
                           {product.category}
                           {product.price ? ` · ₹${product.price}` : ""}
                         </p>
                       </div>
-                      {alreadyAssigned ? (
-                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                          Assigned
-                        </span>
-                      ) : selected ? (
-                        <span className="shrink-0 h-4 w-4 rounded-full bg-primary ring-2 ring-primary/40" />
-                      ) : (
-                        <span className="shrink-0 h-4 w-4 rounded-full border-2 border-outline-variant/40" />
-                      )}
+                      <span
+                        className={[
+                          "shrink-0 h-4 w-4 rounded flex items-center justify-center border-2 transition-colors",
+                          isSelected
+                            ? "bg-primary border-primary"
+                            : "border-outline-variant/40",
+                        ].join(" ")}
+                      >
+                        {isSelected ? <Check className="h-3 w-3 text-white" /> : null}
+                      </span>
                     </button>
                   </li>
                 );
@@ -217,7 +324,7 @@ export function AssignProductModal({
               <button
                 type="button"
                 onClick={handleAssign}
-                disabled={!selectedProductId || submitting}
+                disabled={newAssignCount === 0 || submitting}
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
               >
                 {submitting ? (
@@ -228,7 +335,7 @@ export function AssignProductModal({
                 ) : (
                   <>
                     <PackagePlus className="h-4 w-4" />
-                    Assign Product
+                    Assign {newAssignCount > 0 ? `${newAssignCount} product${newAssignCount > 1 ? "s" : ""}` : "Products"}
                   </>
                 )}
               </button>

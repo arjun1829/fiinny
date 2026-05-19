@@ -5,16 +5,19 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  Clock,
   Copy,
   Loader2,
   Mail,
   MessageCircle,
   PackagePlus,
+  PowerOff,
+  RefreshCw,
   Trash2,
   XCircle,
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
+import type { RetailerSeatListing } from "../../_types/subscriptions";
+import { isListingActive } from "../../_lib/subscriptions-firestore";
 import { cn } from "../../_lib/cn";
 import {
   buildInviteShareMessage,
@@ -25,13 +28,35 @@ import {
 
 type RetailerTableProps = {
   rows: ManufacturerRetailerRow[];
+  seatListings?: RetailerSeatListing[];
   loading?: boolean;
   onRemove?: (row: ManufacturerRetailerRow) => Promise<void>;
   onAssignProduct?: (row: ManufacturerRetailerRow) => void;
+  onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
+  onActivate?: (row: ManufacturerRetailerRow) => void;
 };
 
-function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
-  if (status === "active") {
+function NetworkStatusBadge({
+  retailerDocId,
+  seatListings,
+  isManuallyInactive,
+}: {
+  retailerDocId: string;
+  seatListings: RetailerSeatListing[];
+  isManuallyInactive?: boolean;
+}) {
+  if (isManuallyInactive) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+        <PowerOff className="h-3 w-3" />
+        Deactivated
+      </span>
+    );
+  }
+  const hasActive = seatListings.some(
+    (l) => l.retailerDocId === retailerDocId && isListingActive(l),
+  );
+  if (hasActive) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
@@ -39,18 +64,10 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
       </span>
     );
   }
-  if (status === "removed") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-        <XCircle className="h-3 w-3" />
-        Removed
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
-      <Clock className="h-3 w-3" />
-      Pending
+    <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
+      <XCircle className="h-3 w-3" />
+      Inactive
     </span>
   );
 }
@@ -117,6 +134,62 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   );
 }
 
+function DeactivateAction({
+  row,
+  onDeactivate,
+}: {
+  row: ManufacturerRetailerRow;
+  onDeactivate: (row: ManufacturerRetailerRow) => Promise<void>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+        <span className="text-xs font-medium text-amber-700">Deactivate?</span>
+        <button
+          type="button"
+          disabled={deactivating}
+          onClick={async () => {
+            setDeactivating(true);
+            try {
+              await onDeactivate(row);
+            } finally {
+              setDeactivating(false);
+              setConfirming(false);
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+        >
+          {deactivating ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          {deactivating ? "Deactivating…" : "Confirm"}
+        </button>
+        <button
+          type="button"
+          disabled={deactivating}
+          onClick={() => setConfirming(false)}
+          className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-100 disabled:opacity-60"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
+    >
+      <PowerOff className="h-3.5 w-3.5" />
+      Deactivate
+    </button>
+  );
+}
+
 function RemoveAction({
   row,
   onRemove,
@@ -177,7 +250,15 @@ function RemoveAction({
   );
 }
 
-export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: RetailerTableProps) {
+export function RetailerTable({
+  rows,
+  seatListings = [],
+  loading,
+  onRemove,
+  onAssignProduct,
+  onDeactivate,
+  onActivate,
+}: RetailerTableProps) {
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -197,7 +278,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
     );
   }
 
-  const hasActions = !!(onRemove || onAssignProduct);
+  const hasActions = !!(onRemove || onAssignProduct || onDeactivate || onActivate);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -208,7 +289,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
               <th className="whitespace-nowrap px-4 py-3 font-medium">Shop name</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Owner</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Phone</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Onboarding</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Invite actions</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">Added</th>
               {hasActions ? (
@@ -219,16 +300,26 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
           <tbody className="divide-y divide-outline-variant/20">
             {rows.map((row) => {
               const isRevoked = row.status === "revoked";
-              // Seat assignment doesn't require retailer login — only that
-              // the retailer is linked to this manufacturer and not revoked.
+              const isManuallyInactive = row.onboardingStatus === "inactive";
+              const hasActiveSeats = seatListings.some(
+                (l) => l.retailerDocId === row.retailerDocId && isListingActive(l),
+              );
+
+              // Assign: available for all non-revoked retailers (active or inactive)
               const canAssign = onAssignProduct && !isRevoked;
+              // Deactivate: only when active (has seats) and not already inactive
+              const canDeactivate =
+                onDeactivate && !isRevoked && !isManuallyInactive && hasActiveSeats;
+              // Activate: opens assign modal so manufacturer assigns at least one product
+              const canActivate = onActivate && isManuallyInactive;
 
               return (
                 <tr
                   key={row.id}
                   className={cn(
-                    "hover:bg-surface-container/50",
+                    "hover:bg-surface-container/50 transition-opacity",
                     isRevoked && "opacity-50",
+                    isManuallyInactive && !isRevoked && "opacity-60",
                   )}
                 >
                   <td className="px-4 py-3 font-medium text-on-surface">
@@ -239,7 +330,11 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                     {row.retailerPhone || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <OnboardingBadge status={row.onboardingStatus} />
+                    <NetworkStatusBadge
+                      retailerDocId={row.retailerDocId}
+                      seatListings={seatListings}
+                      isManuallyInactive={isManuallyInactive}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <RowInviteActions row={row} />
@@ -250,7 +345,20 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                   {hasActions ? (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {canAssign ? (
+                        {/* Reactivate: shown only for manually-deactivated retailers */}
+                        {canActivate ? (
+                          <button
+                            type="button"
+                            onClick={() => onActivate(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Reactivate
+                          </button>
+                        ) : null}
+
+                        {/* Assign product: shown for non-revoked, non-deactivated retailers */}
+                        {canAssign && !isManuallyInactive ? (
                           <button
                             type="button"
                             onClick={() => onAssignProduct(row)}
@@ -260,6 +368,12 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct }: Reta
                             Assign product
                           </button>
                         ) : null}
+
+                        {/* Deactivate: only when retailer has active seat listings */}
+                        {canDeactivate ? (
+                          <DeactivateAction row={row} onDeactivate={onDeactivate} />
+                        ) : null}
+
                         {onRemove ? (
                           <RemoveAction row={row} onRemove={onRemove} />
                         ) : null}
