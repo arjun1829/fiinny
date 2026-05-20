@@ -341,9 +341,10 @@ export default function App() {
       productCount: profile.productCount || 0
     });
 
-    const isInvitedRetailer = profile.role === 'retailer' && !!(profile as any).isPaid;
-    if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
+    if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
       navigate('subscription', { replace: true, clearInvite: true });
+    } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
+      window.location.href = '/dashboard';
     } else {
       navigate('home', { replace: true, clearInvite: true });
     }

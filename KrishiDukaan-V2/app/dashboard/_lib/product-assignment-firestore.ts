@@ -62,7 +62,7 @@ export async function assignProductToRetailer(
   // Fetch the manufacturer product and retailer profile in parallel
   const [productSnap, retailerSnap] = await Promise.all([
     getDoc(doc(db, "products", input.productId)),
-    getDoc(doc(db, "retailers", input.retailerId || input.retailerDocId)),
+    getDoc(doc(db, "retailers", input.retailerDocId)),
   ]);
   if (!productSnap.exists()) throw new Error("Product not found.");
   const src = productSnap.data() as Record<string, unknown>;
@@ -150,11 +150,9 @@ export async function assignProductToRetailer(
     expiresAt: subExpiry,
   });
 
-  // 4. Update manufacturer product's availability so the retailer's store appears
-  //    in the marketplace product detail page.
-  //    Use retailerId (Firebase Auth UID) when available — that's the store ID in
-  //    the retailers collection. Fall back to retailerDocId pre-signup.
-  const availabilityStoreId = input.retailerId || input.retailerDocId;
+  // 4. Keep the invited retailer doc as the stable store identity in market availability.
+  //    That doc exists before signup and remains the canonical public store record after claim.
+  const availabilityStoreId = input.retailerDocId;
   batch.update(doc(db, "products", input.productId), {
     availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
   });
@@ -185,9 +183,9 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
 
   await batch.commit();
 
-  // Remove the retailer's store from the manufacturer product's availability array.
-  // We look up the retailer product copy to find the manufacturer's original product ID.
-  const availabilityStoreId = retailerId || retailerDocId;
+  // Remove the retailer's public store from the manufacturer product's availability array.
+  // retailerDocId is the stable public store document used in availability[].
+  const availabilityStoreId = retailerDocId;
   if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
@@ -269,7 +267,7 @@ export async function bulkAssignProductsToRetailer(
   // Fetch all product docs and retailer profile in parallel
   const [productSnaps, retailerSnap] = await Promise.all([
     Promise.all(toAssign.map((id) => getDoc(doc(db, "products", id)))),
-    getDoc(doc(db, "retailers", retailerId || retailerDocId)),
+    getDoc(doc(db, "retailers", retailerDocId)),
   ]);
   const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
   const retailerStoreName = retailerData
@@ -354,9 +352,8 @@ export async function bulkAssignProductsToRetailer(
       expiresAt: subExpiry,
     });
 
-    // 4. Add retailer's store to the manufacturer product's availability array
-    //    Use retailerId (Firebase Auth UID) when available — that's the store ID.
-    const availabilityStoreId = retailerId || retailerDocId;
+    // 4. Add the canonical invited retailer doc to the manufacturer product's availability array.
+    const availabilityStoreId = retailerDocId;
     batch.update(doc(db, "products", productId), {
       availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
     });

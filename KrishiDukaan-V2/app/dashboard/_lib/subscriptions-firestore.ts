@@ -2,7 +2,7 @@ import {
   addDoc,
   collection,
   doc,
-  documentId,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -128,16 +128,26 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
   });
 
   // Trigger subscription confirmation email (fire-and-forget)
+  // Resolve user via uidIndex → users/{phone} (new schema); fall back to users/{uid}
   try {
-    const userSnap = await getDocs(query(collection(db, "users"), where(documentId(), "==", input.ownerId)));
-    const userData = userSnap.docs[0]?.data();
+    let userData: Record<string, unknown> | null = null;
+    const idxSnap = await getDoc(doc(db, "uidIndex", input.ownerId));
+    if (idxSnap.exists()) {
+      const phone = idxSnap.data().phone as string;
+      const userSnap = await getDoc(doc(db, "users", phone));
+      if (userSnap.exists()) userData = userSnap.data() as Record<string, unknown>;
+    }
+    if (!userData) {
+      const directSnap = await getDoc(doc(db, "users", input.ownerId));
+      if (directSnap.exists()) userData = directSnap.data() as Record<string, unknown>;
+    }
     if (userData?.email) {
       fetch("/api/email/subscription-confirmation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userEmail: userData.email,
-          userName: userData.name || "",
+          userName: (userData.name as string) || "",
           seatsPurchased: input.seatsPurchased,
           amountPaid: input.amountPaid,
           planName: input.planName ?? "Standard",

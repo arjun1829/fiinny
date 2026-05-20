@@ -45,6 +45,36 @@ if (typeof window !== 'undefined') {
 
 export { db, auth, storage };
 
+async function resolveUserProfileDocId(uid: string): Promise<string | null> {
+  const [idxSnap, legacyUserSnap] = await Promise.all([
+    getDoc(doc(db, 'uidIndex', uid)),
+    getDoc(doc(db, 'users', uid)),
+  ]);
+
+  if (idxSnap.exists()) {
+    const phone = String(idxSnap.data().phone ?? '').trim();
+    if (phone) return phone;
+  }
+
+  return legacyUserSnap.exists() ? uid : null;
+}
+
+async function resolveRetailerStoreDocId(uid: string): Promise<string> {
+  const userProfileDocId = await resolveUserProfileDocId(uid);
+  if (userProfileDocId) {
+    try {
+      const userSnap = await getDoc(doc(db, 'users', userProfileDocId));
+      if (userSnap.exists()) {
+        const retailerDocId = String(userSnap.data()?.retailerDocId ?? '').trim();
+        if (retailerDocId) return retailerDocId;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return uid;
+}
+
 export type RetailerProduct = {
   name: string;
   quantity: string;
@@ -127,9 +157,12 @@ export async function saveRetailerApplication(payload: RetailerApplication) {
 }
 
 export async function saveRetailerProfile(retailerId: string, profile: RetailerProfile) {
+  const retailerStoreDocId = await resolveRetailerStoreDocId(retailerId);
   await setDoc(
-    doc(db, 'retailers', retailerId),
+    doc(db, 'retailers', retailerStoreDocId),
     {
+      userId: retailerId,
+      retailerId,
       ownerName: profile.ownerName.trim(),
       shopName: profile.shopName.trim(),
       phone: profile.phone.trim(),
@@ -142,6 +175,7 @@ export async function saveRetailerProfile(retailerId: string, profile: RetailerP
         latitude: Number(profile.latitude),
         longitude: Number(profile.longitude)
       },
+      active: true,
       userType: 'retailer',
       updatedAt: serverTimestamp()
     },
@@ -153,6 +187,8 @@ export async function saveRetailerProduct(
   retailerId: string,
   product: CreateRetailProductInput
 ) {
+  const userProfileDocId = await resolveUserProfileDocId(retailerId);
+
   const sellMode = product.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
   // 1. Create the product
   await addDoc(collection(db, 'products'), {
@@ -173,11 +209,13 @@ export async function saveRetailerProduct(
   });
 
   // 2. Increment productCount in user profile
-  const userRef = doc(db, 'users', retailerId);
-  await setDoc(userRef, {
-    productCount: increment(1),
-    updatedAt: serverTimestamp()
-  }, { merge: true });
+  if (userProfileDocId) {
+    const userRef = doc(db, 'users', userProfileDocId);
+    await setDoc(userRef, {
+      productCount: increment(1),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
 }
 
 export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> {
@@ -212,7 +250,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         product.name &&
         product.image &&
         Number.isFinite(product.price) &&
-        (product as any).source !== 'manufacturer_assigned'
+        (product as any).source !== 'manufacturer_assigned' &&
+        (product as any).source !== 'retailer_inventory_copy'
       );
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
@@ -250,6 +289,8 @@ export async function fetchStores(): Promise<Store[]> {
       const data = doc.data();
       return {
         id: doc.id,
+        retailerId: data.retailerId,
+        userId: data.userId,
         name: data.shopName || data.ownerName || 'Retailer',
         ownerName: data.ownerName,
         phone: data.phone,
@@ -264,8 +305,34 @@ export async function fetchStores(): Promise<Store[]> {
           lat: data.location?.latitude ?? data.location?.lat ?? 0,
           lng: data.location?.longitude ?? data.location?.lng ?? 0
         }
-      } as Store;
+      } as Store & { retailerId?: string; userId?: string; city?: string; state?: string; pincode?: string };
     });
+
+    const dedupedRetailers = Array.from(
+      retailers.reduce((map, store) => {
+        const key = String(store.phone || store.id).trim();
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, store);
+          return map;
+        }
+
+        const currentScore =
+          (store.retailerId ? 3 : 0) +
+          (store.userId ? 3 : 0) +
+          (store.name && store.name !== 'Retailer' ? 2 : 0) +
+          (store.location?.lat || store.location?.lng ? 1 : 0);
+        const existingScore =
+          (existing.retailerId ? 3 : 0) +
+          (existing.userId ? 3 : 0) +
+          (existing.name && existing.name !== 'Retailer' ? 2 : 0) +
+          (existing.location?.lat || existing.location?.lng ? 1 : 0);
+
+        if (currentScore >= existingScore) map.set(key, store);
+        return map;
+      }, new Map<string, Store & { retailerId?: string; userId?: string }>())
+      .values(),
+    );
 
     // Manufacturers appear as stores — matched by store.id === product.manufacturerId
     const manufacturers = manufacturersSnapshot.docs
@@ -296,7 +363,7 @@ export async function fetchStores(): Promise<Store[]> {
         } as Store;
       });
 
-    return [...stores, ...retailers, ...manufacturers];
+    return [...stores, ...dedupedRetailers, ...manufacturers];
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
@@ -355,6 +422,13 @@ export async function getUserProfile(uid: string) {
         if (userSnap.exists()) return userSnap.data();
       }
     }
+  } catch {
+    // fall through
+  }
+  // Fallback: email-based admin accounts use users/{uid} directly (no uidIndex entry)
+  try {
+    const directSnap = await getDoc(doc(db, 'users', uid));
+    if (directSnap.exists()) return directSnap.data();
   } catch {
     // fall through
   }
@@ -497,6 +571,8 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
 }
 
 export async function saveManufacturerProduct(manufacturerId: string, product: any) {
+  const userProfileDocId = await resolveUserProfileDocId(manufacturerId);
+
   // 1. Create the product — strip any stale ownership fields from the input
   const { retailerId: _r, ownerType: _ot, ownerId: _oi, store: _s, distance: _d, stock: _st, ...rest } = product;
   const sellMode = product?.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
@@ -515,11 +591,13 @@ export async function saveManufacturerProduct(manufacturerId: string, product: a
   });
 
   // 2. Increment productCount in user profile
-  const userRef = doc(db, 'users', manufacturerId);
-  await setDoc(userRef, {
-    productCount: increment(1),
-    updatedAt: serverTimestamp()
-  }, { merge: true });
+  if (userProfileDocId) {
+    const userRef = doc(db, 'users', userProfileDocId);
+    await setDoc(userRef, {
+      productCount: increment(1),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
 }
 
 export async function fetchDealers(): Promise<any[]> {

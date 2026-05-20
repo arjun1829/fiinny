@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Power, PowerOff, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Power, PowerOff, Save, Trash2 } from "lucide-react";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
-import { updateInventoryRecord } from "../_lib/inventory-firestore";
+import { updateInventoryRecord, acceptAssignedProduct } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
 
 type RowDraft = {
@@ -27,6 +27,7 @@ function statusStyles(status: StockStatus): string {
 type InventoryManagementTableProps = {
   rows: InventoryRow[];
   disabled?: boolean;
+  userId?: string;
   onUpdated: () => Promise<void>;
   onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
@@ -34,17 +35,38 @@ type InventoryManagementTableProps = {
 
 function RowActions({
   row,
+  userId,
   onToggleActive,
   onDelete,
+  onUpdated,
 }: {
   row: InventoryRow;
+  userId?: string;
   onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
+  onUpdated: () => Promise<void>;
 }) {
   const [toggling, setToggling] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
+
+  const isPending = userId && row.ownerId !== userId;
+
+  const handleAccept = async () => {
+    if (!userId) return;
+    setAccepting(true);
+    setRowError(null);
+    try {
+      await acceptAssignedProduct(row.productId, row.inventoryId, userId);
+      await onUpdated();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : "Failed to accept.");
+    } finally {
+      setAccepting(false);
+    }
+  };
 
   const handleToggle = async () => {
     if (!onToggleActive) return;
@@ -76,65 +98,83 @@ function RowActions({
     <div className="flex flex-col gap-1 min-w-[120px]">
       {rowError ? <p className="text-[10px] text-red-600">{rowError}</p> : null}
       <div className="flex flex-wrap items-center gap-1">
-        {onToggleActive && !row.assignedByManufacturer ? (
+        {isPending ? (
           <button
             type="button"
-            onClick={handleToggle}
-            disabled={toggling || deleting}
-            title={row.isActive ? "Deactivate (frees seat)" : "Activate (consumes seat)"}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50",
-              row.isActive
-                ? "border-harvest/40 text-harvest hover:bg-harvest/10"
-                : "border-primary/40 text-primary hover:bg-primary/10",
-            )}
+            onClick={handleAccept}
+            disabled={accepting}
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
           >
-            {toggling ? (
+            {accepting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : row.isActive ? (
-              <PowerOff className="h-3.5 w-3.5" />
             ) : (
-              <Power className="h-3.5 w-3.5" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
             )}
-            {row.isActive ? "Deactivate" : "Activate"}
+            {accepting ? "Accepting…" : "Accept Product"}
           </button>
-        ) : null}
+        ) : (
+          <>
+            {onToggleActive && !row.assignedByManufacturer ? (
+              <button
+                type="button"
+                onClick={handleToggle}
+                disabled={toggling || deleting}
+                title={row.isActive ? "Deactivate (frees seat)" : "Activate (consumes seat)"}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                  row.isActive
+                    ? "border-harvest/40 text-harvest hover:bg-harvest/10"
+                    : "border-primary/40 text-primary hover:bg-primary/10",
+                )}
+              >
+                {toggling ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : row.isActive ? (
+                  <PowerOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Power className="h-3.5 w-3.5" />
+                )}
+                {row.isActive ? "Deactivate" : "Activate"}
+              </button>
+            ) : null}
 
-        {onDelete && !row.assignedByManufacturer ? (
-          confirmDelete ? (
-            <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-              <span className="text-xs font-medium text-red-700">Delete?</span>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={handleDelete}
-                className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
-              >
-                {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                {deleting ? "Deleting…" : "Confirm"}
-              </button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => setConfirmDelete(false)}
-                className="text-xs font-medium text-red-600 px-1 hover:underline"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              disabled={toggling || deleting}
-              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </button>
-          )
-        ) : null}
+            {onDelete && !row.assignedByManufacturer ? (
+              confirmDelete ? (
+                <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                  <span className="text-xs font-medium text-red-700">Delete?</span>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                    className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+                  >
+                    {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                    {deleting ? "Deleting…" : "Confirm"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setConfirmDelete(false)}
+                    className="text-xs font-medium text-red-600 px-1 hover:underline"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={toggling || deleting}
+                  className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              )
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
@@ -143,6 +183,7 @@ function RowActions({
 export function InventoryManagementTable({
   rows,
   disabled,
+  userId,
   onUpdated,
   onToggleActive,
   onDelete,
@@ -370,8 +411,10 @@ export function InventoryManagementTable({
                       <td className="px-3 py-3 md:px-4">
                         <RowActions
                           row={r}
+                          userId={userId}
                           onToggleActive={onToggleActive}
                           onDelete={onDelete}
+                          onUpdated={onUpdated}
                         />
                       </td>
                     ) : null}

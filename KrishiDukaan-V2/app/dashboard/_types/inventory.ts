@@ -68,6 +68,8 @@ export interface InventoryRow {
   updatedAt: Date | null;
   /** 'retailer_inventory' | 'manufacturer_assigned' */
   source?: string;
+  /** UID or placeholder retailerDocId */
+  ownerId?: string;
 }
 
 /** Row for the manufacturer's catalogue table (no stock/inventory data). */

@@ -205,6 +205,7 @@ export function AddProductInventoryForm({
   const [searching,     setSearching]     = useState(false);
   const [showDropdown,  setShowDropdown]  = useState(false);
   const [autofilled,    setAutofilled]    = useState(false);
+  const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -221,6 +222,7 @@ export function AddProductInventoryForm({
   const handleNameChange = useCallback((val: string) => {
     setName(val);
     setAutofilled(false);
+    setExistingProductId(null);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (val.trim().length < 2) { setSuggestions([]); setShowDropdown(false); return; }
     setSearching(true);
@@ -238,6 +240,7 @@ export function AddProductInventoryForm({
     setName(product.name);
     setCategory(product.category || CATEGORIES[0]);
     setDescription(product.description || "");
+    setExistingProductId(product.id);
 
     // Populate variants from product
     const src = product.variants.length
@@ -337,10 +340,11 @@ export function AddProductInventoryForm({
           imageUrl: imageUrls[0] ?? undefined,
           storeName: storeName || "My Store",
           sellMode: "offline_store_only",
+          existingProductId: existingProductId ?? undefined,
         });
       }
       setMessage({ type: "ok", text: isManufacturer ? "Product added to your catalogue." : "Product added to your inventory." });
-      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false);
+      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null);
       setVariants([newVariant()]);
       setImages(Array.from({ length: MAX_IMAGES }, newSlot));
       await onCreated();

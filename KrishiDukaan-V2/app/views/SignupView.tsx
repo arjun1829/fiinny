@@ -77,11 +77,18 @@ export default function SignupView({
     return () => { cancelled = true; };
   }, [trimmedInvite]);
 
-  const inviteRetailerOnly = Boolean(trimmedInvite && (inviteLoading || inviteDetails?.claimable === true));
+  const inviteRetailerOnly = Boolean(
+    trimmedInvite &&
+    (
+      inviteLoading ||
+      inviteDetails?.claimable === true ||
+      inviteDetails?.status === "active"
+    ),
+  );
 
   useEffect(() => {
-    if (inviteDetails?.claimable) setRole("retailer");
-  }, [inviteDetails?.claimable]);
+    if (inviteDetails?.claimable || inviteDetails?.status === "active") setRole("retailer");
+  }, [inviteDetails?.claimable, inviteDetails?.status]);
 
   const manufacturerLabel = inviteDetails?.manufacturerName?.trim() || "this manufacturer";
 
@@ -107,7 +114,7 @@ export default function SignupView({
   // ── Shared invite acceptance ────────────────────────────────────────────────
 
   const acceptInviteIfNeeded = async (uid: string, profile: any) => {
-    if (!trimmedInvite || !inviteDetails?.claimable) return;
+    if (!trimmedInvite) return;
     const result = await acceptManufacturerInvite({ uid, inviteCode: trimmedInvite });
     if (result.ok === false) {
       setError(`${result.message} Your account was created, but the invite could not be linked automatically.`);
@@ -121,7 +128,7 @@ export default function SignupView({
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (trimmedInvite && inviteDetails?.claimable === true && role !== "retailer") {
+    if (inviteRetailerOnly && role !== "retailer") {
       setError("This invite is for retailer accounts only. Please select the Retailer account type.");
       return;
     }
@@ -260,7 +267,7 @@ export default function SignupView({
                 {inviteDetails?.status === "revoked"
                   ? "This invite is no longer valid (revoked)."
                   : inviteDetails?.status === "active"
-                    ? "This invite has already been used."
+                    ? "This invite link was already activated. If this is your shop, continue with the same mobile number or sign in to your retailer account."
                     : "This invite cannot be used anymore."}
               </p>
             )}

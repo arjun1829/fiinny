@@ -3,6 +3,10 @@
 import { DashboardShell } from "./_components/dashboard-shell";
 import { DashboardTour } from "./_components/dashboard-tour";
 import { auth, getUserProfile } from '../firebase';
+import {
+  autoAcceptPendingInvitesForPhone,
+  grantAccessIfManufacturerLinked,
+} from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -19,14 +23,29 @@ export default function DashboardLayout({
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push('/');
+        router.push('/?view=login');
       } else {
         const profile = await getUserProfile(user.uid);
-        // Only allow retailers and manufacturers who have paid
-        if (profile && (profile.role === 'retailer' || profile.role === 'manufacturer') && profile.isPaid) {
+        const role = profile?.role;
+        const isPaid = profile?.isPaid;
+
+        if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
           setLoading(false);
+        } else if (role === 'retailer') {
+          // Retailer not yet marked paid — try auto-accepting pending invites by phone,
+          // then check if they're already linked to a manufacturer network.
+          const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
+          if (accepted) {
+            setLoading(false);
+          } else {
+            const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
+            if (linked) {
+              setLoading(false);
+            } else {
+              router.push('/');
+            }
+          }
         } else {
-          // Redirect to home (which handles paywall/role check)
           router.push('/');
         }
       }

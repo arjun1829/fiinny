@@ -20,8 +20,18 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(myPhone())).data.role;
     }
 
+    // Direct admin check for email-based admin accounts that have no uidIndex entry.
+    // Reads users/{uid} (UID used as doc ID by promoteToAdmin).
+    function isDirectAdmin() {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // isAdmin() works for both phone-based admins (via myRole) and
+    // email-based admins whose doc lives at users/{uid} (via isDirectAdmin).
     function isAdmin() {
-      return isAuthed() && myRole() == 'admin';
+      return isDirectAdmin() || (isAuthed() && myRole() == 'admin');
     }
 
     // ─── uidIndex ────────────────────────────────────────────────────────────
@@ -39,12 +49,13 @@ service cloud.firestore {
     // Document ID = normalized phone e.g. "+919876543210"
     match /users/{phone} {
       allow read: if isAuthed() && (
+        request.auth.uid == phone ||
         myPhone() == phone || isAdmin() || myRole() in ['retailer', 'manufacturer']
       );
       allow create: if isAuthed()
                        && myPhone() == phone
                        && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer'];
-      allow update: if isAdmin() || (isAuthed() && myPhone() == phone &&
+      allow update: if isAdmin() || (isAuthed() && (request.auth.uid == phone || myPhone() == phone) &&
         // Prevent role downgrade
         !(
           (resource.data.role == 'retailer'     && request.resource.data.role == 'customer') ||
@@ -207,15 +218,21 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if true;
       allow create: if isAuthed();
-      allow update: if isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid
-      );
-      allow delete: if isAuthed() && (
+        resource.data.createdBy == request.auth.uid ||
+        // Allow claiming assigned product if it matches the user's retailerDocId (from invite)
+        (resource.data.source == 'manufacturer_assigned' && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
+        // Allow any retailer to add their store to the product's availability array
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability'])
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid
-      );
+      ));
     }
 
     match /retailers/{retailerId} {
@@ -223,7 +240,10 @@ service cloud.firestore {
       allow create: if isAuthed();
       allow update: if isAuthed() && (
         resource.data.userId == request.auth.uid ||
-        retailerId == request.auth.uid
+        resource.data.retailerId == request.auth.uid ||
+        retailerId == request.auth.uid ||
+        resource.data.phone == myPhone() ||
+        resource.data.phone == myPhone().replace('+91', '')
       );
       allow delete: if isAuthed() && retailerId == request.auth.uid;
     }
@@ -245,12 +265,14 @@ service cloud.firestore {
       allow read: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
-        resource.data.manufacturerId == request.auth.uid
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.retailerDocId != null
       );
       allow create: if isAuthed();
       allow update: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.retailerId == request.auth.uid
+        resource.data.retailerId == request.auth.uid ||
+        (resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid)
       );
       allow delete: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -270,9 +292,11 @@ service cloud.firestore {
       allow update: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         (
-          resource.data.status == 'invited' &&
-          resource.data.claimable == true &&
-          resource.data.retailerId == '' &&
+          // Allow claim/takeover if phone matches or it's a fresh invite
+          (
+            (resource.data.status == 'invited' && resource.data.claimable == true && resource.data.retailerId == '') ||
+            (resource.data.retailerPhone == myPhone() || resource.data.retailerPhone == myPhone().replace('+91', ''))
+          ) &&
           request.resource.data.status == 'active' &&
           request.resource.data.retailerId == request.auth.uid &&
           request.resource.data.claimable == false
@@ -282,13 +306,17 @@ service cloud.firestore {
     }
 
     match /retailerSeatListings/{docId} {
-      allow read: if isAuthed() && (
+      allow read: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
-        resource.data.manufacturerId == request.auth.uid
-      );
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.retailerDocId != null
+      ));
       allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      allow update: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        (resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid)
+      );
       allow delete: if isAuthed() && resource.data.ownerId == request.auth.uid;
     }
 
@@ -299,7 +327,7 @@ service cloud.firestore {
     }
 
     match /reportLogs/{docId} {
-      allow read, write: if isAuthed() && myRole() == 'admin';
+      allow read, write: if isAdmin();
     }
 
   }

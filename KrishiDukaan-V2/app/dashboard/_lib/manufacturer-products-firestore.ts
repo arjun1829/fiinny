@@ -195,8 +195,53 @@ export async function searchProductsByName(term: string): Promise<Array<{
   if (!term.trim()) return [];
   const snap = await getDocs(query(collection(db, "products"), orderBy("name")));
   const lower = term.toLowerCase();
-  return snap.docs
-    .map((d) => { const r = d.data() as any; return { id: d.id, name: String(r.name ?? ""), category: String(r.category ?? ""), unit: String(r.unit ?? ""), price: Number(r.price ?? 0), description: String(r.description ?? ""), image: String(r.image ?? ""), images: Array.isArray(r.images) ? r.images : [], variants: Array.isArray(r.variants) ? r.variants : [] }; })
+  const rankProduct = (raw: Record<string, unknown>) => {
+    const source = String(raw.source ?? "");
+    if (source === "manufacturer_inventory") return 5;
+    if (source === "retailer_inventory") return 4;
+    if (!source) return 3;
+    if (source === "retailer_inventory_copy") return 2;
+    if (source === "manufacturer_assigned") return 1;
+    return 0;
+  };
+
+  const products = snap.docs
+    .map((d) => {
+      const r = d.data() as Record<string, unknown>;
+      return {
+        id: d.id,
+        name: String(r.name ?? ""),
+        category: String(r.category ?? ""),
+        unit: String(r.unit ?? ""),
+        price: Number(r.price ?? 0),
+        description: String(r.description ?? ""),
+        image: String(r.image ?? ""),
+        images: Array.isArray(r.images) ? r.images.filter((v): v is string => typeof v === "string") : [],
+        variants: Array.isArray(r.variants) ? r.variants : [],
+        source: String(r.source ?? ""),
+        manufacturerProductId: String(r.manufacturerProductId ?? ""),
+        originalProductId: String(r.originalProductId ?? ""),
+        score: rankProduct(r),
+      };
+    })
     .filter((p) => p.name.toLowerCase().includes(lower))
-    .slice(0, 10);
+    .filter((p) => p.source !== "manufacturer_assigned");
+
+  const deduped = new Map<string, typeof products[number]>();
+  for (const product of products) {
+    const key = (
+      product.originalProductId ||
+      product.manufacturerProductId ||
+      `${product.name.trim().toLowerCase()}|${product.category.trim().toLowerCase()}|${product.unit.trim().toLowerCase()}`
+    );
+    const existing = deduped.get(key);
+    if (!existing || product.score > existing.score) {
+      deduped.set(key, product);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 10)
+    .map(({ source: _source, manufacturerProductId: _manufacturerProductId, originalProductId: _originalProductId, score: _score, ...product }) => product);
 }

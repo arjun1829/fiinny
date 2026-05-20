@@ -11,6 +11,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -65,23 +66,55 @@ export async function acceptManufacturerInvite(params: {
     return { ok: false, message: "Missing invite code." };
   }
 
+  console.log(`[acceptInvite] Starting for code: ${code}, uid: ${params.uid}`);
+
+  const normalize = (p: string) => {
+    const d = p.replace(/\D/g, '');
+    if (d.length === 12 && d.startsWith('91')) return d.slice(2);
+    if (d.length === 10) return d;
+    return d;
+  };
+
+  // Resolve the current user's phone
+  let currentPhoneRaw: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", params.uid));
+    currentPhoneRaw = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+  } catch (e) {
+    console.warn("[acceptInvite] Could not resolve current user phone:", e);
+  }
+
+  const currentPhone = currentPhoneRaw ? normalize(currentPhoneRaw) : null;
+  if (!currentPhone) {
+      return { ok: false, message: "Phone number required to claim invite. Please complete your profile." };
+  }
+
   let initial: ManufacturerRetailerInviteSnapshot | null;
   try {
     initial = await findInviteByCode(code);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[acceptInvite] findInviteByCode failed:`, e);
     if (msg.includes("permission") || msg.includes("insufficient")) {
       return { ok: false, message: "Permission error — Firestore rules not deployed yet. Ask your admin to run: firebase deploy --only firestore:rules" };
     }
     return { ok: false, message: "Could not look up invite code. Try again." };
   }
-  const pre = precheckInviteForAcceptance(initial, params.uid);
-  if (!pre.ok) {
-    return { ok: false, message: mapInviteAcceptanceError((pre as { ok: false; reason: any }).reason) };
+  
+  // Normalize invite phone for validation
+  if (initial) {
+      initial.retailerPhone = normalize(initial.retailerPhone);
   }
 
-  const ref = doc(db, COLLECTION, pre.docId);
-  const wasAlreadyActive = initial?.status === "active" && initial.retailerId.trim() === params.uid;
+  const pre = precheckInviteForAcceptance(initial, currentPhone);
+  if (!pre.ok) {
+     const failureReason = (pre as any).reason;
+     console.warn(`[acceptInvite] Precheck failed for ${code}:`, failureReason);
+     return { ok: false, message: mapInviteAcceptanceError(failureReason) };
+  }
+
+  const ref = doc(db, COLLECTION, initial!.id);
+  const wasAlreadyActive = initial?.status === "active" && initial.retailerPhone === currentPhone;
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -90,39 +123,40 @@ export async function acceptManufacturerInvite(params: {
         throw new Error("invalid_code");
       }
       const row = mapInviteSnapshot(snap.id, snap.data() as Record<string, unknown>);
-      const check = precheckInviteForAcceptance(row, params.uid);
+      row.retailerPhone = normalize(row.retailerPhone);
+      const check = precheckInviteForAcceptance(row, currentPhone);
+      
       if (!check.ok) {
-        throw new Error((check as { ok: false; reason: string }).reason);
+        const failureReason = (check as any).reason;
+        throw new Error(typeof failureReason === "string" ? failureReason : "already_used");
       }
 
-      if (row.status === "active" && row.retailerId.trim() === params.uid) {
+      if (row.status === "active" && row.retailerPhone === currentPhone) {
+        console.log(`[acceptInvite] Already active for this phone, skipping update.`);
         return;
       }
 
-      if (row.status !== "invited") {
-        throw new Error("not_invited");
-      }
-      if (!row.claimable) {
-        throw new Error("not_invited");
-      }
-      const rid = row.retailerId.trim();
-      if (rid && rid !== params.uid) {
-        throw new Error("already_used");
-      }
-
+      console.log(`[acceptInvite] Updating invite doc ${row.id} to active for phone ${currentPhone}`);
       transaction.update(ref, {
         status: "active",
-        retailerId: params.uid,
+        retailerId: params.uid, // Legacy support, though we rely on retailerPhone now
+        retailerPhone: currentPhoneRaw, // Keep the raw +91 format in DB for consistency if preferred, or just normalize
         claimable: false,
         updatedAt: serverTimestamp(),
       });
     });
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
-    const reasons = ["invalid_code", "already_used", "expired", "not_invited"] as const;
-    if (reasons.includes(err as (typeof reasons)[number])) {
-      return { ok: false, message: mapInviteAcceptanceError(err as (typeof reasons)[number]) };
+    console.error(`[acceptInvite] Transaction failed:`, e);
+    
+    if (err === "invalid_code" || err === "expired" || err === "not_invited") {
+      return { ok: false, message: mapInviteAcceptanceError(err as any) };
     }
+    if (err === "already_used") {
+      // Fallback message if we don't have the specific UID in the catch block
+      return { ok: false, message: "This invite has already been used by another account. Sign in with that account." };
+    }
+
     return {
       ok: false,
       message: e instanceof Error ? e.message : "Could not accept invite. Try again.",
@@ -130,36 +164,184 @@ export async function acceptManufacturerInvite(params: {
   }
 
   // After successful invite acceptance, backfill product/inventory/listing records.
-  // Products store retailerDocId = the `retailerDocId` FIELD on the manufacturerRetailers doc
-  // (a retailers collection doc ID), NOT the manufacturerRetailers doc's own ID.
   const retailerDocId = initial!.retailerDocId;
+  console.log(`[acceptInvite] Triggering backfill for retailerDocId: ${retailerDocId} to uid: ${params.uid}`);
   const backfillError = await backfillRetailerAfterInvite(params.uid, retailerDocId);
 
   return { ok: true, alreadyActive: wasAlreadyActive, backfillError };
 }
 
-async function backfillRetailerAfterInvite(uid: string, retailerDocId: string): Promise<string | undefined> {
+/**
+ * Finds all retailerDocIds linked to this UID (or phone) (status=active).
+ * Helps find products if the user profile hasn't synced yet.
+ */
+export async function fetchLinkedRetailerDocIds(uid: string): Promise<string[]> {
+  try {
+    let currentPhone: string | null = null;
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+      currentPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+    } catch (e) {
+      // ignore
+    }
+
+    const queries = [];
+    queries.push(getDocs(query(
+      collection(db, "manufacturerRetailers"),
+      where("retailerId", "==", uid),
+      where("status", "==", "active"),
+    )));
+
+    if (currentPhone) {
+      // Handle the raw format and +91 format just in case
+      queries.push(getDocs(query(
+        collection(db, "manufacturerRetailers"),
+        where("retailerPhone", "==", currentPhone),
+        where("status", "==", "active"),
+      )));
+      
+      const normalized = currentPhone.replace(/\D/g, '');
+      const raw = normalized.length === 12 && normalized.startsWith('91') ? normalized.slice(2) : normalized;
+      if (raw !== currentPhone) {
+         queries.push(getDocs(query(
+          collection(db, "manufacturerRetailers"),
+          where("retailerPhone", "==", raw),
+          where("status", "==", "active"),
+        )));
+      }
+    }
+
+    const snaps = await Promise.all(queries);
+    const docs = snaps.flatMap(snap => snap.docs);
+    return Array.from(new Set(docs.map(d => String(d.data().retailerDocId ?? "")).filter(Boolean)));
+  } catch (e) {
+    console.error("[fetchLinkedRetailerDocIds] Failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Finds any pending (status=invited, claimable=true) invites for the retailer's
+ * registered phone number and auto-accepts them — no invite code needed.
+ * Runs the full backfill (updates ownerId on products/inventory/listings,
+ * sets isPaid:true on their user profile).
+ * Returns true if at least one invite was accepted.
+ */
+export async function autoAcceptPendingInvitesForPhone(uid: string): Promise<boolean> {
+  const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+  if (!idxSnap.exists()) return false;
+  const e164Phone = String(idxSnap.data().phone ?? "");
+  if (!e164Phone) return false;
+
+  // Try both E164 (+919876543210) and plain 10-digit (9876543210) variants
+  const phonesToCheck: string[] = [e164Phone];
+  if (e164Phone.startsWith("+91") && e164Phone.length === 13) {
+    phonesToCheck.push(e164Phone.slice(3));
+  }
+
+  // list rule: allow list: if isAuthed() — any authed user can query
+  const snap = await getDocs(query(
+    collection(db, "manufacturerRetailers"),
+    where("retailerPhone", "in", phonesToCheck),
+  ));
+
+  // Filter client-side to avoid composite index requirement
+  const pending = snap.docs.filter((d) => {
+    const data = d.data();
+    return data.status === "invited" && data.claimable === true;
+  });
+
+  if (pending.length === 0) return false;
+
+  let anyAccepted = false;
+  for (const d of pending) {
+    const data = d.data() as Record<string, unknown>;
+    const retailerDocId = String(data.retailerDocId ?? "");
+    try {
+      console.log(`[autoAccept] Activating invite ${d.id} for phone ${data.retailerPhone} -> uid ${uid}`);
+      await updateDoc(d.ref, {
+        status: "active",
+        retailerId: uid,
+        claimable: false,
+        updatedAt: serverTimestamp(),
+      });
+      const res = await backfillRetailerAfterInvite(uid, retailerDocId);
+      if (res) console.warn(`[autoAccept] Backfill warning for ${d.id}:`, res);
+      anyAccepted = true;
+    } catch (e) {
+      console.warn("[autoAccept] Failed for doc", d.id, e);
+    }
+  }
+  return anyAccepted;
+}
+
+/**
+ * For retailers already linked to a manufacturer (status=active, retailerId=uid)
+ * but missing isPaid:true — sets it so the dashboard becomes accessible.
+ * Safe to call on every login; no-ops if already paid or no link found.
+ * Returns true if access was granted.
+ */
+export async function grantAccessIfManufacturerLinked(uid: string): Promise<boolean> {
+  const snap = await getDocs(query(
+    collection(db, "manufacturerRetailers"),
+    where("retailerId", "==", uid),
+  ));
+
+  const hasActive = snap.docs.some((d) => d.data().status === "active");
+  if (!hasActive) return false;
+
+  const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+  const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+  const userDocId = phone || uid;
+
+  await setDoc(doc(db, "users", userDocId), {
+    isPaid: true,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  return true;
+}
+
+export async function backfillRetailerAfterInvite(uid: string, retailerDocId: string): Promise<string | undefined> {
   if (!retailerDocId) {
+    console.warn("[backfill] retailerDocId is empty");
     return "retailerDocId is empty — cannot sync products. Contact your manufacturer.";
   }
+  console.log(`[backfill] Starting for uid: ${uid}, retailerDocId: ${retailerDocId}`);
   try {
     const now = serverTimestamp();
 
-    // 1. Mark the retailer's user profile as paid (merge so it never overwrites the full doc).
-    //    This also sets retailerDocId on users/{uid} which the Firestore rules use to authorize
-    //    product/inventory updates below.
-    await setDoc(doc(db, "users", uid), {
+    // 1. Resolve the user's phone (new schema stores profiles at users/{phone}, not users/{uid}).
+    //    Fall back to uid as doc ID for legacy / email-based accounts.
+    const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+    const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+    const userDocId = phone || uid;
+
+    console.log(`[backfill] Updating user profile ${userDocId} with retailerDocId: ${retailerDocId}`);
+    await setDoc(doc(db, "users", userDocId), {
       isPaid: true,
       retailerDocId,
       updatedAt: now,
     }, { merge: true });
 
+    // Keep the pre-created retailer document as the canonical public store record.
+    await setDoc(doc(db, "retailers", retailerDocId), {
+      userId: uid,
+      retailerId: uid,
+      active: true,
+      updatedAt: now,
+      ...(phone ? { phone } : {}),
+    }, { merge: true });
+
     // 2. Fetch product copies created before the retailer signed up (ownerId = retailerDocId placeholder)
+    console.log(`[backfill] Querying products/inventory/listings for retailerDocId: ${retailerDocId}`);
     const [productsSnap, inventorySnap, listingsSnap] = await Promise.all([
       getDocs(query(collection(db, "products"),            where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "inventory"),           where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "retailerSeatListings"),where("retailerDocId", "==", retailerDocId))),
     ]);
+
+    console.log(`[backfill] Found: ${productsSnap.size} products, ${inventorySnap.size} inventory, ${listingsSnap.size} listings`);
 
     if (productsSnap.empty && inventorySnap.empty && listingsSnap.empty) {
       return `No products found with retailerDocId="${retailerDocId}". The manufacturer may not have assigned any products yet.`;
@@ -170,29 +352,37 @@ async function backfillRetailerAfterInvite(uid: string, retailerDocId: string): 
 
     productsSnap.docs.forEach((d) => {
       const data = d.data() as Record<string, unknown>;
+      const updateData: Record<string, any> = { retailerId: uid, updatedAt: now };
+      if (phone) updateData.retailerPhone = phone; // add phone support
       if (String(data.ownerId ?? "") === retailerDocId) {
-        batch.update(d.ref, { ownerId: uid, retailerId: uid, updatedAt: now });
-      } else {
-        batch.update(d.ref, { retailerId: uid, updatedAt: now });
+        updateData.ownerId = uid;
+        if (phone) updateData.ownerPhone = phone;
       }
+      batch.update(d.ref, updateData);
     });
 
     inventorySnap.docs.forEach((d) => {
-      batch.update(d.ref, { retailerId: uid, updatedAt: now });
+      const updateData: Record<string, any> = { retailerId: uid, updatedAt: now };
+      if (phone) updateData.retailerPhone = phone;
+      batch.update(d.ref, updateData);
     });
 
     listingsSnap.docs.forEach((d) => {
       const data = d.data() as Record<string, unknown>;
       if (!data.retailerId || data.retailerId === retailerDocId) {
-        batch.update(d.ref, { retailerId: uid });
+        const updateData: Record<string, any> = { retailerId: uid };
+        if (phone) updateData.retailerPhone = phone;
+        batch.update(d.ref, updateData);
       }
     });
 
+    console.log("[backfill] Committing batch update...");
     await batch.commit();
+    console.log("[backfill] Success!");
     return undefined; // success
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn("Retailer backfill after invite acceptance failed:", msg);
+    console.error("[backfill] Failed:", e);
     return `Sync failed: ${msg}`;
   }
 }

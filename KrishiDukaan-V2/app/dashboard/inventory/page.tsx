@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -17,11 +18,15 @@ import {
   fetchSeatListingsForOwner,
   computeSeatStats,
 } from "../_lib/subscriptions-firestore";
-import { acceptManufacturerInvite } from "../../lib/invite/invite-acceptance-service";
+import {
+  acceptManufacturerInvite,
+  autoAcceptPendingInvitesForPhone,
+  fetchLinkedRetailerDocIds,
+} from "../../lib/invite/invite-acceptance-service";
 import type { InventoryRow, ManufacturerProductRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { CheckCircle2, KeyRound, Loader2, PlusCircle, Zap } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, PlusCircle, Search, X, Zap } from "lucide-react";
 import Link from "next/link";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 
@@ -188,6 +193,9 @@ type UserRole = "manufacturer" | "retailer";
 const DEFAULT_STATS: SeatStats = { totalPurchased: 0, activeUsed: 0, available: 0, expiringSoon: 0 };
 
 export default function InventoryPage() {
+  const searchParams = useSearchParams();
+  const urlInviteCode = searchParams.get("inviteCode") ?? "";
+
   const [userId, setUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -200,8 +208,11 @@ export default function InventoryPage() {
   // Inventory state
   const [retailerRows, setRetailerRows] = useState<InventoryRow[]>([]);
   const [catalogueRows, setCatalogueRows] = useState<ManufacturerProductRow[]>([]);
+  const [search, setSearch] = useState("");
 
-  const load = useCallback(async (uid: string, resolvedRole: UserRole) => {
+  const [magicStatus, setMagicStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const load = useCallback(async (uid: string, resolvedRole: UserRole, rDocId?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -218,8 +229,44 @@ export default function InventoryPage() {
         setCatalogueRows(rows);
         setRetailerRows([]);
       } else {
-        const rows = await fetchRetailerInventoryRows(uid);
-        setRetailerRows(rows);
+        // Find ALL linked retailerDocIds to be safe (if backfill failed but invite is active)
+        const linkedIds = await fetchLinkedRetailerDocIds(uid);
+        if (rDocId && !linkedIds.includes(rDocId)) linkedIds.push(rDocId);
+
+        // Fetch products for all linked IDs
+        const rawRows: InventoryRow[] = [];
+        if (linkedIds.length > 0) {
+          const results = await Promise.all(linkedIds.map(id => fetchRetailerInventoryRows(uid, id)));
+          const seen = new Set<string>();
+          results.flat().forEach(row => {
+            if (!seen.has(row.inventoryId)) {
+              seen.add(row.inventoryId);
+              rawRows.push(row);
+            }
+          });
+        } else {
+          rawRows.push(...await fetchRetailerInventoryRows(uid));
+        }
+
+        // Dedup assigned products by name — when the same manufacturer product
+        // was removed and re-assigned, two copies (one inactive, one active) can
+        // share the same name. Keep the active copy; on equal activity keep the
+        // most recently updated one.
+        const nameKey = (r: InventoryRow) =>
+          r.source === "manufacturer_assigned" ? `assigned:${r.productName.trim().toLowerCase()}` : `own:${r.inventoryId}`;
+        const deduped = new Map<string, InventoryRow>();
+        rawRows.forEach(row => {
+          const key = nameKey(row);
+          const existing = deduped.get(key);
+          if (!existing) { deduped.set(key, row); return; }
+          const rowBetter =
+            (row.isActive && !existing.isActive) ||
+            (row.isActive === existing.isActive && (row.updatedAt?.getTime() ?? 0) > (existing.updatedAt?.getTime() ?? 0));
+          if (rowBetter) deduped.set(key, row);
+        });
+        const allRetailerRows = Array.from(deduped.values());
+        allRetailerRows.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+        setRetailerRows(allRetailerRows);
         setCatalogueRows([]);
       }
     } catch (e) {
@@ -250,18 +297,60 @@ export default function InventoryPage() {
         const resolvedRole: UserRole =
           profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
         setRole(resolvedRole);
-        await load(user.uid, resolvedRole);
+        let rDocId = profileData?.retailerDocId;
+
+        if (resolvedRole === "retailer") {
+          // Auto-accept any pending invites matching the retailer's phone (no code needed).
+          // Runs silently — new invites assigned while already logged in appear on next load.
+          await autoAcceptPendingInvitesForPhone(user.uid).catch((e) => {
+            console.warn("[autoAccept] Silent failure:", e);
+          });
+
+          // Also accept an invite code passed via the email magic link (?inviteCode=XXXX)
+          if (urlInviteCode) {
+            setMagicStatus(null);
+            try {
+              const result = await acceptManufacturerInvite({ uid: user.uid, inviteCode: urlInviteCode });
+              if (result.ok === true) {
+                if (result.backfillError) {
+                  setMagicStatus({ type: "error", message: `Linked, but product sync failed: ${result.backfillError}` });
+                } else {
+                  setMagicStatus({ type: "success", message: "Magic link accepted! Products synced." });
+                }
+              } else {
+                setMagicStatus({ type: "error", message: result.message });
+              }
+            } catch (e) {
+              setMagicStatus({ type: "error", message: "Magic link failed to process." });
+            }
+            const url = new URL(window.location.href);
+            url.searchParams.delete("inviteCode");
+            window.history.replaceState({}, "", url.toString());
+            
+            // Refresh profile data as backfill might have updated retailerDocId
+            const freshProfile = await getUserProfile(user.uid);
+            if (freshProfile) {
+              setProfile(freshProfile);
+              rDocId = freshProfile.retailerDocId;
+            }
+          }
+        }
+
+        await load(user.uid, resolvedRole, rDocId);
       } catch {
         setLoading(false);
       }
     });
     return () => unsub();
-  }, [load]);
+  }, [load, urlInviteCode]);
 
   const health = useMemo(() => computeHealth(retailerRows), [retailerRows]);
 
   const refresh = useCallback(async () => {
-    if (userId) await load(userId, role);
+    if (userId) {
+      const p = await getUserProfile(userId);
+      await load(userId, role, p?.retailerDocId);
+    }
   }, [userId, role, load]);
 
   // ─── Auth states ──────────────────────────────────────────────────────────
@@ -303,6 +392,15 @@ export default function InventoryPage() {
         <SeatInfoCard stats={seatStats} />
       </div>
 
+      {magicStatus && (
+        <div className={`mb-6 flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium ${
+          magicStatus.type === "success" ? "bg-primary/10 text-primary border border-primary/20" : "bg-red-50 text-red-700 border border-red-200"
+        }`}>
+          {magicStatus.type === "success" && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+          {magicStatus.message}
+        </div>
+      )}
+
       {error ? (
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
@@ -325,15 +423,35 @@ export default function InventoryPage() {
 
       {/* Product table */}
       <section className="mt-8" aria-label="Inventory list">
-        <h2 className="text-lg font-semibold text-on-surface">
-          {isManufacturer ? "Your catalogue" : "Your inventory"}
-        </h2>
-        <p className="mt-1 text-sm text-on-surface-variant">
-          {isManufacturer
-            ? "Products you own (ownerId = your UID, ownerType = manufacturer)."
-            : "Products from your store — own and manufacturer-assigned (ownerId = your UID, ownerType = retailer)."}
-        </p>
-        <div className="mt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-on-surface">
+              {isManufacturer ? "Your catalogue" : "Your inventory"}
+            </h2>
+            <p className="mt-0.5 text-sm text-on-surface-variant">
+              {isManufacturer
+                ? "Products you own and manage."
+                : "Own products and manufacturer-assigned items."}
+            </p>
+          </div>
+          {/* Search bar */}
+          <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 w-full sm:w-64">
+            <Search className="h-4 w-4 text-outline shrink-0" />
+            <input
+              type="text"
+              placeholder="Search by product name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch("")} className="text-outline hover:text-on-surface">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        <div>
           {loading ? (
             <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -341,7 +459,13 @@ export default function InventoryPage() {
           ) : isManufacturer ? (
             <ManufacturerCatalogueTable rows={catalogueRows} onRefresh={refresh} />
           ) : (
-            <InventoryManagementTable rows={retailerRows} onUpdated={refresh} />
+            <InventoryManagementTable
+              rows={retailerRows.filter(r =>
+                !search || r.productName.toLowerCase().includes(search.toLowerCase())
+              )}
+              onUpdated={refresh}
+              userId={userId}
+            />
           )}
         </div>
       </section>

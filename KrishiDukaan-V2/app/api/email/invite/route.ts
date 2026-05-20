@@ -18,11 +18,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
+    const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app';
     const inviteLink = inviteCode 
       ? buildSignupInviteUrl(inviteCode) 
-      : `${process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app'}/?view=login`;
+      : `${base}/dashboard/inventory`;
+    
+    // If it's an existing retailer but we have an invite code (e.g. from linkExistingRetailerToNetwork),
+    // ensure the link includes it so the dashboard can auto-sync.
+    const finalLink = (inviteCode && inviteLink.includes('/dashboard/inventory'))
+      ? `${inviteLink}?inviteCode=${encodeURIComponent(inviteCode)}`
+      : inviteLink;
       
-    const { html, text } = buildInviteEmail({ shopName, inviteCode, inviteLink, manufacturerName });
+    const { html, text } = buildInviteEmail({ shopName, inviteCode, inviteLink: finalLink, manufacturerName });
 
     await sendEmail({
       to: retailerEmail,

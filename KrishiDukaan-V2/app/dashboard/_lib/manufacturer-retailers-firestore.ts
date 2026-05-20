@@ -80,6 +80,16 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
   };
 }
 
+// ─── Phone normalization ──────────────────────────────────────────────────────
+
+function toE164India(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `+91${digits.slice(1)}`;
+  return phone.trim();
+}
+
 // ─── Invite code generation ───────────────────────────────────────────────────
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -164,13 +174,15 @@ export async function createNetworkRetailer(
   const batch = writeBatch(db);
   const now = serverTimestamp();
 
+  const normalizedPhone = toE164India(input.phone);
+
   // Pre-create retailer entity (no auth UID yet)
   const retailerRef = doc(collection(db, "retailers"));
   const retailerPayload: Record<string, unknown> = {
     role: "retailer",
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
-    phone: input.phone.trim(),
+    phone: normalizedPhone,
     email: input.email.trim().toLowerCase(),
     address: {
       line1: input.address.line1.trim(),
@@ -202,7 +214,7 @@ export async function createNetworkRetailer(
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
     retailerEmail: input.email.trim().toLowerCase(),
-    retailerPhone: input.phone.trim(),
+    retailerPhone: normalizedPhone,
     inviteCode,
     status: "invited",
     claimable: true,
@@ -276,7 +288,7 @@ export async function updateNetworkRetailer(
   const update: Record<string, unknown> = {
     shopName:      patch.shopName.trim(),
     ownerName:     patch.ownerName.trim(),
-    retailerPhone: patch.phone.trim(),
+    retailerPhone: toE164India(patch.phone),
     retailerEmail: patch.email.trim().toLowerCase(),
     updatedAt:     serverTimestamp(),
   };
@@ -385,7 +397,7 @@ export async function linkExistingRetailerToNetwork(input: {
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
     retailerEmail: input.email.trim().toLowerCase(),
-    retailerPhone: input.phone.trim(),
+    retailerPhone: toE164India(input.phone),
     inviteCode,
     status: "active",
     claimable: false,
@@ -401,7 +413,11 @@ export async function linkExistingRetailerToNetwork(input: {
     let emailToNotify = input.email.trim().toLowerCase();
     if (!emailToNotify || emailToNotify.includes("@krishidukan.local")) {
       try {
-        const snap = await getDoc(doc(db, "users", input.retailerUid));
+        const idxSnap = await getDoc(doc(db, "uidIndex", input.retailerUid));
+        const phone = idxSnap.exists() ? (idxSnap.data().phone as string) : null;
+        const snap = phone
+          ? await getDoc(doc(db, "users", phone))
+          : await getDoc(doc(db, "users", input.retailerUid));
         if (snap.exists()) {
           const fresh = (snap.data()?.email ?? "").trim().toLowerCase();
           if (fresh && !fresh.includes("@krishidukan.local")) emailToNotify = fresh;

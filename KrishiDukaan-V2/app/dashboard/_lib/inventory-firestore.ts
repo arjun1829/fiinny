@@ -1,7 +1,9 @@
 import {
+  arrayUnion,
   collection,
   doc,
   documentId,
+  getDoc,
   getDocs,
   increment,
   query,
@@ -11,6 +13,7 @@ import {
   writeBatch,
   type Timestamp,
 } from "firebase/firestore";
+
 import { db } from "../../firebase";
 import type {
   InventoryDoc,
@@ -39,6 +42,20 @@ function timestampToDate(value: unknown): Date | null {
 function toNum(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+async function resolveUserCounterDocId(uid: string): Promise<string | null> {
+  const [idxSnap, legacyUserSnap] = await Promise.all([
+    getDoc(doc(db, "uidIndex", uid)),
+    getDoc(doc(db, "users", uid)),
+  ]);
+
+  if (idxSnap.exists()) {
+    const phone = String(idxSnap.data().phone ?? "").trim();
+    if (phone) return phone;
+  }
+
+  return legacyUserSnap.exists() ? uid : null;
 }
 
 function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
@@ -162,14 +179,44 @@ export async function fetchProductNames(productIds: string[]): Promise<Map<strin
 /**
  * Fetch inventory rows for a RETAILER (active + inactive — management UI).
  *
- * Strategy (ownerId-first):
+ * Strategy:
  *   1. Query `products` where ownerId == uid AND ownerType == "retailer"
- *   2. For those productIds, query `inventory`
- *   3. Join and return InventoryRow[] including isActive state
+ *   2. ALSO Query `products` where retailerDocId == retailerDocId (for pending assignments)
+ *   3. Join and return InventoryRow[]
  */
-export async function fetchRetailerInventoryRows(ownerId: string): Promise<InventoryRow[]> {
-  // Include all products (active + inactive) so the UI can show toggle controls
-  const products = await fetchProductsByOwner(ownerId, "retailer");
+export async function fetchRetailerInventoryRows(
+  ownerId: string,
+  retailerDocId?: string,
+): Promise<InventoryRow[]> {
+  // Query by UID
+  const q1 = query(
+    collection(db, "products"),
+    where("ownerId", "==", ownerId),
+    where("ownerType", "==", "retailer"),
+  );
+  
+  // Query by retailerDocId if available (for products assigned but not yet backfilled/accepted)
+  const queries = [getDocs(q1)];
+  if (retailerDocId) {
+    const q2 = query(
+      collection(db, "products"),
+      where("retailerDocId", "==", retailerDocId),
+      where("ownerType", "==", "retailer"),
+    );
+    queries.push(getDocs(q2));
+  }
+
+  const snaps = await Promise.all(queries);
+  const productMap = new Map<string, ProductDoc>();
+  
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const p = mapProduct(d.id, d.data() as Record<string, unknown>);
+      productMap.set(p.id, p);
+    });
+  });
+
+  const products = Array.from(productMap.values());
   if (!products.length) return [];
 
   const productIds = products.map((p) => p.id);
@@ -191,15 +238,50 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
         reorderThreshold: inv.reorderThreshold,
         status,
         isActive: p.isActive,
-        assignedByManufacturer: inv.assignedByManufacturer ?? false,
+        assignedByManufacturer: inv.assignedByManufacturer === true,
         updatedAt: timestampToDate(inv.updatedAt),
         source: p.source,
+        // Add ownerId to the row so we can detect if it's "Pending Acceptance"
+        ownerId: p.ownerId,
       },
     ];
   });
 
   rows.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
   return rows;
+}
+
+/**
+ * Manually accepts an assigned product: updates ownerId and retailerId to the current user's UID.
+ * This is used when a retailer sees an assigned product that hasn't been backfilled yet.
+ */
+export async function acceptAssignedProduct(
+  productId: string,
+  inventoryId: string,
+  uid: string,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+
+  batch.update(doc(db, "products", productId), {
+    ownerId: uid,
+    retailerId: uid,
+    updatedAt: now,
+  });
+
+  batch.update(doc(db, "inventory", inventoryId), {
+    retailerId: uid,
+    ownerId: uid, // ensure inventory ownerId also matches
+    isAvailable: true, // Auto-available upon acceptance
+    updatedAt: now,
+  });
+
+  // Also try to update any associated seat listing
+  // We can't easily find the listing ID here without another query, 
+  // but backfillRetailerAfterInvite handles the listings.
+  // For individual acceptance, updating the product/inventory is usually enough for the UI.
+
+  await batch.commit();
 }
 
 /**
@@ -250,15 +332,17 @@ export type AddProductInventoryInput = {
   imageUrl?: string;
   storeName?: string;
   sellMode: "online_delivery" | "offline_store_only";
+  existingProductId?: string;
 };
 
 export async function createProductAndInventory(
   ownerId: string,
   input: AddProductInventoryInput,
 ): Promise<void> {
-  const [subs, listings] = await Promise.all([
+  const [subs, listings, userCounterDocId] = await Promise.all([
     fetchSubscriptions(ownerId),
     fetchSeatListingsForOwner(ownerId),
+    resolveUserCounterDocId(ownerId),
   ]);
   if (!canAssignSeat(subs, listings)) {
     throw new Error(
@@ -275,6 +359,9 @@ export async function createProductAndInventory(
   const sellMode =
     input.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
 
+  const isCopy = !!input.existingProductId;
+  const sourceVal = isCopy ? "retailer_inventory_copy" : "retailer_inventory";
+
   const productRef = doc(collection(db, "products"));
   batch.set(productRef, {
     id: productRef.id,
@@ -288,7 +375,7 @@ export async function createProductAndInventory(
     ownerId,
     ownerType: "retailer",
     createdBy: ownerId,
-    source: "retailer_inventory",
+    source: sourceVal,
     createdAt: now,
     updatedAt: now,
     
@@ -299,7 +386,16 @@ export async function createProductAndInventory(
     distance: "Nearby",
     sellMode,
     isOnline: sellMode === "online_delivery",
+    originalProductId: input.existingProductId || null,
   });
+
+  if (isCopy && input.existingProductId) {
+    // Append to original product's availability array
+    const originalRef = doc(db, "products", input.existingProductId);
+    batch.update(originalRef, {
+      availability: arrayUnion({ storeId: ownerId, stockLevel: "In Stock" })
+    });
+  }
 
   const inventoryRef = doc(collection(db, "inventory"));
   batch.set(inventoryRef, {
@@ -327,11 +423,13 @@ export async function createProductAndInventory(
     expiresAt: subExpiry,
   });
 
-  batch.set(
-    doc(db, "users", ownerId),
-    { productCount: increment(1), updatedAt: now },
-    { merge: true },
-  );
+  if (userCounterDocId) {
+    batch.set(
+      doc(db, "users", userCounterDocId),
+      { productCount: increment(1), updatedAt: now },
+      { merge: true },
+    );
+  }
 
   await batch.commit();
 }
