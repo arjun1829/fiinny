@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GeoPoint, doc, getDoc, updateDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSearchParams } from "next/navigation";
 import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X } from "lucide-react";
@@ -148,11 +148,17 @@ function ProfilePageInner() {
         });
         setTagline(d.tagline ?? "");
       }
-      // onlineDelivery is stored on the user's profile doc
-      const userSnap = await getDoc(doc(db, "users", userId));
-      if (userSnap.exists()) {
-        setOnlineDelivery(!!(userSnap.data() as any).onlineDelivery);
-      }
+      // onlineDelivery lives on users/{phone} (new schema) — resolve via uidIndex
+      try {
+        const idxSnap = await getDoc(doc(db, "uidIndex", userId));
+        if (idxSnap.exists()) {
+          const phone = String(idxSnap.data().phone ?? "");
+          if (phone) {
+            const userSnap = await getDoc(doc(db, "users", phone));
+            if (userSnap.exists()) setOnlineDelivery(!!(userSnap.data() as any).onlineDelivery);
+          }
+        }
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
   }, []);
 
@@ -210,9 +216,15 @@ function ProfilePageInner() {
       const listener = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
-        if (place.name) setForm((p) => ({ ...p, businessName: place.name }));
-        if (place.address_components?.length)
-          setForm((p) => ({ ...p, ...extractAddressFields(place as any) }));
+        const addressFields = extractAddressFields(place as any);
+        // Set the uncontrolled input value imperatively so the user sees the selection
+        if (addressInputRef.current && addressFields.line1)
+          addressInputRef.current.value = addressFields.line1;
+        setForm((p) => ({
+          ...p,
+          ...(place.name ? { businessName: place.name } : {}),
+          ...addressFields,
+        }));
         applyPlaceGeometry(place);
       });
       autocompleteListenerRef.current = listener;
@@ -270,6 +282,9 @@ function ProfilePageInner() {
     e.preventDefault();
     if (!uid || !userRole) return;
     if (!geo) { setStatus({ type: "error", message: "Please select an address from autocomplete or use current location." }); return; }
+    // Capture the uncontrolled address input's current DOM value before saving
+    const currentLine1 = addressInputRef.current?.value?.trim() || form.line1;
+    const formToSave = { ...form, line1: currentLine1 };
     setSaving(true); setStatus(null);
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
@@ -277,9 +292,9 @@ function ProfilePageInner() {
       await setDoc(doc(db, col, uid), { socialLinks: social, updatedAt: serverTimestamp() }, { merge: true });
 
       if (userRole === "manufacturer") {
-        await saveManufacturerProfile(uid, form, geo, manufacturerCreatedAt);
+        await saveManufacturerProfile(uid, formToSave, geo, manufacturerCreatedAt);
       } else {
-        await saveRetailerProfile(uid, form, geo, retailerExtras ?? {
+        await saveRetailerProfile(uid, formToSave, geo, retailerExtras ?? {
           createdAt: null, onboardingType: null, manufacturerId: null, active: true, subscriptionStatus: "free",
         });
       }
@@ -306,9 +321,14 @@ function ProfilePageInner() {
     setStatus(null);
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
-      // Use setDoc with merge:true so it works even if the doc doesn't exist yet
       await setDoc(doc(db, col, uid), { tagline, updatedAt: serverTimestamp() }, { merge: true });
-      await setDoc(doc(db, "users", uid), { onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
+
+      // Write onlineDelivery to users/{phone} (new schema) via uidIndex
+      const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+      const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
+      const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+      await setDoc(userTarget, { onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
+
       setStatus({ type: "success", message: "Settings saved." });
     } catch (err) {
       setStatus({ type: "error", message: err instanceof Error ? err.message : "Failed to save settings." });
@@ -518,9 +538,12 @@ function ProfilePageInner() {
                   className={inputCls} placeholder="+91…" />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">Email</span>
-                <input required type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  className={inputCls} />
+                <span className="font-medium text-on-surface">
+                  Email
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional — used for email notifications)</span>
+                </span>
+                <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                  className={inputCls} placeholder="your@email.com" />
               </label>
             </div>
           </section>
@@ -556,8 +579,11 @@ function ProfilePageInner() {
                   Search on Google Maps
                   <span className="ml-1 font-normal text-on-surface-variant">— auto-fills address</span>
                 </span>
-                <input ref={addressInputRef} required value={form.line1} autoComplete="off"
-                  onChange={(e) => setForm((p) => ({ ...p, line1: e.target.value }))}
+                {/* Uncontrolled input — Google Maps Autocomplete sets value directly via DOM.
+                    A controlled input (value+onChange) causes React to fight Maps over ownership
+                    of the input value, breaking the dropdown selection. */}
+                <input ref={addressInputRef} required autoComplete="off"
+                  defaultValue={form.line1}
                   className={inputCls} placeholder="Type your business name or address" />
               </label>
               <div className="grid gap-4 md:grid-cols-3">

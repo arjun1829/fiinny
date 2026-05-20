@@ -59,10 +59,17 @@ export async function assignProductToRetailer(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
-  // Fetch the manufacturer product to copy its data
-  const productSnap = await getDoc(doc(db, "products", input.productId));
+  // Fetch the manufacturer product and retailer profile in parallel
+  const [productSnap, retailerSnap] = await Promise.all([
+    getDoc(doc(db, "products", input.productId)),
+    getDoc(doc(db, "retailers", input.retailerId || input.retailerDocId)),
+  ]);
   if (!productSnap.exists()) throw new Error("Product not found.");
   const src = productSnap.data() as Record<string, unknown>;
+  const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
+  const retailerStoreName = retailerData
+    ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
+    : "";
 
   // Guard against duplicate active assignment (keyed on retailerDocId — works pre-signup)
   const dupQ = query(
@@ -99,14 +106,14 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
     source: "manufacturer_assigned",
-    
+
     // Market display fields
-    store: String(src.store || "Local Store"),
+    store: retailerStoreName,
     stock: "In Stock",
     distance: "Nearby",
     sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
     isOnline: src.isOnline === true || src.sellMode === "online_delivery",
-    
+
     createdAt: now,
     updatedAt: now,
   });
@@ -145,8 +152,11 @@ export async function assignProductToRetailer(
 
   // 4. Update manufacturer product's availability so the retailer's store appears
   //    in the marketplace product detail page.
+  //    Use retailerId (Firebase Auth UID) when available — that's the store ID in
+  //    the retailers collection. Fall back to retailerDocId pre-signup.
+  const availabilityStoreId = input.retailerId || input.retailerDocId;
   batch.update(doc(db, "products", input.productId), {
-    availability: arrayUnion({ storeId: input.retailerDocId, stockLevel: "In Stock" }),
+    availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
   });
 
   await batch.commit();
@@ -166,8 +176,9 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
   const batch = writeBatch(db);
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
-  const retailerProductId = String(data.productId ?? "");
-  const retailerDocId     = String(data.retailerDocId ?? "");
+  const retailerProductId  = String(data.productId ?? "");
+  const retailerDocId      = String(data.retailerDocId ?? "");
+  const retailerId         = String(data.retailerId ?? "");
   if (retailerProductId) {
     batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
   }
@@ -176,13 +187,14 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
 
   // Remove the retailer's store from the manufacturer product's availability array.
   // We look up the retailer product copy to find the manufacturer's original product ID.
-  if (retailerProductId && retailerDocId) {
+  const availabilityStoreId = retailerId || retailerDocId;
+  if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
       const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
       if (mfgProductId) {
         await updateDoc(doc(db, "products", mfgProductId), {
-          availability: arrayRemove({ storeId: retailerDocId, stockLevel: "In Stock" }),
+          availability: arrayRemove({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
         });
       }
     } catch { /* non-critical — product may already be deleted */ }
@@ -254,10 +266,15 @@ export async function bulkAssignProductsToRetailer(
     );
   }
 
-  // Fetch all product docs in one batch
-  const productSnaps = await Promise.all(
-    toAssign.map((id) => getDoc(doc(db, "products", id))),
-  );
+  // Fetch all product docs and retailer profile in parallel
+  const [productSnaps, retailerSnap] = await Promise.all([
+    Promise.all(toAssign.map((id) => getDoc(doc(db, "products", id)))),
+    getDoc(doc(db, "retailers", retailerId || retailerDocId)),
+  ]);
+  const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
+  const retailerStoreName = retailerData
+    ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
+    : "";
 
   const now = serverTimestamp();
   const batch = writeBatch(db);
@@ -293,14 +310,14 @@ export async function bulkAssignProductsToRetailer(
       retailerDocId,
       retailerId: retailerId ?? "",
       source: "manufacturer_assigned",
-      
+
       // Market display fields
-      store: String(src.store || "Local Store"),
+      store: retailerStoreName,
       stock: "In Stock",
       distance: "Nearby",
       sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
       isOnline: src.isOnline === true || src.sellMode === "online_delivery",
-      
+
       createdAt: now,
       updatedAt: now,
     });
@@ -335,6 +352,13 @@ export async function bulkAssignProductsToRetailer(
       manufacturerProductId: productId,
       listingType: "assigned",
       expiresAt: subExpiry,
+    });
+
+    // 4. Add retailer's store to the manufacturer product's availability array
+    //    Use retailerId (Firebase Auth UID) when available — that's the store ID.
+    const availabilityStoreId = retailerId || retailerDocId;
+    batch.update(doc(db, "products", productId), {
+      availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
     });
 
     assigned.push(productId);

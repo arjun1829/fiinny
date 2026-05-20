@@ -48,3 +48,19 @@
   margin: 10px 14px !important;
   font-family: inherit !important;
 }
+
+/* Google Maps Places Autocomplete dropdown — must float above everything */
+.pac-container {
+  z-index: 99999 !important;
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+  font-family: inherit !important;
+  margin-top: 4px !important;
+}
+.pac-item {
+  padding: 8px 12px !important;
+  cursor: pointer !important;
+  font-size: 13px !important;
+}
+.pac-item:hover { background: #f8fafc !important; }

@@ -396,19 +396,30 @@ export async function linkExistingRetailerToNetwork(input: {
   });
 
   // Trigger notification email (fire-and-forget)
-  const trimmedEmail = input.email.trim().toLowerCase();
-  if (trimmedEmail) {
+  // input.email may be stale/placeholder; fetch fresh from users doc
+  (async () => {
+    let emailToNotify = input.email.trim().toLowerCase();
+    if (!emailToNotify || emailToNotify.includes("@krishidukan.local")) {
+      try {
+        const snap = await getDoc(doc(db, "users", input.retailerUid));
+        if (snap.exists()) {
+          const fresh = (snap.data()?.email ?? "").trim().toLowerCase();
+          if (fresh && !fresh.includes("@krishidukan.local")) emailToNotify = fresh;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!emailToNotify) return;
     fetch("/api/email/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        retailerEmail: trimmedEmail,
+        retailerEmail: emailToNotify,
         shopName: input.shopName.trim(),
-        inviteCode: "", // No invite code needed for existing accounts
+        inviteCode: "",
         manufacturerName: input.manufacturerName,
       }),
-    }).catch(() => {/* email failure is non-fatal */});
-  }
+    }).catch(() => {});
+  })();
 
   return { inviteDocId: ref.id };
 }
