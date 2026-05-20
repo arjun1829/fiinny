@@ -3,145 +3,271 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() {
+    // ─── Auth helpers ────────────────────────────────────────────────────────
+
+    function isAuthed() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Resolve the caller's normalized phone from uidIndex.
+    // Costs 1 cached read per rule evaluation — only call this for
+    // collections that truly need phone-based identity.
+    function myPhone() {
+      return get(/databases/$(database)/documents/uidIndex/$(request.auth.uid)).data.phone;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(myPhone())).data.role;
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthed() && myRole() == 'admin';
     }
 
-    function userRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    // ─── uidIndex ────────────────────────────────────────────────────────────
+    // Maps Firebase Auth UID → normalized phone. Written once on first login.
+    // Rule deliberately avoids myPhone() to break the bootstrap chicken-and-egg.
+    match /uidIndex/{uid} {
+      allow read:   if isAuthed() && request.auth.uid == uid;
+      allow create: if isAuthed() && request.auth.uid == uid
+                       && request.resource.data.keys().hasAll(['phone', 'createdAt'])
+                       && request.resource.data.phone is string;
+      allow update, delete: if isAdmin();
     }
 
-    // User profiles
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin() ||
-        (isAuthenticated() && userRole() == 'manufacturer' &&
-         resource.data.role == 'retailer');
-      allow create: if isAuthenticated() &&
-        request.resource.data.role in ['customer', 'retailer', 'manufacturer', 'admin'];
-      allow update: if isAdmin() || (isOwner(userId) && (
-        (request.resource.data.role == resource.data.role) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['isPaid', 'subscriptionStatus', 'paymentDetails', 'totalSeats',
-           'productCount', 'updatedAt', 'role', 'name', 'email', 'phone']
-        ))
-      ));
+    // ─── users/{phone} ───────────────────────────────────────────────────────
+    // Document ID = normalized phone e.g. "+919876543210"
+    match /users/{phone} {
+      allow read: if isAuthed() && (
+        myPhone() == phone || isAdmin() || myRole() in ['retailer', 'manufacturer']
+      );
+      allow create: if isAuthed()
+                       && myPhone() == phone
+                       && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer'];
+      allow update: if isAdmin() || (isAuthed() && myPhone() == phone &&
+        // Prevent role downgrade
+        !(
+          (resource.data.role == 'retailer'     && request.resource.data.role == 'customer') ||
+          (resource.data.role == 'retailer'     && request.resource.data.role == 'consumer') ||
+          (resource.data.role == 'manufacturer' && request.resource.data.role in ['customer','consumer','retailer'])
+        )
+      );
       allow delete: if isAdmin();
     }
 
-    // Hubs
+    // ─── profiles/{phone} ────────────────────────────────────────────────────
+    // Business profile — public read, owner write.
+    match /profiles/{phone} {
+      allow read: if true;
+      allow create: if isAuthed() && myPhone() == phone;
+      allow update: if isAdmin() || (isAuthed() && myPhone() == phone);
+      allow delete: if isAdmin();
+    }
+
+    // ─── catalog ─────────────────────────────────────────────────────────────
+    // Master product catalog (new schema). Public read.
+    match /catalog/{catalogId} {
+      allow read: if true;
+      allow create: if isAuthed() && myRole() in ['retailer', 'manufacturer', 'admin']
+                       && request.resource.data.createdByPhone == myPhone();
+      allow update: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
+      allow delete: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
+    }
+
+    // ─── listings ────────────────────────────────────────────────────────────
+    // Seller-specific offer of a catalog item (new schema). Public read.
+    match /listings/{listingId} {
+      allow read: if true;
+      allow create: if isAuthed() && (
+        (myRole() in ['retailer', 'manufacturer'] && request.resource.data.sellerPhone == myPhone()) ||
+        (myRole() == 'manufacturer' && request.resource.data.assignedByManufacturerPhone == myPhone()) ||
+        isAdmin()
+      );
+      allow update: if isAdmin() || (isAuthed() && (
+        resource.data.sellerPhone == myPhone() ||
+        resource.data.assignedByManufacturerPhone == myPhone()
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
+        resource.data.sellerPhone == myPhone() ||
+        resource.data.assignedByManufacturerPhone == myPhone()
+      ));
+    }
+
+    // ─── manufacturerNetwork ─────────────────────────────────────────────────
+    // Manufacturer ↔ Retailer links (new schema).
+    match /manufacturerNetwork/{docId} {
+      allow get: if isAdmin() || (isAuthed() && (
+        resource.data.manufacturerPhone == myPhone() ||
+        resource.data.retailerPhone == myPhone()
+      ));
+      allow list: if isAuthed();
+      allow create: if isAuthed() && (
+        request.resource.data.manufacturerPhone == myPhone() || isAdmin()
+      );
+      allow update: if isAdmin() || (isAuthed() && (
+        resource.data.manufacturerPhone == myPhone() ||
+        (
+          resource.data.status == 'invited' &&
+          resource.data.claimable == true &&
+          request.resource.data.status == 'active' &&
+          request.resource.data.retailerPhone == myPhone() &&
+          request.resource.data.claimable == false
+        )
+      ));
+      allow delete: if isAdmin() || (
+        isAuthed() && resource.data.manufacturerPhone == myPhone()
+      );
+    }
+
+    // ─── seatListings ────────────────────────────────────────────────────────
+    // Seat consumption tracking (new schema).
+    match /seatListings/{docId} {
+      allow read: if isAuthed() && (
+        resource.data.ownerPhone == myPhone() || isAdmin()
+      );
+      allow create: if isAuthed() && (
+        request.resource.data.ownerPhone == myPhone() || isAdmin()
+      );
+      allow update: if isAdmin() || (isAuthed() && resource.data.ownerPhone == myPhone());
+      allow delete: if isAdmin();
+    }
+
+    // ─── subscriptions ───────────────────────────────────────────────────────
+    // Accepts both new (ownerPhone) and legacy (ownerId) field names.
+    match /subscriptions/{docId} {
+      allow read: if isAuthed() && (
+        (resource.data.ownerPhone is string && resource.data.ownerPhone == myPhone()) ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthed() && (
+        (request.resource.data.ownerPhone is string && request.resource.data.ownerPhone == myPhone()) ||
+        request.resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      ) && request.resource.data.ownerType in ['retailer', 'manufacturer'];
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── payments ────────────────────────────────────────────────────────────
+    // Accepts both new (userPhone) and legacy (userId) field names.
+    match /payments/{paymentId} {
+      allow read: if isAuthed() && (
+        (resource.data.userPhone is string && resource.data.userPhone == myPhone()) ||
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthed() && (
+        (request.resource.data.userPhone is string && request.resource.data.userPhone == myPhone()) ||
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── orders ──────────────────────────────────────────────────────────────
+    // Accepts both new (customerPhone/sellerPhone) and legacy (customerId/sellerId) fields.
+    match /orders/{orderId} {
+      allow create: if isAuthed() && (
+        request.resource.data.customerPhone == myPhone() ||
+        request.resource.data.customerId == request.auth.uid
+      ) && request.resource.data.status == 'placed'
+        && request.resource.data.sellerType in ['retailer', 'manufacturer'];
+
+      allow read: if isAdmin() || (isAuthed() && (
+        resource.data.customerPhone == myPhone() ||
+        resource.data.sellerPhone == myPhone() ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      ));
+
+      allow update: if isAdmin() || (isAuthed() && (
+        resource.data.sellerPhone == myPhone() ||
+        resource.data.sellerId == request.auth.uid
+      ) && request.resource.data.status in ['placed','accepted','out_for_delivery','delivered','rejected']);
+    }
+
+    // ─── hubs ────────────────────────────────────────────────────────────────
     match /hubs/{hubId} {
       allow read: if true;
-      allow write: if isAdmin() || true;
+      allow write: if isAdmin();
     }
 
-    // Products
+    // ─── adminLogs ───────────────────────────────────────────────────────────
+    match /adminLogs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // LEGACY COLLECTIONS
+    // The code still reads/writes these while migrating to the new schema.
+    // Rules here use request.auth.uid directly — no myPhone() dependency —
+    // so they work even before uidIndex exists.
+    // ════════════════════════════════════════════════════════════════════════
+
     match /products/{productId} {
       allow read: if true;
-
-      allow create: if isAuthenticated() && (
-        isAdmin() ||
-        // Normal case: user creates their own product
-        (
-          userRole() in ['manufacturer', 'retailer'] &&
-          request.resource.data.ownerId == request.auth.uid
-        ) ||
-        // Manufacturer assigns a product copy to a retailer (ownerId = retailer, createdBy = manufacturer)
-        (
-          userRole() == 'manufacturer' &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.source == 'manufacturer_assigned'
-        )
+      allow create: if isAuthed();
+      allow update: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid
       );
-
-      allow update: if isAdmin() || (
-        isAuthenticated() && (
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.manufacturerId == request.auth.uid
-        )
-      );
-
-      allow delete: if isAdmin() || (
-        isAuthenticated() && (
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.manufacturerId == request.auth.uid
-        )
+      allow delete: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid
       );
     }
 
-    // Inventory
-    match /inventory/{inventoryId} {
-      allow read: if isAdmin() || (
-        isAuthenticated() && (
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.retailerId == request.auth.uid ||
-          resource.data.manufacturerId == request.auth.uid
-        )
-      );
-
-      allow create: if isAuthenticated() &&
-        (isAdmin() || userRole() in ['manufacturer', 'retailer']);
-
-      allow update: if isAdmin() || (
-        isAuthenticated() && (
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.retailerId == request.auth.uid
-        )
-      );
-
-      allow delete: if isAdmin() || (
-        isAuthenticated() && (
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.retailerId == request.auth.uid
-        )
-      );
-    }
-
-    // Retailers / Shops
     match /retailers/{retailerId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAdmin() || (isAuthenticated() &&
-        (resource.data.userId == request.auth.uid ||
-         userRole() == 'retailer'));
-      allow delete: if isAdmin();
+      allow create: if isAuthed();
+      allow update: if isAuthed() && (
+        resource.data.userId == request.auth.uid ||
+        retailerId == request.auth.uid
+      );
+      allow delete: if isAuthed() && retailerId == request.auth.uid;
     }
 
-    // Stores
     match /stores/{storeId} {
       allow read: if true;
-      allow write: if isAdmin() || (isAuthenticated() &&
-        userRole() == 'manufacturer');
+      allow write: if isAuthed();
     }
 
-    // Manufacturer profiles
     match /manufacturers/{manufacturerId} {
       allow read: if true;
-      allow create, update: if (isOwner(manufacturerId) &&
-        userRole() == 'manufacturer') || isAdmin();
-      allow delete: if isOwner(manufacturerId) || isAdmin();
+      allow create, update: if isAuthed() && (
+        request.auth.uid == manufacturerId || manufacturerId == request.auth.uid
+      );
+      allow delete: if isAuthed() && request.auth.uid == manufacturerId;
     }
 
-    // Manufacturer ↔ Retailer network links
+    match /inventory/{inventoryId} {
+      allow read: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid
+      );
+      allow create: if isAuthed();
+      allow update: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid
+      );
+      allow delete: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid
+      );
+    }
+
     match /manufacturerRetailers/{docId} {
-      allow get: if isAdmin() || (isAuthenticated() && (
+      allow get: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid
-      ));
-      allow list: if isAdmin() || true;
-
-      allow create: if isAuthenticated() &&
-        (request.resource.data.manufacturerId == request.auth.uid || isAdmin());
-
-      allow update: if (isAuthenticated() && (
+      );
+      allow list: if isAuthed();
+      allow create: if isAuthed() && (
+        request.resource.data.manufacturerId == request.auth.uid
+      );
+      allow update: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         (
           resource.data.status == 'invited' &&
@@ -151,90 +277,29 @@ service cloud.firestore {
           request.resource.data.retailerId == request.auth.uid &&
           request.resource.data.claimable == false
         )
-      )) || isAdmin();
-
-      allow delete: if (isAuthenticated() &&
-        resource.data.manufacturerId == request.auth.uid) || isAdmin();
-    }
-
-    // Subscriptions
-    match /subscriptions/{docId} {
-      allow read: if isAdmin() || (isAuthenticated() &&
-        resource.data.ownerId == request.auth.uid);
-
-      allow create: if isAuthenticated() &&
-        (resource.data.ownerId == request.auth.uid || isAdmin()) &&
-        request.resource.data.ownerType in ['manufacturer', 'retailer'];
-
-      allow update, delete: if isAdmin();
-    }
-
-    // Retailer Seat Listings
-    match /retailerSeatListings/{docId} {
-      allow read: if isAdmin() || (isAuthenticated() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.retailerId == request.auth.uid
-      ));
-
-      allow create: if isAuthenticated() &&
-        (request.resource.data.ownerId == request.auth.uid || isAdmin()) &&
-        request.resource.data.ownerType in ['manufacturer', 'retailer'];
-
-      allow update: if (isAuthenticated() &&
-        request.resource.data.ownerId == request.auth.uid) || isAdmin();
-
-      allow delete: if isAdmin();
-    }
-
-    // Orders
-    match /orders/{orderId} {
-      allow create: if isAuthenticated() &&
-        (userRole() == 'customer' || isAdmin()) &&
-        request.resource.data.customerId == request.auth.uid &&
-        request.resource.data.sellerType in ['retailer', 'manufacturer'] &&
-        request.resource.data.status == 'placed';
-
-      allow read: if isAdmin() || (isAuthenticated() && (
-        resource.data.customerId == request.auth.uid ||
-        resource.data.sellerId == request.auth.uid
-      ));
-
-      allow update: if isAdmin() || (isAuthenticated() &&
-        resource.data.sellerId == request.auth.uid &&
-        request.resource.data.customerId == resource.data.customerId &&
-        request.resource.data.sellerId == resource.data.sellerId &&
-        request.resource.data.sellerType == resource.data.sellerType &&
-        request.resource.data.items == resource.data.items &&
-        request.resource.data.subtotal == resource.data.subtotal &&
-        request.resource.data.deliveryMode == resource.data.deliveryMode &&
-        request.resource.data.status in ['placed', 'accepted', 'out_for_delivery', 'delivered', 'rejected']
       );
+      allow delete: if isAuthed() && resource.data.manufacturerId == request.auth.uid;
     }
 
-    // Payments
-    match /payments/{paymentId} {
-      allow read: if isAdmin() || (isAuthenticated() &&
-        (resource.data.userId == request.auth.uid ||
-         resource.data.customerId == request.auth.uid ||
-         userRole() == 'manufacturer'));
-      allow create: if isAuthenticated() &&
-        (request.resource.data.userId == request.auth.uid ||
-         request.resource.data.customerId == request.auth.uid || isAdmin());
+    match /retailerSeatListings/{docId} {
+      allow read: if isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid ||
+        resource.data.manufacturerId == request.auth.uid
+      );
+      allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuthed() && resource.data.ownerId == request.auth.uid;
     }
 
-    // Manufacturer contacts
     match /manufacturer_contacts/{contactId} {
-      allow read: if isAdmin() || (isAuthenticated() &&
-        resource.data.manufacturerId == request.auth.uid);
-      allow create: if (isAuthenticated() &&
-        userRole() == 'manufacturer') || isAdmin();
-      allow update, delete: if isAdmin() || (isAuthenticated() &&
-        resource.data.manufacturerId == request.auth.uid);
+      allow read: if isAuthed() && resource.data.manufacturerId == request.auth.uid;
+      allow create: if isAuthed();
+      allow update, delete: if isAuthed() && resource.data.manufacturerId == request.auth.uid;
     }
 
-    // Report send logs (admin only)
     match /reportLogs/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAuthed() && myRole() == 'admin';
     }
 
   }

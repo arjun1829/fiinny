@@ -11,6 +11,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -201,10 +202,18 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
           sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
           isOnline: data.isOnline === true || data.sellMode === "online_delivery",
-          availability: data.availability || undefined
+          availability: data.availability || undefined,
+          source: data.source ? String(data.source) : undefined,
         } as MarketplaceProduct;
       })
-      .filter((product) => product.name && product.image && Number.isFinite(product.price));
+      // Exclude per-retailer copies — they are represented by the original product's
+      // availability[] array, so they would appear as duplicates in the marketplace.
+      .filter((product) =>
+        product.name &&
+        product.image &&
+        Number.isFinite(product.price) &&
+        (product as any).source !== 'manufacturer_assigned'
+      );
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
     throw error;
@@ -226,9 +235,12 @@ export type Store = {
 
 export async function fetchStores(): Promise<Store[]> {
   try {
-    const storesSnapshot = await getDocs(collection(db, 'stores'));
-    const retailersSnapshot = await getDocs(collection(db, 'retailers'));
-    
+    const [storesSnapshot, retailersSnapshot, manufacturersSnapshot] = await Promise.all([
+      getDocs(collection(db, 'stores')),
+      getDocs(collection(db, 'retailers')),
+      getDocs(collection(db, 'manufacturers')),
+    ]);
+
     const stores = storesSnapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data()
@@ -255,11 +267,47 @@ export async function fetchStores(): Promise<Store[]> {
       } as Store;
     });
 
-    return [...stores, ...retailers];
+    // Manufacturers appear as stores — matched by store.id === product.manufacturerId
+    const manufacturers = manufacturersSnapshot.docs
+      .filter((doc) => {
+        const data = doc.data();
+        // Only include manufacturers that have saved a profile with a name
+        return !!(data.businessName || data.ownerName);
+      })
+      .map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.businessName || data.ownerName || 'Manufacturer',
+          ownerName: data.ownerName,
+          phone: data.phone,
+          address: data.address,
+          city: data.address?.city || data.city,
+          state: data.address?.state || data.state,
+          pincode: data.address?.pincode || data.pincode,
+          distance: 'Nearby',
+          status: 'Active',
+          stock: [],
+          // Manufacturers save geo as a Firestore GeoPoint; extract lat/lng
+          location: {
+            lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
+            lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
+          },
+        } as Store;
+      });
+
+    return [...stores, ...retailers, ...manufacturers];
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
   }
+}
+
+function toE164(rawPhone: string): string {
+  const digits = rawPhone.replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+  if (digits.length === 10) return `+91${digits}`;
+  return `+${digits}`;
 }
 
 export async function saveUserProfile(
@@ -273,21 +321,42 @@ export async function saveUserProfile(
     phoneNormalized?: string;
   }
 ) {
-  await setDoc(doc(db, 'users', uid), {
-    ...profile,
+  const phone = toE164(profile.phone || profile.phoneNormalized || '');
+  const now = serverTimestamp();
+
+  // Step 1: write uidIndex FIRST — this rule only checks request.auth.uid == uid,
+  // no myPhone() lookup needed, so it works even before the user doc exists.
+  await setDoc(doc(db, 'uidIndex', uid), { phone, createdAt: now });
+
+  // Step 2: now myPhone() resolves correctly, so users/{phone} write is allowed.
+  await setDoc(doc(db, 'users', phone), {
+    uid,
+    phone,
+    name: profile.name,
+    email: null,
+    role: profile.role,
+    roleUpgradeHistory: [],
     isPaid: false,
     totalSeats: 0,
     productCount: 0,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+    createdAt: now,
+    updatedAt: now,
   });
 }
 
 export async function getUserProfile(uid: string) {
-  const docRef = doc(db, 'users', uid);
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-    return docSnap.data();
+  try {
+    // New schema: resolve uid → phone via uidIndex, then read users/{phone}
+    const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+    if (idxSnap.exists()) {
+      const phone = String(idxSnap.data().phone ?? '');
+      if (phone) {
+        const userSnap = await getDoc(doc(db, 'users', phone));
+        if (userSnap.exists()) return userSnap.data();
+      }
+    }
+  } catch {
+    // fall through
   }
   return null;
 }
@@ -299,60 +368,75 @@ export async function updateSubscriptionStatus(
   seatCount: number = 1,
   durationMonths: number = 1
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
-  const docRef = doc(db, 'users', uid);
   const timestamp = serverTimestamp();
-  
-  // Get current user profile to update seats
-  const userDoc = await getDoc(docRef);
-  const userData = userDoc.exists() ? userDoc.data() : {};
-  const currentSeats = userData.totalSeats || 0;
 
-  // 1. Update user profile
-  await setDoc(docRef, {
+  // Resolve uid → phone via uidIndex (new schema).
+  // Fall back to writing users/{uid} if uidIndex missing (shouldn't happen after new saveUserProfile).
+  let userDocRef = doc(db, 'users', uid);
+  let userData: Record<string, unknown> = {};
+  let phone: string | null = null;
+
+  try {
+    const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+    if (idxSnap.exists()) {
+      phone = String(idxSnap.data().phone ?? '');
+      userDocRef = doc(db, 'users', phone);
+    }
+    const userDoc = await getDoc(userDocRef);
+    if (userDoc.exists()) userData = userDoc.data() as Record<string, unknown>;
+  } catch { /* fall through with empty userData */ }
+
+  const currentSeats = Number(userData.totalSeats) || 0;
+  const seatsToAdd = Number(seatCount) || 1;
+
+  await setDoc(userDocRef, {
     isPaid: status === 'paid',
     subscriptionStatus: status,
     paymentDetails: paymentDetails || null,
-    totalSeats: status === 'paid' ? currentSeats + seatCount : currentSeats,
-    updatedAt: timestamp
+    totalSeats: status === 'paid' ? currentSeats + seatsToAdd : currentSeats,
+    updatedAt: timestamp,
   }, { merge: true });
 
-  // 2. Create payment + subscription records for tracking
   if (status === 'paid') {
     try {
       const PRICE_PER_SEAT: Record<number, number> = { 1: 21, 3: 54, 6: 90, 12: 144 };
       const pricePerSeat = PRICE_PER_SEAT[durationMonths] ?? 21;
-      const totalAmount = seatCount * pricePerSeat;
+      const totalAmount = seatsToAdd * pricePerSeat;
 
+      // Write both legacy (userId) and new (userPhone) fields so all queries work.
       await addDoc(collection(db, 'payments'), {
         userId: uid,
+        userPhone: phone ?? uid,
         amount: totalAmount,
-        seatCount: seatCount,
-        durationMonths: durationMonths,
+        seatCount: seatsToAdd,
+        durationMonths,
         currency: 'INR',
-        razorpayOrderId: paymentDetails?.orderId,
-        razorpayPaymentId: paymentDetails?.paymentId,
-        timestamp: timestamp,
-        status: 'success'
+        razorpayOrderId: paymentDetails?.orderId ?? null,
+        razorpayPaymentId: paymentDetails?.paymentId ?? null,
+        timestamp,
+        status: 'success',
       });
 
-      // Write to subscriptions collection — one record per payment, never overwrite
       const now = new Date();
       const expiry = new Date(now);
       expiry.setMonth(expiry.getMonth() + durationMonths);
-      const { Timestamp: FsTimestamp } = await import('firebase/firestore');
+      const role = userData.role === 'manufacturer' ? 'manufacturer' : 'retailer';
+
+      // Write both legacy (ownerId) and new (ownerPhone) fields.
       await addDoc(collection(db, 'subscriptions'), {
         ownerId: uid,
-        ownerType: 'manufacturer',
+        ownerPhone: phone ?? uid,
+        ownerType: role,
         planName: 'Standard',
-        seatsPurchased: seatCount,
-        durationMonths: durationMonths,
+        seatsPurchased: seatsToAdd,
+        durationMonths,
         amountPaid: totalAmount,
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
         subscriptionStatus: 'active',
-        startDate: FsTimestamp.fromDate(now),
-        expiryDate: FsTimestamp.fromDate(expiry),
+        startDate: Timestamp.fromDate(now),
+        expiryDate: Timestamp.fromDate(expiry),
         createdAt: timestamp,
         updatedAt: timestamp,
       });

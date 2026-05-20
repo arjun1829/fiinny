@@ -710,6 +710,7 @@ export default function App() {
       case 'profile':
         return (
           <ProfileView
+            uid={user?.uid}
             role={userRole}
             profile={userProfile}
             onProfileSave={handleProfileSave}

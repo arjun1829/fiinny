@@ -14,14 +14,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push("/");
+        router.push("/admin-login");
         return;
       }
       const profile = await getUserProfile(user.uid);
       if (profile?.role === "admin") {
         setLoading(false);
       } else {
-        router.push("/");
+        router.push("/admin-login");
       }
     });
     return () => unsub();

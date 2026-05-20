@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, CheckSquare, Loader2, PackagePlus, Search, Square, Trash2, X } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
 import {
   bulkAssignProductsToRetailer,
   removeProductAssignment,
 } from "../../_lib/product-assignment-firestore";
 import { canAssignSeat, getAvailableSeats } from "../../_lib/subscriptions-firestore";
-import { fetchAllMarketplaceProducts } from "../../../firebase";
+import { db, fetchAllMarketplaceProducts } from "../../../firebase";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
@@ -111,26 +112,40 @@ export function AssignProductModal({
       });
 
       // Fire-and-forget: notify retailer by email about the new product assignment
-      const retailerEmail = retailer.retailerEmail?.trim().toLowerCase();
-      if (retailerEmail) {
-        const firstSelectedId = Array.from(selected)[0];
-        const allAvailable = [...manufacturerProducts, ...marketplaceProducts];
-        const assignedProduct = allAvailable.find((p) => p.id === firstSelectedId);
-        const productLabel = selected.size > 1
-          ? `${assignedProduct?.name ?? "a product"} and ${selected.size - 1} more`
-          : (assignedProduct?.name ?? "a new product");
+      // retailerEmail in the stored doc may be empty or a placeholder — fetch fresh from users doc
+      const firstSelectedId = Array.from(selected)[0];
+      const allAvailable = [...manufacturerProducts, ...marketplaceProducts];
+      const assignedProduct = allAvailable.find((p) => p.id === firstSelectedId);
+      const productLabel = selected.size > 1
+        ? `${assignedProduct?.name ?? "a product"} and ${selected.size - 1} more`
+        : (assignedProduct?.name ?? "a new product");
+      (async () => {
+        let emailToUse = (retailer.retailerEmail ?? "").trim().toLowerCase();
+        if (!emailToUse || emailToUse.includes("@krishidukan.local")) {
+          const uid = retailer.retailerId;
+          if (uid) {
+            try {
+              const snap = await getDoc(doc(db, "users", uid));
+              if (snap.exists()) {
+                const fresh = (snap.data()?.email ?? "").trim().toLowerCase();
+                if (fresh && !fresh.includes("@krishidukan.local")) emailToUse = fresh;
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        if (!emailToUse) return;
         fetch("/api/email/product-assigned", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            retailerEmail,
+            retailerEmail: emailToUse,
             shopName: retailer.shopName || retailer.ownerName,
             productName: productLabel,
             manufacturerName,
             signupLink: process.env.NEXT_PUBLIC_BASE_URL ?? "/",
           }),
-        }).catch(() => {/* email failure is non-fatal */});
-      }
+        }).catch(() => {});
+      })();
 
       await onAssigned();
     } catch (e) {

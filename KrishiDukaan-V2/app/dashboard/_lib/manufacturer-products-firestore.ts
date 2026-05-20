@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   increment,
   orderBy,
@@ -59,6 +60,16 @@ export async function createManufacturerProduct(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
+  // Resolve phone (for users/{phone} update) and business name (for store field) in parallel
+  const [idxSnap, mfgSnap] = await Promise.all([
+    getDoc(doc(db, "uidIndex", manufacturerId)),
+    getDoc(doc(db, "manufacturers", manufacturerId)),
+  ]);
+  const manufacturerPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+  const storeName = mfgSnap.exists()
+    ? String(mfgSnap.data().businessName ?? mfgSnap.data().ownerName ?? "")
+    : "";
+
   const now = serverTimestamp();
   const batch = writeBatch(db);
 
@@ -78,6 +89,7 @@ export async function createManufacturerProduct(
     ownerType: "manufacturer",
     createdBy: manufacturerId,
     manufacturerId,
+    store: storeName,
     source: "manufacturer_inventory",
     createdAt: now,
     updatedAt: now,
@@ -95,11 +107,13 @@ export async function createManufacturerProduct(
     expiresAt: subExpiry,
   });
 
-  batch.set(
-    doc(db, "users", manufacturerId),
-    { productCount: increment(1), updatedAt: now },
-    { merge: true },
-  );
+  if (manufacturerPhone) {
+    batch.set(
+      doc(db, "users", manufacturerPhone),
+      { productCount: increment(1), updatedAt: now },
+      { merge: true },
+    );
+  }
 
   await batch.commit();
   return { productId: productRef.id, seatListingId };

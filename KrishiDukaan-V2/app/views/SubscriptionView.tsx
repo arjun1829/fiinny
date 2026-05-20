@@ -161,12 +161,22 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               paymentId: paymentResponse.razorpay_payment_id,
             }, verifyData.seatCount || seatCount, duration.months);
 
-            if (!updateResult.paymentLogged && updateResult.paymentLogError) {
-              console.warn('Non-blocking payment log error:', updateResult.paymentLogError);
+            if (!updateResult.paymentLogged) {
+              setVerifying(false);
+              setLoading(false);
+              setError(
+                'Payment received, but your seat count could not be updated. ' +
+                'Please refresh the page or contact support with your payment ID: ' +
+                paymentResponse.razorpay_payment_id
+              );
+              return;
             }
 
             // Fire-and-forget subscription confirmation email
-            if (user.email) {
+            // user.email is null for phone-auth; read from Firestore profile instead
+            getUserProfile(user.uid).then((profile) => {
+              const profileEmail = profile?.email ?? '';
+              if (!profileEmail || profileEmail.includes('@krishidukan.local')) return;
               const now = new Date();
               const expiry = new Date(now);
               expiry.setMonth(expiry.getMonth() + duration.months);
@@ -174,8 +184,8 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  userEmail: user.email,
-                  userName: user.displayName || '',
+                  userEmail: profileEmail,
+                  userName: profile?.name || user.displayName || '',
                   seatsPurchased: verifyData.seatCount || seatCount,
                   amountPaid: finalTotal,
                   planName: 'Standard',
@@ -184,13 +194,12 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                   razorpayPaymentId: paymentResponse.razorpay_payment_id,
                   razorpayOrderId: paymentResponse.razorpay_order_id,
                 }),
-              }).catch(() => {/* email failure is non-fatal */});
-            }
+              }).catch(() => {});
+            }).catch(() => {});
 
             await onSuccess();
           } catch (err: any) {
-            const latestProfile = await getUserProfile(user.uid);
-            if (latestProfile?.isPaid) { await onSuccess(); return; }
+            console.error('Payment error caught in handler:', err);
             setError(err.message || 'Payment completed but profile update failed. Please refresh.');
           } finally {
             setVerifying(false);
