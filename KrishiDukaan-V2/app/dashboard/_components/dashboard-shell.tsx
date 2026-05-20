@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, Menu, Package, ReceiptText, Settings, Star, UserCircle2 } from "lucide-react";
+import { LayoutDashboard, Menu, Package, ReceiptText, Star, UserCircle2 } from "lucide-react";
 import { Sidebar } from "./sidebar";
 import { useI18n } from "../../i18n/I18nContext";
 
@@ -12,12 +12,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useI18n();
   const mobileNav = [
-    { href: "/dashboard", labelKey: "mobileNavHome" as const, icon: LayoutDashboard },
-    { href: "/dashboard/inventory", labelKey: "mobileNavStock" as const, icon: Package },
-    { href: "/dashboard/orders", labelKey: "mobileNavOrders" as const, icon: ReceiptText },
-    { href: "/dashboard/profile", labelKey: "mobileNavProfile" as const, icon: UserCircle2 },
-    { href: "/dashboard/settings", labelKey: "mobileNavSettings" as const, icon: Settings },
-  ];
+    { href: "/dashboard", labelKey: "Home", icon: LayoutDashboard },
+    { href: "/dashboard/inventory", labelKey: "Stock", icon: Package },
+    { href: "/dashboard/orders", labelKey: "Orders", icon: ReceiptText },
+    { href: "/dashboard/reviews", labelKey: "Reviews", icon: Star },
+    { href: "/dashboard/profile", labelKey: "Profile", icon: UserCircle2 },
+  ] as const;
 
   return (
     <div className="flex-1 bg-surface relative overflow-y-auto h-[calc(100vh-64px)]">
@@ -52,7 +52,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{t(labelKey)}</span>
+                <span>{labelKey}</span>
               </Link>
             );
           })}

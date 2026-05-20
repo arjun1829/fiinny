@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  documentId,
   getDocs,
   query,
   serverTimestamp,
@@ -35,7 +36,7 @@ export function isSubscriptionActive(sub: Subscription): boolean {
   return sub.expiryDate.toMillis() > Date.now();
 }
 
-export function isExpiringSoon(sub: Subscription, withinDays = 30): boolean {
+export function isExpiringSoon(sub: Subscription, withinDays = 5): boolean {
   if (!isSubscriptionActive(sub)) return false;
   const cutoff = Date.now() + withinDays * 24 * 60 * 60 * 1000;
   return sub.expiryDate.toMillis() <= cutoff;
@@ -85,6 +86,7 @@ function mapSeatListingDoc(id: string, data: Record<string, unknown>): RetailerS
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : null,
     retailerId: data.retailerId ? String(data.retailerId) : null,
     productId: String(data.productId ?? ""),
+    manufacturerProductId: data.manufacturerProductId ? String(data.manufacturerProductId) : null,
     listingType: data.listingType === "assigned" ? "assigned" : "own",
     status: status === "released" || status === "expired" ? status : "active",
     assignedAt: data.assignedAt as Timestamp,
@@ -124,6 +126,32 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
     createdAt: ts,
     updatedAt: ts,
   });
+
+  // Trigger subscription confirmation email (fire-and-forget)
+  try {
+    const userSnap = await getDocs(query(collection(db, "users"), where(documentId(), "==", input.ownerId)));
+    const userData = userSnap.docs[0]?.data();
+    if (userData?.email) {
+      fetch("/api/email/subscription-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: userData.email,
+          userName: userData.name || "",
+          seatsPurchased: input.seatsPurchased,
+          amountPaid: input.amountPaid,
+          planName: input.planName ?? "Standard",
+          startDate: now.toLocaleDateString("en-IN", { dateStyle: "medium" }),
+          expiryDate: expiry.toLocaleDateString("en-IN", { dateStyle: "medium" }),
+          razorpayPaymentId: input.razorpayPaymentId,
+          razorpayOrderId: input.razorpayOrderId,
+        }),
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn("Failed to send subscription email trigger:", e);
+  }
+
   return ref.id;
 }
 
@@ -208,7 +236,7 @@ export function computeSeatStats(
   const totalPurchased = activeSubs.reduce((sum, s) => sum + s.seatsPurchased, 0);
   const activeUsed = getUsedSeats(listings);
   const available = Math.max(0, totalPurchased - activeUsed);
-  const expiringSoon = activeSubs.filter((s) => isExpiringSoon(s, 30)).length;
+  const expiringSoon = activeSubs.filter((s) => isExpiringSoon(s, 5)).length;
   return { totalPurchased, activeUsed, available, expiringSoon };
 }
 
@@ -221,6 +249,8 @@ export type SeatListingPayload = {
   retailerDocId: string | null;
   retailerId: string | null;
   productId: string;
+  /** For assigned listings: the manufacturer's original product doc ID. Null for own listings. */
+  manufacturerProductId: string | null;
   listingType: "own" | "assigned";
   /** Must equal the linked subscription's expiryDate so listings expire with their subscription. */
   expiresAt: Date;
@@ -240,6 +270,7 @@ export function addSeatListingToBatch(
     retailerDocId: payload.retailerDocId,
     retailerId: payload.retailerId,
     productId: payload.productId,
+    manufacturerProductId: payload.manufacturerProductId,
     listingType: payload.listingType,
     status: "active",
     assignedAt: serverTimestamp(),
@@ -259,6 +290,7 @@ export async function createSeatListing(payload: SeatListingPayload): Promise<st
     retailerDocId: payload.retailerDocId,
     retailerId: payload.retailerId,
     productId: payload.productId,
+    manufacturerProductId: payload.manufacturerProductId,
     listingType: payload.listingType,
     status: "active",
     assignedAt: serverTimestamp(),

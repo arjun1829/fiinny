@@ -1,0 +1,241 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin() ||
+        (isAuthenticated() && userRole() == 'manufacturer' &&
+         resource.data.role == 'retailer');
+      allow create: if isAuthenticated() &&
+        request.resource.data.role in ['customer', 'retailer', 'manufacturer', 'admin'];
+      allow update: if isAdmin() || (isOwner(userId) && (
+        (request.resource.data.role == resource.data.role) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['isPaid', 'subscriptionStatus', 'paymentDetails', 'totalSeats',
+           'productCount', 'updatedAt', 'role', 'name', 'email', 'phone']
+        ))
+      ));
+      allow delete: if isAdmin();
+    }
+
+    // Hubs
+    match /hubs/{hubId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if true;
+
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        // Normal case: user creates their own product
+        (
+          userRole() in ['manufacturer', 'retailer'] &&
+          request.resource.data.ownerId == request.auth.uid
+        ) ||
+        // Manufacturer assigns a product copy to a retailer (ownerId = retailer, createdBy = manufacturer)
+        (
+          userRole() == 'manufacturer' &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.source == 'manufacturer_assigned'
+        )
+      );
+
+      allow update: if isAdmin() || (
+        isAuthenticated() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.manufacturerId == request.auth.uid
+        )
+      );
+
+      allow delete: if isAdmin() || (
+        isAuthenticated() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.manufacturerId == request.auth.uid
+        )
+      );
+    }
+
+    // Inventory
+    match /inventory/{inventoryId} {
+      allow read: if isAdmin() || (
+        isAuthenticated() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.retailerId == request.auth.uid ||
+          resource.data.manufacturerId == request.auth.uid
+        )
+      );
+
+      allow create: if isAuthenticated() &&
+        (isAdmin() || userRole() in ['manufacturer', 'retailer']);
+
+      allow update: if isAdmin() || (
+        isAuthenticated() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.retailerId == request.auth.uid
+        )
+      );
+
+      allow delete: if isAdmin() || (
+        isAuthenticated() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.retailerId == request.auth.uid
+        )
+      );
+    }
+
+    // Retailers / Shops
+    match /retailers/{retailerId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() &&
+        (resource.data.userId == request.auth.uid ||
+         userRole() == 'retailer'));
+      allow delete: if isAdmin();
+    }
+
+    // Stores
+    match /stores/{storeId} {
+      allow read: if true;
+      allow write: if isAdmin() || (isAuthenticated() &&
+        userRole() == 'manufacturer');
+    }
+
+    // Manufacturer profiles
+    match /manufacturers/{manufacturerId} {
+      allow read: if true;
+      allow create, update: if (isOwner(manufacturerId) &&
+        userRole() == 'manufacturer') || isAdmin();
+      allow delete: if isOwner(manufacturerId) || isAdmin();
+    }
+
+    // Manufacturer ↔ Retailer network links
+    match /manufacturerRetailers/{docId} {
+      allow get: if isAdmin() || (isAuthenticated() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid
+      ));
+      allow list: if isAdmin() || true;
+
+      allow create: if isAuthenticated() &&
+        (request.resource.data.manufacturerId == request.auth.uid || isAdmin());
+
+      allow update: if (isAuthenticated() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        (
+          resource.data.status == 'invited' &&
+          resource.data.claimable == true &&
+          resource.data.retailerId == '' &&
+          request.resource.data.status == 'active' &&
+          request.resource.data.retailerId == request.auth.uid &&
+          request.resource.data.claimable == false
+        )
+      )) || isAdmin();
+
+      allow delete: if (isAuthenticated() &&
+        resource.data.manufacturerId == request.auth.uid) || isAdmin();
+    }
+
+    // Subscriptions
+    match /subscriptions/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() &&
+        resource.data.ownerId == request.auth.uid);
+
+      allow create: if isAuthenticated() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin()) &&
+        request.resource.data.ownerType in ['manufacturer', 'retailer'];
+
+      allow update, delete: if isAdmin();
+    }
+
+    // Retailer Seat Listings
+    match /retailerSeatListings/{docId} {
+      allow read: if isAdmin() || (isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.retailerId == request.auth.uid
+      ));
+
+      allow create: if isAuthenticated() &&
+        (request.resource.data.ownerId == request.auth.uid || isAdmin()) &&
+        request.resource.data.ownerType in ['manufacturer', 'retailer'];
+
+      allow update: if (isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid) || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // Orders
+    match /orders/{orderId} {
+      allow create: if isAuthenticated() &&
+        (userRole() == 'customer' || isAdmin()) &&
+        request.resource.data.customerId == request.auth.uid &&
+        request.resource.data.sellerType in ['retailer', 'manufacturer'] &&
+        request.resource.data.status == 'placed';
+
+      allow read: if isAdmin() || (isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.sellerId == request.auth.uid
+      ));
+
+      allow update: if isAdmin() || (isAuthenticated() &&
+        resource.data.sellerId == request.auth.uid &&
+        request.resource.data.customerId == resource.data.customerId &&
+        request.resource.data.sellerId == resource.data.sellerId &&
+        request.resource.data.sellerType == resource.data.sellerType &&
+        request.resource.data.items == resource.data.items &&
+        request.resource.data.subtotal == resource.data.subtotal &&
+        request.resource.data.deliveryMode == resource.data.deliveryMode &&
+        request.resource.data.status in ['placed', 'accepted', 'out_for_delivery', 'delivered', 'rejected']
+      );
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || (isAuthenticated() &&
+        (resource.data.userId == request.auth.uid ||
+         resource.data.customerId == request.auth.uid ||
+         userRole() == 'manufacturer'));
+      allow create: if isAuthenticated() &&
+        (request.resource.data.userId == request.auth.uid ||
+         request.resource.data.customerId == request.auth.uid || isAdmin());
+    }
+
+    // Manufacturer contacts
+    match /manufacturer_contacts/{contactId} {
+      allow read: if isAdmin() || (isAuthenticated() &&
+        resource.data.manufacturerId == request.auth.uid);
+      allow create: if (isAuthenticated() &&
+        userRole() == 'manufacturer') || isAdmin();
+      allow update, delete: if isAdmin() || (isAuthenticated() &&
+        resource.data.manufacturerId == request.auth.uid);
+    }
+
+    // Report send logs (admin only)
+    match /reportLogs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+  }
+}

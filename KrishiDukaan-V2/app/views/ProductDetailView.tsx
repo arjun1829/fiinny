@@ -57,9 +57,22 @@ export default function ProductDetailView({
   // Use storesWithDistance for computed distances, fallback to STORES constant
   const availableStores = useMemo(() => {
     const sourceStores = storesWithDistance.length > 0 ? storesWithDistance : stores;
-    const filtered = sourceStores.filter(store =>
-      product.availability?.some(a => a.storeId === store.id)
-    );
+    const filtered = sourceStores.filter(store => {
+      // 1. Check if assigned via availability array
+      const inAvailability = product.availability?.some(a => a.storeId === store.id);
+      if (inAvailability) return true;
+      
+      // 2. Check if this is the primary owner's store
+      const isOwnerStore = 
+        store.id === product.retailerId || 
+        store.id === product.manufacturerId || 
+        store.name === product.store ||
+        (store as any).shopName === product.store ||
+        (store as any).ownerName === product.store;
+        
+      return isOwnerStore;
+    });
+
     // Sort by distance if we have computed distances
     if (storesWithDistance.length > 0) {
       return [...filtered].sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));

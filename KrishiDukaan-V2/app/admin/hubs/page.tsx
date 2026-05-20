@@ -9,6 +9,7 @@ type HubForm = {
   name: string;
   tagline: string;
   heroImage: string;
+  iconImage: string;
   seeds: { name: string; price: string; img: string }[];
   nutrition: { name: string; desc: string; icon: string }[];
   irrigationImage: string;
@@ -24,7 +25,7 @@ type HubForm = {
 };
 
 const EMPTY_FORM: HubForm = {
-  name: "", tagline: "", heroImage: "",
+  name: "", tagline: "", heroImage: "", iconImage: "",
   seeds: [{ name: "", price: "", img: "" }],
   nutrition: [{ name: "", desc: "", icon: "Sprout" }],
   irrigationImage: "",
@@ -42,6 +43,7 @@ function formToHub(f: HubForm): Omit<Hub, "id"> {
     name: f.name.trim(),
     tagline: f.tagline.trim(),
     heroImage: f.heroImage.trim(),
+    iconImage: f.iconImage.trim() || undefined,
     seeds: f.seeds.filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), price: Number(s.price) || 0, img: s.img.trim() })),
     nutrition: f.nutrition.filter(n => n.name.trim()).map(n => ({ name: n.name.trim(), desc: n.desc.trim(), icon: n.icon })),
     irrigation: {
@@ -66,6 +68,7 @@ function formToHub(f: HubForm): Omit<Hub, "id"> {
 function hubToForm(h: Hub): HubForm {
   return {
     name: h.name, tagline: h.tagline, heroImage: h.heroImage,
+    iconImage: h.iconImage || "",
     seeds: h.seeds.length ? h.seeds.map(s => ({ name: s.name, price: String(s.price), img: s.img })) : [{ name: "", price: "", img: "" }],
     nutrition: h.nutrition.length ? h.nutrition.map(n => ({ name: n.name, desc: n.desc, icon: n.icon })) : [{ name: "", desc: "", icon: "Sprout" }],
     irrigationImage: h.irrigation.image,
@@ -384,6 +387,17 @@ export default function AdminHubsPage() {
                   {f.heroImage && (
                     <div className="mt-2 rounded-xl overflow-hidden h-28">
                       <img src={f.heroImage} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Crop Icon URL (Home Page)</label>
+                  <input value={f.iconImage} onChange={e => setF(p => ({ ...p, iconImage: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  {f.iconImage && (
+                    <div className="mt-2 rounded-xl overflow-hidden w-16 h-16 border border-surface-container">
+                      <img src={f.iconImage} alt="icon preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     </div>
                   )}
                 </div>

@@ -15,6 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
@@ -30,6 +31,7 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app);
 
 // Initialize analytics safely
 if (typeof window !== 'undefined') {
@@ -40,7 +42,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export { db, auth };
+export { db, auth, storage };
 
 export type RetailerProduct = {
   name: string;
@@ -294,7 +296,8 @@ export async function updateSubscriptionStatus(
   uid: string,
   status: 'paid' | 'unpaid',
   paymentDetails?: any,
-  seatCount: number = 1
+  seatCount: number = 1,
+  durationMonths: number = 1
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
   const docRef = doc(db, 'users', uid);
   const timestamp = serverTimestamp();
@@ -316,10 +319,15 @@ export async function updateSubscriptionStatus(
   // 2. Create payment + subscription records for tracking
   if (status === 'paid') {
     try {
+      const PRICE_PER_SEAT: Record<number, number> = { 1: 21, 3: 54, 6: 90, 12: 144 };
+      const pricePerSeat = PRICE_PER_SEAT[durationMonths] ?? 21;
+      const totalAmount = seatCount * pricePerSeat;
+
       await addDoc(collection(db, 'payments'), {
         userId: uid,
-        amount: seatCount * 21,
+        amount: totalAmount,
         seatCount: seatCount,
+        durationMonths: durationMonths,
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId,
         razorpayPaymentId: paymentDetails?.paymentId,
@@ -330,14 +338,15 @@ export async function updateSubscriptionStatus(
       // Write to subscriptions collection — one record per payment, never overwrite
       const now = new Date();
       const expiry = new Date(now);
-      expiry.setMonth(expiry.getMonth() + 1); // 1-month seat validity
+      expiry.setMonth(expiry.getMonth() + durationMonths);
       const { Timestamp: FsTimestamp } = await import('firebase/firestore');
       await addDoc(collection(db, 'subscriptions'), {
         ownerId: uid,
         ownerType: 'manufacturer',
         planName: 'Standard',
         seatsPurchased: seatCount,
-        amountPaid: seatCount * 21,
+        durationMonths: durationMonths,
+        amountPaid: totalAmount,
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
@@ -357,6 +366,20 @@ export async function updateSubscriptionStatus(
   }
 
   return { profileUpdated: true, paymentLogged: false };
+}
+
+export async function fetchAllMarketplaceProducts(): Promise<MarketplaceProduct[]> {
+  try {
+    const q = query(
+      collection(db, 'products'),
+      where('isActive', '==', true)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketplaceProduct));
+  } catch (error) {
+    console.error('Error fetching all products:', error);
+    throw error;
+  }
 }
 
 export async function fetchManufacturerProducts(manufacturerId: string): Promise<MarketplaceProduct[]> {
@@ -619,6 +642,7 @@ export interface Hub {
   id: string;
   name: string;
   heroImage: string;
+  iconImage?: string; // New field for Home page tile icon
   tagline: string;
   seeds: { name: string; price: number; img: string }[];
   nutrition: { name: string; desc: string; icon: string }[];
@@ -689,6 +713,23 @@ export async function fetchAllPayments(): Promise<any[]> {
 
 export async function promoteToAdmin(uid: string): Promise<void> {
   await setDoc(doc(db, 'users', uid), { role: 'admin', isPaid: true, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function adminUpdateUser(uid: string, updates: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}): Promise<void> {
+  const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (updates.name !== undefined) payload.name = updates.name.trim();
+  if (updates.email !== undefined) payload.email = updates.email.trim().toLowerCase();
+  if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+  if (updates.role !== undefined) {
+    payload.role = updates.role;
+    if (updates.role === 'admin') payload.isPaid = true;
+  }
+  await setDoc(doc(db, 'users', uid), payload, { merge: true });
 }
 
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {

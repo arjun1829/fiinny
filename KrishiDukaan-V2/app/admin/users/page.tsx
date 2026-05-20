@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, Search, Users, AlertTriangle, X } from "lucide-react";
-import { fetchAllUsers, promoteToAdmin } from "../../firebase";
+import { Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check } from "lucide-react";
+import { fetchAllUsers, promoteToAdmin, adminUpdateUser } from "../../firebase";
 
 const ROLE_BADGE: Record<string, string> = {
   admin: "bg-red-100 text-red-700 border border-red-200",
@@ -11,13 +11,28 @@ const ROLE_BADGE: Record<string, string> = {
   customer: "bg-gray-100 text-gray-600 border border-gray-200",
 };
 
+const ALL_ROLES = ["customer", "retailer", "manufacturer", "admin"] as const;
+
+type EditState = {
+  uid: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+};
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [filterRole, setFilterRole] = useState("all");
 
-  // Promotion state — kept separate and guarded
+  // Edit modal state
+  const [editTarget, setEditTarget] = useState<EditState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Promotion state
   const [showPromotePanel, setShowPromotePanel] = useState(false);
   const [promoteTarget, setPromoteTarget] = useState<any | null>(null);
   const [confirmEmail, setConfirmEmail] = useState("");
@@ -33,8 +48,8 @@ export default function AdminUsersPage() {
 
   const filtered = users.filter(u => {
     const q = search.toLowerCase();
-    const matchSearch = !q || [u.name, u.email, u.role, u.id].join(" ").toLowerCase().includes(q);
-    const matchRole = filterRole === "all" || u.role === filterRole;
+    const matchSearch = !q || [u.name, u.email, u.role, u.id, u.phone].join(" ").toLowerCase().includes(q);
+    const matchRole = filterRole === "all" || (filterRole === "customer" ? (!u.role || u.role === "customer") : u.role === filterRole);
     return matchSearch && matchRole;
   });
 
@@ -49,6 +64,40 @@ export default function AdminUsersPage() {
     manufacturer: users.filter(u => u.role === "manufacturer").length,
     admin: users.filter(u => u.role === "admin").length,
     customer: users.filter(u => !u.role || u.role === "customer").length,
+  };
+
+  const openEdit = (u: any) => {
+    setEditTarget({
+      uid: u.id,
+      name: u.name || "",
+      email: u.email || "",
+      phone: u.phone || "",
+      role: u.role || "customer",
+    });
+    setSaveError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTarget) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await adminUpdateUser(editTarget.uid, {
+        name: editTarget.name,
+        email: editTarget.email,
+        phone: editTarget.phone,
+        role: editTarget.role,
+      });
+      setUsers(prev => prev.map(u => u.id === editTarget.uid
+        ? { ...u, name: editTarget.name, email: editTarget.email, phone: editTarget.phone, role: editTarget.role }
+        : u
+      ));
+      setEditTarget(null);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save. Try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePromoteConfirm = async () => {
@@ -79,12 +128,12 @@ export default function AdminUsersPage() {
           <Users className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-black text-on-surface">Users & Roles</h1>
         </div>
-        <p className="text-sm text-on-surface-variant ml-9">View all platform users, their roles and subscription status.</p>
+        <p className="text-sm text-on-surface-variant ml-9">View and edit all platform users, their roles and subscription status.</p>
       </div>
 
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-2">
-        {(["all", "retailer", "manufacturer", "admin", "customer"] as const).map(role => (
+        {(["all", "retailer", "manufacturer", "customer", "admin"] as const).map(role => (
           <button key={role} onClick={() => setFilterRole(role)}
             className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${filterRole === role ? "bg-primary text-white shadow-sm" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
             {role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)} ({counts[role as keyof typeof counts]})
@@ -95,7 +144,7 @@ export default function AdminUsersPage() {
       {/* Search */}
       <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-2.5">
         <Search className="h-4 w-4 text-outline shrink-0" />
-        <input type="text" placeholder="Search by name, email or role…" value={search}
+        <input type="text" placeholder="Search by name, email, phone or role…" value={search}
           onChange={e => setSearch(e.target.value)}
           className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant" />
       </div>
@@ -118,6 +167,7 @@ export default function AdminUsersPage() {
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Subscription</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Products</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Seats</th>
+                  <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,7 +175,8 @@ export default function AdminUsersPage() {
                   <tr key={u.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
                     <td className="px-5 py-3">
                       <p className="font-semibold text-on-surface">{u.name || "—"}</p>
-                      <p className="text-xs text-on-surface-variant truncate max-w-[220px]">{u.email || u.id}</p>
+                      <p className="text-xs text-on-surface-variant truncate max-w-[200px]">{u.email || "—"}</p>
+                      {u.phone && <p className="text-xs text-on-surface-variant">{u.phone}</p>}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
@@ -140,13 +191,101 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-5 py-3 text-sm text-on-surface">{u.productCount ?? "—"}</td>
                     <td className="px-5 py-3 text-sm text-on-surface">{u.totalSeats ?? "—"}</td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(u)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-on-surface-variant">No users found.</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-on-surface-variant">No users found.</td></tr>
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Edit User Modal ─────────────────────────────────────────────────────── */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-on-surface">Edit User</h2>
+                <p className="text-xs text-on-surface-variant mt-0.5 font-mono">{editTarget.uid.slice(0, 16)}…</p>
+              </div>
+              <button type="button" onClick={() => setEditTarget(null)}
+                className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {saveError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{saveError}</div>
+              )}
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Name</span>
+                <input
+                  value={editTarget.name}
+                  onChange={e => setEditTarget(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                  placeholder="Full name"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Email</span>
+                <input
+                  type="email"
+                  value={editTarget.email}
+                  onChange={e => setEditTarget(prev => prev ? { ...prev, email: e.target.value } : prev)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                  placeholder="user@example.com"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Phone</span>
+                <input
+                  type="tel"
+                  value={editTarget.phone}
+                  onChange={e => setEditTarget(prev => prev ? { ...prev, phone: e.target.value } : prev)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                  placeholder="+91…"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">Role</span>
+                <select
+                  value={editTarget.role}
+                  onChange={e => setEditTarget(prev => prev ? { ...prev, role: e.target.value } : prev)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
+                >
+                  {ALL_ROLES.map(r => (
+                    <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 px-5 py-4">
+              <button type="button" onClick={() => setEditTarget(null)} disabled={saving}
+                className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+                Cancel
+              </button>
+              <button type="button" onClick={handleSaveEdit} disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60">
+                {saving ? (
+                  <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> Saving…</>
+                ) : (
+                  <><Check className="h-4 w-4" /> Save changes</>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -173,7 +312,6 @@ export default function AdminUsersPage() {
               Select a user below, then type their exact email to confirm.
             </p>
 
-            {/* Search non-admin users */}
             <div className="flex items-center gap-3 bg-white border border-red-200 rounded-xl px-3 py-2">
               <Search className="h-4 w-4 text-red-300 shrink-0" />
               <input type="text" placeholder="Search user to promote…" value={promoteSearch}
@@ -181,7 +319,6 @@ export default function AdminUsersPage() {
                 className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-red-300" />
             </div>
 
-            {/* User list */}
             <div className="space-y-1 max-h-48 overflow-y-auto rounded-xl border border-red-200 bg-white">
               {promoteCandidates.length === 0 && (
                 <p className="text-xs text-on-surface-variant text-center py-4">No matching non-admin users.</p>
@@ -203,7 +340,6 @@ export default function AdminUsersPage() {
               ))}
             </div>
 
-            {/* Confirmation step */}
             {promoteTarget && (
               <div className="rounded-xl border border-red-300 bg-white p-4 space-y-3">
                 <div className="flex items-center justify-between">

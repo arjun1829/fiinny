@@ -63,6 +63,8 @@ export interface InventoryRow {
   sellingPrice: number;
   reorderThreshold: number;
   status: StockStatus;
+  isActive: boolean;
+  assignedByManufacturer: boolean;
   updatedAt: Date | null;
   /** 'retailer_inventory' | 'manufacturer_assigned' */
   source?: string;
@@ -75,6 +77,11 @@ export interface ManufacturerProductRow {
   category: string;
   unit: string;
   price: number;
+  description: string;
+  image: string;
+  images: string[];
+  variants: { unit: string; price: number }[];
+  stockQuantity: number;
   source: string;
   isActive: boolean;
   updatedAt: Date | null;

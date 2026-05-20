@@ -1,12 +1,14 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   GeoPoint,
   limit,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type Timestamp,
@@ -45,6 +47,8 @@ function parseOnboardingStatus(value: unknown): RetailerOnboardingStatus {
 }
 
 function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailerDoc {
+  const rawAddr = data.address as Record<string, unknown> | null | undefined;
+  const rawGeo  = data.geo as { latitude?: number; longitude?: number } | null | undefined;
   return {
     id,
     manufacturerId: String(data.manufacturerId ?? ""),
@@ -62,6 +66,17 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
     seatAssignedAt: (data.seatAssignedAt as Timestamp) ?? null,
     createdBy: String(data.createdBy ?? ""),
     addedAt: (data.addedAt as Timestamp) ?? null,
+    address: rawAddr
+      ? {
+          line1:   String(rawAddr.line1   ?? ""),
+          city:    String(rawAddr.city    ?? ""),
+          state:   String(rawAddr.state   ?? ""),
+          pincode: String(rawAddr.pincode ?? ""),
+        }
+      : null,
+    geo: rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number"
+      ? { latitude: rawGeo.latitude, longitude: rawGeo.longitude }
+      : null,
   };
 }
 
@@ -179,7 +194,7 @@ export async function createNetworkRetailer(
 
   // Invite row — links manufacturer to the pre-created retailer
   const inviteRef = doc(collection(db, COLLECTION));
-  batch.set(inviteRef, {
+  const invitePayload: Record<string, unknown> = {
     id: inviteRef.id,
     manufacturerId: input.manufacturerId,
     retailerDocId: retailerRef.id,
@@ -196,7 +211,15 @@ export async function createNetworkRetailer(
     seatAssignedAt: now,
     createdBy: input.manufacturerId,
     addedAt: now,
-  });
+    address: {
+      line1:   input.address.line1.trim(),
+      city:    input.address.city.trim(),
+      state:   input.address.state.trim(),
+      pincode: input.address.pincode.trim(),
+    },
+  };
+  if (input.geo) invitePayload.geo = input.geo;
+  batch.set(inviteRef, invitePayload);
 
   await batch.commit();
   return { retailerDocId: retailerRef.id, inviteCode };
@@ -217,28 +240,177 @@ export async function removeNetworkRetailer(
   inviteDocId: string,
   retailerDocId: string,
 ): Promise<void> {
-  const batch = writeBatch(db);
   const now = serverTimestamp();
 
-  batch.update(doc(db, COLLECTION, inviteDocId), {
+  // ONLY update the link document.
+  // We do NOT modify the global "retailers" or "users" document so the retailer 
+  // remains intact and can be invited again or interact with other manufacturers.
+  await updateDoc(doc(db, COLLECTION, inviteDocId), {
     status: "revoked",
     claimable: false,
     assignedSeat: false,
     onboardingStatus: "removed",
     removedAt: now,
   });
+}
 
-  if (retailerDocId) {
-    batch.update(doc(db, "retailers", retailerDocId), {
-      active: false,
-      onboardingStatus: "removed",
-      assignedSeat: false,
-      seatReleasedAt: now,
-      updatedAt: now,
+export type UpdateNetworkRetailerPatch = {
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  email: string;
+  address?: { line1: string; city: string; state: string; pincode: string };
+  geo?: GeoPoint | null;
+};
+
+/**
+ * Update editable fields of a retailer.
+ * Only writes to `manufacturerRetailers` (the manufacturer's own collection)
+ * to avoid Firestore permission errors on the shared `retailers` collection.
+ */
+export async function updateNetworkRetailer(
+  inviteDocId: string,
+  _retailerDocId: string,
+  patch: UpdateNetworkRetailerPatch,
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    shopName:      patch.shopName.trim(),
+    ownerName:     patch.ownerName.trim(),
+    retailerPhone: patch.phone.trim(),
+    retailerEmail: patch.email.trim().toLowerCase(),
+    updatedAt:     serverTimestamp(),
+  };
+  if (patch.address) update.address = patch.address;
+  if (patch.geo !== undefined) update.geo = patch.geo;
+  await updateDoc(doc(db, COLLECTION, inviteDocId), update);
+}
+
+export type AssignedProductRow = {
+  listingId: string;
+  productId: string;
+  productName: string;
+  category: string;
+  unit: string;
+  price: number;
+  image: string;
+  status: "active" | "released" | "expired";
+  assignedAt: Date | null;
+  expiresAt: Date | null;
+};
+
+/** Fetch all products assigned by a manufacturer to a specific retailer (by retailerDocId). */
+export async function fetchRetailerAssignedProducts(
+  manufacturerId: string,
+  retailerDocId: string,
+): Promise<AssignedProductRow[]> {
+  const q = query(
+    collection(db, "retailerSeatListings"),
+    where("ownerId",       "==", manufacturerId),
+    where("retailerDocId", "==", retailerDocId),
+    where("listingType",   "==", "assigned"),
+  );
+  const snap = await getDocs(q);
+  const rows: AssignedProductRow[] = [];
+  await Promise.all(snap.docs.map(async (d) => {
+    const r    = d.data() as any;
+    const status: "active" | "released" | "expired" =
+      r.status === "released" ? "released" : r.status === "expired" ? "expired" : "active";
+    let productName = "—", category = "—", unit = "—", price = 0, image = "";
+    try {
+      const pSnap = await getDoc(doc(db, "products", String(r.productId ?? "")));
+      if (pSnap.exists()) {
+        const p = pSnap.data() as any;
+        productName = String(p.name ?? "—");
+        category    = String(p.category ?? "—");
+        unit        = String(p.unit ?? "—");
+        price       = Number(p.price ?? 0);
+        image       = String(p.image ?? "");
+      }
+    } catch { /* skip */ }
+    rows.push({
+      listingId:   d.id,
+      productId:   String(r.productId ?? ""),
+      productName, category, unit, price, image,
+      status,
+      assignedAt:  r.assignedAt?.toDate?.() ?? null,
+      expiresAt:   r.expiresAt?.toDate?.()  ?? null,
     });
+  }));
+  return rows.sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0));
+}
+
+/**
+ * Links an already-registered retailer (Firebase Auth user) to this manufacturer's network.
+ * No invite code needed — the retailer already has an account.
+ * Creates a `manufacturerRetailers` doc with status='active' and retailerId pre-filled.
+ */
+export async function linkExistingRetailerToNetwork(input: {
+  manufacturerId: string;
+  manufacturerName: string;
+  retailerUid: string;
+  shopName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+}): Promise<{ inviteDocId: string }> {
+  if (!input.manufacturerId) {
+    console.error("Missing manufacturerId for linking");
+    throw new Error("Your session ID is missing. Please refresh and try again.");
+  }
+  if (!input.retailerUid) {
+    console.error("Missing retailerUid for linking", input);
+    throw new Error("The selected retailer's unique ID is missing. Please contact support.");
   }
 
-  await batch.commit();
+  // Check for existing relationship
+  const q = query(
+    collection(db, COLLECTION),
+    where("manufacturerId", "==", input.manufacturerId),
+    where("retailerDocId", "==", input.retailerUid),
+    where("status", "in", ["active", "invited"])
+  );
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    throw new Error("This retailer is already in your network.");
+  }
+
+  const inviteCode = await generateUniqueInviteCode();
+  const now = serverTimestamp();
+  const ref = doc(collection(db, COLLECTION));
+  await setDoc(ref, {
+    id: ref.id,
+    manufacturerId: input.manufacturerId,
+    retailerDocId: input.retailerUid,
+    retailerId: input.retailerUid,
+    shopName: input.shopName.trim(),
+    ownerName: input.ownerName.trim(),
+    retailerEmail: input.email.trim().toLowerCase(),
+    retailerPhone: input.phone.trim(),
+    inviteCode,
+    status: "active",
+    claimable: false,
+    onboardingStatus: "active",
+    assignedSeat: false,
+    createdBy: input.manufacturerId,
+    addedAt: now,
+  });
+
+  // Trigger notification email (fire-and-forget)
+  const trimmedEmail = input.email.trim().toLowerCase();
+  if (trimmedEmail) {
+    fetch("/api/email/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        retailerEmail: trimmedEmail,
+        shopName: input.shopName.trim(),
+        inviteCode: "", // No invite code needed for existing accounts
+        manufacturerName: input.manufacturerName,
+      }),
+    }).catch(() => {/* email failure is non-fatal */});
+  }
+
+  return { inviteDocId: ref.id };
 }
 
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */

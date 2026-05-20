@@ -1,19 +1,13 @@
 "use client";
 
-import { PageHeader } from "../_components/page-header";
-import { SettingsSections } from "../_components/settings-sections";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useI18n } from "../../i18n/I18nContext";
-
-export default function SettingsPage() {
-  const { t } = useI18n();
-  return (
-    <>
-      <PageHeader
-        title={t('settingsTitle')}
-        description={t('settingsDesc')}
-        helperKey="dashSettings"
-      />
-      <SettingsSections />
-    </>
-  );
+// Settings have been merged into the Profile page (Settings tab).
+export default function SettingsRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/dashboard/profile?tab=settings");
+  }, [router]);
+  return null;
 }

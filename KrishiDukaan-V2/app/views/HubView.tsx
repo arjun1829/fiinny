@@ -390,7 +390,8 @@ interface HubViewProps {
 }
 
 export default function HubView({ searchQuery = '', initialHubId = null }: HubViewProps) {
-  const { t } = useI18n();
+  const { t: _t } = useI18n();
+  const t = (key: string, params?: Record<string, string | number>) => _t(key as any, params); // new hub keys not yet in i18n type
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [selectedHub, setSelectedHub] = useState<Hub | null>(null);
   const [loading, setLoading] = useState(true);

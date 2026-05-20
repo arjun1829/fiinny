@@ -14,6 +14,8 @@ export interface ManufacturerRetailerInviteSnapshot {
   id: string;
   status: InviteDocStatus;
   retailerId: string;
+  /** Pre-created retailers/{docId} — used to query products/inventory assigned pre-signup. */
+  retailerDocId: string;
   inviteCode: string;
   /** True when status === "invited" and claimable === true in Firestore. */
   claimable: boolean;
@@ -51,6 +53,7 @@ export function mapInviteSnapshot(
     id,
     status,
     retailerId,
+    retailerDocId: String(data.retailerDocId ?? "").trim(),
     inviteCode: String(data.inviteCode ?? ""),
     claimable,
   };
