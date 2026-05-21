@@ -136,7 +136,7 @@ export default function DashboardPage() {
           </div>
           <Link href="/dashboard/profile"
             className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
-            <Pencil className="h-3.5 w-3.5" /> Edit profile
+            <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
           </Link>
         </div>
       )}

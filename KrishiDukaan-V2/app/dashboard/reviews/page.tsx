@@ -23,6 +23,7 @@ function formatDate(d: Date | null): string {
 }
 
 function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
+  const { t } = useI18n();
   if (reviews.length === 0) return null;
   const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
   const counts = [5, 4, 3, 2, 1].map((star) => ({
@@ -34,7 +35,7 @@ function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
       <div className="flex flex-col items-center gap-1">
         <span className="text-4xl font-bold text-on-surface tabular-nums">{avg.toFixed(1)}</span>
         <StarRow rating={Math.round(avg)} />
-        <span className="text-xs text-on-surface-variant">{reviews.length} review{reviews.length !== 1 ? "s" : ""}</span>
+        <span className="text-xs text-on-surface-variant">{reviews.length} {t('reviewsLabel')}</span>
       </div>
       <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
         {counts.map(({ star, count }) => (
@@ -56,6 +57,7 @@ function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
 }
 
 export default function ReviewsPage() {
+  const { t } = useI18n();
   const [uid, setUid] = useState<string | null>(null);
   const [reviews, setReviews] = useState<ReviewDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,8 +89,8 @@ export default function ReviewsPage() {
     <>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <PageHeader
-          title="Reviews"
-          description="Real feedback from customers on your products."
+          title={t('reviewsTitle')}
+          description={t('reviewsRealFeedback')}
           helperKey="dashReviews"
         />
         {uid && (
@@ -99,7 +101,7 @@ export default function ReviewsPage() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-60"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            {t('refreshBtn')}
           </button>
         )}
       </div>
@@ -118,9 +120,9 @@ export default function ReviewsPage() {
             <MessageSquare className="h-8 w-8 text-on-surface-variant/40" />
           </div>
           <div>
-            <p className="text-base font-semibold text-on-surface">No reviews yet</p>
+            <p className="text-base font-semibold text-on-surface">{t('noReviewsYet')}</p>
             <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
-              When customers leave reviews on your products, they&apos;ll appear here.
+              {t('noReviewsDesc')}
             </p>
           </div>
         </div>

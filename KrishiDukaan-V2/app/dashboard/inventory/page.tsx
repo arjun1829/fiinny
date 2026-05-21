@@ -108,6 +108,7 @@ function SeatInfoCard({ stats }: { stats: SeatStats }) {
 // ─── Invite code sync card (retailer only) ────────────────────────────────────
 
 function InviteCodeSync({ uid, onSynced }: { uid: string; onSynced: () => void }) {
+  const { t } = useI18n();
   const [code, setCode] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -144,10 +145,10 @@ function InviteCodeSync({ uid, onSynced }: { uid: string; onSynced: () => void }
     <section className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 p-5">
       <div className="flex items-center gap-2 mb-1">
         <KeyRound className="h-4 w-4 text-primary shrink-0" />
-        <h2 className="text-sm font-bold text-on-surface">Have an invite code?</h2>
+        <h2 className="text-sm font-bold text-on-surface">{t('haveInviteCode')}</h2>
       </div>
       <p className="text-xs text-on-surface-variant mb-4">
-        Enter the code your manufacturer gave you to instantly link your account and pull all assigned products.
+        {t('retailerProductInfo')}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -156,7 +157,7 @@ function InviteCodeSync({ uid, onSynced }: { uid: string; onSynced: () => void }
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => e.key === "Enter" && handleSync()}
-          placeholder="e.g. KD-ABCD1234"
+          placeholder={t('inviteCodePlaceholder')}
           maxLength={20}
           className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm font-mono font-bold tracking-widest text-on-surface outline-none ring-primary/30 focus:ring-2 w-48 uppercase"
           disabled={syncing}
@@ -366,16 +367,16 @@ export default function InventoryPage() {
         <section className="mt-8">
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
             <p className="text-sm font-semibold text-on-surface mb-1">
-              Want to list your own products or products of others?
+              {t('noActiveSubMsg')}
             </p>
             <p className="text-xs text-on-surface-variant mb-4">
-              Purchase a subscription to unlock product listing seats.
+              {t('purchaseSeatsStart')}
             </p>
             <Link
               href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95"
             >
-              Get Seats
+              {t('buySeatsBtn')}
             </Link>
           </div>
         </section>

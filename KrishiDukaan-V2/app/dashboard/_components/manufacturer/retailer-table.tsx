@@ -64,7 +64,6 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
 
 function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -111,11 +110,11 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
         <button
           type="button"
           onClick={copyCode}
-          title="Copy invite code"
+          title={t('copyInviteCodeTitle')}
           className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/40 bg-surface-container-low px-1.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedCode ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
-          {copiedCode ? "Copied!" : "Code"}
+          {copiedCode ? t('copiedText') : t('codeBtn')}
         </button>
       </div>
       {/* Share actions */}
@@ -126,7 +125,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
           className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedLink ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
-          Copy link
+          {t('copyLinkBtn')}
         </button>
         <a
           href={whatsappHref}
@@ -135,7 +134,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
           className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           <MessageCircle className="h-3.5 w-3.5" />
-          WhatsApp
+          {t('whatsappBtn')}
         </a>
         {row.retailerEmail ? (
           <a
@@ -143,7 +142,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
           >
             <Mail className="h-3.5 w-3.5" />
-            Email
+            {t('emailBtn')}
           </a>
         ) : null}
       </div>
@@ -213,6 +212,7 @@ function RemoveAction({
 }
 
 export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails }: RetailerTableProps) {
+  const { t } = useI18n();
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -224,9 +224,9 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
   if (!rows.length) {
     return (
       <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-14 text-center">
-        <p className="text-base font-semibold text-on-surface">{'noRetailersYet'}</p>
+        <p className="text-base font-semibold text-on-surface">{t('noRetailersYet')}</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-on-surface-variant">
-          {'noRetailersDesc'}
+          {t('noRetailersDesc')}
         </p>
       </div>
     );
@@ -240,14 +240,14 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
             <tr>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'shopNameCol'}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'ownerCol'}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'phoneCol'}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'onboardingCol'}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'inviteActionsCol'}</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">{'addedCol'}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('shopNameCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('ownerCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('phoneCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('onboardingCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('inviteActionsCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('addedCol')}</th>
               {hasActions ? (
-                <th className="whitespace-nowrap px-4 py-3 font-medium">{'actionsCol'}</th>
+                <th className="whitespace-nowrap px-4 py-3 font-medium">{t('actionsCol')}</th>
               ) : null}
             </tr>
           </thead>
@@ -289,14 +289,14 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                         {onDetails && (
                           <button type="button" onClick={() => onDetails(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                            <Info className="h-3.5 w-3.5" /> Details
+                            <Info className="h-3.5 w-3.5" /> {t('detailsBtn')}
                           </button>
                         )}
                         {/* Edit */}
                         {onEdit && !isRevoked && (
                           <button type="button" onClick={() => onEdit(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                            <Pencil className="h-3.5 w-3.5" /> Edit
+                            <Pencil className="h-3.5 w-3.5" /> {t('editBtn')}
                           </button>
                         )}
                         {/* Assign product */}
@@ -304,7 +304,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                           <HelperTooltip side="left" textKey="dashAssignProduct">
                             <button type="button" onClick={() => onAssignProduct(row)}
                               className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                              <PackagePlus className="h-3.5 w-3.5" /> Assign product
+                              <PackagePlus className="h-3.5 w-3.5" /> {t('assignProductBtn')}
                             </button>
                           </HelperTooltip>
                         ) : null}

@@ -12,11 +12,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useI18n();
   const mobileNav = [
-    { href: "/dashboard", labelKey: "Home", icon: LayoutDashboard },
-    { href: "/dashboard/inventory", labelKey: "Stock", icon: Package },
-    { href: "/dashboard/orders", labelKey: "Orders", icon: ReceiptText },
-    { href: "/dashboard/reviews", labelKey: "Reviews", icon: Star },
-    { href: "/dashboard/profile", labelKey: "Profile", icon: UserCircle2 },
+    { href: "/dashboard", labelKey: "mobileNavHome" as const, icon: LayoutDashboard },
+    { href: "/dashboard/inventory", labelKey: "mobileNavStock" as const, icon: Package },
+    { href: "/dashboard/orders", labelKey: "mobileNavOrders" as const, icon: ReceiptText },
+    { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+    { href: "/dashboard/profile", labelKey: "mobileNavProfile" as const, icon: UserCircle2 },
   ] as const;
 
   return (
@@ -52,7 +52,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{labelKey}</span>
+                <span>{t(labelKey)}</span>
               </Link>
             );
           })}

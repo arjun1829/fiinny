@@ -95,14 +95,14 @@ export default function OrdersPage() {
             <Truck className="h-9 w-9 text-on-surface-variant/40" />
           </div>
           <div>
-            <p className="text-base font-semibold text-on-surface">Online delivery not enabled</p>
+            <p className="text-base font-semibold text-on-surface">{t('onlineDeliveryNotEnabled')}</p>
             <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
-              Enable online delivery in your Profile settings to start accepting online orders.
+              {t('enableOnlineDeliveryHint')}
             </p>
           </div>
           <Link href="/dashboard/profile?tab=settings"
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            Go to Settings
+            {t('goToSettingsBtn')}
           </Link>
         </div>
       ) : loading ? (

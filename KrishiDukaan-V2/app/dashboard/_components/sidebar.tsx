@@ -21,17 +21,17 @@ import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 
 const baseNav = [
-  { href: "/dashboard", labelKey: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/analytics", labelKey: "Analytics", icon: BarChart3 },
-  { href: "/dashboard/inventory", labelKey: "Inventory", icon: Package },
-  { href: "/dashboard/orders", labelKey: "Orders", icon: ReceiptText },
-  { href: "/dashboard/reviews", labelKey: "Reviews", icon: Star },
-  { href: "/dashboard/profile", labelKey: "Profile", icon: UserCircle2 },
+  { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
+  { href: "/dashboard/analytics", labelKey: "sideAnalytics" as const, icon: BarChart3 },
+  { href: "/dashboard/inventory", labelKey: "sideInventory" as const, icon: Package },
+  { href: "/dashboard/orders", labelKey: "sideOrders" as const, icon: ReceiptText },
+  { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+  { href: "/dashboard/profile", labelKey: "sideProfile" as const, icon: UserCircle2 },
 ] as const;
 
 const subscriptionNavKey = {
   href: "/dashboard/subscription",
-  labelKey: "Subscription" as const,
+  labelKey: "sideSubscription" as const,
   icon: CreditCard,
 };
 
@@ -169,11 +169,11 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                   href={href}
                   data-tour-dash={tourKey}
                   onClick={() => onMobileOpenChange(false)}
-                  title="Enable Online Delivery in Profile → Settings"
+                  title={t('enableOnlineDeliveryHint')}
                   className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-on-surface-variant/50 hover:bg-surface-container/50"
                 >
                   <Icon className="h-5 w-5 shrink-0" />
-                  <span>{labelKey}</span>
+                  <span>{t(labelKey)}</span>
                   <Lock className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Link>
               );
@@ -193,7 +193,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0 opacity-90" />
-                {labelKey}
+                {t(labelKey)}
               </Link>
             );
           })}

@@ -6,6 +6,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
+import { useI18n } from "../../i18n/I18nContext";
 
 // ─── Constants (shared with add form) ────────────────────────────────────────
 
@@ -82,6 +83,7 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
   slot: ImgSlot; index: number; disabled: boolean;
   onChange: (p: Partial<ImgSlot>) => void; onClear: () => void;
 }) {
+  const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
@@ -108,13 +110,13 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
             <X className="h-2.5 w-2.5" />
           </button>
           {index === 0 && (
-            <span className="absolute bottom-1 left-1 rounded-full bg-primary/90 px-1.5 py-0.5 text-[9px] font-bold text-white">Main</span>
+            <span className="absolute bottom-1 left-1 rounded-full bg-primary/90 px-1.5 py-0.5 text-[9px] font-bold text-white">{t('formMainBadge')}</span>
           )}
         </div>
       ) : (
         <div className="flex h-20 flex-col items-center justify-center text-on-surface-variant/40">
           <ImageIcon className="h-5 w-5" />
-          <span className="text-[9px] mt-1">{index === 0 ? "Main" : `#${index + 1}`}</span>
+          <span className="text-[9px] mt-1">{index === 0 ? t('formMainBadge') : `#${index + 1}`}</span>
         </div>
       )}
       <div className="flex flex-col gap-1.5 p-2">
@@ -127,7 +129,7 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
               } disabled:opacity-50`}
             >
               {m === "url" ? <LinkIcon className="h-2.5 w-2.5" /> : <Upload className="h-2.5 w-2.5" />}
-              {m === "url" ? "Link" : "Upload"}
+              {m === "url" ? t('formLinkLabel') : t('formUploadLabel')}
             </button>
           ))}
         </div>
@@ -142,7 +144,7 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
             <button type="button" disabled={disabled || slot.uploading}
               onClick={() => fileRef.current?.click()}
               className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-outline-variant/40 py-1.5 text-[10px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50">
-              {slot.uploading ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> Uploading…</> : <><Upload className="h-2.5 w-2.5" /> Choose</>}
+              {slot.uploading ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> {t('formUploadingLabel')}</> : <><Upload className="h-2.5 w-2.5" /> {t('formChooseFile')}</>}
             </button>
           </>
         )}
@@ -159,6 +161,7 @@ export function EditProductModal({ row, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const [name, setName]               = useState(row.productName);
   const [category, setCategory]       = useState(row.category);
   const [description, setDescription] = useState(row.description);
@@ -245,7 +248,7 @@ export function EditProductModal({ row, onClose, onSaved }: {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4">
           <div>
-            <h2 className="text-base font-bold text-on-surface">Edit product</h2>
+            <h2 className="text-base font-bold text-on-surface">{t('editProductTitle')}</h2>
             <p className="text-xs text-on-surface-variant mt-0.5 truncate max-w-sm">{row.productName}</p>
           </div>
           <button type="button" onClick={onClose}
@@ -270,8 +273,8 @@ export function EditProductModal({ row, onClose, onSaved }: {
           {/* Status badge */}
           <div className="flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-on-surface">Product status</p>
-              <p className="text-xs text-on-surface-variant mt-0.5">Controls visibility to retailers</p>
+              <p className="text-sm font-medium text-on-surface">{t('productStatusLabel')}</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">{t('controlsVisibility')}</p>
             </div>
             <button type="button" disabled={toggling}
               onClick={handleToggleActive}
@@ -282,24 +285,24 @@ export function EditProductModal({ row, onClose, onSaved }: {
               }`}
             >
               {toggling && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {row.isActive ? "Deactivate" : "Activate"}
+              {row.isActive ? t('toggleDeactivate') : t('toggleActivate')}
             </button>
           </div>
 
           {/* ── Product details ────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Tag className="h-4 w-4 text-primary" /> Product details
+              <Tag className="h-4 w-4 text-primary" /> {t('productDetailsHeading')}
             </div>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Product name <span className="text-red-500">*</span></span>
+              <span className="font-medium text-on-surface">{t('productNameModalLabel')} <span className="text-red-500">*</span></span>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)}
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
             </label>
 
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-on-surface">Category</span>
+              <span className="font-medium text-on-surface">{t('categoryLabel')}</span>
               <select value={category} onChange={(e) => setCategory(e.target.value)}
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -308,25 +311,25 @@ export function EditProductModal({ row, onClose, onSaved }: {
 
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-on-surface flex items-center gap-1.5">
-                <AlignLeft className="h-3.5 w-3.5 text-on-surface-variant" /> Description
+                <AlignLeft className="h-3.5 w-3.5 text-on-surface-variant" /> {t('descriptionLabel')}
               </span>
               <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
-                placeholder="Describe the product…" />
+                placeholder={t('descModalPlaceholder')} />
             </label>
           </div>
 
           {/* ── Variants ──────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Layers className="h-4 w-4 text-primary" /> Pack sizes &amp; prices
+              <Layers className="h-4 w-4 text-primary" /> {t('formPackSizes')}
             </div>
 
             {/* Header */}
             <div className="grid grid-cols-12 gap-2 px-1">
-              <span className="col-span-4 text-xs font-medium text-on-surface-variant">Unit</span>
-              <span className="col-span-4 text-xs font-medium text-on-surface-variant">Price (₹)</span>
-              <span className="col-span-3 text-xs font-medium text-on-surface-variant">Stock</span>
+              <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formUnitSize')}</span>
+              <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formPriceCol')}</span>
+              <span className="col-span-3 text-xs font-medium text-on-surface-variant">{t('formStockQty')}</span>
               <span className="col-span-1" />
             </div>
 
@@ -377,7 +380,7 @@ export function EditProductModal({ row, onClose, onSaved }: {
               <button type="button"
                 onClick={() => setVariants((vs) => [...vs, { unit: "1kg", customUnit: "", price: "", stock: "" }])}
                 className="flex items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 px-3 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
-                <Plus className="h-4 w-4" /> Add size
+                <Plus className="h-4 w-4" /> {t('formAddSize')}
               </button>
             )}
           </div>
@@ -385,7 +388,7 @@ export function EditProductModal({ row, onClose, onSaved }: {
           {/* ── Images ────────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <ImageIcon className="h-4 w-4 text-primary" /> Product images
+              <ImageIcon className="h-4 w-4 text-primary" /> {t('formProductImagesEdit')}
             </div>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {images.map((slot, i) => (
@@ -400,13 +403,13 @@ export function EditProductModal({ row, onClose, onSaved }: {
         <div className="border-t border-outline-variant/30 px-5 py-4 flex items-center justify-between gap-3">
           <button type="button" onClick={onClose}
             className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors">
-            Cancel
+            {t('cancelBtn')}
           </button>
           <button type="button" disabled={saving}
             onClick={handleSave}
             className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? t('savingBtn') : t('saveBtn')}
           </button>
         </div>
       </div>

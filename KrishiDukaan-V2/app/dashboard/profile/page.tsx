@@ -91,7 +91,7 @@ function ProductCard({ product }: { product: ManufacturerProductRow }) {
         <p className="text-xs font-bold text-primary mt-0.5">₹{product.price.toFixed(0)}</p>
         {!product.isActive && (
           <span className="mt-1 inline-block text-[9px] rounded-full bg-surface-container px-1.5 py-0.5 text-on-surface-variant">
-            Inactive
+            {t('inactiveStatus')}
           </span>
         )}
       </div>
@@ -319,7 +319,7 @@ function ProfilePageInner() {
 
   if (loading) return (
     <div className="flex min-h-[300px] items-center justify-center gap-2 text-sm text-on-surface-variant">
-      <Loader2 className="h-5 w-5 animate-spin" /> Loading profile…
+      <Loader2 className="h-5 w-5 animate-spin" /> {t('loadingProfile')}
     </div>
   );
 
@@ -348,7 +348,7 @@ function ProfilePageInner() {
   // ── Tab bar ─────────────────────────────────────────────────────────────────
   const TabBar = () => (
     <div className="mb-6 flex gap-1 rounded-2xl border border-outline-variant/30 bg-surface-container-low p-1 w-fit">
-      {([["profile", "Profile"] as const, ["settings", "Settings"] as const]).map(([tab, label]) => (
+      {([["profile", t('profileTab')] as const, ["settings", t('settingsTab')] as const]).map(([tab, label]) => (
         <button key={tab} type="button" onClick={() => { setActiveTab(tab); setEditMode(false); setStatus(null); }}
           className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
             activeTab === tab ? "bg-white shadow-sm text-on-surface" : "text-on-surface-variant hover:text-on-surface"
@@ -375,9 +375,9 @@ function ProfilePageInner() {
             {/* Online delivery toggle */}
             <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
               <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
-                <Truck className="h-4 w-4" /> Online Delivery
+                <Truck className="h-4 w-4" /> {t('onlineDelivery')}
               </h2>
-              <p className="mb-4 text-xs text-on-surface-variant">Enable to accept online orders and show the Orders screen. Your products must have &quot;Online delivery&quot; sell mode.</p>
+              <p className="mb-4 text-xs text-on-surface-variant">{t('onlineDeliveryDesc')}</p>
               <label className="flex items-center gap-3 cursor-pointer w-fit">
                 <div className="relative">
                   <input type="checkbox" className="sr-only" checked={onlineDelivery}
@@ -385,24 +385,24 @@ function ProfilePageInner() {
                   <div className={`h-6 w-11 rounded-full transition-colors ${onlineDelivery ? "bg-primary" : "bg-surface-container-highest"}`} />
                   <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`} />
                 </div>
-                <span className="text-sm font-medium text-on-surface">{onlineDelivery ? "Enabled" : "Disabled"}</span>
+                <span className="text-sm font-medium text-on-surface">{onlineDelivery ? t('enabledLabel') : t('disabledLabel')}</span>
               </label>
             </section>
 
             {/* Tagline */}
             <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
-              <h2 className="mb-1 text-sm font-semibold text-on-surface">Shop tagline</h2>
-              <p className="mb-3 text-xs text-on-surface-variant">A short phrase that appears below your shop name in the marketplace.</p>
+              <h2 className="mb-1 text-sm font-semibold text-on-surface">{t('shopTagline')}</h2>
+              <p className="mb-3 text-xs text-on-surface-variant">{t('shopTaglineDesc')}</p>
               <input type="text" value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
                 className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
-                placeholder="e.g. Trusted inputs for progressive farmers" maxLength={80} />
+                placeholder={t('shopTaglinePlaceholder')} maxLength={80} />
             </section>
 
             <button type="button" onClick={handleSettingsSave} disabled={settingsSaving}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70">
               {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {settingsSaving ? "Saving…" : "Save settings"}
+              {settingsSaving ? t('savingText') : t('saveSettingsBtn')}
             </button>
           </div>
         </>
@@ -433,7 +433,7 @@ function ProfilePageInner() {
               </div>
               <button type="button" onClick={() => setEditMode(true)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
-                <Pencil className="h-3.5 w-3.5" /> Edit profile
+                <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
               </button>
             </div>
 
@@ -457,11 +457,11 @@ function ProfilePageInner() {
             <div className="flex gap-6 mb-4 py-3 border-y border-outline-variant/20">
               <div className="text-center">
                 <p className="text-base font-bold text-on-surface">{products.length}</p>
-                <p className="text-[10px] text-on-surface-variant">Products</p>
+                <p className="text-[10px] text-on-surface-variant">{t('productsStatLabel')}</p>
               </div>
               <div className="text-center">
                 <p className="text-base font-bold text-on-surface capitalize">{userRole ?? "—"}</p>
-                <p className="text-[10px] text-on-surface-variant">Account type</p>
+                <p className="text-[10px] text-on-surface-variant">{t('accountTypeLabel')}</p>
               </div>
             </div>
 
@@ -478,7 +478,7 @@ function ProfilePageInner() {
               {!social.instagram && !social.facebook && !social.whatsapp && !social.youtube && (
                 <button type="button" onClick={() => setEditMode(true)}
                   className="text-xs text-on-surface-variant underline underline-offset-2 hover:text-primary">
-                  + Add social links
+                  {t('addSocialLinksBtn')}
                 </button>
               )}
             </div>
@@ -489,11 +489,11 @@ function ProfilePageInner() {
         {userRole === "manufacturer" && (
           <section>
             <h2 className="mb-3 text-sm font-semibold text-on-surface">
-              Your Products{products.length > 0 ? ` · ${products.length}` : ""}
+              {t('yourProductsHeading')}{products.length > 0 ? ` · ${products.length}` : ""}
             </h2>
             {products.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-12 text-center">
-                <p className="text-sm text-on-surface-variant">No active products yet. Add products from the Inventory screen.</p>
+                <p className="text-sm text-on-surface-variant">{t('noActiveProducts')}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -511,10 +511,10 @@ function ProfilePageInner() {
     <>
       <TabBar />
       <div className="mb-6 flex items-center justify-between">
-        <PageHeader title="Edit Profile" description="Update your business details and social links." helperKey="dashProfile" />
+        <PageHeader title={t('editProfileTitle')} description={t('editProfileDesc')} helperKey="dashProfile" />
         <button type="button" onClick={() => setEditMode(false)}
           className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container">
-          <X className="h-4 w-4" /> Cancel
+          <X className="h-4 w-4" /> {t('cancelBtn')}
         </button>
       </div>
 
@@ -528,37 +528,37 @@ function ProfilePageInner() {
         <form className="flex flex-col gap-6" onSubmit={handleSave}>
           {/* Basic info */}
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Basic info</h3>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('basicInfoHeading')}</h3>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">Business name</span>
+                <span className="font-medium text-on-surface">{t('businessNameLabel')}</span>
                 <input required value={form.businessName} onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
-                  className={inputCls} placeholder={userRole === "retailer" ? "Shop or business name" : "Registered business name"} />
+                  className={inputCls} placeholder={userRole === "retailer" ? t('businessNamePlaceholderRetailer') : t('businessNamePlaceholderMfg')} />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">Owner name</span>
+                <span className="font-medium text-on-surface">{t('ownerNameLabel')}</span>
                 <input required value={form.ownerName} onChange={(e) => setForm((p) => ({ ...p, ownerName: e.target.value }))}
-                  className={inputCls} placeholder="Owner or primary contact" />
+                  className={inputCls} placeholder={t('ownerNamePlaceholder')} />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">Phone</span>
+                <span className="font-medium text-on-surface">{t('phoneLabelDash')}</span>
                 <input required type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  className={inputCls} placeholder="+91…" />
+                  className={inputCls} placeholder={t('phonePlaceholder')} />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
-                  Email
-                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional — used for email notifications)</span>
+                  {t('emailLabel')}
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">{t('emailOptionalNote')}</span>
                 </span>
                 <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  className={inputCls} placeholder="your@email.com" />
+                  className={inputCls} placeholder={t('emailPlaceholder')} />
               </label>
             </div>
           </section>
 
           {/* Social links */}
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Social links</h3>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('socialLinksHeading')}</h3>
             <div className="grid gap-4 md:grid-cols-2">
               {([
                 { key: "instagram", icon: Instagram, label: "Instagram", placeholder: "instagram.com/yourpage" },
@@ -580,46 +580,46 @@ function ProfilePageInner() {
 
           {/* Location */}
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Location</h3>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('locationHeading')}</h3>
             <div className="flex flex-col gap-4">
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
-                  Search on Google Maps
-                  <span className="ml-1 font-normal text-on-surface-variant">— auto-fills address</span>
+                  {t('searchGoogleMaps')}
+                  <span className="ml-1 font-normal text-on-surface-variant">{t('autoFillsAddress')}</span>
                 </span>
                 {/* Uncontrolled input — Google Maps Autocomplete sets value directly via DOM.
                     A controlled input (value+onChange) causes React to fight Maps over ownership
                     of the input value, breaking the dropdown selection. */}
                 <input ref={addressInputRef} required autoComplete="off"
                   defaultValue={form.line1}
-                  className={inputCls} placeholder="Type your business name or address" />
+                  className={inputCls} placeholder={t('addressPlaceholder')} />
               </label>
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">City</span>
-                  <input required value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} className={inputCls} placeholder="City" />
+                  <span className="font-medium text-on-surface">{t('cityLabel')}</span>
+                  <input required value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} className={inputCls} placeholder={t('cityPlaceholder')} />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">State</span>
-                  <input required value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))} className={inputCls} placeholder="State" />
+                  <span className="font-medium text-on-surface">{t('stateLabel')}</span>
+                  <input required value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))} className={inputCls} placeholder={t('statePlaceholder')} />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">Pincode</span>
-                  <input required value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))} className={inputCls} placeholder="PIN" />
+                  <span className="font-medium text-on-surface">{t('pincodeLabel')}</span>
+                  <input required value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))} className={inputCls} placeholder={t('pincodePlaceholder')} />
                 </label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={handleUseCurrentLocation} disabled={locating}
                   className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-70">
                   {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-                  Use current location
+                  {t('useCurrentLocation')}
                 </button>
                 {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
               </div>
               {geo && (
                 <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                    <MapPin className="h-3.5 w-3.5" /> Location selected
+                    <MapPin className="h-3.5 w-3.5" /> {t('locationSelected')}
                   </div>
                   <div className="overflow-hidden rounded-xl border border-outline-variant/30">
                     <iframe title="Location preview" src={mapUrl} className="h-48 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
@@ -633,7 +633,7 @@ function ProfilePageInner() {
             <button type="submit" disabled={saving}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-70">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? "Saving…" : "Save profile"}
+              {saving ? t('savingProfile') : t('saveProfileBtn')}
             </button>
           </div>
         </form>
