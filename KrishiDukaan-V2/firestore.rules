@@ -208,6 +208,43 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // ─── Phone-keyed subcollections ──────────────────────────────────────────
+    // These are write-through mirrors of global collections, scoped by phone.
+    // Global collections remain the source of truth.
+
+    match /manufacturers/{mPhone}/retailers/{rPhone} {
+      allow read: if isAuthed() && myPhone() == mPhone;
+      allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
+    }
+
+    match /manufacturers/{mPhone}/products/{pid} {
+      allow read: if isAuthed() && myPhone() == mPhone;
+      allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
+    }
+
+    match /manufacturers/{mPhone}/inventory/{iid} {
+      allow read: if isAuthed() && myPhone() == mPhone;
+      allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
+    }
+
+    match /retailers/{rPhone}/products/{pid} {
+      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
+    }
+
+    match /retailers/{rPhone}/inventory/{iid} {
+      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
+    }
+
+    // ─── businessCodes ───────────────────────────────────────────────────────
+    // Sequential counters for human-readable identifiers (future use).
+    match /businessCodes/{type} {
+      allow read: if isAuthed();
+      allow update: if isAuthed()
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seq', 'updatedAt']);
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // LEGACY COLLECTIONS
     // The code still reads/writes these while migrating to the new schema.
@@ -283,6 +320,7 @@ service cloud.firestore {
     match /manufacturerRetailers/{docId} {
       allow get: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone() ||
         resource.data.retailerId == request.auth.uid
       );
       allow list: if isAuthed();
@@ -291,6 +329,7 @@ service cloud.firestore {
       );
       allow update: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone() ||
         (
           // Allow claim/takeover if phone matches or it's a fresh invite
           (
@@ -302,7 +341,10 @@ service cloud.firestore {
           request.resource.data.claimable == false
         )
       );
-      allow delete: if isAuthed() && resource.data.manufacturerId == request.auth.uid;
+      allow delete: if isAuthed() && (
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone()
+      );
     }
 
     match /retailerSeatListings/{docId} {

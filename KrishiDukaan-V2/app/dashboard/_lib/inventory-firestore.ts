@@ -182,11 +182,13 @@ export async function fetchProductNames(productIds: string[]): Promise<Map<strin
  * Strategy:
  *   1. Query `products` where ownerId == uid AND ownerType == "retailer"
  *   2. ALSO Query `products` where retailerDocId == retailerDocId (for pending assignments)
- *   3. Join and return InventoryRow[]
+ *   3. ALSO Query `products` where retailerPhone == phone (phone-keyed records pre-signup)
+ *   4. Join and return InventoryRow[]
  */
 export async function fetchRetailerInventoryRows(
   ownerId: string,
   retailerDocId?: string,
+  retailerPhone?: string,
 ): Promise<InventoryRow[]> {
   // Query by UID
   const q1 = query(
@@ -194,7 +196,7 @@ export async function fetchRetailerInventoryRows(
     where("ownerId", "==", ownerId),
     where("ownerType", "==", "retailer"),
   );
-  
+
   // Query by retailerDocId if available (for products assigned but not yet backfilled/accepted)
   const queries = [getDocs(q1)];
   if (retailerDocId) {
@@ -204,6 +206,15 @@ export async function fetchRetailerInventoryRows(
       where("ownerType", "==", "retailer"),
     );
     queries.push(getDocs(q2));
+  }
+  // Fallback: query by retailerPhone for phone-keyed docs
+  if (retailerPhone) {
+    const q3 = query(
+      collection(db, "products"),
+      where("retailerPhone", "==", retailerPhone),
+      where("ownerType", "==", "retailer"),
+    );
+    queries.push(getDocs(q3));
   }
 
   const snaps = await Promise.all(queries);
@@ -352,6 +363,13 @@ export async function createProductAndInventory(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
+  // Resolve owner phone for dual-field writes
+  let ownerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
   const now = serverTimestamp();
   const image = (input.imageUrl ?? "").trim();
   const batch = writeBatch(db);
@@ -373,14 +391,16 @@ export async function createProductAndInventory(
     price: input.sellingPrice,
     isActive: true,
     ownerId,
+    ownerPhone: ownerPhone ?? null,
     ownerType: "retailer",
     createdBy: ownerId,
     source: sourceVal,
     createdAt: now,
     updatedAt: now,
-    
+
     // Market display fields
     retailerId: ownerId,
+    retailerPhone: ownerPhone ?? null,
     store: input.storeName || "Local Store",
     stock: "In Stock",
     distance: "Nearby",
@@ -401,8 +421,10 @@ export async function createProductAndInventory(
   batch.set(inventoryRef, {
     id: inventoryRef.id,
     ownerId,
+    ownerPhone: ownerPhone ?? null,
     ownerType: "retailer",
     retailerId: ownerId,
+    retailerPhone: ownerPhone ?? null,
     productId: productRef.id,
     stockQuantity: input.stockQuantity,
     sellingPrice: input.sellingPrice,

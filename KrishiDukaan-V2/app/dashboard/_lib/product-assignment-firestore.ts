@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -59,6 +60,18 @@ export async function assignProductToRetailer(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
+  // Resolve phones for dual-field writes
+  let manufacturerPhone: string | null = null;
+  let retailerPhone: string | null = null;
+  try {
+    const [mIdxSnap, rIdxSnap] = await Promise.all([
+      getDoc(doc(db, "uidIndex", input.manufacturerId)),
+      input.retailerId ? getDoc(doc(db, "uidIndex", input.retailerId)) : Promise.resolve(null),
+    ]);
+    if (mIdxSnap.exists()) manufacturerPhone = String(mIdxSnap.data().phone ?? "") || null;
+    if (rIdxSnap?.exists()) retailerPhone = String(rIdxSnap.data().phone ?? "") || null;
+  } catch { /* ignore — phones are optional enrichment */ }
+
   // Fetch the manufacturer product and retailer profile in parallel
   const [productSnap, retailerSnap] = await Promise.all([
     getDoc(doc(db, "products", input.productId)),
@@ -99,12 +112,15 @@ export async function assignProductToRetailer(
     price: typeof src.price === "number" ? src.price : 0,
     isActive: true,
     ownerId: retailerOwnerId,
+    ownerPhone: retailerPhone ?? null,
     ownerType: "retailer",
     createdBy: input.manufacturerId,
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     manufacturerProductId: input.productId,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
+    retailerPhone: retailerPhone ?? null,
     source: "manufacturer_assigned",
 
     // Market display fields
@@ -123,10 +139,13 @@ export async function assignProductToRetailer(
   batch.set(inventoryRef, {
     id: inventoryRef.id,
     ownerId: retailerOwnerId,
+    ownerPhone: retailerPhone ?? null,
     ownerType: "retailer",
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
+    retailerPhone: retailerPhone ?? null,
     productId: retailerProductRef.id,
     manufacturerProductId: input.productId,
     assignedByManufacturer: true,
@@ -140,10 +159,13 @@ export async function assignProductToRetailer(
   // 3. Seat listing — expires when subscription expires
   const seatListingId = addSeatListingToBatch(batch, {
     ownerId: input.manufacturerId,
+    ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? null,
+    retailerPhone: retailerPhone ?? null,
     productId: retailerProductRef.id,
     manufacturerProductId: input.productId,
     listingType: "assigned",
@@ -158,6 +180,27 @@ export async function assignProductToRetailer(
   });
 
   await batch.commit();
+
+  // Phase 4B: Subcollection mirrors (fire-and-forget, non-critical)
+  (async () => {
+    try {
+      if (manufacturerPhone) {
+        setDoc(
+          doc(db, `manufacturers/${manufacturerPhone}/products/${input.productId}`),
+          { manufacturerId: input.manufacturerId, manufacturerPhone, retailerDocId: input.retailerDocId, retailerPhone, assignedAt: serverTimestamp() },
+          { merge: true },
+        ).catch(() => {});
+      }
+      if (retailerPhone) {
+        setDoc(
+          doc(db, `retailers/${retailerPhone}/products/${retailerProductRef.id}`),
+          { retailerId: input.retailerId ?? input.retailerDocId, retailerPhone, manufacturerId: input.manufacturerId, manufacturerPhone, assignedAt: serverTimestamp() },
+          { merge: true },
+        ).catch(() => {});
+      }
+    } catch { /* non-critical */ }
+  })();
+
   return { seatListingId, retailerProductId: retailerProductRef.id };
 }
 
@@ -274,6 +317,22 @@ export async function bulkAssignProductsToRetailer(
     ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
     : "";
 
+  // Resolve phones for dual-field writes and subcollection mirrors
+  let manufacturerPhone: string | null = null;
+  let retailerPhone: string | null = null;
+  try {
+    const [mIdxSnap, rIdxSnap] = await Promise.all([
+      getDoc(doc(db, "uidIndex", manufacturerId)),
+      retailerId ? getDoc(doc(db, "uidIndex", retailerId)) : Promise.resolve(null),
+    ]);
+    if (mIdxSnap.exists()) manufacturerPhone = String(mIdxSnap.data().phone ?? "") || null;
+    if (rIdxSnap?.exists()) retailerPhone = String(rIdxSnap.data().phone ?? "") || null;
+    // Fallback: phone may already be on the retailer doc
+    if (!retailerPhone && retailerData?.phone) {
+      retailerPhone = String(retailerData.phone);
+    }
+  } catch { /* phones are optional enrichment */ }
+
   const now = serverTimestamp();
   const batch = writeBatch(db);
   const assigned: string[] = [];
@@ -301,12 +360,15 @@ export async function bulkAssignProductsToRetailer(
       price: typeof src.price === "number" ? src.price : 0,
       isActive: true,
       ownerId: retailerOwnerId,
+      ownerPhone: retailerPhone ?? null,
       ownerType: "retailer",
       createdBy: manufacturerId,
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       manufacturerProductId: productId,
       retailerDocId,
       retailerId: retailerId ?? "",
+      retailerPhone: retailerPhone ?? null,
       source: "manufacturer_assigned",
 
       // Market display fields
@@ -325,10 +387,13 @@ export async function bulkAssignProductsToRetailer(
     batch.set(inventoryRef, {
       id: inventoryRef.id,
       ownerId: retailerOwnerId,
+      ownerPhone: retailerPhone ?? null,
       ownerType: "retailer",
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       retailerDocId,
       retailerId: retailerId ?? "",
+      retailerPhone: retailerPhone ?? null,
       productId: retailerProductRef.id,
       manufacturerProductId: productId,
       assignedByManufacturer: true,
@@ -342,10 +407,13 @@ export async function bulkAssignProductsToRetailer(
     // 3. Seat listing
     addSeatListingToBatch(batch, {
       ownerId: manufacturerId,
+      ownerPhone: manufacturerPhone ?? null,
       ownerType: "manufacturer",
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       retailerDocId,
       retailerId: retailerId ?? null,
+      retailerPhone: retailerPhone ?? null,
       productId: retailerProductRef.id,
       manufacturerProductId: productId,
       listingType: "assigned",
@@ -362,6 +430,43 @@ export async function bulkAssignProductsToRetailer(
   }
 
   await batch.commit();
+
+  // ── Phase 4B: Subcollection mirrors (fire-and-forget) ─────────────────────
+  // Write lightweight summary docs under phone-keyed subcollections for future
+  // dashboard grouping and analytics. Failures are non-critical.
+  if (assigned.length > 0) {
+    (async () => {
+      try {
+        const { writeBatch: wb, doc: wDoc, collection: wCol, serverTimestamp: wTs } = await import("firebase/firestore");
+        const { db: wDb } = await import("../../firebase");
+        const mirrorBatch = wb(wDb);
+        const mirrorNow = wTs();
+
+        for (const productId of assigned) {
+          // manufacturers/{manufacturerPhone}/products/{productId}
+          if (manufacturerPhone) {
+            mirrorBatch.set(
+              wDoc(wDb, `manufacturers/${manufacturerPhone}/products/${productId}`),
+              { manufacturerId, manufacturerPhone, retailerDocId, retailerPhone, assignedAt: mirrorNow },
+              { merge: true },
+            );
+          }
+          // retailers/{retailerPhone}/products/{productId}
+          if (retailerPhone) {
+            mirrorBatch.set(
+              wDoc(wDb, `retailers/${retailerPhone}/products/${productId}`),
+              { retailerId: retailerId ?? retailerDocId, retailerPhone, manufacturerId, manufacturerPhone, assignedAt: mirrorNow },
+              { merge: true },
+            );
+          }
+        }
+        await mirrorBatch.commit();
+      } catch (e) {
+        console.warn("[bulkAssign] Subcollection mirror write failed (non-critical):", e);
+      }
+    })();
+  }
+
   return { assigned, skipped, failed };
 }
 

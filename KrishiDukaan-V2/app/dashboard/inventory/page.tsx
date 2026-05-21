@@ -212,7 +212,7 @@ export default function InventoryPage() {
 
   const [magicStatus, setMagicStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const load = useCallback(async (uid: string, resolvedRole: UserRole, rDocId?: string) => {
+  const load = useCallback(async (uid: string, resolvedRole: UserRole, rDocId?: string, rPhone?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -236,7 +236,7 @@ export default function InventoryPage() {
         // Fetch products for all linked IDs
         const rawRows: InventoryRow[] = [];
         if (linkedIds.length > 0) {
-          const results = await Promise.all(linkedIds.map(id => fetchRetailerInventoryRows(uid, id)));
+          const results = await Promise.all(linkedIds.map(id => fetchRetailerInventoryRows(uid, id, rPhone)));
           const seen = new Set<string>();
           results.flat().forEach(row => {
             if (!seen.has(row.inventoryId)) {
@@ -245,7 +245,7 @@ export default function InventoryPage() {
             }
           });
         } else {
-          rawRows.push(...await fetchRetailerInventoryRows(uid));
+          rawRows.push(...await fetchRetailerInventoryRows(uid, undefined, rPhone));
         }
 
         // Dedup assigned products by name — when the same manufacturer product
@@ -336,7 +336,7 @@ export default function InventoryPage() {
           }
         }
 
-        await load(user.uid, resolvedRole, rDocId);
+        await load(user.uid, resolvedRole, rDocId, profileData?.phone);
       } catch {
         setLoading(false);
       }
@@ -349,7 +349,7 @@ export default function InventoryPage() {
   const refresh = useCallback(async () => {
     if (userId) {
       const p = await getUserProfile(userId);
-      await load(userId, role, p?.retailerDocId);
+      await load(userId, role, p?.retailerDocId, p?.phone);
     }
   }, [userId, role, load]);
 

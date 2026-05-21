@@ -43,6 +43,7 @@ function parseStatus(value: unknown): ManufacturerRetailerStatus {
 function parseOnboardingStatus(value: unknown): RetailerOnboardingStatus {
   if (value === "active") return "active";
   if (value === "removed") return "removed";
+  if (value === "inactive") return "inactive";
   return "pending";
 }
 
@@ -52,6 +53,7 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
   return {
     id,
     manufacturerId: String(data.manufacturerId ?? ""),
+    manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
     retailerDocId: String(data.retailerDocId ?? ""),
     retailerId: String(data.retailerId ?? ""),
     shopName: String(data.shopName ?? ""),
@@ -77,6 +79,8 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
     geo: rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number"
       ? { latitude: rawGeo.latitude, longitude: rawGeo.longitude }
       : null,
+    manuallyDeactivated: data.manuallyDeactivated === true,
+    retailerCode: data.retailerCode ? String(data.retailerCode) : undefined,
   };
 }
 
@@ -128,11 +132,31 @@ export async function generateUniqueInviteCode(maxAttempts = 8): Promise<string>
 export async function fetchManufacturerRetailers(
   manufacturerId: string,
 ): Promise<ManufacturerRetailerRow[]> {
-  const q = query(collection(db, COLLECTION), where("manufacturerId", "==", manufacturerId));
-  const snap = await getDocs(q);
-  const rows: ManufacturerRetailerRow[] = snap.docs.map((d) => {
-    const docData = mapDoc(d.id, d.data() as Record<string, unknown>);
-    return { ...docData, addedAtLabel: timestampLabel(docData.addedAt) };
+  // Dual query: legacy manufacturerId (UID) + manufacturerPhone (E164)
+  let manufacturerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", manufacturerId));
+    if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
+  const queries = [
+    getDocs(query(collection(db, COLLECTION), where("manufacturerId", "==", manufacturerId))),
+  ];
+  if (manufacturerPhone && manufacturerPhone !== manufacturerId) {
+    queries.push(getDocs(query(collection(db, COLLECTION), where("manufacturerPhone", "==", manufacturerPhone))));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const rows: ManufacturerRetailerRow[] = [];
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        const docData = mapDoc(d.id, d.data() as Record<string, unknown>);
+        rows.push({ ...docData, addedAtLabel: timestampLabel(docData.addedAt) });
+      }
+    });
   });
   rows.sort((a, b) => {
     const ta = a.addedAt?.toMillis?.() ?? 0;
@@ -176,6 +200,13 @@ export async function createNetworkRetailer(
 
   const normalizedPhone = toE164India(input.phone);
 
+  // Resolve manufacturer's phone for dual-field writes and subcollection mirror
+  let manufacturerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", input.manufacturerId));
+    if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
   // Pre-create retailer entity (no auth UID yet)
   const retailerRef = doc(collection(db, "retailers"));
   const retailerPayload: Record<string, unknown> = {
@@ -191,6 +222,7 @@ export async function createNetworkRetailer(
       pincode: input.address.pincode.trim(),
     },
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     onboardingType: "manufacturer-network",
     assignedSeat: true,
     seatAssignedAt: now,
@@ -209,6 +241,7 @@ export async function createNetworkRetailer(
   const invitePayload: Record<string, unknown> = {
     id: inviteRef.id,
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     retailerDocId: retailerRef.id,
     retailerId: "",
     shopName: input.shopName.trim(),
@@ -234,6 +267,25 @@ export async function createNetworkRetailer(
   batch.set(inviteRef, invitePayload);
 
   await batch.commit();
+
+  // Phase 4A: Subcollection mirror — fire-and-forget (non-critical)
+  // manufacturers/{manufacturerPhone}/retailers/{normalizedPhone}
+  if (manufacturerPhone) {
+    setDoc(
+      doc(db, `manufacturers/${manufacturerPhone}/retailers/${normalizedPhone}`),
+      {
+        retailerDocId: retailerRef.id,
+        retailerPhone: normalizedPhone,
+        shopName: input.shopName.trim(),
+        ownerName: input.ownerName.trim(),
+        inviteCode,
+        status: "invited",
+        onboardingStatus: "active",
+        addedAt: serverTimestamp(),
+      },
+    ).catch((e) => console.warn("[createNetworkRetailer] Subcollection mirror failed:", e));
+  }
+
   return { retailerDocId: retailerRef.id, inviteCode };
 }
 
@@ -263,6 +315,66 @@ export async function removeNetworkRetailer(
     assignedSeat: false,
     onboardingStatus: "removed",
     removedAt: now,
+  });
+}
+
+/**
+ * Manually deactivates a retailer WITHOUT permanently revoking them (reversible).
+ *
+ * Atomically:
+ *   1. Releases all active assigned seat listings for this retailer.
+ *   2. Deactivates the corresponding retailer product copies (isActive → false).
+ *   3. Marks the `manufacturerRetailers` link as onboardingStatus: "inactive".
+ *
+ * The retailers doc is NOT modified — manufacturer lacks write permission on it.
+ */
+export async function deactivateNetworkRetailer(
+  inviteDocId: string,
+  retailerDocId: string,
+  manufacturerId: string,
+): Promise<void> {
+  const now = serverTimestamp();
+
+  const listingsSnap = await getDocs(
+    query(
+      collection(db, "retailerSeatListings"),
+      where("ownerId", "==", manufacturerId),
+      where("retailerDocId", "==", retailerDocId),
+      where("listingType", "==", "assigned"),
+      where("status", "==", "active"),
+    ),
+  );
+
+  const batch = writeBatch(db);
+
+  batch.update(doc(db, COLLECTION, inviteDocId), {
+    onboardingStatus: "inactive",
+    assignedSeat: false,
+    manuallyDeactivated: true,
+    deactivatedAt: now,
+  });
+
+  listingsSnap.docs.forEach((listingDoc) => {
+    batch.update(listingDoc.ref, { status: "released", releasedAt: now });
+    const productId = String(listingDoc.data().productId ?? "");
+    if (productId) {
+      batch.update(doc(db, "products", productId), { isActive: false, updatedAt: now });
+    }
+  });
+
+  await batch.commit();
+}
+
+/**
+ * Resets a manually-deactivated retailer back to active onboarding status.
+ * Called automatically after the manufacturer assigns at least one product to re-activate.
+ */
+export async function reactivateNetworkRetailer(inviteDocId: string): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, inviteDocId), {
+    onboardingStatus: "active",
+    assignedSeat: true,
+    manuallyDeactivated: false,
+    reactivatedAt: serverTimestamp(),
   });
 }
 

@@ -16,6 +16,8 @@ import { InviteCard } from "../../_components/manufacturer/invite-card";
 import {
   fetchManufacturerRetailers,
   removeNetworkRetailer,
+  deactivateNetworkRetailer,
+  reactivateNetworkRetailer,
 } from "../../_lib/manufacturer-retailers-firestore";
 import {
   fetchSubscriptions,
@@ -119,8 +121,28 @@ export default function ManufacturerRetailersPage() {
     if (manufacturerId) await loadAll(manufacturerId);
   };
 
+  const handleDeactivate = async (row: ManufacturerRetailerRow) => {
+    if (!manufacturerId) return;
+    await deactivateNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
+    await loadAll(manufacturerId);
+  };
+
+  /**
+   * Opens the assign-product modal for a deactivated retailer so the
+   * manufacturer can assign at least one product to re-activate them.
+   */
+  const handleActivate = (row: ManufacturerRetailerRow) => {
+    setAssignTarget(row);
+  };
+
   const handleAssigned = async () => {
-    if (manufacturerId) await loadAll(manufacturerId);
+    if (!manufacturerId) return;
+    // If the assign target was manually deactivated, reset it back to active
+    // so the row reflects the new seat listing immediately.
+    if (assignTarget?.onboardingStatus === "inactive") {
+      await reactivateNetworkRetailer(assignTarget.id);
+    }
+    await loadAll(manufacturerId);
     setAssignTarget(null);
   };
 
@@ -198,6 +220,8 @@ export default function ManufacturerRetailersPage() {
           onAssignProduct={(row) => setAssignTarget(row)}
           onEdit={(row) => setEditTarget(row)}
           onDetails={(row) => setDetailsTarget(row)}
+          onDeactivate={handleDeactivate}
+          onActivate={handleActivate}
         />
       </section>
 

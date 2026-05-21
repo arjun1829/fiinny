@@ -111,8 +111,17 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
   const now = new Date();
   const expiry = subscriptionExpiryDate(now);
   const ts = serverTimestamp();
+
+  // Resolve phone for the owner (if available via uidIndex)
+  let ownerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", input.ownerId));
+    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
   const ref = await addDoc(collection(db, SUBSCRIPTIONS), {
     ownerId: input.ownerId,
+    ownerPhone: ownerPhone ?? null,
     ownerType: input.ownerType,
     planName: input.planName ?? "Standard",
     seatsPurchased: input.seatsPurchased,
@@ -166,11 +175,32 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
 }
 
 export async function fetchSubscriptions(ownerId: string): Promise<Subscription[]> {
-  const q = query(collection(db, SUBSCRIPTIONS), where("ownerId", "==", ownerId));
-  const snap = await getDocs(q);
-  const subs = snap.docs.map((d) =>
-    mapSubscriptionDoc(d.id, d.data() as Record<string, unknown>),
-  );
+  // Dual query: legacy ownerId (UID) + new ownerPhone (E164).
+  // Resolves phone via uidIndex; falls back to UID-only if not found.
+  let ownerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
+  const queries = [
+    getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerId", "==", ownerId))),
+  ];
+  if (ownerPhone && ownerPhone !== ownerId) {
+    queries.push(getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerPhone", "==", ownerPhone))));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const subs: Subscription[] = [];
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        subs.push(mapSubscriptionDoc(d.id, d.data() as Record<string, unknown>));
+      }
+    });
+  });
   subs.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
   return subs;
 }
@@ -254,10 +284,16 @@ export function computeSeatStats(
 
 export type SeatListingPayload = {
   ownerId: string;
+  /** Normalized E164 phone of the owner (manufacturer or retailer). Optional but preferred for new writes. */
+  ownerPhone?: string | null;
   ownerType: "manufacturer" | "retailer";
   manufacturerId: string | null;
+  /** Normalized phone of the manufacturer for phone-based queries. */
+  manufacturerPhone?: string | null;
   retailerDocId: string | null;
   retailerId: string | null;
+  /** Normalized E164 phone of the retailer. */
+  retailerPhone?: string | null;
   productId: string;
   /** For assigned listings: the manufacturer's original product doc ID. Null for own listings. */
   manufacturerProductId: string | null;
@@ -275,10 +311,13 @@ export function addSeatListingToBatch(
 
   batch.set(ref, {
     ownerId: payload.ownerId,
+    ownerPhone: payload.ownerPhone ?? null,
     ownerType: payload.ownerType,
     manufacturerId: payload.manufacturerId,
+    manufacturerPhone: payload.manufacturerPhone ?? null,
     retailerDocId: payload.retailerDocId,
     retailerId: payload.retailerId,
+    retailerPhone: payload.retailerPhone ?? null,
     productId: payload.productId,
     manufacturerProductId: payload.manufacturerProductId,
     listingType: payload.listingType,
@@ -295,10 +334,13 @@ export function addSeatListingToBatch(
 export async function createSeatListing(payload: SeatListingPayload): Promise<string> {
   const ref = await addDoc(collection(db, SEAT_LISTINGS), {
     ownerId: payload.ownerId,
+    ownerPhone: payload.ownerPhone ?? null,
     ownerType: payload.ownerType,
     manufacturerId: payload.manufacturerId,
+    manufacturerPhone: payload.manufacturerPhone ?? null,
     retailerDocId: payload.retailerDocId,
     retailerId: payload.retailerId,
+    retailerPhone: payload.retailerPhone ?? null,
     productId: payload.productId,
     manufacturerProductId: payload.manufacturerProductId,
     listingType: payload.listingType,
