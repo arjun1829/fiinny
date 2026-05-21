@@ -1,8 +1,10 @@
 import type { ManufacturerReportData } from "../reports/manufacturer-report-data";
 
-function fmt(d: Date | null): string {
+function fmt(d: Date | string | null): string {
   if (!d) return "—";
-  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function statBox(label: string, value: string | number, color: string) {

@@ -244,10 +244,11 @@ export default function App() {
       let stores = await fetchStores();
       let fetchedHubs = await fetchHubs();
 
-      if (products.length === 0 || stores.length === 0) {
+      if (products.length === 0 || stores.length === 0 || fetchedHubs.length === 0) {
         console.log('Firebase data incomplete, attempting sync...', { 
           productsCount: products.length, 
-          storesCount: stores.length 
+          storesCount: stores.length,
+          hubsCount: fetchedHubs.length
         });
         await syncInitialData(PRODUCTS, STORES, INVENTORY);
         // Fetch again after sync
@@ -652,7 +653,22 @@ export default function App() {
           />
         );
       case 'hub':
-        return <HubView searchQuery={productSearch} initialHubId={selectedHubId} />;
+        return (
+          <HubView 
+            searchQuery={productSearch} 
+            initialHubId={selectedHubId}
+            onSearchProduct={(query) => {
+              setProductSearch(query);
+              setSelectedCategory('all');
+              navigate('market');
+            }}
+            onCategoryClick={(category) => {
+              setProductSearch('');
+              setSelectedCategory(category);
+              navigate('market');
+            }}
+          />
+        );
       case 'product':
         return <ProductDetailView
           products={allProducts}

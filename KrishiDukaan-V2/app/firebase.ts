@@ -757,7 +757,12 @@ export async function fetchManufacturerContacts(manufacturerId: string): Promise
   }
 }
 
+import { Hub, INITIAL_HUBS } from './initialHubs';
+
+export type { Hub };
+
 export async function syncInitialData(products: any[], stores: any[], inventory: any[] = []) {
+  // Sync products
   try {
     const productsSnap = await getDocs(collection(db, 'products'));
     if (productsSnap.empty) {
@@ -770,7 +775,12 @@ export async function syncInitialData(products: any[], stores: any[], inventory:
         });
       }
     }
+  } catch (error) {
+    console.warn('Firebase: Syncing initial products failed:', error);
+  }
 
+  // Sync stores
+  try {
     const storesSnap = await getDocs(collection(db, 'stores'));
     if (storesSnap.empty) {
       console.log('Firebase: Syncing initial stores...');
@@ -782,7 +792,12 @@ export async function syncInitialData(products: any[], stores: any[], inventory:
         });
       }
     }
+  } catch (error) {
+    console.warn('Firebase: Syncing initial stores failed:', error);
+  }
 
+  // Sync inventory
+  try {
     const inventorySnap = await getDocs(collection(db, 'inventory'));
     if (inventorySnap.empty && inventory.length > 0) {
       console.log('Firebase: Syncing initial inventory...');
@@ -795,28 +810,28 @@ export async function syncInitialData(products: any[], stores: any[], inventory:
       }
     }
   } catch (error) {
-    console.error('Firebase Sync Error (Check your Firestore Rules):', error);
-    throw error;
+    console.warn('Firebase: Syncing initial inventory failed:', error);
+  }
+
+  // Sync hubs
+  try {
+    const hubsSnap = await getDocs(collection(db, 'hubs'));
+    if (hubsSnap.empty) {
+      console.log('Firebase: Syncing initial hubs...');
+      for (const hub of INITIAL_HUBS) {
+        const { id, ...hubData } = hub;
+        await setDoc(doc(db, 'hubs', id), {
+          ...hubData,
+          createdAt: serverTimestamp(),
+          source: 'initial_sync'
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('Firebase: Syncing initial hubs failed:', error);
   }
 }
 
-export interface Hub {
-  id: string;
-  name: string;
-  heroImage: string;
-  iconImage?: string; // New field for Home page tile icon
-  tagline: string;
-  seeds: { name: string; price: number; img: string }[];
-  nutrition: { name: string; desc: string; icon: string }[];
-  irrigation: { image: string; items: { name: string; price: string }[] };
-  advisory: { title: string; description: string };
-  growthStages?: { phase: string; duration: string; description: string; products: string[] }[];
-  commonMistakes?: string[];
-  idealClimate?: string;
-  soilType?: string;
-  waterNeeds?: string;
-  bestSeason?: string;
-}
 
 export async function trackProductImpression(productId: string, position: number) {
   try {
@@ -846,6 +861,27 @@ export async function trackProductClick(productId: string) {
 export async function fetchHubs(): Promise<Hub[]> {
   try {
     const snapshot = await getDocs(collection(db, 'hubs'));
+    if (snapshot.empty) {
+      console.log('Firebase: Hubs collection is empty. Seeding initial hubs...');
+      try {
+        for (const hub of INITIAL_HUBS) {
+          const { id, ...hubData } = hub;
+          await setDoc(doc(db, 'hubs', id), {
+            ...hubData,
+            createdAt: serverTimestamp(),
+            source: 'initial_sync'
+          });
+        }
+        const newSnapshot = await getDocs(collection(db, 'hubs'));
+        return newSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Hub));
+      } catch (seedError) {
+        console.warn('Firebase: Seeding initial hubs failed (likely permission denied). Falling back to local INITIAL_HUBS:', seedError);
+        return INITIAL_HUBS;
+      }
+    }
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -913,8 +949,12 @@ export async function adminDeleteProduct(productId: string): Promise<void> {
 }
 
 export async function saveHub(hub: Omit<Hub, 'id'>): Promise<string> {
-  const ref = await addDoc(collection(db, 'hubs'), { ...hub, createdAt: serverTimestamp() });
-  return ref.id;
+  const id = hub.name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  await setDoc(doc(db, 'hubs', id), {
+    ...hub,
+    createdAt: serverTimestamp()
+  });
+  return id;
 }
 
 export async function updateHub(hubId: string, hub: Partial<Omit<Hub, 'id'>>): Promise<void> {
@@ -923,4 +963,16 @@ export async function updateHub(hubId: string, hub: Partial<Omit<Hub, 'id'>>): P
 
 export async function deleteHub(hubId: string): Promise<void> {
   await deleteDoc(doc(db, 'hubs', hubId));
+}
+
+export async function importHubs(hubsList: Hub[]): Promise<void> {
+  for (const hub of hubsList) {
+    const { id, ...hubData } = hub;
+    await setDoc(doc(db, 'hubs', id), {
+      ...hubData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      source: 'admin_import'
+    });
+  }
 }

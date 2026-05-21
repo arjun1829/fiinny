@@ -138,6 +138,8 @@ async function fetchProductsByOwner(
  */
 async function fetchInventoryByProductIds(
   productIds: string[],
+  ownerId?: string,
+  retailerDocId?: string,
 ): Promise<Map<string, InventoryDoc>> {
   const unique = Array.from(new Set(productIds.filter(Boolean)));
   const map = new Map<string, InventoryDoc>();
@@ -146,11 +148,60 @@ async function fetchInventoryByProductIds(
   for (let i = 0; i < unique.length; i += chunkSize) {
     const chunk = unique.slice(i, i + chunkSize);
     if (!chunk.length) continue;
-    const q = query(collection(db, "inventory"), where("productId", "in", chunk));
-    const snap = await getDocs(q);
-    snap.docs.forEach((d) => {
-      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-      if (!map.has(inv.productId)) map.set(inv.productId, inv);
+
+    const queries = [];
+
+    if (ownerId) {
+      queries.push(
+        getDocs(
+          query(
+            collection(db, "inventory"),
+            where("productId", "in", chunk),
+            where("ownerId", "==", ownerId)
+          )
+        ),
+        getDocs(
+          query(
+            collection(db, "inventory"),
+            where("productId", "in", chunk),
+            where("retailerId", "==", ownerId)
+          )
+        )
+      );
+    }
+
+    if (retailerDocId) {
+      queries.push(
+        getDocs(
+          query(
+            collection(db, "inventory"),
+            where("productId", "in", chunk),
+            where("retailerDocId", "==", retailerDocId)
+          )
+        )
+      );
+    }
+
+    // Fallback if no filters are available
+    if (queries.length === 0) {
+      queries.push(
+        getDocs(
+          query(
+            collection(db, "inventory"),
+            where("productId", "in", chunk)
+          )
+        )
+      );
+    }
+
+    const snaps = await Promise.all(queries);
+    snaps.forEach((snap) => {
+      snap.docs.forEach((d) => {
+        const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+        if (!map.has(inv.productId)) {
+          map.set(inv.productId, inv);
+        }
+      });
     });
   }
 
@@ -231,7 +282,7 @@ export async function fetchRetailerInventoryRows(
   if (!products.length) return [];
 
   const productIds = products.map((p) => p.id);
-  const inventoryMap = await fetchInventoryByProductIds(productIds);
+  const inventoryMap = await fetchInventoryByProductIds(productIds, ownerId, retailerDocId);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
     const inv = inventoryMap.get(p.id);

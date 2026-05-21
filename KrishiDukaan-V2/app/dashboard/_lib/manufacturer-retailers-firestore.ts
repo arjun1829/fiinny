@@ -158,6 +158,40 @@ export async function fetchManufacturerRetailers(
       }
     });
   });
+
+  // For rows missing address/geo, fetch from the retailer's own profile doc
+  // (happens when retailer fills their profile after being linked, or via linkExistingRetailer)
+  const missingAddr = rows.filter(
+    (r) => !r.address?.line1 && !r.address?.city && r.retailerDocId,
+  );
+  if (missingAddr.length > 0) {
+    await Promise.all(
+      missingAddr.map(async (row) => {
+        try {
+          const rSnap = await getDoc(doc(db, "retailers", row.retailerDocId));
+          if (!rSnap.exists()) return;
+          const rd = rSnap.data() as Record<string, unknown>;
+          const rawAddr = rd.address as Record<string, unknown> | null | undefined;
+          const rawGeo  = rd.geo as { latitude?: number; longitude?: number } | null | undefined;
+          if (rawAddr?.city || rawAddr?.line1) {
+            row.address = {
+              line1:   String(rawAddr.line1   ?? ""),
+              city:    String(rawAddr.city    ?? ""),
+              state:   String(rawAddr.state   ?? ""),
+              pincode: String(rawAddr.pincode ?? ""),
+            };
+          }
+          if (!row.geo && rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number") {
+            row.geo = { latitude: rawGeo.latitude, longitude: rawGeo.longitude };
+          }
+          // Also sync shopName/ownerName if they were empty in the invite doc
+          if (!row.shopName && rd.shopName) row.shopName = String(rd.shopName);
+          if (!row.ownerName && rd.ownerName) row.ownerName = String(rd.ownerName);
+        } catch { /* ignore — address stays null */ }
+      }),
+    );
+  }
+
   rows.sort((a, b) => {
     const ta = a.addedAt?.toMillis?.() ?? 0;
     const tb = b.addedAt?.toMillis?.() ?? 0;
@@ -498,10 +532,26 @@ export async function linkExistingRetailerToNetwork(input: {
     throw new Error("This retailer is already in your network.");
   }
 
+  // Fetch the retailer's existing profile to copy address/geo
+  let retailerAddress: Record<string, unknown> | null = null;
+  let retailerGeo: { latitude: number; longitude: number } | null = null;
+  try {
+    const rSnap = await getDoc(doc(db, "retailers", input.retailerUid));
+    if (rSnap.exists()) {
+      const rd = rSnap.data() as Record<string, unknown>;
+      const rawAddr = rd.address as Record<string, unknown> | null | undefined;
+      const rawGeo  = rd.geo as { latitude?: number; longitude?: number } | null | undefined;
+      if (rawAddr) retailerAddress = rawAddr;
+      if (rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number") {
+        retailerGeo = { latitude: rawGeo.latitude, longitude: rawGeo.longitude };
+      }
+    }
+  } catch { /* ignore */ }
+
   const inviteCode = await generateUniqueInviteCode();
   const now = serverTimestamp();
   const ref = doc(collection(db, COLLECTION));
-  await setDoc(ref, {
+  const linkPayload: Record<string, unknown> = {
     id: ref.id,
     manufacturerId: input.manufacturerId,
     retailerDocId: input.retailerUid,
@@ -517,7 +567,10 @@ export async function linkExistingRetailerToNetwork(input: {
     assignedSeat: false,
     createdBy: input.manufacturerId,
     addedAt: now,
-  });
+  };
+  if (retailerAddress) linkPayload.address = retailerAddress;
+  if (retailerGeo) linkPayload.geo = retailerGeo;
+  await setDoc(ref, linkPayload);
 
   // Trigger notification email (fire-and-forget)
   // input.email may be stale/placeholder; fetch fresh from users doc
