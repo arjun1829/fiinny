@@ -159,8 +159,7 @@ export default function ManufacturerRetailersPage() {
           </HelperTooltip>
           {totalPurchased > 0 ? (
             <p className="text-xs text-on-surface-variant inline-flex items-center gap-1">
-              {Math.max(0, seatsRemaining)} of {totalPurchased} seat
-              {totalPurchased !== 1 ? "s" : ""} remaining
+              {Math.max(0, seatsRemaining)} {t('rnOfSeats')} {totalPurchased} {totalPurchased !== 1 ? t('rnSeatsWord') : t('rnSeatWord')} {t('rnSeatsRemaining')}
               <HelperIcon
                 size="xs"
                 variant="ghost"
@@ -170,7 +169,7 @@ export default function ManufacturerRetailersPage() {
               />
             </p>
           ) : (
-            <p className="text-xs text-harvest">No active subscription</p>
+            <p className="text-xs text-harvest">{t('rnNoActiveSub')}</p>
           )}
         </div>
       </div>

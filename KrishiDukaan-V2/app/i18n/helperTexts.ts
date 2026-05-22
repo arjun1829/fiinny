@@ -961,6 +961,32 @@ export const HELPER_TEXTS = {
       hi: 'प्रत्येक विक्रेता उत्पाद असाइनमेंट एक माह के लिए एक सीट उपयोग करता है।',
     },
   },
+
+  // --- Inventory: Add product form sections ---
+  dashFormProductDetails: {
+    title: { en: 'Product details', mr: 'उत्पादन तपशील', hi: 'उत्पाद विवरण' },
+    body: {
+      en: 'Name, category, and description. Start typing the name to auto-fill from the existing catalogue.',
+      mr: 'नाव, श्रेणी आणि वर्णन. विद्यमान कॅटलॉगमधून आपोआप भरण्यासाठी नाव टाइप करायला सुरुवात करा.',
+      hi: 'नाम, श्रेणी और विवरण। मौजूदा कैटलॉग से स्वतः भरने के लिए नाम टाइप करना शुरू करें।',
+    },
+  },
+  dashFormPackSizes: {
+    title: { en: 'Pack sizes & prices', mr: 'पॅक आकार आणि किंमती', hi: 'पैक आकार और कीमतें' },
+    body: {
+      en: 'Add each pack size you sell with its price and stock. Use quick-add chips or add a custom size.',
+      mr: 'तुम्ही विकता तो प्रत्येक पॅक आकार त्याची किंमत आणि साठ्यासह जोडा. क्विक-अॅड चिप्स वापरा किंवा सानुकूल आकार जोडा.',
+      hi: 'आप जो प्रत्येक पैक आकार बेचते हैं उसे उसकी कीमत और स्टॉक के साथ जोड़ें। क्विक-ऐड चिप्स का उपयोग करें या कस्टम आकार जोड़ें।',
+    },
+  },
+  dashFormProductImages: {
+    title: { en: 'Product images', mr: 'उत्पादन प्रतिमा', hi: 'उत्पाद छवियाँ' },
+    body: {
+      en: 'Add up to 5 photos by link or upload. The first image is the main photo — use a clear 800×800 px shot.',
+      mr: 'लिंकद्वारे किंवा अपलोड करून ५ पर्यंत फोटो जोडा. पहिली प्रतिमा मुख्य फोटो आहे — स्पष्ट ८००×८०० px फोटो वापरा.',
+      hi: 'लिंक या अपलोड द्वारा 5 तक फ़ोटो जोड़ें। पहली छवि मुख्य फ़ोटो है — स्पष्ट 800×800 px फ़ोटो उपयोग करें।',
+    },
+  },
 } as const;
 
 export type HelperTextKey = keyof typeof HELPER_TEXTS;

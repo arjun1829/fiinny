@@ -2,6 +2,7 @@
 
 import { Check, Copy, Mail, MessageCircle, Share2, X } from "lucide-react";
 import { useState } from "react";
+import { useI18n } from "../../../i18n/I18nContext";
 import {
   buildInviteShareMessage,
   buildMailtoInviteUrl,
@@ -19,6 +20,7 @@ type InviteCardProps = {
 };
 
 export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: InviteCardProps) {
+  const { t } = useI18n();
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -67,7 +69,7 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
       </button>
 
       <p className="pr-10 text-sm font-semibold text-primary inline-flex items-center gap-1.5">
-        Retailer added
+        {t('rnRetailerAdded')}
         <HelperIcon
           size="xs"
           variant="ghost"
@@ -77,9 +79,8 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
         />
       </p>
       <p className="mt-1 text-sm text-on-surface-variant">
-        Share this signup link with{" "}
-        <span className="font-medium text-on-surface">{shopName || "the retailer"}</span> so they can
-        create their account and join your network.
+        {t('rnShareSignupLink')}{" "}
+        <span className="font-medium text-on-surface">{shopName || t('rnTheRetailer')}</span> {t('rnSoTheyCanJoin')}
       </p>
       <p className="mt-2 break-all font-mono text-xs text-on-surface-variant">{inviteLink}</p>
 
@@ -93,7 +94,7 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
           className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedCode ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
-          {copiedCode ? "Copied code" : "Copy code"}
+          {copiedCode ? t('rnCopiedCode') : t('rnCopyCode')}
         </button>
       </div>
 
@@ -104,7 +105,7 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
           className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedLink ? <Check className="h-4 w-4 text-primary" /> : <Share2 className="h-4 w-4" />}
-          {copiedLink ? "Copied link" : "Copy invite link"}
+          {copiedLink ? t('rnCopiedLink') : t('rnCopyInviteLink')}
         </button>
         <a
           href={whatsappHref}
@@ -113,7 +114,7 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
           className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container"
         >
           <MessageCircle className="h-4 w-4" />
-          Share on WhatsApp
+          {t('rnShareWhatsApp')}
         </a>
         {retailerEmail ? (
           <a
@@ -121,7 +122,7 @@ export function InviteCard({ inviteCode, shopName, retailerEmail, onDismiss }: I
             className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container"
           >
             <Mail className="h-4 w-4" />
-            Share via email
+            {t('rnShareEmail')}
           </a>
         ) : null}
       </div>

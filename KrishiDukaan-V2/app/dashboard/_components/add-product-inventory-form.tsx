@@ -12,6 +12,7 @@ import { createManufacturerProduct, searchProductsByName } from "../_lib/manufac
 import { createProductAndInventory } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
 import { useI18n } from "../../i18n/I18nContext";
+import { HelperIcon } from "../../../components/helpers";
 import type { MarketplaceProduct } from "../../../types/product";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -398,6 +399,7 @@ export function AddProductInventoryForm({
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
             <Tag className="h-4 w-4 text-primary" /> {t('formProductDetails')}
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormProductDetails" ariaLabel={`${t('formProductDetails')} help`} />
           </div>
 
           {/* Product name — with search */}
@@ -485,6 +487,7 @@ export function AddProductInventoryForm({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
               <Layers className="h-4 w-4 text-primary" /> {t('formPackSizes')}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormPackSizes" ariaLabel={`${t('formPackSizes')} help`} />
             </div>
             <span className="text-xs text-on-surface-variant">{variants.length}/{MAX_VARIANTS} {t('formSizesCount')}</span>
           </div>
@@ -586,6 +589,7 @@ export function AddProductInventoryForm({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
               <ImageIcon className="h-4 w-4 text-primary" /> {t('formProductImages')}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormProductImages" ariaLabel={`${t('formProductImages')} help`} />
             </div>
             <span className="text-xs text-on-surface-variant">{t('formUploadOrPaste')} {MAX_IMAGES}</span>
           </div>

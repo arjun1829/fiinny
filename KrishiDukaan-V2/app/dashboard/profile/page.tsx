@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X } from "lucide-react";
 import { auth, db } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
+import { HelperIcon } from "../../../components/helpers";
 import {
   fetchDashboardUserRole,
   loadProfileState,
@@ -74,6 +75,7 @@ function SocialBadge({ href, icon: Icon, label, colorClass }: { href: string; ic
 }
 
 function ProductCard({ product }: { product: ManufacturerProductRow }) {
+  const { t } = useI18n();
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient hover:shadow-md transition-shadow">
       <div className="aspect-square bg-surface-container flex items-center justify-center overflow-hidden">
@@ -376,6 +378,13 @@ function ProfilePageInner() {
             <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
               <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
                 <Truck className="h-4 w-4" /> {t('onlineDelivery')}
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="dashSettings"
+                  ariaLabel={`${t('settingsTab')} help`}
+                />
               </h2>
               <p className="mb-4 text-xs text-on-surface-variant">{t('onlineDeliveryDesc')}</p>
               <label className="flex items-center gap-3 cursor-pointer w-fit">
