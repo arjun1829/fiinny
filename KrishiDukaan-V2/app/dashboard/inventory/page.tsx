@@ -12,6 +12,9 @@ import { AddProductInventoryForm } from "../_components/add-product-inventory-fo
 import {
   fetchRetailerInventoryRows,
   fetchManufacturerCatalogueRows,
+  activateProduct,
+  deactivateProduct,
+  deleteProduct,
 } from "../_lib/inventory-firestore";
 import {
   fetchSubscriptions,
@@ -353,6 +356,45 @@ export default function InventoryPage() {
     }
   }, [userId, role, load]);
 
+  // ─── Manufacturer toggle (seat-aware) ────────────────────────────────────────
+  const handleMfrToggleActive = useCallback(async (
+    productId: string,
+    inventoryId: string | undefined,
+    isActive: boolean,
+  ) => {
+    if (!userId) return;
+    if (isActive) {
+      await deactivateProduct(productId, userId, inventoryId);
+    } else {
+      await activateProduct(productId, userId, "manufacturer", inventoryId);
+    }
+    await refresh();
+  }, [userId, refresh]);
+
+  // ─── Retailer toggle + delete (seat-aware) ───────────────────────────────────
+  const handleRetailerToggleActive = useCallback(async (
+    productId: string,
+    inventoryId: string,
+    isActive: boolean,
+  ) => {
+    if (!userId) return;
+    if (isActive) {
+      await deactivateProduct(productId, userId, inventoryId);
+    } else {
+      await activateProduct(productId, userId, "retailer", inventoryId);
+    }
+    await refresh();
+  }, [userId, refresh]);
+
+  const handleRetailerDelete = useCallback(async (
+    productId: string,
+    inventoryId: string,
+  ) => {
+    if (!userId) return;
+    await deleteProduct(productId, userId, inventoryId);
+    await refresh();
+  }, [userId, refresh]);
+
   // ─── Auth states ──────────────────────────────────────────────────────────
 
   if (!authReady) {
@@ -457,7 +499,11 @@ export default function InventoryPage() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
           ) : isManufacturer ? (
-            <ManufacturerCatalogueTable rows={catalogueRows} onRefresh={refresh} />
+            <ManufacturerCatalogueTable
+              rows={catalogueRows}
+              onRefresh={refresh}
+              onToggleActive={handleMfrToggleActive}
+            />
           ) : (
             <InventoryManagementTable
               rows={retailerRows.filter(r =>
@@ -465,6 +511,8 @@ export default function InventoryPage() {
               )}
               onUpdated={refresh}
               userId={userId}
+              onToggleActive={handleRetailerToggleActive}
+              onDelete={handleRetailerDelete}
             />
           )}
         </div>

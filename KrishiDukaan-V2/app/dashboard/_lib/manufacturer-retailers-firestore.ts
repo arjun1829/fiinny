@@ -94,6 +94,90 @@ function toE164India(phone: string): string {
   return phone.trim();
 }
 
+// ─── Phone resolution ─────────────────────────────────────────────────────────
+
+/**
+ * Resolves a user's normalized E164 phone from uidIndex.
+ * Falls back to users/{uid}.phone and manufacturers/{uid}.phone for legacy accounts.
+ * Returns null only when the phone cannot be determined from any source.
+ */
+async function resolvePhone(uid: string): Promise<string | null> {
+  // Primary: uidIndex (written at every phone-OTP signup)
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+    if (idxSnap.exists()) {
+      const phone = String(idxSnap.data().phone ?? "").trim();
+      if (phone) return phone;
+    }
+  } catch { /* fall through */ }
+
+  // Fallback 1: users/{uid}.phone (legacy + email-based accounts)
+  try {
+    const userSnap = await getDoc(doc(db, "users", uid));
+    if (userSnap.exists()) {
+      const phone = String(userSnap.data().phone ?? "").trim();
+      if (phone) return toE164India(phone);
+    }
+  } catch { /* fall through */ }
+
+  // Fallback 2: manufacturers/{uid}.phone (legacy manufacturer profile)
+  try {
+    const mfgSnap = await getDoc(doc(db, "manufacturers", uid));
+    if (mfgSnap.exists()) {
+      const phone = String(mfgSnap.data().phone ?? "").trim();
+      if (phone) return toE164India(phone);
+    }
+  } catch { /* fall through */ }
+
+  console.warn(`[resolvePhone] Could not resolve phone for uid: ${uid}. Mirror writes will be skipped.`);
+  return null;
+}
+
+// ─── Subcollection mirror sync ────────────────────────────────────────────────
+
+/**
+ * Writes/merges a mirror doc at manufacturers/{mPhone}/retailers/{rPhone}.
+ * Awaited directly — failures are logged, not swallowed silently.
+ */
+export async function syncRetailerMirror(
+  manufacturerPhone: string,
+  retailerPhone: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, `manufacturers/${manufacturerPhone}/retailers/${retailerPhone}`),
+      { ...data, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  } catch (e) {
+    console.error(
+      `[syncRetailerMirror] FAILED manufacturers/${manufacturerPhone}/retailers/${retailerPhone}:`,
+      e,
+    );
+  }
+}
+
+/**
+ * Reads manufacturerPhone + retailerPhone from an invite doc by its ID.
+ * Used by status-change operations that only receive the invite doc ID.
+ */
+async function phonesFromInvite(
+  inviteDocId: string,
+): Promise<{ manufacturerPhone: string | null; retailerPhone: string | null }> {
+  try {
+    const snap = await getDoc(doc(db, COLLECTION, inviteDocId));
+    if (!snap.exists()) return { manufacturerPhone: null, retailerPhone: null };
+    const d = snap.data() as Record<string, unknown>;
+    return {
+      manufacturerPhone: d.manufacturerPhone ? String(d.manufacturerPhone) : null,
+      retailerPhone: d.retailerPhone ? String(d.retailerPhone) : null,
+    };
+  } catch {
+    return { manufacturerPhone: null, retailerPhone: null };
+  }
+}
+
 // ─── Invite code generation ───────────────────────────────────────────────────
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -201,19 +285,15 @@ export async function createNetworkRetailer(
   const normalizedPhone = toE164India(input.phone);
 
   // Resolve manufacturer's phone for dual-field writes and subcollection mirror
-  let manufacturerPhone: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", input.manufacturerId));
-    if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
-  } catch { /* ignore */ }
+  const manufacturerPhone = await resolvePhone(input.manufacturerId);
 
-  // Pre-create retailer entity (no auth UID yet)
-  const retailerRef = doc(collection(db, "retailers"));
+  // Pre-create retailer entity keyed by normalized phone (idempotent)
+  const retailerRef = doc(db, "retailers", normalizedPhone);
   const retailerPayload: Record<string, unknown> = {
     role: "retailer",
+    phone: normalizedPhone,
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
-    phone: normalizedPhone,
     email: input.email.trim().toLowerCase(),
     address: {
       line1: input.address.line1.trim(),
@@ -234,15 +314,15 @@ export async function createNetworkRetailer(
     updatedAt: now,
   };
   if (input.geo) retailerPayload.geo = input.geo;
-  batch.set(retailerRef, retailerPayload);
+  batch.set(retailerRef, retailerPayload, { merge: true });
 
-  // Invite row — links manufacturer to the pre-created retailer
+  // Invite row — retailerDocId is now the normalized phone (stable, deterministic)
   const inviteRef = doc(collection(db, COLLECTION));
   const invitePayload: Record<string, unknown> = {
     id: inviteRef.id,
     manufacturerId: input.manufacturerId,
     manufacturerPhone: manufacturerPhone ?? null,
-    retailerDocId: retailerRef.id,
+    retailerDocId: normalizedPhone,
     retailerId: "",
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
@@ -268,25 +348,27 @@ export async function createNetworkRetailer(
 
   await batch.commit();
 
-  // Phase 4A: Subcollection mirror — fire-and-forget (non-critical)
-  // manufacturers/{manufacturerPhone}/retailers/{normalizedPhone}
+  // Subcollection mirror — awaited so errors surface immediately
   if (manufacturerPhone) {
-    setDoc(
-      doc(db, `manufacturers/${manufacturerPhone}/retailers/${normalizedPhone}`),
-      {
-        retailerDocId: retailerRef.id,
-        retailerPhone: normalizedPhone,
-        shopName: input.shopName.trim(),
-        ownerName: input.ownerName.trim(),
-        inviteCode,
-        status: "invited",
-        onboardingStatus: "active",
-        addedAt: serverTimestamp(),
-      },
-    ).catch((e) => console.warn("[createNetworkRetailer] Subcollection mirror failed:", e));
+    await syncRetailerMirror(manufacturerPhone, normalizedPhone, {
+      retailerDocId: normalizedPhone,
+      retailerPhone: normalizedPhone,
+      manufacturerPhone,
+      shopName: input.shopName.trim(),
+      ownerName: input.ownerName.trim(),
+      inviteCode,
+      status: "invited",
+      onboardingStatus: "active",
+      addedAt: serverTimestamp(),
+    });
+  } else {
+    console.error(
+      "[createNetworkRetailer] Cannot write subcollection mirror: manufacturer has no resolvable phone. uid:",
+      input.manufacturerId,
+    );
   }
 
-  return { retailerDocId: retailerRef.id, inviteCode };
+  return { retailerDocId: normalizedPhone, inviteCode };
 }
 
 /**
@@ -307,7 +389,7 @@ export async function removeNetworkRetailer(
   const now = serverTimestamp();
 
   // ONLY update the link document.
-  // We do NOT modify the global "retailers" or "users" document so the retailer 
+  // We do NOT modify the global "retailers" or "users" document so the retailer
   // remains intact and can be invited again or interact with other manufacturers.
   await updateDoc(doc(db, COLLECTION, inviteDocId), {
     status: "revoked",
@@ -316,6 +398,16 @@ export async function removeNetworkRetailer(
     onboardingStatus: "removed",
     removedAt: now,
   });
+
+  // Sync mirror
+  const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
+  if (manufacturerPhone && retailerPhone) {
+    await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+      status: "revoked",
+      onboardingStatus: "removed",
+      assignedSeat: false,
+    });
+  }
 }
 
 /**
@@ -363,6 +455,16 @@ export async function deactivateNetworkRetailer(
   });
 
   await batch.commit();
+
+  // Sync mirror
+  const { manufacturerPhone: mPhone, retailerPhone: rPhone } = await phonesFromInvite(inviteDocId);
+  if (mPhone && rPhone) {
+    await syncRetailerMirror(mPhone, rPhone, {
+      onboardingStatus: "inactive",
+      assignedSeat: false,
+      manuallyDeactivated: true,
+    });
+  }
 }
 
 /**
@@ -376,6 +478,16 @@ export async function reactivateNetworkRetailer(inviteDocId: string): Promise<vo
     manuallyDeactivated: false,
     reactivatedAt: serverTimestamp(),
   });
+
+  // Sync mirror
+  const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
+  if (manufacturerPhone && retailerPhone) {
+    await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+      onboardingStatus: "active",
+      assignedSeat: true,
+      manuallyDeactivated: false,
+    });
+  }
 }
 
 export type UpdateNetworkRetailerPatch = {
@@ -407,6 +519,19 @@ export async function updateNetworkRetailer(
   if (patch.address) update.address = patch.address;
   if (patch.geo !== undefined) update.geo = patch.geo;
   await updateDoc(doc(db, COLLECTION, inviteDocId), update);
+
+  // Sync mirror with updated editable fields
+  const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
+  if (manufacturerPhone && retailerPhone) {
+    const mirrorUpdate: Record<string, unknown> = {
+      shopName: patch.shopName.trim(),
+      ownerName: patch.ownerName.trim(),
+      retailerPhone: toE164India(patch.phone),
+    };
+    if (patch.address) mirrorUpdate.address = patch.address;
+    if (patch.geo !== undefined) mirrorUpdate.geo = patch.geo;
+    await syncRetailerMirror(manufacturerPhone, retailerPhone, mirrorUpdate);
+  }
 }
 
 export type AssignedProductRow = {
@@ -486,11 +611,24 @@ export async function linkExistingRetailerToNetwork(input: {
     throw new Error("The selected retailer's unique ID is missing. Please contact support.");
   }
 
-  // Check for existing relationship
+  // Resolve retailer's normalized phone — used as both retailerDocId and retailers/ doc key
+  let retailerPhone = toE164India(input.phone);
+  if (!retailerPhone || retailerPhone === input.phone) {
+    // Phone may not be normalized yet; try uidIndex as the authoritative source
+    try {
+      const rIdxSnap = await getDoc(doc(db, "uidIndex", input.retailerUid));
+      if (rIdxSnap.exists()) retailerPhone = String(rIdxSnap.data().phone ?? "") || retailerPhone;
+    } catch { /* ignore */ }
+  }
+  if (!retailerPhone) throw new Error("Could not resolve retailer phone. Please provide a valid phone number.");
+
+  const retailerDocId = retailerPhone; // phone IS the stable document identifier
+
+  // Check for existing relationship by phone (deterministic, not UID)
   const q = query(
     collection(db, COLLECTION),
     where("manufacturerId", "==", input.manufacturerId),
-    where("retailerDocId", "==", input.retailerUid),
+    where("retailerPhone", "==", retailerPhone),
     where("status", "in", ["active", "invited"])
   );
   const snap = await getDocs(q);
@@ -504,12 +642,12 @@ export async function linkExistingRetailerToNetwork(input: {
   await setDoc(ref, {
     id: ref.id,
     manufacturerId: input.manufacturerId,
-    retailerDocId: input.retailerUid,
+    retailerDocId,
     retailerId: input.retailerUid,
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
     retailerEmail: input.email.trim().toLowerCase(),
-    retailerPhone: toE164India(input.phone),
+    retailerPhone,
     inviteCode,
     status: "active",
     claimable: false,
@@ -518,6 +656,29 @@ export async function linkExistingRetailerToNetwork(input: {
     createdBy: input.manufacturerId,
     addedAt: now,
   });
+
+  // Resolve manufacturer phone for subcollection mirror
+  const mfrPhone = await resolvePhone(input.manufacturerId);
+
+  // manufacturers/{mPhone}/retailers/{rPhone} mirror
+  if (mfrPhone) {
+    await syncRetailerMirror(mfrPhone, retailerPhone, {
+      retailerDocId,
+      retailerPhone,
+      manufacturerPhone: mfrPhone,
+      retailerId: input.retailerUid,
+      shopName: input.shopName.trim(),
+      ownerName: input.ownerName.trim(),
+      status: "active",
+      onboardingStatus: "active",
+      addedAt: serverTimestamp(),
+    });
+  } else {
+    console.error(
+      "[linkExistingRetailerToNetwork] Cannot write subcollection mirror: manufacturer has no resolvable phone. uid:",
+      input.manufacturerId,
+    );
+  }
 
   // Trigger notification email (fire-and-forget)
   // input.email may be stale/placeholder; fetch fresh from users doc

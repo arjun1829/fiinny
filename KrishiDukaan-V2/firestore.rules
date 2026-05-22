@@ -213,8 +213,11 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
-      allow read: if isAuthed() && myPhone() == mPhone;
-      allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
+      // Manufacturer reads their roster; retailer reads their own entry.
+      allow read: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
+      // Manufacturer manages their roster; retailer can update their own entry
+      // (e.g. backfill sets status:"active" after onboarding).
+      allow write: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/products/{pid} {
@@ -228,7 +231,9 @@ service cloud.firestore {
     }
 
     match /retailers/{rPhone}/products/{pid} {
-      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      // Public read — product summaries are no more sensitive than the global products collection.
+      // Enables efficient "retailer profile" queries without scanning all products.
+      allow read: if true;
       allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
     }
 

@@ -23,6 +23,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { syncRetailerMirror } from "../../dashboard/_lib/manufacturer-retailers-firestore";
 import {
   mapInviteAcceptanceError,
   mapInviteSnapshot,
@@ -265,6 +266,17 @@ export async function autoAcceptPendingInvitesForPhone(uid: string): Promise<boo
         claimable: false,
         updatedAt: serverTimestamp(),
       });
+      // Sync the manufacturer mirror immediately after activating the invite
+      const mPhone = data.manufacturerPhone ? String(data.manufacturerPhone) : null;
+      if (mPhone && e164Phone) {
+        await syncRetailerMirror(mPhone, e164Phone, {
+          status: "active",
+          retailerId: uid,
+          retailerPhone: e164Phone,
+          onboardingStatus: String(data.onboardingStatus ?? "active"),
+          assignedSeat: data.assignedSeat === true,
+        });
+      }
       const res = await backfillRetailerAfterInvite(uid, retailerDocId);
       if (res) console.warn(`[autoAccept] Backfill warning for ${d.id}:`, res);
       anyAccepted = true;
@@ -379,6 +391,84 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
     console.log("[backfill] Committing batch update...");
     await batch.commit();
     console.log("[backfill] Success!");
+
+    // Sync all manufacturer mirror docs for this retailer to status: "active"
+    if (phone) {
+      (async () => {
+        try {
+          // Find all manufacturerRetailers docs that match this retailerDocId
+          const inviteSnap = await getDocs(query(
+            collection(db, "manufacturerRetailers"),
+            where("retailerDocId", "==", retailerDocId),
+          ));
+          await Promise.all(inviteSnap.docs.map(async (inviteDoc) => {
+            const d = inviteDoc.data() as Record<string, unknown>;
+            const mPhone = d.manufacturerPhone ? String(d.manufacturerPhone) : null;
+            if (!mPhone) {
+              console.warn("[backfill] Skipping mirror for invite without manufacturerPhone:", inviteDoc.id);
+              return;
+            }
+            await syncRetailerMirror(mPhone, phone, {
+              status: "active",
+              retailerId: uid,
+              retailerPhone: phone,
+              onboardingStatus: String(d.onboardingStatus ?? "active"),
+              assignedSeat: d.assignedSeat === true,
+            });
+          }));
+        } catch (e) {
+          console.warn("[backfill] Manufacturer mirror sync failed:", e);
+        }
+      })();
+    }
+
+    // Mirror synced records to phone-keyed subcollections (fire-and-forget)
+    if (phone) {
+      import("firebase/firestore").then(({ writeBatch: wb, doc: wDoc, serverTimestamp: wTs }) => {
+        const mirrorBatch = wb(db);
+        const mirrorNow = wTs();
+
+        productsSnap.docs.forEach((d) => {
+          const data = d.data() as Record<string, any>;
+          mirrorBatch.set(
+            wDoc(db, `retailers/${phone}/products/${d.id}`),
+            {
+              retailerId: uid,
+              retailerPhone: phone,
+              manufacturerId: data.manufacturerId ?? null,
+              manufacturerPhone: data.manufacturerPhone ?? null,
+              assignedAt: data.createdAt ?? mirrorNow,
+            },
+            { merge: true }
+          );
+        });
+
+        inventorySnap.docs.forEach((d) => {
+          const data = d.data() as Record<string, any>;
+          mirrorBatch.set(
+            wDoc(db, `retailers/${phone}/inventory/${d.id}`),
+            {
+              id: d.id,
+              productId: data.productId ?? null,
+              stockQuantity: data.stockQuantity ?? 0,
+              sellingPrice: data.sellingPrice ?? 0,
+              reorderThreshold: data.reorderThreshold ?? 5,
+              isAvailable: data.isAvailable ?? false,
+              updatedAt: mirrorNow,
+              assignedByManufacturer: true,
+            },
+            { merge: true }
+          );
+        });
+
+        mirrorBatch.commit().catch((me) => {
+          console.warn("[backfill] Mirror batch commit failed:", me);
+        });
+      }).catch((ie) => {
+        console.warn("[backfill] Mirror dynamic import failed:", ie);
+      });
+    }
+
     return undefined; // success
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
