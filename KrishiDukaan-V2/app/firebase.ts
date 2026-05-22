@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -237,7 +238,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           store: String(data.store || 'Local Store'),
           distance: String(data.distance || 'Nearby'),
           retailerId: data.retailerId ? String(data.retailerId) : undefined,
+          retailerPhone: data.retailerPhone ? String(data.retailerPhone) : undefined,
           manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
+          manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
           sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
           isOnline: data.isOnline === true || data.sellMode === "online_delivery",
           availability: data.availability || undefined,
@@ -524,6 +527,84 @@ export async function updateSubscriptionStatus(
   }
 
   return { profileUpdated: true, paymentLogged: false };
+}
+
+export async function requestRoleUpgrade(
+  uid: string,
+  targetRole: 'retailer' | 'manufacturer',
+  details: {
+    shopName?: string;
+    businessName?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+  }
+): Promise<void> {
+  const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+  if (!idxSnap.exists()) throw new Error('User profile not found. Please re-login.');
+  const phone = String(idxSnap.data().phone ?? '').trim();
+  if (!phone) throw new Error('Phone not found. Please re-login.');
+
+  const userRef = doc(db, 'users', phone);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) throw new Error('User profile not found.');
+
+  const currentRole = String(userSnap.data().role ?? 'customer');
+
+  if (targetRole === 'retailer' && !['customer', 'consumer'].includes(currentRole)) {
+    throw new Error('Only customers can upgrade to retailer.');
+  }
+  if (targetRole === 'manufacturer' && currentRole !== 'retailer') {
+    throw new Error('Only retailers can upgrade to manufacturer.');
+  }
+
+  const now = serverTimestamp();
+
+  await setDoc(userRef, {
+    role: targetRole,
+    roleUpgradeHistory: arrayUnion({
+      from: currentRole,
+      to: targetRole,
+      at: new Date().toISOString(),
+    }),
+    updatedAt: now,
+  }, { merge: true });
+
+  if (targetRole === 'retailer') {
+    await setDoc(doc(db, 'retailers', phone), {
+      userId: uid,
+      retailerId: uid,
+      phone,
+      ownerName: userSnap.data().name || '',
+      shopName: (details.shopName || '').trim(),
+      address: (details.address || '').trim(),
+      city: (details.city || '').trim(),
+      state: (details.state || '').trim(),
+      pincode: (details.pincode || '').trim(),
+      status: 'active',
+      userType: 'retailer',
+      active: true,
+      location: { latitude: 0, longitude: 0 },
+      products: [],
+      createdAt: now,
+      updatedAt: now,
+    }, { merge: true });
+  } else {
+    await setDoc(doc(db, 'manufacturers', uid), {
+      userId: uid,
+      phone,
+      ownerName: userSnap.data().name || '',
+      businessName: (details.businessName || '').trim(),
+      address: (details.address || '').trim(),
+      city: (details.city || '').trim(),
+      state: (details.state || '').trim(),
+      pincode: (details.pincode || '').trim(),
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    }, { merge: true });
+  }
 }
 
 export async function fetchAllMarketplaceProducts(): Promise<MarketplaceProduct[]> {
@@ -833,12 +914,21 @@ export async function syncInitialData(products: any[], stores: any[], inventory:
 }
 
 
+function getLocalDayKey(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export async function trackProductImpression(productId: string, position: number) {
   try {
     const ref = doc(db, 'products', productId);
+    const dayKey = getLocalDayKey();
     await updateDoc(ref, {
       impressions: increment(1),
-      positionSum: increment(position)
+      positionSum: increment(position),
+      [`impressionsByDay.${dayKey}`]: increment(1),
     });
   } catch (error) {
     // Silent fail for analytics
@@ -849,12 +939,40 @@ export async function trackProductImpression(productId: string, position: number
 export async function trackProductClick(productId: string) {
   try {
     const ref = doc(db, 'products', productId);
+    const dayKey = getLocalDayKey();
     await updateDoc(ref, {
-      clicks: increment(1)
+      clicks: increment(1),
+      [`clicksByDay.${dayKey}`]: increment(1),
     });
   } catch (error) {
     // Silent fail for analytics
     console.warn('Click track failed', error);
+  }
+}
+
+export async function trackStoreCall(productId: string) {
+  try {
+    const ref = doc(db, 'products', productId);
+    const dayKey = getLocalDayKey();
+    await updateDoc(ref, {
+      calls: increment(1),
+      [`callsByDay.${dayKey}`]: increment(1),
+    });
+  } catch (error) {
+    console.warn('Call track failed', error);
+  }
+}
+
+export async function trackDirectionRequest(productId: string) {
+  try {
+    const ref = doc(db, 'products', productId);
+    const dayKey = getLocalDayKey();
+    await updateDoc(ref, {
+      directionRequests: increment(1),
+      [`directionRequestsByDay.${dayKey}`]: increment(1),
+    });
+  } catch (error) {
+    console.warn('Direction request track failed', error);
   }
 }
 

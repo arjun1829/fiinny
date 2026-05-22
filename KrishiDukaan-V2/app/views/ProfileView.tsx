@@ -51,7 +51,7 @@ export default function ProfileView({
   profile,
   onProfileSave,
   onRetailerProductSaved,
-  onNavigate
+  onNavigate,
 }: ProfileViewProps) {
   const [localProfile, setLocalProfile] = useState(profile);
   const [productForm, setProductForm] = useState<ProductFormState>(initialProductForm);

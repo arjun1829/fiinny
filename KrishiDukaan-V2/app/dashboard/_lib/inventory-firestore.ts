@@ -504,6 +504,34 @@ export async function createProductAndInventory(
     );
   }
 
+  // Phone-keyed index for efficient "retailer profile" page queries.
+  // Only written when we know the retailer's phone (new-schema accounts).
+  if (ownerPhone) {
+    // Lightweight product summary in the retailer's subcollection.
+    batch.set(doc(db, "retailers", ownerPhone, "products", productRef.id), {
+      productId: productRef.id,
+      name: input.name.trim(),
+      image: image || "",
+      price: input.sellingPrice,
+      category: input.category.trim(),
+      isActive: true,
+      createdAt: now,
+    });
+
+    // Upsert public retailer profile. Only write shopName when it's a real value
+    // so we never overwrite a retailer's real name with the "My Store" placeholder.
+    const profilePatch: Record<string, unknown> = {
+      phone: ownerPhone,
+      role: "retailer",
+      updatedAt: now,
+    };
+    const storeName = (input.storeName ?? "").trim();
+    if (storeName && storeName.toLowerCase() !== "my store") {
+      profilePatch.shopName = storeName;
+    }
+    batch.set(doc(db, "profiles", ownerPhone), profilePatch, { merge: true });
+  }
+
   await batch.commit();
 }
 
@@ -538,6 +566,7 @@ export async function deactivateProduct(
   productId: string,
   ownerId: string,
   inventoryId?: string,
+  ownerPhone?: string,
 ): Promise<void> {
   const allListings = await fetchSeatListingsForOwner(ownerId);
   const listing = allListings.find(
@@ -553,6 +582,11 @@ export async function deactivateProduct(
     batch.update(doc(db, "retailerSeatListings", listing.id), {
       status: "released",
       releasedAt: now,
+    });
+  }
+  if (ownerPhone) {
+    batch.update(doc(db, "retailers", ownerPhone, "products", productId), {
+      isActive: false,
     });
   }
   await batch.commit();
@@ -607,6 +641,7 @@ export async function deleteProduct(
   productId: string,
   ownerId: string,
   inventoryId?: string,
+  ownerPhone?: string,
 ): Promise<void> {
   const allListings = await fetchSeatListingsForOwner(ownerId);
   const listing = allListings.find(
@@ -623,6 +658,9 @@ export async function deleteProduct(
       status: "released",
       releasedAt: now,
     });
+  }
+  if (ownerPhone) {
+    batch.delete(doc(db, "retailers", ownerPhone, "products", productId));
   }
   await batch.commit();
 }

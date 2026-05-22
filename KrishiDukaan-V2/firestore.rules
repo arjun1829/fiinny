@@ -228,7 +228,9 @@ service cloud.firestore {
     }
 
     match /retailers/{rPhone}/products/{pid} {
-      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      // Public read — product summaries are no more sensitive than the global products collection.
+      // Enables efficient "retailer profile" queries without scanning all products.
+      allow read: if true;
       allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
     }
 

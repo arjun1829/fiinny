@@ -166,10 +166,15 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             <button type="button" disabled={disabled || slot.uploading}
               onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors">
-              {slot.uploading
-                ? <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</>
-                : <><Upload className="h-3 w-3" />Choose file</>}
+              className="flex w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors">
+              {slot.uploading ? (
+                <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1"><Upload className="h-3 w-3" />Choose image</span>
+                  <span className="text-[9px] text-on-surface-variant/60">JPG, PNG, WEBP, GIF</span>
+                </>
+              )}
             </button>
           </>
         )}
@@ -197,8 +202,8 @@ export function AddProductInventoryForm({
   // Variants
   const [variants,    setVariants]    = useState<Variant[]>([newVariant()]);
 
-  // Images
-  const [images,      setImages]      = useState<ImageSlot[]>(Array.from({ length: MAX_IMAGES }, newSlot));
+  // Images — start with 1 slot, user can add more
+  const [images,      setImages]      = useState<ImageSlot[]>([newSlot()]);
 
   // Search state
   const [suggestions,   setSuggestions]   = useState<SearchResult[]>([]);
@@ -253,9 +258,10 @@ export function AddProductInventoryForm({
       stock: "",
     })));
 
-    // Populate images
+    // Populate images — only as many slots as we have URLs for (min 1)
     const urls = product.images.length ? product.images : (product.image ? [product.image] : []);
-    setImages(Array.from({ length: MAX_IMAGES }, (_, i) => ({
+    const slotCount = Math.max(1, Math.min(urls.length, MAX_IMAGES));
+    setImages(Array.from({ length: slotCount }, (_, i) => ({
       mode: "url" as const,
       url: urls[i] ?? "",
       uploading: false,
@@ -346,7 +352,7 @@ export function AddProductInventoryForm({
       setMessage({ type: "ok", text: isManufacturer ? "Product added to your catalogue." : "Product added to your inventory." });
       setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null);
       setVariants([newVariant()]);
-      setImages(Array.from({ length: MAX_IMAGES }, newSlot));
+      setImages([newSlot()]);
       await onCreated();
     } catch (err) {
       setMessage({ type: "err", text: err instanceof Error ? err.message : "Failed to create product." });
@@ -584,11 +590,18 @@ export function AddProductInventoryForm({
 
         {/* ── Section 3: Images ─────────────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <ImageIcon className="h-4 w-4 text-primary" /> Product images
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <ImageIcon className="h-4 w-4 text-primary" /> Product images
+              </div>
+              <p className="text-xs text-on-surface-variant">
+                Images only — JPG, PNG, WEBP, GIF &nbsp;·&nbsp; max 5 &nbsp;·&nbsp; recommended 800×800 px
+              </p>
             </div>
-            <span className="text-xs text-on-surface-variant">Upload or paste link · up to {MAX_IMAGES}</span>
+            <span className="shrink-0 rounded-full bg-surface-container px-2.5 py-0.5 text-xs font-medium text-on-surface-variant">
+              {images.length}/{MAX_IMAGES}
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {images.map((slot, i) => (
@@ -596,7 +609,17 @@ export function AddProductInventoryForm({
                 onChange={(p) => setImg(i, p)} onClear={() => clearImg(i)} />
             ))}
           </div>
-          <p className="text-xs text-on-surface-variant">First image is used as the main photo. Recommended 800×800 px.</p>
+          {images.length < MAX_IMAGES && (
+            <button
+              type="button"
+              disabled={isDisabled}
+              onClick={() => setImages((imgs) => [...imgs, newSlot()])}
+              className="flex w-fit items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Add another image
+            </button>
+          )}
+          <p className="text-xs text-on-surface-variant">First image is used as the main photo.</p>
         </div>
 
         {/* Submit */}
