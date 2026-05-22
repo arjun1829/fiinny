@@ -359,3 +359,45 @@ export async function releaseSeatListing(seatListingId: string): Promise<void> {
     releasedAt: serverTimestamp(),
   });
 }
+
+/**
+ * Returns true if this retailer has at least one active, non-expired seat listing
+ * that was assigned by a manufacturer (listingType: "assigned").
+ *
+ * Checks two identifiers in parallel:
+ *  - retailerId (Auth UID) — populated after the retailer signs up and backfill runs
+ *  - retailerDocId (E164 phone) — populated at product-assignment time, works pre-signup
+ *
+ * This is the authoritative source-of-truth check used to bypass the paywall when
+ * the `isPaid` flag has not been written yet (e.g., invite acceptance failed silently).
+ */
+export async function retailerHasActiveSeat(
+  uid: string,
+  phone?: string | null,
+): Promise<boolean> {
+  const now = Date.now();
+
+  const queries: Promise<RetailerSeatListing[]>[] = [
+    getDocs(query(collection(db, SEAT_LISTINGS), where("retailerId", "==", uid))).then((snap) =>
+      snap.docs.map((d) => mapSeatListingDoc(d.id, d.data() as Record<string, unknown>)),
+    ),
+  ];
+
+  // Pre-signup: listing has retailerDocId = E164 phone, retailerId = "" or null
+  if (phone && phone !== uid) {
+    queries.push(
+      getDocs(query(collection(db, SEAT_LISTINGS), where("retailerDocId", "==", phone))).then(
+        (snap) => snap.docs.map((d) => mapSeatListingDoc(d.id, d.data() as Record<string, unknown>)),
+      ),
+    );
+  }
+
+  const results = await Promise.all(queries);
+  return results.flat().some(
+    (l) =>
+      l.listingType === "assigned" &&
+      l.status === "active" &&
+      l.expiresAt != null &&
+      l.expiresAt.toMillis() > now,
+  );
+}

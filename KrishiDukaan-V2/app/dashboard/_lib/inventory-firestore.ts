@@ -134,26 +134,67 @@ async function fetchProductsByOwner(
 }
 
 /**
- * Fetch inventory docs keyed by productId for a set of product IDs (chunked).
- * Keeps only the first matching inventory doc per productId.
+ * Fetch all inventory docs owned by / assigned to a RETAILER, keyed by productId.
+ *
+ * Uses ONLY ownership-scoped queries so every individual query is covered by the
+ * `inventory` Firestore rule without the "productId-in" anti-pattern that causes
+ * "Missing or insufficient permissions" errors when any returned doc fails the rule.
+ *
+ * Three query axes cover all lifecycle states:
+ *   1. ownerId == uid            — self-created products and post-backfill assigned ones
+ *   2. retailerId == uid         — post-backfill assigned products (backfill sets retailerId)
+ *   3. retailerDocId == phone    — pre-signup / pre-backfill assigned products
  */
-async function fetchInventoryByProductIds(
-  productIds: string[],
+async function fetchInventoryForRetailer(
+  uid: string,
+  retailerDocId?: string | null,
+  retailerPhone?: string | null,
 ): Promise<Map<string, InventoryDoc>> {
-  const unique = Array.from(new Set(productIds.filter(Boolean)));
   const map = new Map<string, InventoryDoc>();
-  const chunkSize = 10;
 
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const chunk = unique.slice(i, i + chunkSize);
-    if (!chunk.length) continue;
-    const q = query(collection(db, "inventory"), where("productId", "in", chunk));
-    const snap = await getDocs(q);
+  const queries: Promise<Awaited<ReturnType<typeof getDocs>>>[] = [
+    getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "inventory"), where("retailerId", "==", uid))),
+  ];
+
+  // Deduplicate phone keys: retailerDocId is the canonical phone; retailerPhone is a fallback
+  const phoneKeys = new Set<string>();
+  if (retailerDocId) phoneKeys.add(retailerDocId);
+  if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
+  Array.from(phoneKeys).forEach((phone) => {
+    queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
+  });
+
+  const snaps = await Promise.all(queries);
+  snaps.forEach((snap) => {
     snap.docs.forEach((d) => {
       const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
       if (!map.has(inv.productId)) map.set(inv.productId, inv);
     });
-  }
+  });
+
+  return map;
+}
+
+/**
+ * Fetch all inventory docs owned by a MANUFACTURER, keyed by productId.
+ *
+ * Queries by ownerId and manufacturerId separately so both self-created inventory
+ * and legacy docs where only manufacturerId was set are captured. Each query is
+ * individually validated by the `inventory` Firestore rule.
+ */
+async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
+  const map = new Map<string, InventoryDoc>();
+
+  const [snap1, snap2] = await Promise.all([
+    getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
+  ]);
+
+  [...snap1.docs, ...snap2.docs].forEach((d) => {
+    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+    if (!map.has(inv.productId)) map.set(inv.productId, inv);
+  });
 
   return map;
 }
@@ -231,8 +272,7 @@ export async function fetchRetailerInventoryRows(
   const products = Array.from(productMap.values());
   if (!products.length) return [];
 
-  const productIds = products.map((p) => p.id);
-  const inventoryMap = await fetchInventoryByProductIds(productIds);
+  const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
     const inv = inventoryMap.get(p.id);
@@ -309,7 +349,7 @@ export async function fetchManufacturerCatalogueRows(
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
-  const inventoryMap = await fetchInventoryByProductIds(products.map((p) => p.id));
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
 
   const rows: ManufacturerProductRow[] = products.map((p) => {
     const raw = p as any;

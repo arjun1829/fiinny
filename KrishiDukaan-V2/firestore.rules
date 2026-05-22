@@ -308,13 +308,13 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId != null
+        resource.data.retailerDocId == myPhone()
       );
       allow create: if isAuthed();
       allow update: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
-        (resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid)
+        (resource.data.retailerDocId == myPhone() && request.resource.data.retailerId == request.auth.uid)
       );
       allow delete: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -357,7 +357,7 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId != null
+        resource.data.retailerDocId == myPhone()
       ));
       allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuthed() && (

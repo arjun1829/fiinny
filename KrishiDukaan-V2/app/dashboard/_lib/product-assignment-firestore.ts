@@ -13,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
-import { syncRetailerMirror } from "./manufacturer-retailers-firestore";
+import { syncRetailerMirror, activateRetailerOnProductAssignment } from "./manufacturer-retailers-firestore";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
   addSeatListingToBatch,
@@ -222,6 +222,14 @@ export async function assignProductToRetailer(
         shopName: retailerStoreName,
       });
     }
+
+    // Flip onboardingStatus → "active" on the invite link doc now that a product is assigned.
+    await activateRetailerOnProductAssignment(
+      input.manufacturerId,
+      input.retailerDocId,
+      manufacturerPhone,
+      retailerPhone,
+    );
   })();
 
   return { seatListingId, retailerProductId: retailerProductRef.id };
@@ -512,6 +520,14 @@ export async function bulkAssignProductsToRetailer(
           shopName: retailerStoreName,
         });
       }
+
+      // Flip onboardingStatus → "active" now that at least one product is assigned.
+      await activateRetailerOnProductAssignment(
+        manufacturerId,
+        retailerDocId,
+        manufacturerPhone,
+        retailerPhone,
+      );
     })();
   }
 

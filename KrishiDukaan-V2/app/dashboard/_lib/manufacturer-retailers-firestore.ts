@@ -304,9 +304,9 @@ export async function createNetworkRetailer(
     manufacturerId: input.manufacturerId,
     manufacturerPhone: manufacturerPhone ?? null,
     onboardingType: "manufacturer-network",
-    assignedSeat: true,
-    seatAssignedAt: now,
-    onboardingStatus: "active",
+    assignedSeat: false,
+    seatAssignedAt: null,
+    onboardingStatus: "pending",
     createdBy: input.manufacturerId,
     active: false,
     subscriptionStatus: "free",
@@ -331,9 +331,9 @@ export async function createNetworkRetailer(
     inviteCode,
     status: "invited",
     claimable: true,
-    onboardingStatus: "active",
-    assignedSeat: true,
-    seatAssignedAt: now,
+    onboardingStatus: "pending",
+    assignedSeat: false,
+    seatAssignedAt: null,
     createdBy: input.manufacturerId,
     addedAt: now,
     address: {
@@ -358,7 +358,7 @@ export async function createNetworkRetailer(
       ownerName: input.ownerName.trim(),
       inviteCode,
       status: "invited",
-      onboardingStatus: "active",
+      onboardingStatus: "pending",
       addedAt: serverTimestamp(),
     });
   } else {
@@ -711,6 +711,56 @@ export async function linkExistingRetailerToNetwork(input: {
   })();
 
   return { inviteDocId: ref.id };
+}
+
+/**
+ * Called after a product is successfully assigned to a retailer.
+ * Flips onboardingStatus → "active" and sets assignedSeat: true on the
+ * manufacturerRetailers link doc (and its mirror) if it was "pending".
+ * No-ops if already active or doc not found. Always resolves (never throws).
+ */
+export async function activateRetailerOnProductAssignment(
+  manufacturerId: string,
+  retailerDocId: string,
+  manufacturerPhone: string | null,
+  retailerPhone: string | null,
+): Promise<void> {
+  try {
+    const q = query(
+      collection(db, COLLECTION),
+      where("manufacturerId", "==", manufacturerId),
+      where("retailerDocId", "==", retailerDocId),
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+
+    const now = serverTimestamp();
+    await Promise.all(
+      snap.docs
+        .filter((d) => {
+          const s = d.data().status;
+          return s !== "revoked";
+        })
+        .map((d) =>
+          updateDoc(d.ref, {
+            onboardingStatus: "active",
+            assignedSeat: true,
+            seatAssignedAt: now,
+            updatedAt: now,
+          }),
+        ),
+    );
+
+    if (manufacturerPhone && retailerPhone) {
+      await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+        onboardingStatus: "active",
+        assignedSeat: true,
+        seatAssignedAt: now,
+      });
+    }
+  } catch (e) {
+    console.warn("[activateRetailerOnProductAssignment] Failed (non-critical):", e);
+  }
 }
 
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */
