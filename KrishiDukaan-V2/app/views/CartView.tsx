@@ -1,4 +1,8 @@
+"use client";
+
 import type { CartItem } from "../../types/order";
+import { useI18n } from "../i18n/I18nContext";
+import { HelperIcon } from "../../components/helpers";
 
 type CartViewProps = {
   items: CartItem[];
@@ -31,16 +35,26 @@ export default function CartView({
   loading,
   message,
 }: CartViewProps) {
+  const { t } = useI18n();
   const subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
 
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
-      <h1 className="text-3xl font-bold text-on-surface mb-2">Cart</h1>
-      <p className="text-sm text-on-surface-variant mb-6">Online delivery items grouped by seller at checkout.</p>
+      <h1 className="text-3xl font-bold text-on-surface mb-2">{t('cartTitle')}</h1>
+      <p className="text-sm text-on-surface-variant mb-6 inline-flex items-center gap-1.5">
+        {t('cartSubtitle')}
+        <HelperIcon
+          size="xs"
+          variant="ghost"
+          side="right"
+          textKey="cartSellerGrouping"
+          ariaLabel={`${t('cartTitle')} help`}
+        />
+      </p>
 
       {!items.length ? (
         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
-          Your cart is empty.
+          {t('cartEmpty')}
         </div>
       ) : (
         <div className="space-y-4">
@@ -70,7 +84,7 @@ export default function CartView({
                     onClick={() => onRemove(item.productId)}
                     className="ml-3 text-xs font-bold text-primary"
                   >
-                    Remove
+                    {t('removeBtn')}
                   </button>
                 </div>
               </div>
@@ -82,7 +96,16 @@ export default function CartView({
 
       <div className="mt-8 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
         <div className="flex items-center justify-between text-lg font-bold">
-          <span>Subtotal</span>
+          <span className="inline-flex items-center gap-1.5">
+            {t('cartSubtotal')}
+            <HelperIcon
+              size="xs"
+              variant="ghost"
+              side="right"
+              textKey="cartSubtotal"
+              ariaLabel={`${t('cartSubtotal')} help`}
+            />
+          </span>
           <span>₹{subtotal.toFixed(2)}</span>
         </div>
 
@@ -91,19 +114,19 @@ export default function CartView({
             <input
               value={customerName}
               onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
-              placeholder="Full name"
+              placeholder={t('cartFullNamePlaceholder')}
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
             />
             <input
               value={customerPhone}
               onChange={(e) => onCustomerFieldChange("customerPhone", e.target.value)}
-              placeholder="Phone number"
+              placeholder={t('cartPhonePlaceholder')}
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
             />
             <textarea
               value={customerAddress}
               onChange={(e) => onCustomerFieldChange("customerAddress", e.target.value)}
-              placeholder="Delivery address"
+              placeholder={t('cartAddressPlaceholder')}
               rows={3}
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
             />
@@ -112,12 +135,12 @@ export default function CartView({
               onClick={() => void onCheckout()}
               className="rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold disabled:opacity-60"
             >
-              {loading ? "Placing orders..." : "Place Order"}
+              {loading ? t('cartPlacingOrders') : t('cartPlaceOrder')}
             </button>
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold">
-            Login as Customer to Checkout
+            {t('cartLoginToCheckout')}
           </button>
         )}
 
