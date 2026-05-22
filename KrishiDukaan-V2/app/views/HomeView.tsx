@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import { ICONS, CROPS, PRODUCTS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketplaceProduct } from '../../types/product';
+import { Hub } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
+  hubs?: Hub[];
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
@@ -28,11 +30,22 @@ type Slide = {
 
 export default function HomeView({
   products = PRODUCTS,
+  hubs = [],
   onProductClick,
   onHubClick,
   onCategoryClick,
 }: HomeViewProps) {
   const { t } = useI18n();
+
+  // Prepare crop list for "Shop by Crop"
+  // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
+  const displayCrops = hubs.length > 0 
+    ? hubs.map(h => ({ 
+        id: h.id, 
+        name: h.name, 
+        image: h.iconImage || h.heroImage 
+      }))
+    : CROPS;
 
   const powerPlusProducts = products
     .filter((p) => p.name === 'Power Plus' && p.manufacturerId === 'karanarjun-mfg')
@@ -260,7 +273,7 @@ export default function HomeView({
           />
         </div>
         <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-          {CROPS.map((crop) => (
+          {displayCrops.map((crop) => (
             <motion.button
               key={crop.id}
               whileHover={{ y: -3 }}

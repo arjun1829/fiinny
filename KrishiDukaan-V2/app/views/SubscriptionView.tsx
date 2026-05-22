@@ -70,7 +70,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const handleSeatInput = (val: string) => {
     setSeatInput(val);
     const n = parseInt(val, 10);
-    if (!isNaN(n) && n >= 1 && n <= 10000) setSeatCount(n);
+    if (!isNaN(n) && n >= 1 && n <= 10000) {
+      setSeatCount(n);
+    }
   };
 
   const adjustSeats = (delta: number) => {
@@ -159,13 +161,45 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               paymentId: paymentResponse.razorpay_payment_id,
             }, verifyData.seatCount || seatCount, duration.months);
 
-            if (!updateResult.paymentLogged && updateResult.paymentLogError) {
-              console.warn('Non-blocking payment log error:', updateResult.paymentLogError);
+            if (!updateResult.paymentLogged) {
+              setVerifying(false);
+              setLoading(false);
+              setError(
+                'Payment received, but your seat count could not be updated. ' +
+                'Please refresh the page or contact support with your payment ID: ' +
+                paymentResponse.razorpay_payment_id
+              );
+              return;
             }
+
+            // Fire-and-forget subscription confirmation email
+            // user.email is null for phone-auth; read from Firestore profile instead
+            getUserProfile(user.uid).then((profile) => {
+              const profileEmail = profile?.email ?? '';
+              if (!profileEmail || profileEmail.includes('@krishidukan.local')) return;
+              const now = new Date();
+              const expiry = new Date(now);
+              expiry.setMonth(expiry.getMonth() + duration.months);
+              fetch('/api/email/subscription-confirmation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userEmail: profileEmail,
+                  userName: profile?.name || user.displayName || '',
+                  seatsPurchased: verifyData.seatCount || seatCount,
+                  amountPaid: finalTotal,
+                  planName: 'Standard',
+                  startDate: now.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+                  expiryDate: expiry.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+                  razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                  razorpayOrderId: paymentResponse.razorpay_order_id,
+                }),
+              }).catch(() => {});
+            }).catch(() => {});
+
             await onSuccess();
           } catch (err: any) {
-            const latestProfile = await getUserProfile(user.uid);
-            if (latestProfile?.isPaid) { await onSuccess(); return; }
+            console.error('Payment error caught in handler:', err);
             setError(err.message || 'Payment completed but profile update failed. Please refresh.');
           } finally {
             setVerifying(false);
@@ -359,7 +393,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                     disabled={loading}
                     className="w-full bg-primary text-white text-[11px] md:text-xs font-black uppercase tracking-widest py-3 md:py-3.5 rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0 active:shadow-primary/10 transition-all disabled:opacity-70 disabled:hover:translate-y-0"
                   >
-                    {loading ? t('processing') : `Pay ₹${finalTotal} · ${seatCount} seat${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
+                    {loading ? t('processing') : `Pay ₹${finalTotal} · ${seatCount} seat${seatCount !== 1 ? 's' : ''} · {duration.label}`}
                   </button>
                   <div className="mt-4 flex flex-col items-center gap-3">
                     <p className="text-[9px] md:text-[10px] text-on-surface-variant font-bold uppercase tracking-widest flex items-center gap-1 opacity-70">

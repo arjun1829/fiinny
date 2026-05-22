@@ -628,6 +628,7 @@ export default function App() {
         return (
           <HomeView
             products={homeProducts}
+            hubs={hubs}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -709,6 +710,7 @@ export default function App() {
       case 'profile':
         return (
           <ProfileView
+            uid={user?.uid}
             role={userRole}
             profile={userProfile}
             onProfileSave={handleProfileSave}
@@ -736,6 +738,7 @@ export default function App() {
         return (
           <HomeView
             products={homeProducts}
+            hubs={hubs}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');

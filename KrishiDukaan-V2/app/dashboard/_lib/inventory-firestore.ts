@@ -100,7 +100,7 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
 
 /**
  * Fetch all products owned by a user, keyed by ownerId + ownerType.
- * This is the primary ownership query — no retailerId or source dependency.
+ * Returns BOTH active and inactive products for management UI.
  */
 async function fetchProductsByOwner(
   ownerId: string,
@@ -140,37 +140,35 @@ async function fetchInventoryByProductIds(
   return map;
 }
 
-/** @deprecated Use fetchProductsByOwner + fetchInventoryByProductIds instead. */
-async function fetchProductsByIds(ids: string[]): Promise<Map<string, ProductDoc>> {
-  const unique = Array.from(new Set(ids.filter(Boolean)));
-  const map = new Map<string, ProductDoc>();
-  const chunkSize = 10;
+// ─── Public fetch functions ───────────────────────────────────────────────────
 
+/** Batch-fetch product names by doc IDs. Returns a map of id → name. */
+export async function fetchProductNames(productIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = Array.from(new Set(productIds.filter(Boolean)));
+  const chunkSize = 10;
   for (let i = 0; i < unique.length; i += chunkSize) {
     const chunk = unique.slice(i, i + chunkSize);
     if (!chunk.length) continue;
     const q = query(collection(db, "products"), where(documentId(), "in", chunk));
     const snap = await getDocs(q);
     snap.docs.forEach((d) => {
-      map.set(d.id, mapProduct(d.id, d.data() as Record<string, unknown>));
+      map.set(d.id, String(d.data().name ?? ""));
     });
   }
-
   return map;
 }
 
-// ─── Public fetch functions ───────────────────────────────────────────────────
-
 /**
- * Fetch inventory rows for a RETAILER.
+ * Fetch inventory rows for a RETAILER (active + inactive — management UI).
  *
- * Strategy (ownerId-first — no retailerId / source dependency):
+ * Strategy (ownerId-first):
  *   1. Query `products` where ownerId == uid AND ownerType == "retailer"
- *      → covers both retailer_inventory and manufacturer_assigned sources
- *   2. For those productIds, query `inventory` where productId in [...]
- *   3. Join and return InventoryRow[]
+ *   2. For those productIds, query `inventory`
+ *   3. Join and return InventoryRow[] including isActive state
  */
 export async function fetchRetailerInventoryRows(ownerId: string): Promise<InventoryRow[]> {
+  // Include all products (active + inactive) so the UI can show toggle controls
   const products = await fetchProductsByOwner(ownerId, "retailer");
   if (!products.length) return [];
 
@@ -179,7 +177,7 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
 
   const rows: InventoryRow[] = products.flatMap((p) => {
     const inv = inventoryMap.get(p.id);
-    if (!inv) return []; // skip products that have no inventory record yet
+    if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
     return [
       {
@@ -192,6 +190,8 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
         sellingPrice: inv.sellingPrice,
         reorderThreshold: inv.reorderThreshold,
         status,
+        isActive: p.isActive,
+        assignedByManufacturer: inv.assignedByManufacturer ?? false,
         updatedAt: timestampToDate(inv.updatedAt),
         source: p.source,
       },
@@ -203,7 +203,7 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
 }
 
 /**
- * Fetch catalogue rows for a MANUFACTURER.
+ * Fetch catalogue rows for a MANUFACTURER (active + inactive — management UI).
  *
  * Queries `products` where ownerId == uid AND ownerType == "manufacturer".
  * Returns ManufacturerProductRow[] (no stock/inventory data).
@@ -211,6 +211,7 @@ export async function fetchRetailerInventoryRows(ownerId: string): Promise<Inven
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
 ): Promise<ManufacturerProductRow[]> {
+  // Include all products (active + inactive) for management UI
   const products = await fetchProductsByOwner(ownerId, "manufacturer");
 
   const rows: ManufacturerProductRow[] = products.map((p) => {
@@ -274,7 +275,6 @@ export async function createProductAndInventory(
   const sellMode =
     input.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
 
-  // 1. Product
   const productRef = doc(collection(db, "products"));
   batch.set(productRef, {
     id: productRef.id,
@@ -301,13 +301,11 @@ export async function createProductAndInventory(
     isOnline: sellMode === "online_delivery",
   });
 
-  // 2. Inventory — linked by productId (ownerId-first approach)
   const inventoryRef = doc(collection(db, "inventory"));
   batch.set(inventoryRef, {
     id: inventoryRef.id,
     ownerId,
     ownerType: "retailer",
-    // keep retailerId for backwards compatibility with legacy queries
     retailerId: ownerId,
     productId: productRef.id,
     stockQuantity: input.stockQuantity,
@@ -317,7 +315,6 @@ export async function createProductAndInventory(
     updatedAt: now,
   });
 
-  // 3. Seat listing
   addSeatListingToBatch(batch, {
     ownerId,
     ownerType: "retailer",
@@ -325,11 +322,11 @@ export async function createProductAndInventory(
     retailerDocId: null,
     retailerId: ownerId,
     productId: productRef.id,
+    manufacturerProductId: null,
     listingType: "own",
     expiresAt: subExpiry,
   });
 
-  // 4. Increment productCount
   batch.set(
     doc(db, "users", ownerId),
     { productCount: increment(1), updatedAt: now },
@@ -357,4 +354,104 @@ export async function updateInventoryRecord(
     isAvailable: patch.stockQuantity > 0,
     updatedAt: serverTimestamp(),
   });
+}
+
+// ─── Product lifecycle operations ─────────────────────────────────────────────
+
+/**
+ * Deactivates a product: sets isActive=false, releases any active seat listing.
+ * The product record stays in Firestore — it can be reactivated later.
+ * Pass inventoryId to also set isAvailable=false on the inventory doc.
+ */
+export async function deactivateProduct(
+  productId: string,
+  ownerId: string,
+  inventoryId?: string,
+): Promise<void> {
+  const allListings = await fetchSeatListingsForOwner(ownerId);
+  const listing = allListings.find(
+    (l) => l.productId === productId && l.status === "active",
+  );
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: false, updatedAt: now });
+  if (inventoryId) {
+    batch.update(doc(db, "inventory", inventoryId), { isAvailable: false, updatedAt: now });
+  }
+  if (listing) {
+    batch.update(doc(db, "retailerSeatListings", listing.id), {
+      status: "released",
+      releasedAt: now,
+    });
+  }
+  await batch.commit();
+}
+
+/**
+ * Activates an inactive product: validates seat availability, creates a new
+ * seat listing, and sets isActive=true.
+ * Pass inventoryId to also set isAvailable=true on the inventory doc.
+ */
+export async function activateProduct(
+  productId: string,
+  ownerId: string,
+  ownerType: "manufacturer" | "retailer",
+  inventoryId?: string,
+): Promise<void> {
+  const [subs, listings] = await Promise.all([
+    fetchSubscriptions(ownerId),
+    fetchSeatListingsForOwner(ownerId),
+  ]);
+  if (!canAssignSeat(subs, listings)) {
+    throw new Error("No seats available. Purchase more seats to reactivate this product.");
+  }
+  const subExpiry = getSubscriptionExpiryDate(subs);
+  if (!subExpiry) throw new Error("No active subscription found.");
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: true, updatedAt: now });
+  if (inventoryId) {
+    batch.update(doc(db, "inventory", inventoryId), { isAvailable: true, updatedAt: now });
+  }
+  addSeatListingToBatch(batch, {
+    ownerId,
+    ownerType,
+    manufacturerId: ownerType === "manufacturer" ? ownerId : null,
+    retailerDocId: null,
+    retailerId: ownerType === "retailer" ? ownerId : null,
+    productId,
+    manufacturerProductId: null,
+    listingType: "own",
+    expiresAt: subExpiry,
+  });
+  await batch.commit();
+}
+
+/**
+ * Hard-deletes a product and its inventory record (if given).
+ * Also releases any active seat listing.
+ */
+export async function deleteProduct(
+  productId: string,
+  ownerId: string,
+  inventoryId?: string,
+): Promise<void> {
+  const allListings = await fetchSeatListingsForOwner(ownerId);
+  const listing = allListings.find(
+    (l) => l.productId === productId && l.status === "active",
+  );
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "products", productId));
+  if (inventoryId) {
+    batch.delete(doc(db, "inventory", inventoryId));
+  }
+  if (listing) {
+    batch.update(doc(db, "retailerSeatListings", listing.id), {
+      status: "released",
+      releasedAt: now,
+    });
+  }
+  await batch.commit();
 }

@@ -25,6 +25,7 @@ import {
   buildSignupInviteUrl,
   buildWhatsAppShareUrl,
 } from "../../../lib/invite/invite-utils";
+import { useI18n } from "../../../i18n/I18nContext";
 
 type RetailerTableProps = {
   rows: ManufacturerRetailerRow[];
@@ -36,11 +37,12 @@ type RetailerTableProps = {
 };
 
 function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
+  const { t } = useI18n();
   if (status === "active") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
-        Active
+        {t('activeBadge')}
       </span>
     );
   }
@@ -48,19 +50,20 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
         <XCircle className="h-3 w-3" />
-        Removed
+        {t('removedStatus')}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
       <Clock className="h-3 w-3" />
-      Pending
+      {t('pendingStatus')}
     </span>
   );
 }
 
 function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
+  const { t } = useI18n();
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -107,11 +110,11 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
         <button
           type="button"
           onClick={copyCode}
-          title="Copy invite code"
+          title={t('copyInviteCodeTitle')}
           className="inline-flex items-center gap-0.5 rounded-lg border border-outline-variant/40 bg-surface-container-low px-1.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedCode ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
-          {copiedCode ? "Copied!" : "Code"}
+          {copiedCode ? t('copiedText') : t('codeBtn')}
         </button>
       </div>
       {/* Share actions */}
@@ -122,7 +125,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
           className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           {copiedLink ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
-          Copy link
+          {t('copyLinkBtn')}
         </button>
         <a
           href={whatsappHref}
@@ -131,7 +134,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
           className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
         >
           <MessageCircle className="h-3.5 w-3.5" />
-          WhatsApp
+          {t('whatsappBtn')}
         </a>
         {row.retailerEmail ? (
           <a
@@ -139,7 +142,7 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:bg-surface-container"
           >
             <Mail className="h-3.5 w-3.5" />
-            Email
+            {t('emailBtn')}
           </a>
         ) : null}
       </div>
@@ -154,18 +157,19 @@ function RemoveAction({
   row: ManufacturerRetailerRow;
   onRemove: (row: ManufacturerRetailerRow) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
 
   if (row.status === "revoked") {
-    return <span className="text-xs text-on-surface-variant">Removed</span>;
+    return <span className="text-xs text-on-surface-variant">{t('removedStatus')}</span>;
   }
 
   if (confirming) {
     return (
       <div className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-600" />
-        <span className="text-xs font-medium text-red-700">Remove retailer?</span>
+        <span className="text-xs font-medium text-red-700">{t('removeRetailerQ')}</span>
         <button
           type="button"
           disabled={removing}
@@ -181,7 +185,7 @@ function RemoveAction({
           className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
         >
           {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          {removing ? "Removing…" : "Confirm"}
+          {removing ? t('removingText') : t('confirmBtn')}
         </button>
         <button
           type="button"
@@ -189,7 +193,7 @@ function RemoveAction({
           onClick={() => setConfirming(false)}
           className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60"
         >
-          Cancel
+          {t('cancelBtn')}
         </button>
       </div>
     );
@@ -202,12 +206,13 @@ function RemoveAction({
       className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600"
     >
       <Trash2 className="h-3.5 w-3.5" />
-      Remove
+      {t('removeBtn')}
     </button>
   );
 }
 
 export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails }: RetailerTableProps) {
+  const { t } = useI18n();
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -219,9 +224,9 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
   if (!rows.length) {
     return (
       <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-14 text-center">
-        <p className="text-base font-semibold text-on-surface">No retailers yet</p>
+        <p className="text-base font-semibold text-on-surface">{t('noRetailersYet')}</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-on-surface-variant">
-          Add a retailer to pre-create their profile and generate a signup invite link.
+          {t('noRetailersDesc')}
         </p>
       </div>
     );
@@ -235,14 +240,14 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
             <tr>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Shop name</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Owner</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Phone</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Onboarding</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Invite actions</th>
-              <th className="whitespace-nowrap px-4 py-3 font-medium">Added</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('shopNameCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('ownerCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('phoneCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('onboardingCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('inviteActionsCol')}</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">{t('addedCol')}</th>
               {hasActions ? (
-                <th className="whitespace-nowrap px-4 py-3 font-medium">Actions</th>
+                <th className="whitespace-nowrap px-4 py-3 font-medium">{t('actionsCol')}</th>
               ) : null}
             </tr>
           </thead>
@@ -284,14 +289,14 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                         {onDetails && (
                           <button type="button" onClick={() => onDetails(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                            <Info className="h-3.5 w-3.5" /> Details
+                            <Info className="h-3.5 w-3.5" /> {t('detailsBtn')}
                           </button>
                         )}
                         {/* Edit */}
                         {onEdit && !isRevoked && (
                           <button type="button" onClick={() => onEdit(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                            <Pencil className="h-3.5 w-3.5" /> Edit
+                            <Pencil className="h-3.5 w-3.5" /> {t('editBtn')}
                           </button>
                         )}
                         {/* Assign product */}
@@ -299,7 +304,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                           <HelperTooltip side="left" textKey="dashAssignProduct">
                             <button type="button" onClick={() => onAssignProduct(row)}
                               className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
-                              <PackagePlus className="h-3.5 w-3.5" /> Assign product
+                              <PackagePlus className="h-3.5 w-3.5" /> {t('assignProductBtn')}
                             </button>
                           </HelperTooltip>
                         ) : null}

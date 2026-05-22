@@ -19,6 +19,7 @@ import {
   fetchSeatListingsForOwner,
   fetchSubscriptions,
   getSubscriptionExpiryDate,
+  getAvailableSeats,
 } from "./subscriptions-firestore";
 
 const SEAT_LISTINGS = "retailerSeatListings";
@@ -58,10 +59,17 @@ export async function assignProductToRetailer(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
-  // Fetch the manufacturer product to copy its data
-  const productSnap = await getDoc(doc(db, "products", input.productId));
+  // Fetch the manufacturer product and retailer profile in parallel
+  const [productSnap, retailerSnap] = await Promise.all([
+    getDoc(doc(db, "products", input.productId)),
+    getDoc(doc(db, "retailers", input.retailerId || input.retailerDocId)),
+  ]);
   if (!productSnap.exists()) throw new Error("Product not found.");
   const src = productSnap.data() as Record<string, unknown>;
+  const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
+  const retailerStoreName = retailerData
+    ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
+    : "";
 
   // Guard against duplicate active assignment (keyed on retailerDocId — works pre-signup)
   const dupQ = query(
@@ -82,6 +90,7 @@ export async function assignProductToRetailer(
   const retailerProductRef = doc(collection(db, "products"));
   const retailerOwnerId = input.retailerId || input.retailerDocId;
   batch.set(retailerProductRef, {
+    id: retailerProductRef.id,
     name: String(src.name ?? ""),
     category: String(src.category ?? ""),
     description: String(src.description ?? ""),
@@ -97,6 +106,14 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
     source: "manufacturer_assigned",
+
+    // Market display fields
+    store: retailerStoreName,
+    stock: "In Stock",
+    distance: "Nearby",
+    sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+    isOnline: src.isOnline === true || src.sellMode === "online_delivery",
+
     createdAt: now,
     updatedAt: now,
   });
@@ -104,6 +121,10 @@ export async function assignProductToRetailer(
   // 2. Inventory record — retailer manages stock; linked by retailerDocId pre-signup
   const inventoryRef = doc(collection(db, "inventory"));
   batch.set(inventoryRef, {
+    id: inventoryRef.id,
+    ownerId: retailerOwnerId,
+    ownerType: "retailer",
+    manufacturerId: input.manufacturerId,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
     productId: retailerProductRef.id,
@@ -124,14 +145,18 @@ export async function assignProductToRetailer(
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? null,
     productId: retailerProductRef.id,
+    manufacturerProductId: input.productId,
     listingType: "assigned",
     expiresAt: subExpiry,
   });
 
   // 4. Update manufacturer product's availability so the retailer's store appears
   //    in the marketplace product detail page.
+  //    Use retailerId (Firebase Auth UID) when available — that's the store ID in
+  //    the retailers collection. Fall back to retailerDocId pre-signup.
+  const availabilityStoreId = input.retailerId || input.retailerDocId;
   batch.update(doc(db, "products", input.productId), {
-    availability: arrayUnion({ storeId: input.retailerDocId, stockLevel: "In Stock" }),
+    availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
   });
 
   await batch.commit();
@@ -151,8 +176,9 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
   const batch = writeBatch(db);
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
-  const retailerProductId = String(data.productId ?? "");
-  const retailerDocId     = String(data.retailerDocId ?? "");
+  const retailerProductId  = String(data.productId ?? "");
+  const retailerDocId      = String(data.retailerDocId ?? "");
+  const retailerId         = String(data.retailerId ?? "");
   if (retailerProductId) {
     batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
   }
@@ -161,13 +187,14 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
 
   // Remove the retailer's store from the manufacturer product's availability array.
   // We look up the retailer product copy to find the manufacturer's original product ID.
-  if (retailerProductId && retailerDocId) {
+  const availabilityStoreId = retailerId || retailerDocId;
+  if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
       const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
       if (mfgProductId) {
         await updateDoc(doc(db, "products", mfgProductId), {
-          availability: arrayRemove({ storeId: retailerDocId, stockLevel: "In Stock" }),
+          availability: arrayRemove({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
         });
       }
     } catch { /* non-critical — product may already be deleted */ }
@@ -179,6 +206,166 @@ export async function fetchAssignmentsForManufacturer(
   manufacturerId: string,
 ): Promise<RetailerSeatListing[]> {
   return fetchSeatListingsForOwner(manufacturerId);
+}
+
+export type BulkAssignInput = {
+  manufacturerId: string;
+  retailerDocId: string;
+  retailerId?: string;
+  /** Array of manufacturer product IDs to assign. Already-assigned ones are skipped. */
+  productIds: string[];
+};
+
+export type BulkAssignResult = {
+  assigned: string[];   // product IDs successfully assigned
+  skipped: string[];    // product IDs skipped (already assigned)
+  failed: string[];     // product IDs that errored
+};
+
+/**
+ * Assigns multiple manufacturer products to a retailer in a single batch.
+ * Validates that enough seats are available for all new assignments before writing.
+ * Already-assigned products (active listing exists) are silently skipped.
+ */
+export async function bulkAssignProductsToRetailer(
+  input: BulkAssignInput,
+): Promise<BulkAssignResult> {
+  const { manufacturerId, retailerDocId, retailerId, productIds } = input;
+
+  const [subs, existingListings] = await Promise.all([
+    fetchSubscriptions(manufacturerId),
+    fetchSeatListingsForOwner(manufacturerId),
+  ]);
+
+  const subExpiry = getSubscriptionExpiryDate(subs);
+  if (!subExpiry) throw new Error("No active subscription found.");
+
+  // Determine which products are already actively assigned to this retailer
+  const alreadyAssigned = new Set(
+    existingListings
+      .filter(
+        (l) =>
+          l.retailerDocId === retailerDocId &&
+          l.status === "active" &&
+          l.manufacturerProductId,
+      )
+      .map((l) => l.manufacturerProductId!),
+  );
+
+  const toAssign = productIds.filter((id) => !alreadyAssigned.has(id));
+  const skipped = productIds.filter((id) => alreadyAssigned.has(id));
+
+  if (toAssign.length === 0) {
+    return { assigned: [], skipped, failed: [] };
+  }
+
+  const available = getAvailableSeats(subs, existingListings);
+  if (available < toAssign.length) {
+    throw new Error(
+      `Not enough seats. Need ${toAssign.length} but only ${available} available.`,
+    );
+  }
+
+  // Fetch all product docs and retailer profile in parallel
+  const [productSnaps, retailerSnap] = await Promise.all([
+    Promise.all(toAssign.map((id) => getDoc(doc(db, "products", id)))),
+    getDoc(doc(db, "retailers", retailerId || retailerDocId)),
+  ]);
+  const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
+  const retailerStoreName = retailerData
+    ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
+    : "";
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  const assigned: string[] = [];
+  const failed: string[] = [];
+
+  for (let i = 0; i < toAssign.length; i++) {
+    const productId = toAssign[i];
+    const snap = productSnaps[i];
+    if (!snap.exists()) {
+      failed.push(productId);
+      continue;
+    }
+    const src = snap.data() as Record<string, unknown>;
+    const retailerOwnerId = retailerId || retailerDocId;
+
+    // 1. Product copy
+    const retailerProductRef = doc(collection(db, "products"));
+    batch.set(retailerProductRef, {
+      id: retailerProductRef.id,
+      name: String(src.name ?? ""),
+      category: String(src.category ?? ""),
+      description: String(src.description ?? ""),
+      image: String(src.image ?? ""),
+      unit: String(src.unit ?? ""),
+      price: typeof src.price === "number" ? src.price : 0,
+      isActive: true,
+      ownerId: retailerOwnerId,
+      ownerType: "retailer",
+      createdBy: manufacturerId,
+      manufacturerId,
+      manufacturerProductId: productId,
+      retailerDocId,
+      retailerId: retailerId ?? "",
+      source: "manufacturer_assigned",
+
+      // Market display fields
+      store: retailerStoreName,
+      stock: "In Stock",
+      distance: "Nearby",
+      sellMode: src.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+      isOnline: src.isOnline === true || src.sellMode === "online_delivery",
+
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 2. Inventory record
+    const inventoryRef = doc(collection(db, "inventory"));
+    batch.set(inventoryRef, {
+      id: inventoryRef.id,
+      ownerId: retailerOwnerId,
+      ownerType: "retailer",
+      manufacturerId,
+      retailerDocId,
+      retailerId: retailerId ?? "",
+      productId: retailerProductRef.id,
+      manufacturerProductId: productId,
+      assignedByManufacturer: true,
+      stockQuantity: 0,
+      sellingPrice: typeof src.price === "number" ? src.price : 0,
+      reorderThreshold: 5,
+      isAvailable: false,
+      updatedAt: now,
+    });
+
+    // 3. Seat listing
+    addSeatListingToBatch(batch, {
+      ownerId: manufacturerId,
+      ownerType: "manufacturer",
+      manufacturerId,
+      retailerDocId,
+      retailerId: retailerId ?? null,
+      productId: retailerProductRef.id,
+      manufacturerProductId: productId,
+      listingType: "assigned",
+      expiresAt: subExpiry,
+    });
+
+    // 4. Add retailer's store to the manufacturer product's availability array
+    //    Use retailerId (Firebase Auth UID) when available — that's the store ID.
+    const availabilityStoreId = retailerId || retailerDocId;
+    batch.update(doc(db, "products", productId), {
+      availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
+    });
+
+    assigned.push(productId);
+  }
+
+  await batch.commit();
+  return { assigned, skipped, failed };
 }
 
 /** All assignment listings received by a retailer (assigned to them by manufacturers). */
@@ -203,6 +390,7 @@ export async function fetchAssignmentsForRetailer(
         retailerDocId: raw.retailerDocId ? String(raw.retailerDocId) : null,
         retailerId: raw.retailerId ? String(raw.retailerId) : null,
         productId: String(raw.productId ?? ""),
+        manufacturerProductId: raw.manufacturerProductId ? String(raw.manufacturerProductId) : null,
         listingType: "assigned" as const,
         status: (status === "released" || status === "expired" ? status : "active") as RetailerSeatListing["status"],
         assignedAt: raw.assignedAt as RetailerSeatListing["assignedAt"],

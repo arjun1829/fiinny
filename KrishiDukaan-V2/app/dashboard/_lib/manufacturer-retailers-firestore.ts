@@ -240,28 +240,18 @@ export async function removeNetworkRetailer(
   inviteDocId: string,
   retailerDocId: string,
 ): Promise<void> {
-  const batch = writeBatch(db);
   const now = serverTimestamp();
 
-  batch.update(doc(db, COLLECTION, inviteDocId), {
+  // ONLY update the link document.
+  // We do NOT modify the global "retailers" or "users" document so the retailer 
+  // remains intact and can be invited again or interact with other manufacturers.
+  await updateDoc(doc(db, COLLECTION, inviteDocId), {
     status: "revoked",
     claimable: false,
     assignedSeat: false,
     onboardingStatus: "removed",
     removedAt: now,
   });
-
-  if (retailerDocId) {
-    batch.update(doc(db, "retailers", retailerDocId), {
-      active: false,
-      onboardingStatus: "removed",
-      assignedSeat: false,
-      seatReleasedAt: now,
-      updatedAt: now,
-    });
-  }
-
-  await batch.commit();
 }
 
 export type UpdateNetworkRetailerPatch = {
@@ -347,6 +337,91 @@ export async function fetchRetailerAssignedProducts(
     });
   }));
   return rows.sort((a, b) => (b.assignedAt?.getTime() ?? 0) - (a.assignedAt?.getTime() ?? 0));
+}
+
+/**
+ * Links an already-registered retailer (Firebase Auth user) to this manufacturer's network.
+ * No invite code needed — the retailer already has an account.
+ * Creates a `manufacturerRetailers` doc with status='active' and retailerId pre-filled.
+ */
+export async function linkExistingRetailerToNetwork(input: {
+  manufacturerId: string;
+  manufacturerName: string;
+  retailerUid: string;
+  shopName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+}): Promise<{ inviteDocId: string }> {
+  if (!input.manufacturerId) {
+    console.error("Missing manufacturerId for linking");
+    throw new Error("Your session ID is missing. Please refresh and try again.");
+  }
+  if (!input.retailerUid) {
+    console.error("Missing retailerUid for linking", input);
+    throw new Error("The selected retailer's unique ID is missing. Please contact support.");
+  }
+
+  // Check for existing relationship
+  const q = query(
+    collection(db, COLLECTION),
+    where("manufacturerId", "==", input.manufacturerId),
+    where("retailerDocId", "==", input.retailerUid),
+    where("status", "in", ["active", "invited"])
+  );
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    throw new Error("This retailer is already in your network.");
+  }
+
+  const inviteCode = await generateUniqueInviteCode();
+  const now = serverTimestamp();
+  const ref = doc(collection(db, COLLECTION));
+  await setDoc(ref, {
+    id: ref.id,
+    manufacturerId: input.manufacturerId,
+    retailerDocId: input.retailerUid,
+    retailerId: input.retailerUid,
+    shopName: input.shopName.trim(),
+    ownerName: input.ownerName.trim(),
+    retailerEmail: input.email.trim().toLowerCase(),
+    retailerPhone: input.phone.trim(),
+    inviteCode,
+    status: "active",
+    claimable: false,
+    onboardingStatus: "active",
+    assignedSeat: false,
+    createdBy: input.manufacturerId,
+    addedAt: now,
+  });
+
+  // Trigger notification email (fire-and-forget)
+  // input.email may be stale/placeholder; fetch fresh from users doc
+  (async () => {
+    let emailToNotify = input.email.trim().toLowerCase();
+    if (!emailToNotify || emailToNotify.includes("@krishidukan.local")) {
+      try {
+        const snap = await getDoc(doc(db, "users", input.retailerUid));
+        if (snap.exists()) {
+          const fresh = (snap.data()?.email ?? "").trim().toLowerCase();
+          if (fresh && !fresh.includes("@krishidukan.local")) emailToNotify = fresh;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!emailToNotify) return;
+    fetch("/api/email/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        retailerEmail: emailToNotify,
+        shopName: input.shopName.trim(),
+        inviteCode: "",
+        manufacturerName: input.manufacturerName,
+      }),
+    }).catch(() => {});
+  })();
+
+  return { inviteDocId: ref.id };
 }
 
 /** @deprecated Use createNetworkRetailer instead. Kept for backward-compat. */

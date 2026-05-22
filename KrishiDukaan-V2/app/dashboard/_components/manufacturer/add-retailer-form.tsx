@@ -2,11 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint } from "firebase/firestore";
-import { Loader2, LocateFixed, MapPin, UserPlus, X } from "lucide-react";
+import { Link2, Loader2, LocateFixed, MapPin, Search, UserPlus, X } from "lucide-react";
 import {
   createNetworkRetailer,
+  linkExistingRetailerToNetwork,
   type NetworkRetailerAddress,
 } from "../../_lib/manufacturer-retailers-firestore";
+import { fetchAllUsers, fetchAllRetailers, fetchStores } from "../../../firebase";
+import { useI18n } from "../../../i18n/I18nContext";
 
 declare global {
   interface Window {
@@ -16,6 +19,7 @@ declare global {
 
 type AddRetailerModalProps = {
   manufacturerId: string;
+  manufacturerName: string;
   /** totalSeats - non-revoked row count. Negative means no subscription. */
   seatsRemaining: number;
   onRetailerAdded: (payload: {
@@ -92,12 +96,29 @@ function extractAddressFields(place: {
   return fields;
 }
 
+type Tab = "new" | "existing";
+
+type RegisteredRetailer = {
+  id: string;
+  name?: string;
+  shopName?: string;
+  ownerName?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+};
+
 export function AddRetailerModal({
   manufacturerId,
+  manufacturerName,
   seatsRemaining,
   onRetailerAdded,
   onClose,
 }: AddRetailerModalProps) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>("new");
+
+  // "New retailer" state
   const [shopName, setShopName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -105,10 +126,136 @@ export function AddRetailerModal({
   const [address, setAddress] = useState<NetworkRetailerAddress>(emptyAddress);
   const [geo, setGeo] = useState<GeoPoint | null>(null);
 
+  // "Link existing" state
+  const [existingUsers, setExistingUsers] = useState<RegisteredRetailer[]>([]);
+  const [existingSearch, setExistingSearch] = useState("");
+  const [selectedExisting, setSelectedExisting] = useState<RegisteredRetailer | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Load registered retailers on mount for suggestions
+  useEffect(() => {
+    setLoadingExisting(true);
+    const load = async () => {
+      try {
+        const [users, retailers, stores] = await Promise.all([
+          fetchAllUsers().catch(() => []),
+          fetchAllRetailers().catch(() => []),
+          fetchStores().catch(() => [])
+        ]);
+        
+        const map = new Map<string, RegisteredRetailer>();
+        
+        // Process users with retailer role
+        users.forEach((u: any) => {
+          if (u.role === "retailer") {
+            const id = u.id || u.uid || u.docId; // Support multiple possible ID fields
+            if (!id) return;
+            
+            const email = (u.email || "").toLowerCase();
+            const phone = u.phone || "";
+            const key = id;
+            map.set(key, {
+              id: id,
+              name: u.name,
+              shopName: u.shopName || u.name,
+              ownerName: u.ownerName || u.name,
+              email: u.email,
+              phone: u.phone,
+              role: u.role
+            });
+          }
+        });
+
+        // Add from retailers collection
+        retailers.forEach((r: any) => {
+          const id = r.id || r.uid || r.docId;
+          if (!id) return;
+          
+          const email = (r.email || "").toLowerCase();
+          const phone = r.phone || "";
+          const key = id;
+          if (!map.has(key)) {
+            map.set(key, {
+              id: id,
+              shopName: r.shopName,
+              ownerName: r.ownerName,
+              email: r.email,
+              phone: r.phone,
+              role: "retailer"
+            });
+          }
+        });
+
+        // Add from stores collection (seeded stores often go here)
+        stores.forEach((s: any) => {
+          const id = s.id || s.uid || s.docId;
+          if (!id) return;
+          
+          const key = id;
+          if (!map.has(key)) {
+            map.set(key, {
+              id: id,
+              shopName: s.name,
+              ownerName: s.ownerName || s.name,
+              phone: s.phone,
+              email: s.email,
+              role: "retailer"
+            });
+          }
+        });
+        
+        setExistingUsers(Array.from(map.values()));
+      } catch (err) {
+        console.error("Failed to load existing retailers", err);
+      } finally {
+        setLoadingExisting(false);
+      }
+    };
+    load();
+  }, []);
+
+  const filteredExisting = existingUsers.filter((u) => {
+    const q = (tab === "existing" ? existingSearch : shopName).toLowerCase();
+    if (!q) return false;
+    // Don't suggest if it's an exact match already (prevents redundant dropdown)
+    if (tab === "new" && u.shopName?.toLowerCase() === shopName.toLowerCase()) return true; 
+    return [u.shopName, u.ownerName, u.name, u.email, u.phone].join(" ").toLowerCase().includes(q);
+  });
+
+  const handleLinkExisting = async (retailerToLink?: RegisteredRetailer) => {
+    const target = retailerToLink || selectedExisting;
+    console.log("Linking retailer:", { manufacturerId, target });
+    if (!target) return;
+    setError(null);
+    setSubmitting(true);
+    setShowSuggestions(false);
+    try {
+      await linkExistingRetailerToNetwork({
+        manufacturerId,
+        manufacturerName,
+        retailerUid: target.id,
+        shopName: target.shopName || target.name || t('retailerFallbackName'),
+        ownerName: target.ownerName || target.name || "",
+        email: target.email || "",
+        phone: target.phone || "",
+      });
+      await onRetailerAdded({
+        inviteCode: "",
+        shopName: target.shopName || target.name || t('retailerFallbackName'),
+        retailerEmail: target.email || "",
+        retailerPhone: target.phone || "",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('failedToLinkRetailer'));
+      setSubmitting(false);
+    }
+  };
 
   const addressInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteListenerRef = useRef<unknown>(null);
@@ -128,7 +275,7 @@ export function AddRetailerModal({
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      setMapsError("Google Maps key not configured.");
+      setMapsError(t('googleMapsKeyMissing'));
       return;
     }
 
@@ -178,7 +325,7 @@ export function AddRetailerModal({
         script.dataset.loaded = "true";
         runWhenReady();
       };
-      script.onerror = () => setMapsError("Unable to load Google Maps.");
+      script.onerror = () => setMapsError(t('unableToLoadMaps'));
       document.head.appendChild(script);
     }
 
@@ -192,7 +339,7 @@ export function AddRetailerModal({
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setError("Geolocation is not supported in this browser.");
+      setError(t('geolocationNotSupported'));
       return;
     }
     setLocating(true);
@@ -218,7 +365,7 @@ export function AddRetailerModal({
       },
       (err) => {
         setLocating(false);
-        setError(err.message || "Unable to access location.");
+        setError(err.message || t('unableToAccessLocation'));
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
@@ -235,7 +382,7 @@ export function AddRetailerModal({
 
     const trimmedPhone = phone.trim();
     if (!trimmedPhone) {
-      setError("Phone number is required.");
+      setError(t('phoneNumberRequired'));
       return;
     }
 
@@ -251,14 +398,30 @@ export function AddRetailerModal({
         geo,
       });
 
+      const trimmedEmail = email.trim().toLowerCase();
+
+      // Fire-and-forget: send invite email if retailer has an email address
+      if (trimmedEmail) {
+        fetch("/api/email/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            retailerEmail: trimmedEmail,
+            shopName: shopName.trim(),
+            inviteCode,
+            manufacturerName,
+          }),
+        }).catch(() => {/* email failure is non-fatal */});
+      }
+
       await onRetailerAdded({
         inviteCode,
         shopName: shopName.trim(),
-        retailerEmail: email.trim().toLowerCase(),
+        retailerEmail: trimmedEmail,
         retailerPhone: trimmedPhone,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add retailer. Try again.");
+      setError(err instanceof Error ? err.message : t('failedToAddRetailer'));
       setSubmitting(false);
     }
   };
@@ -281,40 +444,134 @@ export function AddRetailerModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-on-surface">Add Retailer</h2>
+            <h2 className="text-base font-semibold text-on-surface">{t('addRetailerModalTitle')}</h2>
             <p className="text-xs text-on-surface-variant mt-0.5">
-              Creates a retailer profile and generates a signup invite link.
+              {t('addRetailerModalDesc')}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container"
-            aria-label="Close"
+            aria-label={t('addRetailerCloseLabel')}
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Seat guard */}
-        {seatsRemaining <= 0 ? (
+        {/* Tabs */}
+        <div className="flex border-b border-outline-variant/20 shrink-0">
+          {(["new", "existing"] as Tab[]).map((tabKey) => (
+            <button
+              key={tabKey}
+              type="button"
+              onClick={() => { setTab(tabKey); setError(null); }}
+              className={[
+                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                tab === tabKey
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-on-surface-variant hover:text-on-surface",
+              ].join(" ")}
+            >
+              {tabKey === "new" ? (
+                <><UserPlus className="h-4 w-4" /> {t('newRetailerTab')}</>
+              ) : (
+                <><Link2 className="h-4 w-4" /> {t('linkExistingTab')}</>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Seat guard (new retailer tab only) */}
+        {tab === "new" && seatsRemaining <= 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <div className="rounded-full bg-harvest/10 p-3">
               <UserPlus className="h-6 w-6 text-harvest" />
             </div>
             <div>
-              <p className="font-semibold text-on-surface">No seats available</p>
+              <p className="font-semibold text-on-surface">{t('noSeatsAvailableTitle')}</p>
               <p className="mt-1 text-sm text-on-surface-variant max-w-xs mx-auto">
-                You have used all your retailer network seats. Upgrade your subscription to add
-                more retailers.
+                {t('noSeatsAvailableDesc')}
               </p>
             </div>
             <a
               href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95"
             >
-              Upgrade subscription
+              {t('upgradeSubscription')}
             </a>
+          </div>
+        ) : tab === "existing" ? (
+          /* ── Link existing registered retailer ── */
+          <div className="flex flex-col gap-4 overflow-y-auto px-5 py-5">
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+            )}
+            <p className="text-sm text-on-surface-variant">
+              {t('linkExistingDesc')}
+            </p>
+            <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2">
+              <Search className="h-4 w-4 text-outline shrink-0" />
+              <input
+                type="text"
+                placeholder={t('searchRetailerPlaceholder')}
+                value={existingSearch}
+                onChange={(e) => setExistingSearch(e.target.value)}
+                className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
+              />
+            </div>
+            {loadingExisting ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-outline-variant/30 divide-y divide-outline-variant/10">
+                {filteredExisting.length === 0 ? (
+                  <p className="px-4 py-6 text-center text-sm text-on-surface-variant">
+                    {existingSearch ? t('noMatchingRetailers') : t('noRegisteredRetailers')}
+                  </p>
+                ) : (
+                  filteredExisting.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setSelectedExisting(u)}
+                      className={[
+                        "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors",
+                        selectedExisting?.id === u.id ? "bg-primary/10" : "hover:bg-surface-container",
+                      ].join(" ")}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-on-surface truncate">
+                          {u.shopName || u.name || t('retailerFallbackName')}
+                        </p>
+                        <p className="text-xs text-on-surface-variant truncate">
+                          {u.ownerName || u.name} {u.email ? `· ${u.email}` : ""}
+                        </p>
+                      </div>
+                      {selectedExisting?.id === u.id && (
+                        <span className="text-xs font-bold text-primary shrink-0 mt-0.5">{t('selectedLabel')}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 pt-4">
+              <button type="button" onClick={onClose} disabled={submitting}
+                className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+                {t('cancelBtn')}
+              </button>
+              <button type="button" onClick={() => handleLinkExisting()}
+                disabled={!selectedExisting || submitting}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60">
+                {submitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> {t('linkingText')}</>
+                ) : (
+                  <><Link2 className="h-4 w-4" /> {t('linkToNetworkBtn')}</>
+                )}
+              </button>
+            </div>
           </div>
         ) : (
           <form
@@ -329,25 +586,58 @@ export function AddRetailerModal({
 
             {/* Row 1: Shop name + Owner name */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className={labelCls}>
-                <span className="font-medium text-on-surface">Shop name</span>
+              <label className={labelCls + " relative"}>
+                <span className="font-medium text-on-surface">{t('shopNameFormLabel')}</span>
                 <input
                   required
                   disabled={submitting}
                   value={shopName}
-                  onChange={(e) => setShopName(e.target.value)}
-                  placeholder="Retailer shop name"
+                  onChange={(e) => {
+                    setShopName(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  placeholder={t('shopNameFormPlaceholder')}
                   className={inputCls}
                 />
+                {tab === "new" && showSuggestions && shopName && filteredExisting.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto rounded-xl border border-outline-variant/40 bg-white shadow-lg">
+                    <p className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant bg-surface-container-low border-b border-outline-variant/10">
+                      {t('existingRetailersFound')}
+                    </p>
+                    <ul className="divide-y divide-outline-variant/10">
+                      {filteredExisting.map((u) => (
+                        <li key={u.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleLinkExisting(u)}
+                            className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-primary/5 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-on-surface truncate">
+                                {u.shopName || u.name}
+                              </p>
+                              <p className="text-[10px] text-on-surface-variant truncate">
+                                {u.ownerName || u.name} · {u.phone}
+                              </p>
+                            </div>
+                            <span className="text-[9px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">{t('linkBtn')}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Owner name</span>
+                <span className="font-medium text-on-surface">{t('ownerNameFormLabel')}</span>
                 <input
                   required
                   disabled={submitting}
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
-                  placeholder="Owner or contact person"
+                  placeholder={t('ownerNameFormPlaceholder')}
                   className={inputCls}
                 />
               </label>
@@ -357,7 +647,7 @@ export function AddRetailerModal({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">
-                  Phone <span className="text-red-500">*</span>
+                  {t('phoneRequired')} <span className="text-red-500">*</span>
                 </span>
                 <input
                   required
@@ -371,15 +661,15 @@ export function AddRetailerModal({
               </label>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">
-                  Email{" "}
-                  <span className="font-normal text-on-surface-variant">(optional)</span>
+                  {t('emailOptional')}{" "}
+                  <span className="font-normal text-on-surface-variant">{t('optionalText')}</span>
                 </span>
                 <input
                   type="email"
                   disabled={submitting}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="retailer@example.com"
+                  placeholder={t('retailerEmailPlaceholder')}
                   className={inputCls}
                 />
               </label>
@@ -388,9 +678,9 @@ export function AddRetailerModal({
             {/* Business / address search — autocomplete fills shopName + address fields */}
             <label className={labelCls}>
               <span className="font-medium text-on-surface">
-                Search shop on Google Maps
+                {t('searchShopMaps')}
                 <span className="ml-1 font-normal text-on-surface-variant">
-                  — auto-fills name & address
+                  {t('searchShopAutoFills')}
                 </span>
               </span>
               <input
@@ -399,7 +689,7 @@ export function AddRetailerModal({
                 disabled={submitting}
                 value={address.line1}
                 onChange={(e) => setAddress((p) => ({ ...p, line1: e.target.value }))}
-                placeholder="Type shop name or address (e.g. Ramesh Agro Store Pune)"
+                placeholder={t('searchShopPlaceholder')}
                 autoComplete="off"
                 className={inputCls}
               />
@@ -407,35 +697,35 @@ export function AddRetailerModal({
 
             <div className="grid gap-4 sm:grid-cols-3">
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">City</span>
+                <span className="font-medium text-on-surface">{t('cityLabel')}</span>
                 <input
                   required
                   disabled={submitting}
                   value={address.city}
                   onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
-                  placeholder="City"
+                  placeholder={t('cityPlaceholder')}
                   className={inputCls}
                 />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">State</span>
+                <span className="font-medium text-on-surface">{t('stateLabel')}</span>
                 <input
                   required
                   disabled={submitting}
                   value={address.state}
                   onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value }))}
-                  placeholder="State"
+                  placeholder={t('statePlaceholder')}
                   className={inputCls}
                 />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Pincode</span>
+                <span className="font-medium text-on-surface">{t('pincodeLabel')}</span>
                 <input
                   required
                   disabled={submitting}
                   value={address.pincode}
                   onChange={(e) => setAddress((p) => ({ ...p, pincode: e.target.value }))}
-                  placeholder="PIN"
+                  placeholder={t('pinPlaceholder')}
                   className={inputCls}
                 />
               </label>
@@ -454,7 +744,7 @@ export function AddRetailerModal({
                 ) : (
                   <LocateFixed className="h-4 w-4" />
                 )}
-                Use current location
+                {t('useCurrentLocation')}
               </button>
               {mapsError ? (
                 <p className="text-xs text-harvest">{mapsError}</p>
@@ -464,13 +754,13 @@ export function AddRetailerModal({
             {/* Paste Google Maps link */}
             <label className={labelCls}>
               <span className="font-medium text-on-surface">
-                Paste Google Maps link
-                <span className="ml-1 font-normal text-on-surface-variant">— pins location from a shared Maps URL</span>
+                {t('pasteGoogleMapsLink')}
+                <span className="ml-1 font-normal text-on-surface-variant">{t('pinsFromMapsUrl')}</span>
               </span>
               <input
                 type="url"
                 disabled={submitting}
-                placeholder="https://maps.google.com/maps?q=18.52,73.85 or share link…"
+                placeholder={t('mapsUrlPlaceholder')}
                 className={inputCls}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData("text");
@@ -488,7 +778,10 @@ export function AddRetailerModal({
               />
               {geo ? (
                 <p className="text-xs text-primary">
-                  Coordinates detected: {geo.latitude.toFixed(5)}, {geo.longitude.toFixed(5)}
+                  {t('coordinatesDetected', {
+                    lat: geo.latitude.toFixed(5),
+                    lng: geo.longitude.toFixed(5),
+                  })}
                 </p>
               ) : null}
             </label>
@@ -497,11 +790,11 @@ export function AddRetailerModal({
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                   <MapPin className="h-3.5 w-3.5" />
-                  Location pinned
+                  {t('locationPinned')}
                 </div>
                 <div className="overflow-hidden rounded-xl border border-outline-variant/30">
                   <iframe
-                    title="Location preview"
+                    title={t('locationPreviewTitle')}
                     src={mapUrl}
                     className="h-40 w-full"
                     loading="lazy"
@@ -519,7 +812,7 @@ export function AddRetailerModal({
                 disabled={submitting}
                 className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60"
               >
-                Cancel
+                {t('cancelBtn')}
               </button>
               <button
                 type="submit"
@@ -529,12 +822,12 @@ export function AddRetailerModal({
                 {submitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Adding…
+                    {t('addingText')}
                   </>
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4" />
-                    Add Retailer
+                    {t('addRetailerBtn')}
                   </>
                 )}
               </button>

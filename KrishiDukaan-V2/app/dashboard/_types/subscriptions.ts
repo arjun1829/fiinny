@@ -47,8 +47,13 @@ export interface RetailerSeatListing {
   /** Retailer's Firebase Auth uid — empty string until they sign up */
   retailerId: string | null;
 
-  /** The product doc this listing covers */
+  /** The product doc this listing covers (retailer copy ID for assigned listings) */
   productId: string;
+  /**
+   * For assigned listings: the manufacturer's original product doc ID.
+   * Used for duplicate-assignment checks and pre-selecting in the assign modal.
+   */
+  manufacturerProductId: string | null;
 
   listingType: SeatListingType;
   status: SeatListingStatus;
@@ -62,5 +67,5 @@ export interface SeatStats {
   totalPurchased: number; // seats from active subscriptions
   activeUsed: number;     // active + non-expired listings where ownerId = user
   available: number;      // totalPurchased − activeUsed, >= 0
-  expiringSoon: number;   // subscriptions expiring within 30 days
+  expiringSoon: number;   // subscriptions expiring within 5 days
 }

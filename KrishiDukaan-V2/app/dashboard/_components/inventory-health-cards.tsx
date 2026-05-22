@@ -1,5 +1,8 @@
+"use client";
+
 import { HelperIcon } from "../../../components/helpers";
 import { HelperTextKey } from "../../i18n/helperTexts";
+import { useI18n } from "../../i18n/I18nContext";
 
 type InventoryHealthCardsProps = {
   inStock: number;
@@ -16,10 +19,12 @@ export function InventoryHealthCards({
   score,
   label,
 }: InventoryHealthCardsProps) {
-  const cards: Array<{ title: string; value: number; tone: string; helperKey: HelperTextKey }> = [
-    { title: "In stock", value: inStock, tone: "text-primary", helperKey: "dashInvInStock" },
-    { title: "Low stock", value: lowStock, tone: "text-harvest", helperKey: "dashInvLowStock" },
-    { title: "Out of stock", value: outOfStock, tone: "text-secondary", helperKey: "dashInvOutOfStock" },
+  const { t } = useI18n();
+
+  const cards: { title: string; value: number; tone: string; helperKey: HelperTextKey }[] = [
+    { title: t('inStockStatus'), value: inStock, tone: "text-primary", helperKey: "dashInvInStock" },
+    { title: t('lowStockStatus'), value: lowStock, tone: "text-harvest", helperKey: "dashInvLowStock" },
+    { title: t('outOfStockStatus'), value: outOfStock, tone: "text-secondary", helperKey: "dashInvOutOfStock" },
   ];
 
   return (
@@ -44,7 +49,7 @@ export function InventoryHealthCards({
       ))}
       <div className="rounded-2xl border border-outline-variant/30 bg-primary/5 p-4 shadow-ambient sm:col-span-2 lg:col-span-1">
         <div className="flex items-center gap-1.5">
-          <p className="text-sm font-medium text-on-surface-variant">Health score</p>
+          <p className="text-sm font-medium text-on-surface-variant">{t('healthScoreLabel')}</p>
           <HelperIcon
             size="xs"
             variant="ghost"
