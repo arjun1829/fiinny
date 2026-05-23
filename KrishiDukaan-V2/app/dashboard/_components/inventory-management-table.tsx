@@ -192,6 +192,7 @@ export function InventoryManagementTable({
   const { t } = useI18n();
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -228,6 +229,8 @@ export function InventoryManagementTable({
         reorderThreshold: Math.max(0, Math.floor(d.reorderThreshold)),
       });
       await onUpdated();
+      setSavedId(inventoryId);
+      setTimeout(() => setSavedId((prev) => (prev === inventoryId ? null : prev)), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update inventory.");
     } finally {
@@ -408,6 +411,11 @@ export function InventoryManagementTable({
                         )}
                         {t('saveBtn')}
                       </button>
+                      {savedId === r.inventoryId && (
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                        </span>
+                      )}
                     </td>
                     {hasActions ? (
                       <td className="px-3 py-3 md:px-4">

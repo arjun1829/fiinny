@@ -590,8 +590,11 @@ export async function requestRoleUpgrade(
       updatedAt: now,
     }, { merge: true });
   } else {
-    await setDoc(doc(db, 'manufacturers', uid), {
+    // Phone is the canonical document ID for manufacturers (matches subcollection structure)
+    await setDoc(doc(db, 'manufacturers', phone), {
+      uid,
       userId: uid,
+      manufacturerId: uid,
       phone,
       ownerName: userSnap.data().name || '',
       businessName: (details.businessName || '').trim(),

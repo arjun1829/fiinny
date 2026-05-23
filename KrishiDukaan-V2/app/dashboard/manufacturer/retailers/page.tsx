@@ -37,6 +37,7 @@ type ToastPayload = {
   shopName: string;
   retailerEmail: string;
   retailerPhone: string;
+  retailerDocId: string;
 };
 
 export default function ManufacturerRetailersPage() {
@@ -116,6 +117,13 @@ export default function ManufacturerRetailersPage() {
     if (manufacturerId) await loadAll(manufacturerId);
     setAddModalOpen(false);
     setToast(payload);
+    // Auto-open product assignment for the new retailer so the manufacturer
+    // can assign their first product immediately (retailer stays "pending" until then).
+    setRows((current) => {
+      const newRow = current.find((r) => r.retailerDocId === payload.retailerDocId);
+      if (newRow) setAssignTarget(newRow);
+      return current;
+    });
   };
 
   const handleRemove = async (row: ManufacturerRetailerRow) => {

@@ -635,7 +635,7 @@ export async function linkExistingRetailerToNetwork(input: {
   ownerName: string;
   email: string;
   phone: string;
-}): Promise<{ inviteDocId: string }> {
+}): Promise<{ inviteDocId: string; retailerDocId: string }> {
   if (!input.manufacturerId) {
     console.error("Missing manufacturerId for linking");
     throw new Error("Your session ID is missing. Please refresh and try again.");
@@ -763,7 +763,7 @@ export async function linkExistingRetailerToNetwork(input: {
     }).catch(() => {});
   })();
 
-  return { inviteDocId: ref.id };
+  return { inviteDocId: ref.id, retailerDocId };
 }
 
 /**
