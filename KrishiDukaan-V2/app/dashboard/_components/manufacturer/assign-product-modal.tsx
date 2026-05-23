@@ -151,7 +151,16 @@ export function AssignProductModal({
             inviteCode: retailer.inviteCode || "",
             retailerStatus: retailer.status,
           }),
-        }).catch(() => {});
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              const body = await res.text().catch(() => "");
+              console.warn("[product-assigned email] Server error:", res.status, body);
+            }
+          })
+          .catch((err) => {
+            console.warn("[product-assigned email] Network error:", err);
+          });
       })();
 
       await onAssigned();

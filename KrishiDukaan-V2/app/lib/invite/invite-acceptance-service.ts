@@ -81,37 +81,34 @@ export async function acceptManufacturerInvite(params: {
     return p.trim();
   };
 
-  // Resolve the current user's phone
+  // Resolve phone + look up invite in parallel — two independent reads, no need to sequence them
   let currentPhoneRaw: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", params.uid));
-    currentPhoneRaw = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
-  } catch (e) {
-    console.warn("[acceptInvite] Could not resolve current user phone:", e);
-  }
-
-  const currentPhone = currentPhoneRaw ? normalize(currentPhoneRaw) : null;
-  if (!currentPhone) {
-      return { ok: false, message: "Phone number required to claim invite. Please complete your profile." };
-  }
-
   let initial: ManufacturerRetailerInviteSnapshot | null;
   try {
-    initial = await findInviteByCode(code);
+    const [idxSnap, inviteResult] = await Promise.all([
+      getDoc(doc(db, "uidIndex", params.uid)),
+      findInviteByCode(code).catch((e: unknown) => { throw e; }),
+    ]);
+    currentPhoneRaw = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+    initial = inviteResult;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[acceptInvite] findInviteByCode failed:`, e);
+    console.error(`[acceptInvite] parallel lookup failed:`, e);
     if (msg.includes("permission") || msg.includes("insufficient")) {
       return { ok: false, message: "Permission error — Firestore rules not deployed yet. Ask your admin to run: firebase deploy --only firestore:rules" };
     }
     return { ok: false, message: "Could not look up invite code. Try again." };
   }
-  
-  // Normalize invite phone to E164 for comparison (same format as currentPhone and uidIndex)
-  if (initial) {
-      initial.retailerPhone = normalize(initial.retailerPhone);
+
+  const currentPhone = currentPhoneRaw ? normalize(currentPhoneRaw) : null;
+  if (!currentPhone) {
+    return { ok: false, message: "Phone number required to claim invite. Please complete your profile." };
   }
 
+  // Normalize invite phone to E164 for comparison
+  if (initial) {
+    initial.retailerPhone = normalize(initial.retailerPhone);
+  }
 
   const pre = precheckInviteForAcceptance(initial, currentPhone);
   if (!pre.ok) {
@@ -171,9 +168,10 @@ export async function acceptManufacturerInvite(params: {
   }
 
   // After successful invite acceptance, backfill product/inventory/listing records.
+  // Pass the already-resolved phone so backfill skips its own uidIndex read.
   const retailerDocId = initial!.retailerDocId;
   console.log(`[acceptInvite] Triggering backfill for retailerDocId: ${retailerDocId} to uid: ${params.uid}`);
-  const backfillError = await backfillRetailerAfterInvite(params.uid, retailerDocId);
+  const backfillError = await backfillRetailerAfterInvite(params.uid, retailerDocId, currentPhoneRaw);
 
   return { ok: true, alreadyActive: wasAlreadyActive, backfillError };
 }
@@ -378,7 +376,11 @@ export async function grantAccessIfHasActiveSeat(uid: string): Promise<boolean> 
   return true;
 }
 
-export async function backfillRetailerAfterInvite(uid: string, retailerDocId: string): Promise<string | undefined> {
+export async function backfillRetailerAfterInvite(
+  uid: string,
+  retailerDocId: string,
+  preResolvedPhone?: string | null,
+): Promise<string | undefined> {
   if (!retailerDocId) {
     console.warn("[backfill] retailerDocId is empty");
     return "retailerDocId is empty — cannot sync products. Contact your manufacturer.";
@@ -387,35 +389,28 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
   try {
     const now = serverTimestamp();
 
-    // 1. Resolve the user's phone (new schema stores profiles at users/{phone}, not users/{uid}).
-    //    Fall back to uid as doc ID for legacy / email-based accounts.
-    const idxSnap = await getDoc(doc(db, "uidIndex", uid));
-    const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+    // 1. Resolve the user's phone — use the pre-resolved value when available to skip
+    //    a redundant uidIndex read (caller already resolved it).
+    let phone: string | null = preResolvedPhone ?? null;
+    if (!phone) {
+      const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+      phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+    }
     const userDocId = phone || uid;
 
-    console.log(`[backfill] Updating user profile ${userDocId} with retailerDocId: ${retailerDocId}`);
-    await setDoc(doc(db, "users", userDocId), {
-      isPaid: true,
-      retailerDocId,
-      updatedAt: now,
-    }, { merge: true });
-
-    // Keep the pre-created retailer document as the canonical public store record.
-    await setDoc(doc(db, "retailers", retailerDocId), {
-      userId: uid,
-      retailerId: uid,
-      active: true,
-      updatedAt: now,
-      ...(phone ? { phone } : {}),
-    }, { merge: true });
-
-    // 2. Fetch product copies created before the retailer signed up (ownerId = retailerDocId placeholder)
+    // 2. Kick off all read queries in parallel while we build the batch
+    //    (products/inventory/listings keyed by retailerDocId)
     console.log(`[backfill] Querying products/inventory/listings for retailerDocId: ${retailerDocId}`);
-    const [productsSnap, inventorySnap, listingsSnap] = await Promise.all([
+    const [productsSnap, inventorySnap, listingsSnap, retailerSnap] = await Promise.all([
       getDocs(query(collection(db, "products"),            where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "inventory"),           where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "retailerSeatListings"),where("retailerDocId", "==", retailerDocId))),
+      getDoc(doc(db, "retailers", retailerDocId)),
     ]);
+    const retailerDocData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
+    const storeName = retailerDocData
+      ? String(retailerDocData.shopName ?? retailerDocData.businessName ?? retailerDocData.ownerName ?? "")
+      : "";
 
     console.log(`[backfill] Found: ${productsSnap.size} products, ${inventorySnap.size} inventory, ${listingsSnap.size} listings`);
 
@@ -423,8 +418,24 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
       return `No products found with retailerDocId="${retailerDocId}". The manufacturer may not have assigned any products yet.`;
     }
 
-    // Batch all writes (Firestore limit: 500 per batch)
+    // Batch all writes — include user profile + retailer doc updates so they happen
+    // in a single round trip instead of two sequential awaits before this point.
     const batch = writeBatch(db);
+
+    console.log(`[backfill] Updating user profile ${userDocId} with retailerDocId: ${retailerDocId}`);
+    batch.set(doc(db, "users", userDocId), {
+      isPaid: true,
+      retailerDocId,
+      updatedAt: now,
+    }, { merge: true });
+
+    batch.set(doc(db, "retailers", retailerDocId), {
+      userId: uid,
+      retailerId: uid,
+      active: true,
+      updatedAt: now,
+      ...(phone ? { phone } : {}),
+    }, { merge: true });
 
     productsSnap.docs.forEach((d) => {
       const data = d.data() as Record<string, unknown>;
@@ -460,6 +471,41 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
     console.log("[backfill] Committing batch update...");
     await batch.commit();
     console.log("[backfill] Success!");
+
+    // Patch manufacturer product availability entries that were written before storePhone/storeName existed.
+    // Each assigned product copy has a `manufacturerProductId` pointing to the original product.
+    // We read that doc, find the entry with storeId===retailerDocId, and write the enriched version.
+    (async () => {
+      try {
+        const mfgProductIds = Array.from(new Set(
+          productsSnap.docs
+            .map((d) => String((d.data() as Record<string, unknown>).manufacturerProductId ?? ""))
+            .filter(Boolean),
+        ));
+        await Promise.all(mfgProductIds.map(async (mfgId) => {
+          try {
+            const mfgSnap = await getDoc(doc(db, "products", mfgId));
+            if (!mfgSnap.exists()) return;
+            const mfgData = mfgSnap.data() as Record<string, unknown>;
+            const avArr = Array.isArray(mfgData.availability) ? mfgData.availability as Record<string, unknown>[] : [];
+            const existing = avArr.find((e) => e.storeId === retailerDocId);
+            if (!existing) return;
+            // Only patch if storePhone or storeName is missing
+            if (existing.storePhone && existing.storeName) return;
+            const { updateDoc: ud, arrayRemove: ar, arrayUnion: au } = await import("firebase/firestore");
+            await ud(doc(db, "products", mfgId), { availability: ar(existing) });
+            await ud(doc(db, "products", mfgId), {
+              availability: au({
+                storeId: retailerDocId,
+                storePhone: phone ?? null,
+                storeName: storeName || null,
+                stockLevel: String(existing.stockLevel ?? "In Stock"),
+              }),
+            });
+          } catch { /* non-critical — marketplace display degrades gracefully */ }
+        }));
+      } catch { /* non-critical */ }
+    })();
 
     // Sync all manufacturer mirror docs for this retailer to status: "active"
     if (phone) {
