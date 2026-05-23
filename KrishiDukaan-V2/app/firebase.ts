@@ -22,7 +22,7 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778",
-  authDomain: "krishidukan-e8315.firebaseapp.com",
+  authDomain: "krishidukan.com",
   projectId: "krishidukan-e8315",
   storageBucket: "krishidukan-e8315.firebasestorage.app",
   messagingSenderId: "650303885415",
