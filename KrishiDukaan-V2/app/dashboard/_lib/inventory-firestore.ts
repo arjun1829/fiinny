@@ -8,6 +8,7 @@ import {
   increment,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -133,77 +134,67 @@ async function fetchProductsByOwner(
 }
 
 /**
- * Fetch inventory docs keyed by productId for a set of product IDs (chunked).
- * Keeps only the first matching inventory doc per productId.
+ * Fetch all inventory docs owned by / assigned to a RETAILER, keyed by productId.
+ *
+ * Uses ONLY ownership-scoped queries so every individual query is covered by the
+ * `inventory` Firestore rule without the "productId-in" anti-pattern that causes
+ * "Missing or insufficient permissions" errors when any returned doc fails the rule.
+ *
+ * Three query axes cover all lifecycle states:
+ *   1. ownerId == uid            — self-created products and post-backfill assigned ones
+ *   2. retailerId == uid         — post-backfill assigned products (backfill sets retailerId)
+ *   3. retailerDocId == phone    — pre-signup / pre-backfill assigned products
  */
-async function fetchInventoryByProductIds(
-  productIds: string[],
-  ownerId?: string,
-  retailerDocId?: string,
+async function fetchInventoryForRetailer(
+  uid: string,
+  retailerDocId?: string | null,
+  retailerPhone?: string | null,
 ): Promise<Map<string, InventoryDoc>> {
-  const unique = Array.from(new Set(productIds.filter(Boolean)));
   const map = new Map<string, InventoryDoc>();
-  const chunkSize = 10;
 
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const chunk = unique.slice(i, i + chunkSize);
-    if (!chunk.length) continue;
+  const queries: Promise<Awaited<ReturnType<typeof getDocs>>>[] = [
+    getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "inventory"), where("retailerId", "==", uid))),
+  ];
 
-    const queries = [];
+  // Deduplicate phone keys: retailerDocId is the canonical phone; retailerPhone is a fallback
+  const phoneKeys = new Set<string>();
+  if (retailerDocId) phoneKeys.add(retailerDocId);
+  if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
+  Array.from(phoneKeys).forEach((phone) => {
+    queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
+  });
 
-    if (ownerId) {
-      queries.push(
-        getDocs(
-          query(
-            collection(db, "inventory"),
-            where("productId", "in", chunk),
-            where("ownerId", "==", ownerId)
-          )
-        ),
-        getDocs(
-          query(
-            collection(db, "inventory"),
-            where("productId", "in", chunk),
-            where("retailerId", "==", ownerId)
-          )
-        )
-      );
-    }
-
-    if (retailerDocId) {
-      queries.push(
-        getDocs(
-          query(
-            collection(db, "inventory"),
-            where("productId", "in", chunk),
-            where("retailerDocId", "==", retailerDocId)
-          )
-        )
-      );
-    }
-
-    // Fallback if no filters are available
-    if (queries.length === 0) {
-      queries.push(
-        getDocs(
-          query(
-            collection(db, "inventory"),
-            where("productId", "in", chunk)
-          )
-        )
-      );
-    }
-
-    const snaps = await Promise.all(queries);
-    snaps.forEach((snap) => {
-      snap.docs.forEach((d) => {
-        const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-        if (!map.has(inv.productId)) {
-          map.set(inv.productId, inv);
-        }
-      });
+  const snaps = await Promise.all(queries);
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+      if (!map.has(inv.productId)) map.set(inv.productId, inv);
     });
-  }
+  });
+
+  return map;
+}
+
+/**
+ * Fetch all inventory docs owned by a MANUFACTURER, keyed by productId.
+ *
+ * Queries by ownerId and manufacturerId separately so both self-created inventory
+ * and legacy docs where only manufacturerId was set are captured. Each query is
+ * individually validated by the `inventory` Firestore rule.
+ */
+async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
+  const map = new Map<string, InventoryDoc>();
+
+  const [snap1, snap2] = await Promise.all([
+    getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
+  ]);
+
+  [...snap1.docs, ...snap2.docs].forEach((d) => {
+    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+    if (!map.has(inv.productId)) map.set(inv.productId, inv);
+  });
 
   return map;
 }
@@ -281,8 +272,7 @@ export async function fetchRetailerInventoryRows(
   const products = Array.from(productMap.values());
   if (!products.length) return [];
 
-  const productIds = products.map((p) => p.id);
-  const inventoryMap = await fetchInventoryByProductIds(productIds, ownerId, retailerDocId);
+  const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
     const inv = inventoryMap.get(p.id);
@@ -355,13 +345,18 @@ export async function acceptAssignedProduct(
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
 ): Promise<ManufacturerProductRow[]> {
-  // Include all products (active + inactive) for management UI
   const products = await fetchProductsByOwner(ownerId, "manufacturer");
+  if (!products.length) return [];
+
+  // Join inventory to get inventoryId (and up-to-date stockQuantity)
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
 
   const rows: ManufacturerProductRow[] = products.map((p) => {
     const raw = p as any;
+    const inv = inventoryMap.get(p.id);
     return {
       productId: p.id,
+      inventoryId: inv?.id,
       productName: p.name,
       category: p.category,
       unit: p.unit,
@@ -370,7 +365,7 @@ export async function fetchManufacturerCatalogueRows(
       image: p.image ?? "",
       images: Array.isArray(raw.images) ? raw.images : (p.image ? [p.image] : []),
       variants: Array.isArray(raw.variants) ? raw.variants : [{ unit: p.unit, price: p.price }],
-      stockQuantity: typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0,
+      stockQuantity: inv?.stockQuantity ?? (typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0),
       source: p.source ?? "manufacturer_inventory",
       isActive: p.isActive,
       updatedAt: timestampToDate(p.updatedAt),
@@ -533,6 +528,97 @@ export async function createProductAndInventory(
   }
 
   await batch.commit();
+
+  // Subcollection mirrors for self-created product and inventory (fire-and-forget)
+  if (ownerPhone) {
+    import("firebase/firestore").then(({ setDoc: sDoc, doc: wDoc }) => {
+      sDoc(
+        wDoc(db, `retailers/${ownerPhone}/products/${productRef.id}`),
+        {
+          productId: productRef.id,
+          name: input.name.trim(),
+          category: input.category.trim(),
+          unit: input.unit.trim(),
+          isActive: true,
+          addedAt: now
+        },
+        { merge: true }
+      ).catch(() => {});
+
+      sDoc(
+        wDoc(db, `retailers/${ownerPhone}/inventory/${inventoryRef.id}`),
+        {
+          id: inventoryRef.id,
+          productId: productRef.id,
+          stockQuantity: input.stockQuantity,
+          sellingPrice: input.sellingPrice,
+          reorderThreshold: input.reorderThreshold,
+          isAvailable: input.stockQuantity > 0,
+          updatedAt: now
+        },
+        { merge: true }
+      ).catch(() => {});
+    }).catch(() => {});
+  }
+}
+
+export type AddManufacturerInventoryInput = {
+  productId: string;
+  stockQuantity: number;
+  sellingPrice: number;
+  reorderThreshold: number;
+};
+
+/**
+ * Creates a manufacturer-owned inventory record in global and subcollections.
+ * Used when a manufacturer acts as a direct seller with their own stock.
+ */
+export async function createManufacturerInventoryRecord(
+  manufacturerId: string,
+  input: AddManufacturerInventoryInput
+): Promise<void> {
+  // Resolve owner phone
+  let ownerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", manufacturerId));
+    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore */ }
+
+  const now = serverTimestamp();
+  const inventoryRef = doc(collection(db, "inventory"));
+
+  // 1. Create global inventory doc
+  await setDoc(inventoryRef, {
+    id: inventoryRef.id,
+    ownerId: manufacturerId,
+    ownerPhone: ownerPhone ?? null,
+    ownerType: "manufacturer",
+    manufacturerId,
+    manufacturerPhone: ownerPhone ?? null,
+    productId: input.productId,
+    stockQuantity: input.stockQuantity,
+    sellingPrice: input.sellingPrice,
+    reorderThreshold: input.reorderThreshold,
+    isAvailable: input.stockQuantity > 0,
+    updatedAt: now,
+  });
+
+  // 2. Fire-and-forget mirror to manufacturers/{manufacturerPhone}/inventory/{inventoryId}
+  if (ownerPhone) {
+    setDoc(
+      doc(db, `manufacturers/${ownerPhone}/inventory/${inventoryRef.id}`),
+      {
+        id: inventoryRef.id,
+        productId: input.productId,
+        stockQuantity: input.stockQuantity,
+        sellingPrice: input.sellingPrice,
+        reorderThreshold: input.reorderThreshold,
+        isAvailable: input.stockQuantity > 0,
+        updatedAt: now,
+      },
+      { merge: true }
+    ).catch(() => {});
+  }
 }
 
 export type InventoryUpdateInput = {
@@ -553,6 +639,38 @@ export async function updateInventoryRecord(
     isAvailable: patch.stockQuantity > 0,
     updatedAt: serverTimestamp(),
   });
+
+  // Background sync to subcollection mirror (fire-and-forget)
+  (async () => {
+    try {
+      const { getDoc: sGet, doc: wDoc, setDoc: sSet, serverTimestamp: sTs } = await import("firebase/firestore");
+      const invSnap = await sGet(wDoc(db, "inventory", inventoryId));
+      if (!invSnap.exists()) return;
+      const data = invSnap.data();
+      let phone: string | null = (data.ownerPhone || data.retailerPhone || data.manufacturerPhone) ?? null;
+      const ownerType: string = data.ownerType || "retailer";
+      // Fallback: resolve phone via uidIndex using ownerId (handles docs created before ownerPhone was set)
+      if (!phone && data.ownerId) {
+        const idxSnap = await sGet(wDoc(db, "uidIndex", data.ownerId));
+        if (idxSnap.exists()) phone = String(idxSnap.data().phone ?? "") || null;
+      }
+      if (!phone) return;
+      const col = ownerType === "manufacturer" ? "manufacturers" : "retailers";
+      await sSet(
+        wDoc(db, `${col}/${phone}/inventory/${inventoryId}`),
+        {
+          stockQuantity: patch.stockQuantity,
+          sellingPrice: patch.sellingPrice,
+          reorderThreshold: patch.reorderThreshold,
+          isAvailable: patch.stockQuantity > 0,
+          updatedAt: sTs(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn("[updateInventoryRecord] Mirror sync failed:", e);
+    }
+  })();
 }
 
 // ─── Product lifecycle operations ─────────────────────────────────────────────
@@ -590,6 +708,33 @@ export async function deactivateProduct(
     });
   }
   await batch.commit();
+
+  // Sync isAvailable=false to subcollection mirror (fire-and-forget)
+  if (inventoryId) {
+    (async () => {
+      try {
+        const { getDoc: sGet, doc: wDoc, setDoc: sSet, serverTimestamp: sTs } = await import("firebase/firestore");
+        const [idxSnap, invSnap] = await Promise.all([
+          sGet(wDoc(db, "uidIndex", ownerId)),
+          sGet(wDoc(db, "inventory", inventoryId)),
+        ]);
+        let phone: string | null = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+        const ownerType: string = invSnap.exists() ? (invSnap.data().ownerType || "retailer") : "retailer";
+        // Fallback: phone stored on the inventory doc
+        if (!phone && invSnap.exists()) {
+          const d = invSnap.data();
+          phone = d.ownerPhone || d.retailerPhone || d.manufacturerPhone || null;
+        }
+        if (!phone) return;
+        const col = ownerType === "manufacturer" ? "manufacturers" : "retailers";
+        await sSet(
+          wDoc(db, `${col}/${phone}/inventory/${inventoryId}`),
+          { isAvailable: false, updatedAt: sTs() },
+          { merge: true }
+        );
+      } catch {}
+    })();
+  }
 }
 
 /**
@@ -631,6 +776,32 @@ export async function activateProduct(
     expiresAt: subExpiry,
   });
   await batch.commit();
+
+  // Sync isAvailable=true to subcollection mirror (fire-and-forget)
+  if (inventoryId) {
+    (async () => {
+      try {
+        const { getDoc: sGet, doc: wDoc, setDoc: sSet, serverTimestamp: sTs } = await import("firebase/firestore");
+        const idxSnap = await sGet(wDoc(db, "uidIndex", ownerId));
+        let phone: string | null = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+        // Fallback: read phone from inventory doc
+        if (!phone) {
+          const invSnap = await sGet(wDoc(db, "inventory", inventoryId));
+          if (invSnap.exists()) {
+            const d = invSnap.data();
+            phone = d.ownerPhone || d.retailerPhone || d.manufacturerPhone || null;
+          }
+        }
+        if (!phone) return;
+        const col = ownerType === "manufacturer" ? "manufacturers" : "retailers";
+        await sSet(
+          wDoc(db, `${col}/${phone}/inventory/${inventoryId}`),
+          { isAvailable: true, updatedAt: sTs() },
+          { merge: true }
+        );
+      } catch {}
+    })();
+  }
 }
 
 /**
@@ -663,4 +834,26 @@ export async function deleteProduct(
     batch.delete(doc(db, "retailers", ownerPhone, "products", productId));
   }
   await batch.commit();
+
+  // Delete subcollection mirror (fire-and-forget)
+  if (inventoryId) {
+    (async () => {
+      try {
+        const { getDoc: sGet, doc: wDoc, deleteDoc: sDelete } = await import("firebase/firestore");
+        const [idxSnap, invSnap] = await Promise.all([
+          sGet(wDoc(db, "uidIndex", ownerId)),
+          sGet(wDoc(db, "inventory", inventoryId)),
+        ]);
+        let phone: string | null = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+        const ownerType: string = invSnap.exists() ? (invSnap.data().ownerType || "retailer") : "retailer";
+        if (!phone && invSnap.exists()) {
+          const d = invSnap.data();
+          phone = d.ownerPhone || d.retailerPhone || d.manufacturerPhone || null;
+        }
+        if (!phone) return;
+        const col = ownerType === "manufacturer" ? "manufacturers" : "retailers";
+        await sDelete(wDoc(db, `${col}/${phone}/inventory/${inventoryId}`));
+      } catch {}
+    })();
+  }
 }

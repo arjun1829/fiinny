@@ -213,8 +213,11 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
-      allow read: if isAuthed() && myPhone() == mPhone;
-      allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
+      // Manufacturer reads their roster; retailer reads their own entry.
+      allow read: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
+      // Manufacturer manages their roster; retailer can update their own entry
+      // (e.g. backfill sets status:"active" after onboarding).
+      allow write: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/products/{pid} {
@@ -305,13 +308,13 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId != null
+        resource.data.retailerDocId == myPhone()
       );
       allow create: if isAuthed();
       allow update: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
-        (resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid)
+        (resource.data.retailerDocId == myPhone() && request.resource.data.retailerId == request.auth.uid)
       );
       allow delete: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -354,7 +357,7 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId != null
+        resource.data.retailerDocId == myPhone()
       ));
       allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuthed() && (

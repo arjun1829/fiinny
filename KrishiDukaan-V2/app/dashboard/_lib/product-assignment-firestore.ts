@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { syncRetailerMirror, activateRetailerOnProductAssignment } from "./manufacturer-retailers-firestore";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
   addSeatListingToBatch,
@@ -83,6 +84,9 @@ export async function assignProductToRetailer(
   const retailerStoreName = retailerData
     ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
     : "";
+  if (!retailerPhone && retailerData?.phone) {
+    retailerPhone = String(retailerData.phone);
+  }
 
   // Guard against duplicate active assignment (keyed on retailerDocId — works pre-signup)
   const dupQ = query(
@@ -184,21 +188,48 @@ export async function assignProductToRetailer(
   // Phase 4B: Subcollection mirrors (fire-and-forget, non-critical)
   (async () => {
     try {
-      if (manufacturerPhone) {
-        setDoc(
-          doc(db, `manufacturers/${manufacturerPhone}/products/${input.productId}`),
-          { manufacturerId: input.manufacturerId, manufacturerPhone, retailerDocId: input.retailerDocId, retailerPhone, assignedAt: serverTimestamp() },
-          { merge: true },
-        ).catch(() => {});
-      }
       if (retailerPhone) {
         setDoc(
           doc(db, `retailers/${retailerPhone}/products/${retailerProductRef.id}`),
           { retailerId: input.retailerId ?? input.retailerDocId, retailerPhone, manufacturerId: input.manufacturerId, manufacturerPhone, assignedAt: serverTimestamp() },
           { merge: true },
         ).catch(() => {});
+
+        setDoc(
+          doc(db, `retailers/${retailerPhone}/inventory/${inventoryRef.id}`),
+          {
+            id: inventoryRef.id,
+            productId: retailerProductRef.id,
+            stockQuantity: 0,
+            sellingPrice: typeof src.price === "number" ? src.price : 0,
+            reorderThreshold: 5,
+            isAvailable: false,
+            updatedAt: serverTimestamp(),
+            assignedByManufacturer: true
+          },
+          { merge: true }
+        ).catch(() => {});
       }
     } catch { /* non-critical */ }
+
+    // Always attempt to repair/confirm the manufacturer→retailer mirror,
+    // independent of whether the retailer subcollection batch above succeeded.
+    if (manufacturerPhone && retailerPhone) {
+      await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+        retailerDocId: input.retailerDocId,
+        retailerPhone,
+        manufacturerPhone,
+        shopName: retailerStoreName,
+      });
+    }
+
+    // Flip onboardingStatus → "active" on the invite link doc now that a product is assigned.
+    await activateRetailerOnProductAssignment(
+      input.manufacturerId,
+      input.retailerDocId,
+      manufacturerPhone,
+      retailerPhone,
+    );
   })();
 
   return { seatListingId, retailerProductId: retailerProductRef.id };
@@ -337,6 +368,7 @@ export async function bulkAssignProductsToRetailer(
   const batch = writeBatch(db);
   const assigned: string[] = [];
   const failed: string[] = [];
+  const assignedDetails: { manufacturerProductId: string; retailerProductId: string; inventoryId: string; sellingPrice: number }[] = [];
 
   for (let i = 0; i < toAssign.length; i++) {
     const productId = toAssign[i];
@@ -427,6 +459,12 @@ export async function bulkAssignProductsToRetailer(
     });
 
     assigned.push(productId);
+    assignedDetails.push({
+      manufacturerProductId: productId,
+      retailerProductId: retailerProductRef.id,
+      inventoryId: inventoryRef.id,
+      sellingPrice: typeof src.price === "number" ? src.price : 0,
+    });
   }
 
   await batch.commit();
@@ -442,20 +480,27 @@ export async function bulkAssignProductsToRetailer(
         const mirrorBatch = wb(wDb);
         const mirrorNow = wTs();
 
-        for (const productId of assigned) {
-          // manufacturers/{manufacturerPhone}/products/{productId}
-          if (manufacturerPhone) {
-            mirrorBatch.set(
-              wDoc(wDb, `manufacturers/${manufacturerPhone}/products/${productId}`),
-              { manufacturerId, manufacturerPhone, retailerDocId, retailerPhone, assignedAt: mirrorNow },
-              { merge: true },
-            );
-          }
-          // retailers/{retailerPhone}/products/{productId}
+        for (const item of assignedDetails) {
+          // retailers/{retailerPhone}/products/{retailerProductId}
           if (retailerPhone) {
             mirrorBatch.set(
-              wDoc(wDb, `retailers/${retailerPhone}/products/${productId}`),
+              wDoc(wDb, `retailers/${retailerPhone}/products/${item.retailerProductId}`),
               { retailerId: retailerId ?? retailerDocId, retailerPhone, manufacturerId, manufacturerPhone, assignedAt: mirrorNow },
+              { merge: true },
+            );
+
+            mirrorBatch.set(
+              wDoc(wDb, `retailers/${retailerPhone}/inventory/${item.inventoryId}`),
+              {
+                id: item.inventoryId,
+                productId: item.retailerProductId,
+                stockQuantity: 0,
+                sellingPrice: item.sellingPrice,
+                reorderThreshold: 5,
+                isAvailable: false,
+                updatedAt: mirrorNow,
+                assignedByManufacturer: true
+              },
               { merge: true },
             );
           }
@@ -464,6 +509,25 @@ export async function bulkAssignProductsToRetailer(
       } catch (e) {
         console.warn("[bulkAssign] Subcollection mirror write failed (non-critical):", e);
       }
+
+      // Always attempt to repair/confirm the manufacturer→retailer mirror,
+      // independent of whether the retailer subcollection batch above succeeded.
+      if (manufacturerPhone && retailerPhone) {
+        await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+          retailerDocId,
+          retailerPhone,
+          manufacturerPhone,
+          shopName: retailerStoreName,
+        });
+      }
+
+      // Flip onboardingStatus → "active" now that at least one product is assigned.
+      await activateRetailerOnProductAssignment(
+        manufacturerId,
+        retailerDocId,
+        manufacturerPhone,
+        retailerPhone,
+      );
     })();
   }
 

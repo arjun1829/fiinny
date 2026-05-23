@@ -23,6 +23,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { syncRetailerMirror } from "../../dashboard/_lib/manufacturer-retailers-firestore";
 import {
   mapInviteAcceptanceError,
   mapInviteSnapshot,
@@ -262,9 +263,24 @@ export async function autoAcceptPendingInvitesForPhone(uid: string): Promise<boo
       await updateDoc(d.ref, {
         status: "active",
         retailerId: uid,
+        // Explicitly write retailerPhone in E164 so the Firestore rule
+        // `request.resource.data.retailerPhone == myPhone()` always matches,
+        // regardless of what format was stored at invite-creation time.
+        retailerPhone: e164Phone,
         claimable: false,
         updatedAt: serverTimestamp(),
       });
+      // Sync the manufacturer mirror immediately after activating the invite
+      const mPhone = data.manufacturerPhone ? String(data.manufacturerPhone) : null;
+      if (mPhone && e164Phone) {
+        await syncRetailerMirror(mPhone, e164Phone, {
+          status: "active",
+          retailerId: uid,
+          retailerPhone: e164Phone,
+          onboardingStatus: String(data.onboardingStatus ?? "active"),
+          assignedSeat: data.assignedSeat === true,
+        });
+      }
       const res = await backfillRetailerAfterInvite(uid, retailerDocId);
       if (res) console.warn(`[autoAccept] Backfill warning for ${d.id}:`, res);
       anyAccepted = true;
@@ -276,28 +292,82 @@ export async function autoAcceptPendingInvitesForPhone(uid: string): Promise<boo
 }
 
 /**
- * For retailers already linked to a manufacturer (status=active, retailerId=uid)
- * but missing isPaid:true — sets it so the dashboard becomes accessible.
+ * For retailers already linked to a manufacturer (status=active) but missing
+ * isPaid:true — sets it so the dashboard becomes accessible.
+ *
+ * Queries by both retailerId (UID) and retailerPhone (E164 + 10-digit) so it works
+ * for retailers who signed up after the invite was created (retailerId was empty).
  * Safe to call on every login; no-ops if already paid or no link found.
  * Returns true if access was granted.
  */
 export async function grantAccessIfManufacturerLinked(uid: string): Promise<boolean> {
-  const snap = await getDocs(query(
-    collection(db, "manufacturerRetailers"),
-    where("retailerId", "==", uid),
-  ));
+  // Resolve phone for phone-based queries
+  let phone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+    phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+  } catch { /* ignore */ }
 
-  const hasActive = snap.docs.some((d) => d.data().status === "active");
+  const phoneQueries = [
+    getDocs(query(collection(db, "manufacturerRetailers"), where("retailerId", "==", uid))),
+  ];
+  if (phone) {
+    phoneQueries.push(
+      getDocs(query(collection(db, "manufacturerRetailers"), where("retailerPhone", "==", phone))),
+    );
+    // Also check raw 10-digit variant for legacy docs
+    const raw = phone.startsWith("+91") && phone.length === 13 ? phone.slice(3) : null;
+    if (raw) {
+      phoneQueries.push(
+        getDocs(query(collection(db, "manufacturerRetailers"), where("retailerPhone", "==", raw))),
+      );
+    }
+  }
+
+  const snaps = await Promise.all(phoneQueries);
+  const hasActive = snaps.some((snap) =>
+    snap.docs.some((d) => d.data().status === "active"),
+  );
   if (!hasActive) return false;
 
-  const idxSnap = await getDoc(doc(db, "uidIndex", uid));
-  const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
   const userDocId = phone || uid;
-
   await setDoc(doc(db, "users", userDocId), {
     isPaid: true,
     updatedAt: serverTimestamp(),
   }, { merge: true });
+
+  return true;
+}
+
+/**
+ * Last-resort access check: grants dashboard access if the retailer has at least one
+ * active, non-expired manufacturer-assigned seat listing in `retailerSeatListings`.
+ *
+ * This covers the case where the invite acceptance flow failed silently (e.g., Firestore
+ * rule mismatch, network error) but the manufacturer already assigned a product — which
+ * creates the seat listing — so the retailer legitimately has earned access.
+ *
+ * Also repairs the `isPaid` flag as a side effect so future logins are fast.
+ */
+export async function grantAccessIfHasActiveSeat(uid: string): Promise<boolean> {
+  let phone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+    phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+  } catch { /* ignore */ }
+
+  const { retailerHasActiveSeat } = await import("../../dashboard/_lib/subscriptions-firestore");
+  const hasSeat = await retailerHasActiveSeat(uid, phone).catch(() => false);
+  if (!hasSeat) return false;
+
+  // Repair the isPaid flag so subsequent logins skip all these fallback checks.
+  const userDocId = phone || uid;
+  await setDoc(doc(db, "users", userDocId), {
+    isPaid: true,
+    updatedAt: serverTimestamp(),
+  }, { merge: true }).catch((e) => {
+    console.warn("[grantAccessIfHasActiveSeat] Could not repair isPaid flag:", e);
+  });
 
   return true;
 }
@@ -362,8 +432,13 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
     });
 
     inventorySnap.docs.forEach((d) => {
+      const data = d.data() as Record<string, unknown>;
       const updateData: Record<string, any> = { retailerId: uid, updatedAt: now };
-      if (phone) updateData.retailerPhone = phone;
+      if (String(data.ownerId ?? "") === retailerDocId) updateData.ownerId = uid;
+      if (phone) {
+        updateData.retailerPhone = phone;
+        if (String(data.ownerId ?? "") === retailerDocId) updateData.ownerPhone = phone;
+      }
       batch.update(d.ref, updateData);
     });
 
@@ -379,6 +454,84 @@ export async function backfillRetailerAfterInvite(uid: string, retailerDocId: st
     console.log("[backfill] Committing batch update...");
     await batch.commit();
     console.log("[backfill] Success!");
+
+    // Sync all manufacturer mirror docs for this retailer to status: "active"
+    if (phone) {
+      (async () => {
+        try {
+          // Find all manufacturerRetailers docs that match this retailerDocId
+          const inviteSnap = await getDocs(query(
+            collection(db, "manufacturerRetailers"),
+            where("retailerDocId", "==", retailerDocId),
+          ));
+          await Promise.all(inviteSnap.docs.map(async (inviteDoc) => {
+            const d = inviteDoc.data() as Record<string, unknown>;
+            const mPhone = d.manufacturerPhone ? String(d.manufacturerPhone) : null;
+            if (!mPhone) {
+              console.warn("[backfill] Skipping mirror for invite without manufacturerPhone:", inviteDoc.id);
+              return;
+            }
+            await syncRetailerMirror(mPhone, phone, {
+              status: "active",
+              retailerId: uid,
+              retailerPhone: phone,
+              onboardingStatus: String(d.onboardingStatus ?? "active"),
+              assignedSeat: d.assignedSeat === true,
+            });
+          }));
+        } catch (e) {
+          console.warn("[backfill] Manufacturer mirror sync failed:", e);
+        }
+      })();
+    }
+
+    // Mirror synced records to phone-keyed subcollections (fire-and-forget)
+    if (phone) {
+      import("firebase/firestore").then(({ writeBatch: wb, doc: wDoc, serverTimestamp: wTs }) => {
+        const mirrorBatch = wb(db);
+        const mirrorNow = wTs();
+
+        productsSnap.docs.forEach((d) => {
+          const data = d.data() as Record<string, any>;
+          mirrorBatch.set(
+            wDoc(db, `retailers/${phone}/products/${d.id}`),
+            {
+              retailerId: uid,
+              retailerPhone: phone,
+              manufacturerId: data.manufacturerId ?? null,
+              manufacturerPhone: data.manufacturerPhone ?? null,
+              assignedAt: data.createdAt ?? mirrorNow,
+            },
+            { merge: true }
+          );
+        });
+
+        inventorySnap.docs.forEach((d) => {
+          const data = d.data() as Record<string, any>;
+          mirrorBatch.set(
+            wDoc(db, `retailers/${phone}/inventory/${d.id}`),
+            {
+              id: d.id,
+              productId: data.productId ?? null,
+              stockQuantity: data.stockQuantity ?? 0,
+              sellingPrice: data.sellingPrice ?? 0,
+              reorderThreshold: data.reorderThreshold ?? 5,
+              isAvailable: data.isAvailable ?? false,
+              updatedAt: mirrorNow,
+              assignedByManufacturer: true,
+            },
+            { merge: true }
+          );
+        });
+
+        mirrorBatch.commit().catch((me) => {
+          console.warn("[backfill] Mirror batch commit failed:", me);
+        });
+      }).catch((ie) => {
+        console.warn("[backfill] Mirror dynamic import failed:", ie);
+      });
+    }
+
     return undefined; // success
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

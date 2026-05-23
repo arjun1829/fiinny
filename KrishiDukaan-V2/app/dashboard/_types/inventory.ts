@@ -72,9 +72,10 @@ export interface InventoryRow {
   ownerId?: string;
 }
 
-/** Row for the manufacturer's catalogue table (no stock/inventory data). */
+/** Row for the manufacturer's catalogue table. */
 export interface ManufacturerProductRow {
   productId: string;
+  inventoryId?: string;
   productName: string;
   category: string;
   unit: string;

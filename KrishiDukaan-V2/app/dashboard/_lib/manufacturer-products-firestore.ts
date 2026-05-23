@@ -7,6 +7,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -47,7 +48,7 @@ export type ManufacturerProductInput = {
 export async function createManufacturerProduct(
   manufacturerId: string,
   input: ManufacturerProductInput,
-): Promise<{ productId: string; seatListingId: string }> {
+): Promise<{ productId: string; inventoryId: string; seatListingId: string }> {
   const [subs, listings] = await Promise.all([
     fetchSubscriptions(manufacturerId),
     fetchSeatListingsForOwner(manufacturerId),
@@ -71,6 +72,7 @@ export async function createManufacturerProduct(
     : "";
 
   const now = serverTimestamp();
+  const stockQty = input.stockQuantity ?? 0;
   const batch = writeBatch(db);
 
   const productRef = doc(collection(db, "products"));
@@ -86,12 +88,31 @@ export async function createManufacturerProduct(
     images: input.images ?? [],
     isActive: true,
     ownerId: manufacturerId,
+    ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
     createdBy: manufacturerId,
     manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     store: storeName,
     source: "manufacturer_inventory",
     createdAt: now,
+    updatedAt: now,
+  });
+
+  // Inventory record for the manufacturer's own stock
+  const inventoryRef = doc(collection(db, "inventory"));
+  batch.set(inventoryRef, {
+    id: inventoryRef.id,
+    ownerId: manufacturerId,
+    ownerPhone: manufacturerPhone ?? null,
+    ownerType: "manufacturer",
+    manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
+    productId: productRef.id,
+    stockQuantity: stockQty,
+    sellingPrice: input.price,
+    reorderThreshold: 0,
+    isAvailable: stockQty > 0,
     updatedAt: now,
   });
 
@@ -116,7 +137,37 @@ export async function createManufacturerProduct(
   }
 
   await batch.commit();
-  return { productId: productRef.id, seatListingId };
+
+  // Subcollection mirrors (fire-and-forget)
+  if (manufacturerPhone) {
+    setDoc(
+      doc(db, `manufacturers/${manufacturerPhone}/products/${productRef.id}`),
+      {
+        productId: productRef.id,
+        name: input.name.trim(),
+        category: input.category.trim(),
+        isActive: true,
+        addedAt: now
+      },
+      { merge: true }
+    ).catch(() => {});
+
+    setDoc(
+      doc(db, `manufacturers/${manufacturerPhone}/inventory/${inventoryRef.id}`),
+      {
+        id: inventoryRef.id,
+        productId: productRef.id,
+        stockQuantity: stockQty,
+        sellingPrice: input.price,
+        reorderThreshold: 0,
+        isAvailable: stockQty > 0,
+        updatedAt: now,
+      },
+      { merge: true }
+    ).catch(() => {});
+  }
+
+  return { productId: productRef.id, inventoryId: inventoryRef.id, seatListingId };
 }
 
 /** Fetches all seat listings belonging to this manufacturer (own + assigned). */

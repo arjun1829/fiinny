@@ -6,6 +6,7 @@ import { auth, getUserProfile } from '../firebase';
 import {
   autoAcceptPendingInvitesForPhone,
   grantAccessIfManufacturerLinked,
+  grantAccessIfHasActiveSeat,
 } from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -32,8 +33,11 @@ export default function DashboardLayout({
         if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
           setLoading(false);
         } else if (role === 'retailer') {
-          // Retailer not yet marked paid — try auto-accepting pending invites by phone,
-          // then check if they're already linked to a manufacturer network.
+          // Retailer not yet marked paid — try progressively cheaper checks:
+          // 1. Auto-accept any pending phone-matched invites (sets isPaid:true via backfill).
+          // 2. Grant access if already linked to an active manufacturer network.
+          // 3. Direct seat check: has at least one active assigned seat listing (source of truth).
+          //    This catches cases where steps 1/2 failed but the seat was already created.
           const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
           if (accepted) {
             setLoading(false);
@@ -42,7 +46,12 @@ export default function DashboardLayout({
             if (linked) {
               setLoading(false);
             } else {
-              router.push('/');
+              const hasSeat = await grantAccessIfHasActiveSeat(user.uid).catch(() => false);
+              if (hasSeat) {
+                setLoading(false);
+              } else {
+                router.push('/');
+              }
             }
           }
         } else {

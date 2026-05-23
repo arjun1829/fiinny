@@ -61,18 +61,15 @@ async function resolveUserProfileDocId(uid: string): Promise<string | null> {
 }
 
 async function resolveRetailerStoreDocId(uid: string): Promise<string> {
-  const userProfileDocId = await resolveUserProfileDocId(uid);
-  if (userProfileDocId) {
-    try {
-      const userSnap = await getDoc(doc(db, 'users', userProfileDocId));
-      if (userSnap.exists()) {
-        const retailerDocId = String(userSnap.data()?.retailerDocId ?? '').trim();
-        if (retailerDocId) return retailerDocId;
-      }
-    } catch {
-      // fall through
+  // With the phone-based schema, the retailers/ document ID is the normalized phone.
+  // Resolve from uidIndex first (authoritative), then fall back to uid for legacy accounts.
+  try {
+    const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+    if (idxSnap.exists()) {
+      const phone = String(idxSnap.data().phone ?? '').trim();
+      if (phone) return phone;
     }
-  }
+  } catch { /* fall through */ }
   return uid;
 }
 
@@ -137,10 +134,12 @@ export async function saveRetailerApplication(payload: RetailerApplication) {
     throw new Error('Please add at least one product with quantity.');
   }
 
-  await addDoc(collection(db, 'retailers'), {
+  // Use normalized phone as the document ID so the record is deterministic and dedup-safe
+  const normalizedPhone = toE164(payload.phone.trim());
+  await setDoc(doc(db, 'retailers', normalizedPhone), {
     ownerName: payload.ownerName.trim(),
     shopName: payload.shopName.trim(),
-    phone: payload.phone.trim(),
+    phone: normalizedPhone,
     email: payload.email.trim(),
     address: payload.address.trim(),
     city: payload.city.trim(),
@@ -154,7 +153,7 @@ export async function saveRetailerApplication(payload: RetailerApplication) {
     status: 'pending',
     userType: 'retailer',
     createdAt: serverTimestamp()
-  });
+  }, { merge: true });
 }
 
 export async function saveRetailerProfile(retailerId: string, profile: RetailerProfile) {
