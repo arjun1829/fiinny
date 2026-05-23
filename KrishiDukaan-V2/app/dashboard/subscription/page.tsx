@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckSquare, ChevronLeft, ChevronRight, CreditCard, Filter, Loader2, RefreshCw, Search, Square, Trash2, X } from "lucide-react";
-import { collection, documentId, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
 import { auth, db, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import {
@@ -580,6 +580,7 @@ export default function SubscriptionPage() {
   const [stats, setStats] = useState<SeatStats | null>(null);
   const [retailerMap, setRetailerMap] = useState<Map<string, string>>(new Map());
   const [productMap, setProductMap] = useState<Map<string, { name: string; image: string }>>(new Map());
+  const [manufacturerNameMap, setManufacturerNameMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -595,8 +596,9 @@ export default function SubscriptionPage() {
       setOwnListings(ownData);
       setStats(computeSeatStats(subsData, ownData));
 
+      let assigned: RetailerSeatListing[] = [];
       if (userRole === "retailer") {
-        const assigned = await fetchSeatListingsForRetailer(userId);
+        assigned = await fetchSeatListingsForRetailer(userId);
         setAssignedToMe(assigned);
       } else {
         setAssignedToMe([]);
@@ -609,7 +611,7 @@ export default function SubscriptionPage() {
 
       // Fetch product name + image for all unique productIds in listings
       try {
-        const allListings = [...ownData, ...(userRole === "retailer" ? [] : [])];
+        const allListings = [...ownData, ...(userRole === "retailer" ? assigned : [])];
         const productIds = Array.from(new Set(allListings.map((l) => l.productId).filter(Boolean))) as string[];
         if (productIds.length > 0) {
           const CHUNK = 30; // Firestore `in` limit
@@ -628,6 +630,26 @@ export default function SubscriptionPage() {
           setProductMap(pMap);
         }
       } catch { /* non-critical */ }
+
+      // Fetch manufacturer business names for assigned-to-me listings
+      if (userRole === "retailer" && assigned.length > 0) {
+        try {
+          const uniqueMfrIds = Array.from(new Set(assigned.map((l) => l.manufacturerId).filter(Boolean))) as string[];
+          const mfrNameMap = new Map<string, string>();
+          await Promise.all(uniqueMfrIds.map(async (mfrId) => {
+            try {
+              const idxSnap = await getDoc(doc(db, "uidIndex", mfrId));
+              const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+              const mfrSnap = await getDoc(doc(db, "manufacturers", phone || mfrId));
+              if (mfrSnap.exists()) {
+                const d = mfrSnap.data() as Record<string, unknown>;
+                mfrNameMap.set(mfrId, String(d.businessName ?? d.ownerName ?? ""));
+              }
+            } catch { /* skip */ }
+          }));
+          setManufacturerNameMap(mfrNameMap);
+        } catch { /* non-critical */ }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load subscription data.");
     } finally {
@@ -835,6 +857,8 @@ export default function SubscriptionPage() {
                     <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
                       <tr>
                         <th className="whitespace-nowrap px-4 py-3 font-medium">{t('statusCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">Product</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">Manufacturer</th>
                         <th className="whitespace-nowrap px-4 py-3 font-medium">{t('assignedCol')}</th>
                         <th className="whitespace-nowrap px-4 py-3 font-medium">{t('expiresCol')}</th>
                       </tr>
@@ -851,6 +875,14 @@ export default function SubscriptionPage() {
                         >
                           <td className="px-4 py-3">
                             <ListingBadge listing={listing} />
+                          </td>
+                          <td className="px-4 py-3 text-on-surface font-medium">
+                            {productMap.get(listing.productId)?.name ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-on-surface-variant">
+                            {listing.manufacturerId
+                              ? (manufacturerNameMap.get(listing.manufacturerId) ?? "—")
+                              : "—"}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
                             {listing.assignedAt

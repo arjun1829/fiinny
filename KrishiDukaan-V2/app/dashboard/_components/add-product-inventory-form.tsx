@@ -13,6 +13,7 @@ import { createProductAndInventory, retailerHasProduct } from "../_lib/inventory
 import type { SeatStats } from "../_types/subscriptions";
 import { useI18n } from "../../i18n/I18nContext";
 import { HelperIcon } from "../../../components/helpers";
+import { StatusToast } from "../../components/shared/status-toast";
 import type { MarketplaceProduct } from "../../../types/product";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -401,15 +402,12 @@ export function AddProductInventoryForm({
         </div>
       )}
 
-      {message && (
-        <div className={`mt-4 rounded-xl px-4 py-3 text-sm font-medium ${
-          message.type === "ok"
-            ? "border border-primary/30 bg-primary/10 text-primary"
-            : "border border-red-200 bg-red-50 text-red-700"
-        }`}>
-          {message.text}
-        </div>
-      )}
+      <StatusToast
+        message={message?.text ?? null}
+        type={message?.type === "ok" ? "success" : "error"}
+        onDismiss={() => setMessage(null)}
+        autoClose={message?.type === "err" ? 0 : 3500}
+      />
 
       <form className="mt-6 flex flex-col gap-6" onSubmit={handleSubmit}>
 

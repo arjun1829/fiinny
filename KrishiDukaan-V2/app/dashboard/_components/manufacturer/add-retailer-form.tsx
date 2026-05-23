@@ -27,6 +27,7 @@ type AddRetailerModalProps = {
     shopName: string;
     retailerEmail: string;
     retailerPhone: string;
+    retailerDocId: string;
   }) => Promise<void>;
   onClose: () => void;
 };
@@ -236,7 +237,7 @@ export function AddRetailerModal({
     setSubmitting(true);
     setShowSuggestions(false);
     try {
-      await linkExistingRetailerToNetwork({
+      const linked = await linkExistingRetailerToNetwork({
         manufacturerId,
         manufacturerName,
         retailerUid: target.id,
@@ -250,6 +251,7 @@ export function AddRetailerModal({
         shopName: target.shopName || target.name || t('retailerFallbackName'),
         retailerEmail: target.email || "",
         retailerPhone: target.phone || "",
+        retailerDocId: linked.retailerDocId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToLinkRetailer'));
@@ -388,7 +390,7 @@ export function AddRetailerModal({
 
     setSubmitting(true);
     try {
-      const { inviteCode } = await createNetworkRetailer({
+      const { inviteCode, retailerDocId } = await createNetworkRetailer({
         manufacturerId,
         shopName: shopName.trim(),
         ownerName: ownerName.trim(),
@@ -428,6 +430,7 @@ export function AddRetailerModal({
         shopName: shopName.trim(),
         retailerEmail: trimmedEmail,
         retailerPhone: trimmedPhone,
+        retailerDocId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToAddRetailer'));

@@ -307,10 +307,13 @@ service cloud.firestore {
 
     match /manufacturers/{manufacturerId} {
       allow read: if true;
+      // Allow write when manufacturerId is the auth UID (legacy) OR the caller's phone (new schema)
       allow create, update: if isAuthed() && (
-        request.auth.uid == manufacturerId || manufacturerId == request.auth.uid
+        request.auth.uid == manufacturerId || myPhone() == manufacturerId
       );
-      allow delete: if isAuthed() && request.auth.uid == manufacturerId;
+      allow delete: if isAuthed() && (
+        request.auth.uid == manufacturerId || myPhone() == manufacturerId
+      );
     }
 
     match /inventory/{inventoryId} {

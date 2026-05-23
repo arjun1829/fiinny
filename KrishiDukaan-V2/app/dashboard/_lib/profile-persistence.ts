@@ -94,13 +94,30 @@ function addressFromDoc(data: Record<string, unknown>) {
   };
 }
 
+/** Resolves the Firestore document ID for a manufacturer — phone (new) or uid (legacy). */
+export async function resolveManufacturerDocId(uid: string): Promise<string> {
+  const phone = await phoneFromUid(uid);
+  return phone || uid;
+}
+
 export async function loadProfileState(
   uid: string,
   role: DashboardProfileRole,
   authEmail: string | null,
 ): Promise<LoadedProfileState> {
   const col = role === "manufacturer" ? "manufacturers" : "retailers";
-  const snap = await getDoc(doc(db, col, uid));
+
+  // For manufacturers: try phone-keyed doc first (new schema), fall back to uid-keyed (legacy)
+  let snap;
+  if (role === "manufacturer") {
+    const phone = await phoneFromUid(uid);
+    snap = phone ? await getDoc(doc(db, col, phone)) : null;
+    if (!snap?.exists()) {
+      snap = await getDoc(doc(db, col, uid));
+    }
+  } else {
+    snap = await getDoc(doc(db, col, uid));
+  }
 
   // Base empty form — try to pre-populate name/phone from users/{phone}
   let prefillName = "";
@@ -194,14 +211,18 @@ export async function saveManufacturerProfile(
   existingCreatedAt: unknown | null,
 ): Promise<void> {
   const trimmedEmail = form.email.trim();
+  const phone = await phoneFromUid(uid);
+  // Phone is the canonical doc ID so profile and subcollections share the same parent doc
+  const manufacturerDocId = phone || uid;
+
   await setDoc(
-    doc(db, "manufacturers", uid),
+    doc(db, "manufacturers", manufacturerDocId),
     {
       uid,
       manufacturerId: uid,
       businessName: form.businessName.trim(),
       ownerName:    form.ownerName.trim(),
-      phone:        form.phone.trim(),
+      phone:        form.phone.trim() || phone || "",
       email:        trimmedEmail,
       geo,
       address: {
@@ -218,7 +239,6 @@ export async function saveManufacturerProfile(
 
   // Sync email to users/{phone} so notifications work
   if (trimmedEmail) {
-    const phone = await phoneFromUid(uid);
     const target = phone ? doc(db, "users", phone) : doc(db, "users", uid);
     await setDoc(target, { email: trimmedEmail, updatedAt: serverTimestamp() }, { merge: true });
   }
