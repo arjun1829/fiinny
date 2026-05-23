@@ -34,6 +34,16 @@ service cloud.firestore {
       return isDirectAdmin() || (isAuthed() && myRole() == 'admin');
     }
 
+    // Compares a stored phone value against the caller's phone (myPhone()),
+    // handling both E164 (+919876543210) and 10-digit (9876543210) formats.
+    // This is the fix for the invite-acceptance "Missing or insufficient permissions" error:
+    // retailerDocId is stored as a 10-digit phone, but myPhone() returns E164.
+    function phoneMatches(storedPhone) {
+      return storedPhone == myPhone() ||
+             storedPhone == myPhone().replace('+91', '') ||
+             ('+91' + storedPhone) == myPhone();
+    }
+
     // ─── uidIndex ────────────────────────────────────────────────────────────
     // Maps Firebase Auth UID → normalized phone. Written once on first login.
     // Rule deliberately avoids myPhone() to break the bootstrap chicken-and-egg.
@@ -308,13 +318,19 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId == myPhone()
+        // retailerDocId can be stored as 10-digit or E164 — match both formats
+        phoneMatches(resource.data.retailerDocId) ||
+        // Allow if retailerPhone is set (post-backfill) and matches caller
+        (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone))
       );
       allow create: if isAuthed();
       allow update: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
-        (resource.data.retailerDocId == myPhone() && request.resource.data.retailerId == request.auth.uid)
+        // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
+        (phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid) ||
+        // Also allow if retailerPhone already matches (re-running backfill)
+        (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone) && request.resource.data.retailerId == request.auth.uid)
       );
       allow delete: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -326,7 +342,9 @@ service cloud.firestore {
       allow get: if isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
-        resource.data.retailerId == request.auth.uid
+        resource.data.retailerId == request.auth.uid ||
+        // Allow retailer to read their own invite by phone (for auto-accept flow)
+        phoneMatches(resource.data.retailerPhone)
       );
       allow list: if isAuthed();
       allow create: if isAuthed() && (
@@ -336,11 +354,13 @@ service cloud.firestore {
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         (
-          // Allow claim/takeover if phone matches or it's a fresh invite
+          // Allow claim/takeover: phone matches (any format) OR it's a fresh phoneless invite
           (
             (resource.data.status == 'invited' && resource.data.claimable == true && resource.data.retailerId == '') ||
-            (resource.data.retailerPhone == myPhone() || resource.data.retailerPhone == myPhone().replace('+91', ''))
+            phoneMatches(resource.data.retailerPhone)
           ) &&
+          resource.data.status == 'invited' &&
+          resource.data.claimable == true &&
           request.resource.data.status == 'active' &&
           request.resource.data.retailerId == request.auth.uid &&
           request.resource.data.claimable == false
@@ -357,12 +377,12 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        resource.data.retailerDocId == myPhone()
+        phoneMatches(resource.data.retailerDocId)
       ));
       allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        (resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid)
+        (resource.data.retailerDocId != null && phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid)
       );
       allow delete: if isAuthed() && resource.data.ownerId == request.auth.uid;
     }

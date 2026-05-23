@@ -221,7 +221,7 @@ export async function saveRetailerProduct(
 export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> {
   try {
     const snapshot = await getDocs(collection(db, 'products'));
-    return snapshot.docs
+    const raw = snapshot.docs
       .map((item) => {
         const data = item.data();
         return {
@@ -238,6 +238,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           distance: String(data.distance || 'Nearby'),
           retailerId: data.retailerId ? String(data.retailerId) : undefined,
           retailerPhone: data.retailerPhone ? String(data.retailerPhone) : undefined,
+          ownerId: data.ownerId ? String(data.ownerId) : undefined,
           manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
           manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
           sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
@@ -246,8 +247,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           source: data.source ? String(data.source) : undefined,
         } as MarketplaceProduct;
       })
-      // Exclude per-retailer copies — they are represented by the original product's
-      // availability[] array, so they would appear as duplicates in the marketplace.
+      // Exclude per-retailer copies — represented by the original product's availability[].
+      // Exclude manufacturer_assigned — retailer manages their own listing.
       .filter((product) =>
         product.name &&
         product.image &&
@@ -255,6 +256,55 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         (product as any).source !== 'manufacturer_assigned' &&
         (product as any).source !== 'retailer_inventory_copy'
       );
+
+    // Deduplicate by name: if two products share the same name (case-insensitive),
+    // keep the manufacturer_inventory card as canonical and merge the retailer's
+    // store info into its availability array so farmers see one card with all sources.
+    const byName = new Map<string, MarketplaceProduct>();
+    for (const p of raw) {
+      const key = p.name.toLowerCase().trim();
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, { ...p, availability: p.availability ? [...p.availability] : [] });
+        continue;
+      }
+
+      const existingIsManufacturer = existing.source === 'manufacturer_inventory';
+      const pIsManufacturer = p.source === 'manufacturer_inventory';
+      const canonical = (!existingIsManufacturer && pIsManufacturer) ? { ...p, availability: p.availability ? [...p.availability] : [] } : existing;
+      const secondary = (!existingIsManufacturer && pIsManufacturer) ? existing : p;
+
+      // Merge secondary's own availability entries into canonical
+      const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
+      for (const entry of (secondary.availability ?? [])) {
+        const dup = av.some(
+          (a) => a.storeId === entry.storeId ||
+                 (entry.storePhone && a.storePhone === entry.storePhone),
+        );
+        if (!dup) av.push(entry);
+      }
+
+      // Also register the secondary product itself as an availability source
+      const secondaryStoreId = (secondary as any).ownerId || secondary.retailerId || '';
+      const secondaryPhone = secondary.retailerPhone;
+      const alreadyPresent = av.some(
+        (a) => (secondaryStoreId && a.storeId === secondaryStoreId) ||
+               (secondaryPhone && a.storePhone === secondaryPhone),
+      );
+      if (!alreadyPresent && (secondaryStoreId || secondaryPhone)) {
+        av.push({
+          storeId: secondaryStoreId,
+          storePhone: secondaryPhone,
+          storeName: secondary.store || undefined,
+          stockLevel: secondary.stock || 'In Stock',
+          sellingPrice: secondary.price,
+        });
+      }
+
+      byName.set(key, { ...canonical, availability: av.length > 0 ? av : undefined });
+    }
+
+    return Array.from(byName.values());
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
     throw error;

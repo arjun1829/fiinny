@@ -69,11 +69,16 @@ export async function acceptManufacturerInvite(params: {
 
   console.log(`[acceptInvite] Starting for code: ${code}, uid: ${params.uid}`);
 
-  const normalize = (p: string) => {
+  const normalize = (p: string): string => {
+    if (!p) return "";
     const d = p.replace(/\D/g, '');
-    if (d.length === 12 && d.startsWith('91')) return d.slice(2);
-    if (d.length === 10) return d;
-    return d;
+    // Always produce E164 to match uidIndex format and invite doc format
+    if (d.length === 10) return `+91${d}`;
+    if (d.length === 12 && d.startsWith('91')) return `+${d}`;
+    if (d.length === 13 && d.startsWith('91')) return `+${d}`;
+    // Already has +, return as-is (already E164)
+    if (p.startsWith('+')) return p.trim();
+    return p.trim();
   };
 
   // Resolve the current user's phone
@@ -102,10 +107,11 @@ export async function acceptManufacturerInvite(params: {
     return { ok: false, message: "Could not look up invite code. Try again." };
   }
   
-  // Normalize invite phone for validation
+  // Normalize invite phone to E164 for comparison (same format as currentPhone and uidIndex)
   if (initial) {
       initial.retailerPhone = normalize(initial.retailerPhone);
   }
+
 
   const pre = precheckInviteForAcceptance(initial, currentPhone);
   if (!pre.ok) {

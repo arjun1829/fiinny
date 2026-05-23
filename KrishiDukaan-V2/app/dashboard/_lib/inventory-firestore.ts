@@ -378,6 +378,38 @@ export async function fetchManufacturerCatalogueRows(
 
 // ─── Write operations ─────────────────────────────────────────────────────────
 
+/**
+ * Returns true if this retailer already has an active product listing that
+ * matches by originalProductId (autofill path) OR by name + unit (manual path).
+ *
+ * Uses only the indexed ownerId+ownerType query to avoid requiring new composite
+ * indexes. Client-side filtering is acceptable because retailers have few products.
+ */
+export async function retailerHasProduct(
+  ownerId: string,
+  opts: { originalProductId?: string | null; name: string; unit: string },
+): Promise<boolean> {
+  const snap = await getDocs(
+    query(
+      collection(db, "products"),
+      where("ownerId", "==", ownerId),
+      where("ownerType", "==", "retailer"),
+    ),
+  );
+  const nameLower = opts.name.trim().toLowerCase();
+  const unitLower = opts.unit.trim().toLowerCase();
+
+  return snap.docs.some((d) => {
+    const data = d.data() as Record<string, unknown>;
+    if (data.isActive === false) return false;
+    if (opts.originalProductId && data.originalProductId === opts.originalProductId) return true;
+    return (
+      String(data.name ?? "").toLowerCase() === nameLower &&
+      String(data.unit ?? "").toLowerCase() === unitLower
+    );
+  });
+}
+
 export type AddProductInventoryInput = {
   name: string;
   category: string;
@@ -408,6 +440,18 @@ export async function createProductAndInventory(
   }
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
+
+  // Duplicate guard — prevent the same product being listed more than once
+  const isDuplicate = await retailerHasProduct(ownerId, {
+    originalProductId: input.existingProductId,
+    name: input.name,
+    unit: input.unit,
+  });
+  if (isDuplicate) {
+    throw new Error(
+      `"${input.name.trim()}" is already in your inventory. Edit the existing listing instead of adding it again.`,
+    );
+  }
 
   // Resolve owner phone for dual-field writes
   let ownerPhone: string | null = null;
@@ -456,10 +500,15 @@ export async function createProductAndInventory(
   });
 
   if (isCopy && input.existingProductId) {
-    // Append to original product's availability array
     const originalRef = doc(db, "products", input.existingProductId);
     batch.update(originalRef, {
-      availability: arrayUnion({ storeId: ownerId, stockLevel: "In Stock" })
+      availability: arrayUnion({
+        storeId: ownerId,
+        storePhone: ownerPhone ?? null,
+        storeName: (input.storeName ?? "").trim() || null,
+        stockLevel: "In Stock",
+        sellingPrice: input.sellingPrice,
+      }),
     });
   }
 

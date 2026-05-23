@@ -194,8 +194,14 @@ export default function ProductDetailView({
   const availableStores = useMemo(() => {
     const sourceStores = storesWithDistance.length > 0 ? storesWithDistance : stores;
     const filtered = sourceStores.filter(store => {
-      // 1. Check if assigned via availability array
-      const inAvailability = product.availability?.some(a => a.storeId === store.id);
+      // 1. Check if assigned via availability array (match by UID or phone)
+      const storePhone = (store as any).phone as string | undefined;
+      const inAvailability = product.availability?.some(
+        (a) =>
+          a.storeId === store.id ||
+          (a.storePhone && storePhone && a.storePhone === storePhone) ||
+          (a.storePhone && a.storePhone === store.id),
+      );
       if (inAvailability) return true;
       
       // 2. Check if this is the primary owner's store
@@ -268,7 +274,13 @@ export default function ProductDetailView({
           </div>
 
           {availableStores.length > 0 ? availableStores.map(store => {
-            const availability = product.availability?.find(a => a.storeId === store.id);
+            const storePhone = (store as any).phone as string | undefined;
+            const availability = product.availability?.find(
+              (a) =>
+                a.storeId === store.id ||
+                (a.storePhone && storePhone && a.storePhone === storePhone) ||
+                (a.storePhone && a.storePhone === store.id),
+            );
             const isExpanded = expandedStoreId === store.id;
             return (
               <div

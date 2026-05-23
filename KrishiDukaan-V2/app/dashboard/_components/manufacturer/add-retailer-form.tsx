@@ -400,7 +400,7 @@ export function AddRetailerModal({
 
       const trimmedEmail = email.trim().toLowerCase();
 
-      // Fire-and-forget: send invite email if retailer has an email address
+      // Send invite email — non-fatal, but log if it fails so the manufacturer knows to share the link manually
       if (trimmedEmail) {
         fetch("/api/email/invite", {
           method: "POST",
@@ -411,7 +411,16 @@ export function AddRetailerModal({
             inviteCode,
             manufacturerName,
           }),
-        }).catch(() => {/* email failure is non-fatal */});
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              const body = await res.text().catch(() => "");
+              console.warn("[invite email] Server returned error:", res.status, body);
+            }
+          })
+          .catch((err) => {
+            console.warn("[invite email] Network error — share the invite link manually:", err);
+          });
       }
 
       await onRetailerAdded({

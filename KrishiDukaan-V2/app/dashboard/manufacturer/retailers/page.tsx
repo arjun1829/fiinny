@@ -13,6 +13,7 @@ import { AssignProductModal } from "../../_components/manufacturer/assign-produc
 import { EditRetailerModal } from "../../_components/manufacturer/edit-retailer-modal";
 import { RetailerDetailsModal } from "../../_components/manufacturer/retailer-details-modal";
 import { InviteCard } from "../../_components/manufacturer/invite-card";
+import { BulkRetailerUpload } from "../../_components/manufacturer/bulk-retailer-upload";
 import {
   fetchManufacturerRetailers,
   removeNetworkRetailer,
@@ -212,6 +213,23 @@ export default function ManufacturerRetailersPage() {
           />
         </div>
       ) : null}
+
+      {/* Bulk retailer upload */}
+      <section className="mb-6" aria-label="Bulk add retailers">
+        <BulkRetailerUpload
+          manufacturerId={manufacturerId}
+          manufacturerName={manufacturerName}
+          seatsRemaining={seatsRemaining}
+          existingPhones={
+            new Set(
+              rows
+                .map((r) => r.retailerPhone)
+                .filter((p): p is string => !!p),
+            )
+          }
+          onDone={async () => { if (manufacturerId) await loadAll(manufacturerId); }}
+        />
+      </section>
 
       <section aria-label="Retailer list">
         <RetailerTable

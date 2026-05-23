@@ -9,7 +9,7 @@ import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts } from "../../firebase";
 import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
-import { createProductAndInventory } from "../_lib/inventory-firestore";
+import { createProductAndInventory, retailerHasProduct } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
 import { useI18n } from "../../i18n/I18nContext";
 import { HelperIcon } from "../../../components/helpers";
@@ -214,19 +214,21 @@ export function AddProductInventoryForm({
   const nameRef = useRef<HTMLInputElement>(null);
 
   // Submit state
-  const [submitting,  setSubmitting]  = useState(false);
-  const [message,     setMessage]     = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [message,       setMessage]       = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [alreadyListed, setAlreadyListed] = useState(false);
 
   const isManufacturer = role === "manufacturer";
   const hasSeats       = seatStats.available > 0;
   const noSubscription = seatStats.totalPurchased === 0;
-  const isDisabled     = disabled || submitting || !userId || !hasSeats;
+  const isDisabled     = disabled || submitting || !userId || !hasSeats || (role === "retailer" && alreadyListed);
 
   // ── Search ───────────────────────────────────────────────────────────────────
   const handleNameChange = useCallback((val: string) => {
     setName(val);
     setAutofilled(false);
     setExistingProductId(null);
+    setAlreadyListed(false);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (val.trim().length < 2) { setSuggestions([]); setShowDropdown(false); return; }
     setSearching(true);
@@ -270,6 +272,17 @@ export function AddProductInventoryForm({
     setShowDropdown(false);
     setSuggestions([]);
     setAutofilled(true);
+    setAlreadyListed(false);
+
+    // For retailers: check immediately whether this product is already in their inventory
+    if (role === "retailer" && userId) {
+      const firstUnit = src[0]?.unit ?? product.unit;
+      retailerHasProduct(userId, {
+        originalProductId: product.id,
+        name: product.name,
+        unit: firstUnit,
+      }).then(setAlreadyListed).catch(() => {});
+    }
   };
 
   // Close dropdown on outside click
@@ -349,7 +362,7 @@ export function AddProductInventoryForm({
         });
       }
       setMessage({ type: "ok", text: isManufacturer ? t('formProductAdded') : t('formProductAddedInv') });
-      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null);
+      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
       setVariants([newVariant()]);
       setImages([newSlot()]);
       await onCreated();
@@ -431,9 +444,16 @@ export function AddProductInventoryForm({
             {autofilled && (
               <div className="flex items-center gap-2 rounded-xl bg-primary/5 border border-primary/20 px-3 py-2">
                 <span className="text-xs text-primary font-medium">{t('formAutofilledMsg')}</span>
-                <button type="button" onClick={() => setAutofilled(false)} className="ml-auto text-primary/60 hover:text-primary">
+                <button type="button" onClick={() => { setAutofilled(false); setAlreadyListed(false); }} className="ml-auto text-primary/60 hover:text-primary">
                   <X className="h-3.5 w-3.5" />
                 </button>
+              </div>
+            )}
+
+            {/* Already-listed warning — retailer only */}
+            {role === "retailer" && alreadyListed && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                This product is already in your inventory. Edit the existing listing instead of adding it again.
               </div>
             )}
 

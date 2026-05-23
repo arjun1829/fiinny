@@ -32,7 +32,10 @@ export type MarketplaceProduct = {
   distance?: string;
 
   availability?: {
-    storeId: string;
+    storeId: string;       // retailer's Auth UID (legacy key)
+    storePhone?: string;   // retailer's E164 phone (new-schema key; matches retailers/{phone} doc ID)
+    storeName?: string;    // retailer's shop name for display
     stockLevel: string;
+    sellingPrice?: number;
   }[];
 };
