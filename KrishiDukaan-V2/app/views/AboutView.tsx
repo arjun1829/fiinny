@@ -33,13 +33,6 @@ export default function AboutView() {
     }
   ];
 
-  const team = [
-    { name: 'Rajesh Kumar', role: 'Founder & CEO', location: 'Pune, Maharashtra' },
-    { name: 'Priya Sharma', role: 'Head of Operations', location: 'Nashik, Maharashtra' },
-    { name: 'Ankit Desai', role: 'Technology Lead', location: 'Pune, Maharashtra' },
-    { name: 'Sunita Patil', role: 'Farmer Relations', location: 'Kolhapur, Maharashtra' }
-  ];
-
   return (
     <div className="flex flex-col gap-0">
       {/* Hero */}
@@ -135,34 +128,6 @@ export default function AboutView() {
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Team */}
-      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full py-16">
-        <div className="text-center mb-12">
-          <span className="text-primary text-xs font-black uppercase tracking-widest mb-3 block">The People Behind Krishidukan</span>
-          <h2 className="text-4xl font-bold text-on-surface">Our Team</h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-          {team.map((member, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container text-center hover:shadow-ambient transition-shadow"
-            >
-              <div className="w-16 h-16 rounded-full bg-primary-container mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold">
-                {member.name.charAt(0)}
-              </div>
-              <h4 className="font-bold text-on-surface mb-1">{member.name}</h4>
-              <p className="text-primary text-xs font-black uppercase tracking-widest mb-2">{member.role}</p>
-              <p className="text-on-surface-variant text-xs flex items-center justify-center gap-1">
-                <ICONS.Location className="w-3 h-3" /> {member.location}
-              </p>
-            </motion.div>
-          ))}
         </div>
       </section>
 

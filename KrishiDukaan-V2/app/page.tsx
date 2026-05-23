@@ -173,6 +173,7 @@ export default function App() {
       setSelectedProductId(nextProductId);
       setSelectedStoreId(nextStoreId);
       setSelectedHubId(nextHubId);
+      window.scrollTo({ top: 0, behavior: 'instant' });
 
       if (typeof window !== 'undefined') {
         const inviteForUrl = options?.clearInvite ? null : undefined;
@@ -206,6 +207,7 @@ export default function App() {
       setSelectedProductId(next.productId);
       setSelectedStoreId(next.storeId);
       setSelectedHubId(next.hubId);
+      window.scrollTo({ top: 0, behavior: 'instant' });
     };
 
     window.addEventListener('popstate', onPopState);
