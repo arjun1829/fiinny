@@ -2,9 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { auth, db } from "../firebase";
+import { auth, getUserProfile } from "../firebase";
 
 export default function AdminLoginClient() {
   const router = useRouter();
@@ -20,18 +19,15 @@ export default function AdminLoginClient() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
+      // getUserProfile resolves via uidIndex → users/{phone} for phone users,
+      // and falls back to users/{uid} for email-based admin accounts.
+      const profile = await getUserProfile(userCredential.user.uid);
 
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role === "admin") {
-          router.push("/admin");
-        } else {
-          setError("Access denied. Not an administrator.");
-          await auth.signOut();
-        }
+      if (profile?.role === "admin") {
+        router.push("/admin");
       } else {
-        setError("Admin profile not found.");
+        setError("Access denied. Not an administrator.");
+        await auth.signOut();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong.";

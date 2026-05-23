@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Loader2, Package, PackagePlus, ToggleLeft, ToggleRight } from "lucide-react";
+import { X, Loader2, Package, PackagePlus, ToggleLeft, ToggleRight, MapPin } from "lucide-react";
 import { useI18n } from "../../../i18n/I18nContext";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import {
@@ -80,6 +80,13 @@ export function RetailerDetailsModal({ row, manufacturerId, onClose, onAssignPro
               {row.ownerName} · {row.retailerPhone}
               {row.retailerEmail ? ` · ${row.retailerEmail}` : ""}
             </p>
+            {(row.address?.city || row.address?.line1) && (
+              <p className="text-xs text-on-surface-variant mt-0.5 flex items-center gap-1">
+                <MapPin className="h-3 w-3 shrink-0" />
+                {[row.address.line1, row.address.city, row.address.state, row.address.pincode]
+                  .filter(Boolean).join(", ")}
+              </p>
+            )}
             <div className="mt-2 flex gap-2">
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                 {activeCount} {activeCount !== 1 ? t('rnActiveProducts') : t('rnActiveProduct')}

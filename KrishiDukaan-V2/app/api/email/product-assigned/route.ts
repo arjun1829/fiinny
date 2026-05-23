@@ -9,7 +9,8 @@ export async function POST(request: Request) {
       shopName?: string;
       productName?: string;
       manufacturerName?: string;
-      signupLink?: string;
+      inviteCode?: string;
+      retailerStatus?: string;
     };
 
     const {
@@ -17,15 +18,24 @@ export async function POST(request: Request) {
       shopName = "",
       productName = "a new product",
       manufacturerName = "Your manufacturer",
+      inviteCode = "",
+      retailerStatus = "active",
     } = body;
 
     if (!retailerEmail) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const dashboardLink = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app'}/dashboard/inventory`;
+    const base = process.env.NEXT_PUBLIC_BASE_URL || 'https://krishidukan-e8315.web.app';
+    // For new (invited) retailers: magic link pre-fills their invite code on the signup page.
+    // For existing (active) retailers: go to inventory with inviteCode for auto-acceptance.
+    const actionLink = (inviteCode && retailerStatus === "invited")
+      ? `${base}/?view=signup&inviteCode=${encodeURIComponent(inviteCode)}`
+      : inviteCode 
+        ? `${base}/dashboard/inventory?inviteCode=${encodeURIComponent(inviteCode)}`
+        : `${base}/dashboard/inventory`;
 
-    const { html, text } = buildProductAssignedEmail({ shopName, productName, manufacturerName, dashboardLink });
+    const { html, text } = buildProductAssignedEmail({ shopName, productName, manufacturerName, actionLink, inviteCode, retailerStatus });
 
     await sendEmail({
       to: retailerEmail,

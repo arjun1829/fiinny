@@ -41,6 +41,24 @@ async function phoneFromUid(uid: string): Promise<string | null> {
   }
 }
 
+async function retailerDocIdFromUid(uid: string): Promise<string | null> {
+  const phone = await phoneFromUid(uid);
+  const targets = phone ? [doc(db, "users", phone), doc(db, "users", uid)] : [doc(db, "users", uid)];
+
+  for (const target of targets) {
+    try {
+      const snap = await getDoc(target);
+      if (!snap.exists()) continue;
+      const retailerDocId = String(snap.data()?.retailerDocId ?? "").trim();
+      if (retailerDocId) return retailerDocId;
+    } catch {
+      // ignore and try the next target
+    }
+  }
+
+  return null;
+}
+
 export async function fetchDashboardUserRole(uid: string): Promise<DashboardProfileRole | null> {
   // New schema: users/{phone}
   const phone = await phoneFromUid(uid);
@@ -213,9 +231,14 @@ export async function saveRetailerProfile(
   extras: RetailerProfileExtras,
 ): Promise<void> {
   const trimmedEmail = form.email.trim();
+  const retailerDocId = await retailerDocIdFromUid(uid);
+  const retailerRef = doc(db, "retailers", retailerDocId || uid);
+
   await setDoc(
-    doc(db, "retailers", uid),
+    retailerRef,
     {
+      userId: uid,
+      retailerId: uid,
       role: "retailer",
       shopName:  form.businessName.trim(),
       ownerName: form.ownerName.trim(),
@@ -232,7 +255,7 @@ export async function saveRetailerProfile(
       manufacturerId:  extras.manufacturerId || null,
       createdAt:       extras.createdAt || serverTimestamp(),
       updatedAt:       serverTimestamp(),
-      active:          extras.active,
+      active:          true,
       subscriptionStatus: extras.subscriptionStatus,
     },
     { merge: true },

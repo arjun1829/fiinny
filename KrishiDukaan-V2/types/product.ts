@@ -19,6 +19,8 @@ export type MarketplaceProduct = {
   manufacturerProductId?: string;
   retailerId?: string;
   retailerDocId?: string;
+  retailerPhone?: string;
+  manufacturerPhone?: string;
 
   /** Market display & Delivery fields */
   sellMode?: "online_delivery" | "offline_store_only";

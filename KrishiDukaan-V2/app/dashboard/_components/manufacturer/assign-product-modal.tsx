@@ -127,7 +127,11 @@ export function AssignProductModal({
           const uid = retailer.retailerId;
           if (uid) {
             try {
-              const snap = await getDoc(doc(db, "users", uid));
+              const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+              const phone = idxSnap.exists() ? (idxSnap.data().phone as string) : null;
+              const snap = phone
+                ? await getDoc(doc(db, "users", phone))
+                : await getDoc(doc(db, "users", uid));
               if (snap.exists()) {
                 const fresh = (snap.data()?.email ?? "").trim().toLowerCase();
                 if (fresh && !fresh.includes("@krishidukan.local")) emailToUse = fresh;
@@ -144,7 +148,8 @@ export function AssignProductModal({
             shopName: retailer.shopName || retailer.ownerName,
             productName: productLabel,
             manufacturerName,
-            signupLink: process.env.NEXT_PUBLIC_BASE_URL ?? "/",
+            inviteCode: retailer.inviteCode || "",
+            retailerStatus: retailer.status,
           }),
         }).catch(() => {});
       })();

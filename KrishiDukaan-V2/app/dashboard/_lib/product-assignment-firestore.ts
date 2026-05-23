@@ -7,11 +7,13 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { syncRetailerMirror, activateRetailerOnProductAssignment } from "./manufacturer-retailers-firestore";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
   addSeatListingToBatch,
@@ -59,10 +61,22 @@ export async function assignProductToRetailer(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
+  // Resolve phones for dual-field writes
+  let manufacturerPhone: string | null = null;
+  let retailerPhone: string | null = null;
+  try {
+    const [mIdxSnap, rIdxSnap] = await Promise.all([
+      getDoc(doc(db, "uidIndex", input.manufacturerId)),
+      input.retailerId ? getDoc(doc(db, "uidIndex", input.retailerId)) : Promise.resolve(null),
+    ]);
+    if (mIdxSnap.exists()) manufacturerPhone = String(mIdxSnap.data().phone ?? "") || null;
+    if (rIdxSnap?.exists()) retailerPhone = String(rIdxSnap.data().phone ?? "") || null;
+  } catch { /* ignore — phones are optional enrichment */ }
+
   // Fetch the manufacturer product and retailer profile in parallel
   const [productSnap, retailerSnap] = await Promise.all([
     getDoc(doc(db, "products", input.productId)),
-    getDoc(doc(db, "retailers", input.retailerId || input.retailerDocId)),
+    getDoc(doc(db, "retailers", input.retailerDocId)),
   ]);
   if (!productSnap.exists()) throw new Error("Product not found.");
   const src = productSnap.data() as Record<string, unknown>;
@@ -70,6 +84,9 @@ export async function assignProductToRetailer(
   const retailerStoreName = retailerData
     ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
     : "";
+  if (!retailerPhone && retailerData?.phone) {
+    retailerPhone = String(retailerData.phone);
+  }
 
   // Guard against duplicate active assignment (keyed on retailerDocId — works pre-signup)
   const dupQ = query(
@@ -99,12 +116,15 @@ export async function assignProductToRetailer(
     price: typeof src.price === "number" ? src.price : 0,
     isActive: true,
     ownerId: retailerOwnerId,
+    ownerPhone: retailerPhone ?? null,
     ownerType: "retailer",
     createdBy: input.manufacturerId,
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     manufacturerProductId: input.productId,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
+    retailerPhone: retailerPhone ?? null,
     source: "manufacturer_assigned",
 
     // Market display fields
@@ -123,10 +143,13 @@ export async function assignProductToRetailer(
   batch.set(inventoryRef, {
     id: inventoryRef.id,
     ownerId: retailerOwnerId,
+    ownerPhone: retailerPhone ?? null,
     ownerType: "retailer",
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? "",
+    retailerPhone: retailerPhone ?? null,
     productId: retailerProductRef.id,
     manufacturerProductId: input.productId,
     assignedByManufacturer: true,
@@ -140,26 +163,75 @@ export async function assignProductToRetailer(
   // 3. Seat listing — expires when subscription expires
   const seatListingId = addSeatListingToBatch(batch, {
     ownerId: input.manufacturerId,
+    ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
     manufacturerId: input.manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
     retailerDocId: input.retailerDocId,
     retailerId: input.retailerId ?? null,
+    retailerPhone: retailerPhone ?? null,
     productId: retailerProductRef.id,
     manufacturerProductId: input.productId,
     listingType: "assigned",
     expiresAt: subExpiry,
   });
 
-  // 4. Update manufacturer product's availability so the retailer's store appears
-  //    in the marketplace product detail page.
-  //    Use retailerId (Firebase Auth UID) when available — that's the store ID in
-  //    the retailers collection. Fall back to retailerDocId pre-signup.
-  const availabilityStoreId = input.retailerId || input.retailerDocId;
+  // 4. Keep the invited retailer doc as the stable store identity in market availability.
+  //    That doc exists before signup and remains the canonical public store record after claim.
+  const availabilityStoreId = input.retailerDocId;
   batch.update(doc(db, "products", input.productId), {
     availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
   });
 
   await batch.commit();
+
+  // Phase 4B: Subcollection mirrors (fire-and-forget, non-critical)
+  (async () => {
+    try {
+      if (retailerPhone) {
+        setDoc(
+          doc(db, `retailers/${retailerPhone}/products/${retailerProductRef.id}`),
+          { retailerId: input.retailerId ?? input.retailerDocId, retailerPhone, manufacturerId: input.manufacturerId, manufacturerPhone, assignedAt: serverTimestamp() },
+          { merge: true },
+        ).catch(() => {});
+
+        setDoc(
+          doc(db, `retailers/${retailerPhone}/inventory/${inventoryRef.id}`),
+          {
+            id: inventoryRef.id,
+            productId: retailerProductRef.id,
+            stockQuantity: 0,
+            sellingPrice: typeof src.price === "number" ? src.price : 0,
+            reorderThreshold: 5,
+            isAvailable: false,
+            updatedAt: serverTimestamp(),
+            assignedByManufacturer: true
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+    } catch { /* non-critical */ }
+
+    // Always attempt to repair/confirm the manufacturer→retailer mirror,
+    // independent of whether the retailer subcollection batch above succeeded.
+    if (manufacturerPhone && retailerPhone) {
+      await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+        retailerDocId: input.retailerDocId,
+        retailerPhone,
+        manufacturerPhone,
+        shopName: retailerStoreName,
+      });
+    }
+
+    // Flip onboardingStatus → "active" on the invite link doc now that a product is assigned.
+    await activateRetailerOnProductAssignment(
+      input.manufacturerId,
+      input.retailerDocId,
+      manufacturerPhone,
+      retailerPhone,
+    );
+  })();
+
   return { seatListingId, retailerProductId: retailerProductRef.id };
 }
 
@@ -185,9 +257,9 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
 
   await batch.commit();
 
-  // Remove the retailer's store from the manufacturer product's availability array.
-  // We look up the retailer product copy to find the manufacturer's original product ID.
-  const availabilityStoreId = retailerId || retailerDocId;
+  // Remove the retailer's public store from the manufacturer product's availability array.
+  // retailerDocId is the stable public store document used in availability[].
+  const availabilityStoreId = retailerDocId;
   if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
@@ -269,17 +341,34 @@ export async function bulkAssignProductsToRetailer(
   // Fetch all product docs and retailer profile in parallel
   const [productSnaps, retailerSnap] = await Promise.all([
     Promise.all(toAssign.map((id) => getDoc(doc(db, "products", id)))),
-    getDoc(doc(db, "retailers", retailerId || retailerDocId)),
+    getDoc(doc(db, "retailers", retailerDocId)),
   ]);
   const retailerData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
   const retailerStoreName = retailerData
     ? String(retailerData.shopName ?? retailerData.businessName ?? retailerData.ownerName ?? "")
     : "";
 
+  // Resolve phones for dual-field writes and subcollection mirrors
+  let manufacturerPhone: string | null = null;
+  let retailerPhone: string | null = null;
+  try {
+    const [mIdxSnap, rIdxSnap] = await Promise.all([
+      getDoc(doc(db, "uidIndex", manufacturerId)),
+      retailerId ? getDoc(doc(db, "uidIndex", retailerId)) : Promise.resolve(null),
+    ]);
+    if (mIdxSnap.exists()) manufacturerPhone = String(mIdxSnap.data().phone ?? "") || null;
+    if (rIdxSnap?.exists()) retailerPhone = String(rIdxSnap.data().phone ?? "") || null;
+    // Fallback: phone may already be on the retailer doc
+    if (!retailerPhone && retailerData?.phone) {
+      retailerPhone = String(retailerData.phone);
+    }
+  } catch { /* phones are optional enrichment */ }
+
   const now = serverTimestamp();
   const batch = writeBatch(db);
   const assigned: string[] = [];
   const failed: string[] = [];
+  const assignedDetails: { manufacturerProductId: string; retailerProductId: string; inventoryId: string; sellingPrice: number }[] = [];
 
   for (let i = 0; i < toAssign.length; i++) {
     const productId = toAssign[i];
@@ -303,12 +392,15 @@ export async function bulkAssignProductsToRetailer(
       price: typeof src.price === "number" ? src.price : 0,
       isActive: true,
       ownerId: retailerOwnerId,
+      ownerPhone: retailerPhone ?? null,
       ownerType: "retailer",
       createdBy: manufacturerId,
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       manufacturerProductId: productId,
       retailerDocId,
       retailerId: retailerId ?? "",
+      retailerPhone: retailerPhone ?? null,
       source: "manufacturer_assigned",
 
       // Market display fields
@@ -327,10 +419,13 @@ export async function bulkAssignProductsToRetailer(
     batch.set(inventoryRef, {
       id: inventoryRef.id,
       ownerId: retailerOwnerId,
+      ownerPhone: retailerPhone ?? null,
       ownerType: "retailer",
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       retailerDocId,
       retailerId: retailerId ?? "",
+      retailerPhone: retailerPhone ?? null,
       productId: retailerProductRef.id,
       manufacturerProductId: productId,
       assignedByManufacturer: true,
@@ -344,27 +439,98 @@ export async function bulkAssignProductsToRetailer(
     // 3. Seat listing
     addSeatListingToBatch(batch, {
       ownerId: manufacturerId,
+      ownerPhone: manufacturerPhone ?? null,
       ownerType: "manufacturer",
       manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? null,
       retailerDocId,
       retailerId: retailerId ?? null,
+      retailerPhone: retailerPhone ?? null,
       productId: retailerProductRef.id,
       manufacturerProductId: productId,
       listingType: "assigned",
       expiresAt: subExpiry,
     });
 
-    // 4. Add retailer's store to the manufacturer product's availability array
-    //    Use retailerId (Firebase Auth UID) when available — that's the store ID.
-    const availabilityStoreId = retailerId || retailerDocId;
+    // 4. Add the canonical invited retailer doc to the manufacturer product's availability array.
+    const availabilityStoreId = retailerDocId;
     batch.update(doc(db, "products", productId), {
       availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
     });
 
     assigned.push(productId);
+    assignedDetails.push({
+      manufacturerProductId: productId,
+      retailerProductId: retailerProductRef.id,
+      inventoryId: inventoryRef.id,
+      sellingPrice: typeof src.price === "number" ? src.price : 0,
+    });
   }
 
   await batch.commit();
+
+  // ── Phase 4B: Subcollection mirrors (fire-and-forget) ─────────────────────
+  // Write lightweight summary docs under phone-keyed subcollections for future
+  // dashboard grouping and analytics. Failures are non-critical.
+  if (assigned.length > 0) {
+    (async () => {
+      try {
+        const { writeBatch: wb, doc: wDoc, collection: wCol, serverTimestamp: wTs } = await import("firebase/firestore");
+        const { db: wDb } = await import("../../firebase");
+        const mirrorBatch = wb(wDb);
+        const mirrorNow = wTs();
+
+        for (const item of assignedDetails) {
+          // retailers/{retailerPhone}/products/{retailerProductId}
+          if (retailerPhone) {
+            mirrorBatch.set(
+              wDoc(wDb, `retailers/${retailerPhone}/products/${item.retailerProductId}`),
+              { retailerId: retailerId ?? retailerDocId, retailerPhone, manufacturerId, manufacturerPhone, assignedAt: mirrorNow },
+              { merge: true },
+            );
+
+            mirrorBatch.set(
+              wDoc(wDb, `retailers/${retailerPhone}/inventory/${item.inventoryId}`),
+              {
+                id: item.inventoryId,
+                productId: item.retailerProductId,
+                stockQuantity: 0,
+                sellingPrice: item.sellingPrice,
+                reorderThreshold: 5,
+                isAvailable: false,
+                updatedAt: mirrorNow,
+                assignedByManufacturer: true
+              },
+              { merge: true },
+            );
+          }
+        }
+        await mirrorBatch.commit();
+      } catch (e) {
+        console.warn("[bulkAssign] Subcollection mirror write failed (non-critical):", e);
+      }
+
+      // Always attempt to repair/confirm the manufacturer→retailer mirror,
+      // independent of whether the retailer subcollection batch above succeeded.
+      if (manufacturerPhone && retailerPhone) {
+        await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+          retailerDocId,
+          retailerPhone,
+          manufacturerPhone,
+          shopName: retailerStoreName,
+        });
+      }
+
+      // Flip onboardingStatus → "active" now that at least one product is assigned.
+      await activateRetailerOnProductAssignment(
+        manufacturerId,
+        retailerDocId,
+        manufacturerPhone,
+        retailerPhone,
+      );
+    })();
+  }
+
   return { assigned, skipped, failed };
 }
 

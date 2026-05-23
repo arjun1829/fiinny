@@ -13,6 +13,8 @@ import {
   MessageCircle,
   PackagePlus,
   Pencil,
+  PowerOff,
+  RefreshCw,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -34,6 +36,8 @@ type RetailerTableProps = {
   onAssignProduct?: (row: ManufacturerRetailerRow) => void;
   onEdit?: (row: ManufacturerRetailerRow) => void;
   onDetails?: (row: ManufacturerRetailerRow) => void;
+  onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
+  onActivate?: (row: ManufacturerRetailerRow) => void;
 };
 
 function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
@@ -43,6 +47,14 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
         {t('activeBadge')}
+      </span>
+    );
+  }
+  if (status === "inactive") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+        <PowerOff className="h-3 w-3" />
+        Deactivated
       </span>
     );
   }
@@ -211,7 +223,55 @@ function RemoveAction({
   );
 }
 
-export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails }: RetailerTableProps) {
+function DeactivateAction({
+  row,
+  onDeactivate,
+}: {
+  row: ManufacturerRetailerRow;
+  onDeactivate: (row: ManufacturerRetailerRow) => Promise<void>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+        <span className="text-xs font-medium text-amber-700">Deactivate?</span>
+        <button
+          type="button"
+          disabled={deactivating}
+          onClick={async () => {
+            setDeactivating(true);
+            try { await onDeactivate(row); }
+            finally { setDeactivating(false); setConfirming(false); }
+          }}
+          className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+        >
+          {deactivating ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          {deactivating ? "Deactivating…" : "Confirm"}
+        </button>
+        <button type="button" disabled={deactivating} onClick={() => setConfirming(false)}
+          className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-100 disabled:opacity-60">
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
+    >
+      <PowerOff className="h-3.5 w-3.5" />
+      Deactivate
+    </button>
+  );
+}
+
+export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails, onDeactivate, onActivate }: RetailerTableProps) {
   const { t } = useI18n();
   if (loading) {
     return (
@@ -232,7 +292,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
     );
   }
 
-  const hasActions = !!(onRemove || onAssignProduct || onEdit || onDetails);
+  const hasActions = !!(onRemove || onAssignProduct || onEdit || onDetails || onDeactivate || onActivate);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -254,16 +314,18 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
           <tbody className="divide-y divide-outline-variant/20">
             {rows.map((row) => {
               const isRevoked = row.status === "revoked";
-              // Seat assignment doesn't require retailer login — only that
-              // the retailer is linked to this manufacturer and not revoked.
-              const canAssign = onAssignProduct && !isRevoked;
+              const isManuallyInactive = row.onboardingStatus === "inactive";
+              const canAssign = onAssignProduct && !isRevoked && !isManuallyInactive;
+              const canDeactivate = onDeactivate && !isRevoked && !isManuallyInactive && row.onboardingStatus === "active";
+              const canActivate = onActivate && isManuallyInactive;
 
               return (
                 <tr
                   key={row.id}
                   className={cn(
-                    "hover:bg-surface-container/50",
+                    "hover:bg-surface-container/50 transition-opacity",
                     isRevoked && "opacity-50",
+                    isManuallyInactive && !isRevoked && "opacity-60",
                   )}
                 >
                   <td className="px-4 py-3 font-medium text-on-surface">
@@ -285,6 +347,13 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                   {hasActions ? (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Reactivate: for manually-deactivated retailers */}
+                        {canActivate && (
+                          <button type="button" onClick={() => onActivate(row)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                            <RefreshCw className="h-3.5 w-3.5" /> Reactivate
+                          </button>
+                        )}
                         {/* Details */}
                         {onDetails && (
                           <button type="button" onClick={() => onDetails(row)}
@@ -293,7 +362,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                           </button>
                         )}
                         {/* Edit */}
-                        {onEdit && !isRevoked && (
+                        {onEdit && !isRevoked && !isManuallyInactive && (
                           <button type="button" onClick={() => onEdit(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
                             <Pencil className="h-3.5 w-3.5" /> {t('editBtn')}
@@ -308,6 +377,8 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                             </button>
                           </HelperTooltip>
                         ) : null}
+                        {/* Deactivate */}
+                        {canDeactivate && <DeactivateAction row={row} onDeactivate={onDeactivate} />}
                         {/* Remove */}
                         {onRemove ? <RemoveAction row={row} onRemove={onRemove} /> : null}
                       </div>

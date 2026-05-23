@@ -3,9 +3,9 @@
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import { useSearchParams } from "next/navigation";
-import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X } from "lucide-react";
-import { auth, db } from "../../firebase";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X, TrendingUp } from "lucide-react";
+import { auth, db, requestRoleUpgrade } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { HelperIcon } from "../../../components/helpers";
 import {
@@ -105,6 +105,7 @@ type ActiveTab = "profile" | "settings";
 
 function ProfilePageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [activeTab,  setActiveTab] = useState<ActiveTab>(
     searchParams?.get("tab") === "settings" ? "settings" : "profile",
   );
@@ -118,6 +119,7 @@ function ProfilePageInner() {
   const [products,  setProducts]  = useState<ManufacturerProductRow[]>([]);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
   const [tagline,        setTagline]        = useState("");
+  const [totalSeats,     setTotalSeats]     = useState(0);
 
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
@@ -126,6 +128,8 @@ function ProfilePageInner() {
   const [editMode,  setEditMode]  = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [upgradeBusinessName, setUpgradeBusinessName] = useState("");
+  const [upgrading, setUpgrading] = useState(false);
 
   const addressInputRef         = useRef<HTMLInputElement | null>(null);
   const autocompleteListenerRef = useRef<unknown>(null);
@@ -151,14 +155,17 @@ function ProfilePageInner() {
         });
         setTagline(d.tagline ?? "");
       }
-      // onlineDelivery lives on users/{phone} (new schema) — resolve via uidIndex
+      // onlineDelivery and totalSeats live on users/{phone} (new schema) — resolve via uidIndex
       try {
         const idxSnap = await getDoc(doc(db, "uidIndex", userId));
         if (idxSnap.exists()) {
           const phone = String(idxSnap.data().phone ?? "");
           if (phone) {
             const userSnap = await getDoc(doc(db, "users", phone));
-            if (userSnap.exists()) setOnlineDelivery(!!(userSnap.data() as any).onlineDelivery);
+            if (userSnap.exists()) {
+              setOnlineDelivery(!!(userSnap.data() as any).onlineDelivery);
+              setTotalSeats(Number((userSnap.data() as any).totalSeats) || 0);
+            }
           }
         }
       } catch { /* ignore */ }
@@ -325,6 +332,29 @@ function ProfilePageInner() {
     </div>
   );
 
+  const handleUpgradeToManufacturer = async () => {
+    if (!uid) return;
+    if (totalSeats <= 0) {
+      router.push("/dashboard/upgrade");
+      return;
+    }
+    if (!upgradeBusinessName.trim()) {
+      setStatus({ type: "error", message: "Please enter your business / brand name." });
+      return;
+    }
+    setUpgrading(true);
+    setStatus(null);
+    try {
+      await requestRoleUpgrade(uid, "manufacturer", { businessName: upgradeBusinessName.trim() });
+      setStatus({ type: "success", message: "Upgraded to Manufacturer! Reloading dashboard…" });
+      setTimeout(() => router.push("/dashboard"), 1500);
+    } catch (err) {
+      setStatus({ type: "error", message: err instanceof Error ? err.message : "Upgrade failed." });
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
   const handleSettingsSave = async () => {
     if (!uid || !userRole) return;
     setSettingsSaving(true);
@@ -413,6 +443,55 @@ function ProfilePageInner() {
               {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {settingsSaving ? t('savingText') : t('saveSettingsBtn')}
             </button>
+
+            {/* Upgrade to Manufacturer — only for retailers */}
+            {userRole === "retailer" && (
+              <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
+                <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" /> Upgrade to Manufacturer
+                </h2>
+                <p className="mb-4 text-xs text-on-surface-variant">
+                  Distribute your own products to retailers across the network. This uses one of your seats.
+                </p>
+
+                {totalSeats > 0 ? (
+                  <div className="space-y-3">
+                    <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
+                      {totalSeats} seat{totalSeats !== 1 ? "s" : ""} available — upgrade is free
+                    </div>
+                    <input
+                      type="text"
+                      value={upgradeBusinessName}
+                      onChange={(e) => setUpgradeBusinessName(e.target.value)}
+                      placeholder="Business / Brand name"
+                      className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleUpgradeToManufacturer}
+                      disabled={upgrading || !upgradeBusinessName.trim()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60"
+                    >
+                      {upgrading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                      {upgrading ? "Upgrading…" : "Upgrade to Manufacturer"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-on-surface-variant bg-surface-container rounded-xl px-4 py-3">
+                      You have no seats. Purchase a plan first to unlock the upgrade.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/dashboard/upgrade")}
+                      className="inline-flex items-center gap-2 rounded-xl border border-primary bg-white px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/5 transition-colors"
+                    >
+                      Buy seats to upgrade
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         </>
       );

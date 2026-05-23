@@ -201,14 +201,15 @@ export function AddProductInventoryForm({
   // Variants
   const [variants,    setVariants]    = useState<Variant[]>([newVariant()]);
 
-  // Images
-  const [images,      setImages]      = useState<ImageSlot[]>(Array.from({ length: MAX_IMAGES }, newSlot));
+  // Images — start with 1 slot, user can add more
+  const [images,      setImages]      = useState<ImageSlot[]>([newSlot()]);
 
   // Search state
   const [suggestions,   setSuggestions]   = useState<SearchResult[]>([]);
   const [searching,     setSearching]     = useState(false);
   const [showDropdown,  setShowDropdown]  = useState(false);
   const [autofilled,    setAutofilled]    = useState(false);
+  const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -225,6 +226,7 @@ export function AddProductInventoryForm({
   const handleNameChange = useCallback((val: string) => {
     setName(val);
     setAutofilled(false);
+    setExistingProductId(null);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (val.trim().length < 2) { setSuggestions([]); setShowDropdown(false); return; }
     setSearching(true);
@@ -242,6 +244,7 @@ export function AddProductInventoryForm({
     setName(product.name);
     setCategory(product.category || CATEGORIES[0]);
     setDescription(product.description || "");
+    setExistingProductId(product.id);
 
     // Populate variants from product
     const src = product.variants.length
@@ -254,9 +257,10 @@ export function AddProductInventoryForm({
       stock: "",
     })));
 
-    // Populate images
+    // Populate images — only as many slots as we have URLs for (min 1)
     const urls = product.images.length ? product.images : (product.image ? [product.image] : []);
-    setImages(Array.from({ length: MAX_IMAGES }, (_, i) => ({
+    const slotCount = Math.max(1, Math.min(urls.length, MAX_IMAGES));
+    setImages(Array.from({ length: slotCount }, (_, i) => ({
       mode: "url" as const,
       url: urls[i] ?? "",
       uploading: false,
@@ -341,12 +345,13 @@ export function AddProductInventoryForm({
           imageUrl: imageUrls[0] ?? undefined,
           storeName: storeName || "My Store",
           sellMode: "offline_store_only",
+          existingProductId: existingProductId ?? undefined,
         });
       }
       setMessage({ type: "ok", text: isManufacturer ? t('formProductAdded') : t('formProductAddedInv') });
-      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false);
+      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null);
       setVariants([newVariant()]);
-      setImages(Array.from({ length: MAX_IMAGES }, newSlot));
+      setImages([newSlot()]);
       await onCreated();
     } catch (err) {
       setMessage({ type: "err", text: err instanceof Error ? err.message : "Failed to create product." });
@@ -599,6 +604,16 @@ export function AddProductInventoryForm({
                 onChange={(p) => setImg(i, p)} onClear={() => clearImg(i)} />
             ))}
           </div>
+          {images.length < MAX_IMAGES && (
+            <button
+              type="button"
+              disabled={isDisabled}
+              onClick={() => setImages((imgs) => [...imgs, newSlot()])}
+              className="flex w-fit items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Add another image
+            </button>
+          )}
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 

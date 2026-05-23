@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Layers, Plus, Pencil, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon } from "lucide-react";
-import { fetchHubs, saveHub, updateHub, deleteHub } from "../../firebase";
+import { fetchHubs, saveHub, updateHub, deleteHub, importHubs } from "../../firebase";
 import type { Hub } from "../../firebase";
+import { INITIAL_HUBS } from "../../initialHubs";
 
 type HubForm = {
   name: string;
@@ -134,6 +135,7 @@ function ArrayField<T extends Record<string, string>>({
 export default function AdminHubsPage() {
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<HubForm>(EMPTY_FORM);
@@ -143,7 +145,14 @@ export default function AdminHubsPage() {
 
   const load = () => {
     setLoading(true);
-    fetchHubs().then(setHubs).finally(() => setLoading(false));
+    setError(null);
+    fetchHubs()
+      .then(setHubs)
+      .catch(err => {
+        console.error("Failed to fetch hubs:", err);
+        setError("Failed to load hubs from Firebase. Please make sure you are logged in and have admin permissions.");
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -187,6 +196,21 @@ export default function AdminHubsPage() {
     }
   };
 
+  const handleImportDefaults = async () => {
+    if (!confirm("This will write the 10 default crop hubs into your Firebase database. Proceed?")) return;
+    setSaving(true);
+    try {
+      await importHubs(INITIAL_HUBS);
+      alert("Successfully seeded 10 default crop hubs in Firestore!");
+      load();
+    } catch (err) {
+      console.error("Failed to seed default hubs:", err);
+      alert("Failed to seed default hubs. Check console/Firestore Rules.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const f = form;
   const setF = setForm;
 
@@ -202,11 +226,24 @@ export default function AdminHubsPage() {
             Manage crop hubs — add, edit, delete. Hubs saved here replace the default mock hubs on the public site.
           </p>
         </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors shrink-0">
-          <Plus className="h-4 w-4" /> New Hub
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={handleImportDefaults} disabled={saving}
+            className="flex items-center gap-2 border border-outline bg-surface-container-low text-on-surface-variant text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-50">
+            {saving ? "Importing..." : "Import Default Hubs"}
+          </button>
+          <button onClick={openAdd}
+            className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors">
+            <Plus className="h-4 w-4" /> New Hub
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-4">
+          <p className="font-semibold">{error}</p>
+          <button onClick={load} className="shrink-0 bg-red-100 hover:bg-red-200 text-red-900 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors">Retry</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-60 items-center justify-center">
@@ -216,10 +253,15 @@ export default function AdminHubsPage() {
         <div className="rounded-3xl border-2 border-dashed border-outline-variant p-16 text-center">
           <Layers className="h-10 w-10 text-outline mx-auto mb-4" />
           <h3 className="text-lg font-bold text-on-surface mb-1">No hubs yet</h3>
-          <p className="text-sm text-on-surface-variant mb-6">The public site uses built-in fallback hubs until you add real ones here.</p>
-          <button onClick={openAdd} className="bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
-            Create your first hub
-          </button>
+          <p className="text-sm text-on-surface-variant mb-6">Your Firestore database has no hubs. You can seed it with the 10 default hubs or create a new one.</p>
+          <div className="flex items-center justify-center gap-4">
+            <button onClick={openAdd} className="bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
+              Create Custom Hub
+            </button>
+            <button onClick={handleImportDefaults} disabled={saving} className="bg-secondary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-secondary-container transition-colors disabled:opacity-50">
+              {saving ? "Importing..." : "Seed 10 Default Hubs"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

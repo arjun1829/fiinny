@@ -55,7 +55,7 @@ export default function ProfileView({
   profile,
   onProfileSave,
   onRetailerProductSaved,
-  onNavigate
+  onNavigate,
 }: ProfileViewProps) {
   const { t } = useI18n();
   const [localProfile, setLocalProfile] = useState(profile);

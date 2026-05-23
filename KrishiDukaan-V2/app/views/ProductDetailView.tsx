@@ -3,9 +3,15 @@ import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
 import { StoreWithDistance } from '../utils/nearby';
-import { trackProductClick } from '../firebase';
+import { trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
+import {
+  fetchRetailerPublicProfile,
+  fetchRetailerProductSummaries,
+  type RetailerPublicProfile,
+  type RetailerProductSummary,
+} from '../dashboard/_lib/retailer-profile-firestore';
 
 type StoreListItem = {
   id: string;
@@ -27,7 +33,137 @@ interface ProductDetailViewProps {
   onAddToCart?: (product: MarketplaceProduct) => void;
 }
 
-export default function ProductDetailView({ 
+// ─── Retailer Profile Section ─────────────────────────────────────────────────
+
+function RetailerProfileSection({
+  retailerPhone,
+  currentProductId,
+  onProductClick,
+}: {
+  retailerPhone: string;
+  currentProductId: string;
+  onProductClick?: (id: string) => void;
+}) {
+  const [profile, setProfile] = useState<RetailerPublicProfile | null>(null);
+  const [products, setProducts] = useState<RetailerProductSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetchRetailerPublicProfile(retailerPhone),
+      fetchRetailerProductSummaries(retailerPhone, currentProductId, 8),
+    ])
+      .then(([prof, prods]) => {
+        setProfile(prof);
+        setProducts(prods);
+      })
+      .finally(() => setLoading(false));
+  }, [retailerPhone, currentProductId]);
+
+  if (loading) {
+    return (
+      <div className="rounded-3xl border border-surface-container bg-white p-6 animate-pulse">
+        <div className="h-4 w-48 rounded-full bg-surface-container-highest mb-3" />
+        <div className="h-3 w-32 rounded-full bg-surface-container-highest" />
+      </div>
+    );
+  }
+
+  if (!profile && products.length === 0) return null;
+
+  const shopName = profile?.shopName || "This Retailer";
+  const locationParts = [profile?.city, profile?.state].filter(Boolean);
+
+  return (
+    <section className="rounded-3xl border border-surface-container bg-white shadow-sm overflow-hidden">
+      {/* Profile header */}
+      <div className="flex items-center gap-4 p-6 border-b border-surface-container">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <ICONS.Market className="h-7 w-7" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">
+            Sold &amp; fulfilled by
+          </p>
+          <h3 className="text-lg font-bold text-on-surface truncate">{shopName}</h3>
+          {locationParts.length > 0 && (
+            <p className="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
+              <ICONS.Location className="h-3 w-3" />
+              {locationParts.join(", ")}
+            </p>
+          )}
+          {profile?.bio && (
+            <p className="text-xs text-on-surface-variant mt-1 line-clamp-2">{profile.bio}</p>
+          )}
+        </div>
+      </div>
+
+      {/* "More products" prompt + grid */}
+      <div className="p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-on-surface">
+              Would you like to see more products from this retailer?
+            </p>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              {products.length > 0
+                ? `${products.length} other product${products.length !== 1 ? "s" : ""} available from ${shopName}`
+                : `Browse all products listed by ${shopName}`}
+            </p>
+          </div>
+        </div>
+
+        {products.length > 0 ? (
+          <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
+            {products.map((p) => (
+              <button
+                key={p.productId}
+                type="button"
+                onClick={() => onProductClick?.(p.productId)}
+                className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
+              >
+                <div className="aspect-square overflow-hidden bg-surface-container">
+                  {p.image ? (
+                    <img
+                      src={p.image}
+                      alt={p.name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-on-surface-variant/30">
+                      <ICONS.Market className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-2.5 flex flex-col gap-0.5">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-primary">
+                    {p.category}
+                  </span>
+                  <p className="text-sm font-bold text-on-surface truncate leading-tight">
+                    {p.name}
+                  </p>
+                  <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-on-surface-variant italic">
+            No other products listed yet from this retailer.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── Main View ────────────────────────────────────────────────────────────────
+
+export default function ProductDetailView({
   products = PRODUCTS, 
   stores = STORES, 
   productId, 
@@ -173,7 +309,10 @@ export default function ProductDetailView({
                   </button>
                   <HelperTooltip side="left" textKey="storeDirections">
                     <button
-                      onClick={() => onStoreClick(store.id)}
+                      onClick={() => {
+                        void trackDirectionRequest(product.id);
+                        onStoreClick(store.id);
+                      }}
                       className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-primary text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"
                     >
                       <ICONS.Directions className="w-3.5 h-3.5" />
@@ -208,7 +347,10 @@ export default function ProductDetailView({
                             {(store as any).phone ? (
                               <a
                                 href={`tel:${(store as any).phone}`}
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void trackStoreCall(product.id);
+                                }}
                                 className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                               >
                                 <ICONS.Phone className="w-3.5 h-3.5" /> {t('callStoreShort')}
@@ -388,8 +530,8 @@ export default function ProductDetailView({
         </div>
       </section>
 
-      {/* Seller Portfolio */}
-      {sellerProducts.length > 0 && (
+      {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
+      {sellerProducts.length > 0 && !product.retailerPhone && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -398,7 +540,7 @@ export default function ProductDetailView({
             </div>
             {onViewSellerAll && (
               <button
-                onClick={() => onViewSellerAll(product.store)}
+                onClick={() => onViewSellerAll(product.store || "")}
                 className="text-xs font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
               >
                 {t('viewAll')} <ICONS.ChevronRight className="w-3.5 h-3.5" />
@@ -424,6 +566,15 @@ export default function ProductDetailView({
             ))}
           </div>
         </section>
+      )}
+
+      {/* Retailer Profile Section — phone-keyed, efficient subcollection fetch */}
+      {product.retailerPhone && (
+        <RetailerProfileSection
+          retailerPhone={product.retailerPhone}
+          currentProductId={product.id}
+          onProductClick={onProductClick}
+        />
       )}
     </div>
   );

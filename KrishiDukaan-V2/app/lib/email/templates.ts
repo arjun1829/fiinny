@@ -152,16 +152,19 @@ export function buildProductAssignedEmail(params: {
   shopName: string;
   productName: string;
   manufacturerName: string;
-  dashboardLink: string;
+  actionLink: string;
+  inviteCode?: string;
+  retailerStatus?: string;
 }) {
-  const { shopName, productName, manufacturerName, dashboardLink } = params;
+  const { shopName, productName, manufacturerName, actionLink, inviteCode = "", retailerStatus = "active" } = params;
   const displayName = shopName || "your shop";
+  const isNew = Boolean(inviteCode && retailerStatus === "invited");
 
   const html = wrapper(`
     <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827;">New product assigned to you</h2>
     <p style="margin:0 0 20px;font-size:15px;color:#374151;">
       <strong>${manufacturerName}</strong> has assigned the product <strong>"${productName}"</strong> to <strong>${displayName}</strong>.
-      You have been opted in for production notifications for this product.
+      ${isNew ? "Create your free account to start selling it directly to farmers." : "Log in to your dashboard to manage your inventory and start selling."}
     </p>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
@@ -170,10 +173,15 @@ export function buildProductAssignedEmail(params: {
       <p style="margin:4px 0 0;font-size:13px;color:#3b82f6;">by ${manufacturerName}</p>
     </div>
 
-    <p style="margin:0 0 4px;font-size:14px;color:#374151;">
-      Log in to your KrishiDukan dashboard to manage your inventory and start selling this product.
-    </p>
-    ${button(dashboardLink, "Go to my inventory →")}
+    ${isNew ? `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#166534;text-transform:uppercase;letter-spacing:0.05em;">Your Invite Code</p>
+      <p style="margin:0;font-size:28px;font-weight:700;letter-spacing:4px;color:#15803d;font-family:monospace;">${inviteCode}</p>
+      <p style="margin:8px 0 0;font-size:13px;color:#166534;">The button below signs you up and applies this code automatically.</p>
+    </div>
+    ` : ""}
+
+    ${button(actionLink, isNew ? "Create my account & accept →" : "Go to my inventory →")}
 
     <hr style="margin:28px 0;border:none;border-top:1px solid #e5e7eb;" />
     <p style="margin:0;font-size:13px;color:#9ca3af;">
@@ -181,7 +189,9 @@ export function buildProductAssignedEmail(params: {
     </p>
   `);
 
-  const text = `New product assigned: "${productName}" by ${manufacturerName}.\n\nYou have been opted in for production notifications for this product.\n\nLog in to your inventory here: ${dashboardLink}`;
+  const text = isNew
+    ? `New product assigned: "${productName}" by ${manufacturerName}.\n\nYour invite code: ${inviteCode}\n\nCreate your account and start selling:\n${actionLink}`
+    : `New product assigned: "${productName}" by ${manufacturerName}.\n\nLog in to your inventory here:\n${actionLink}`;
 
   return { html, text };
 }

@@ -470,15 +470,6 @@ export function Navbar({
                   <button
                     onClick={() => {
                       setIsAccountMenuOpen(false);
-                      navigate('profile');
-                    }}
-                    className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                  >
-                    {t('profile')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsAccountMenuOpen(false);
                       handleLogout();
                     }}
                     className="w-full text-left px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg transition-colors"

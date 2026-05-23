@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Pencil, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 import type { ManufacturerProductRow } from "../_types/inventory";
-import { toggleProductActive } from "../_lib/manufacturer-products-firestore";
 import { EditProductModal } from "./edit-product-modal";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
@@ -11,6 +10,7 @@ import { useI18n } from "../../i18n/I18nContext";
 type Props = {
   rows: ManufacturerProductRow[];
   onRefresh: () => void;
+  onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean) => Promise<void>;
 };
 
 function sourceCls(source: string): string {
@@ -18,36 +18,56 @@ function sourceCls(source: string): string {
   return "bg-surface-container text-on-surface-variant";
 }
 
-function ToggleBtn({ row, onDone }: { row: ManufacturerProductRow; onDone: () => void }) {
+function ToggleBtn({
+  row,
+  onDone,
+  onToggleActive,
+}: {
+  row: ManufacturerProductRow;
+  onDone: () => void;
+  onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean) => Promise<void>;
+}) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const handle = async () => {
     setBusy(true);
-    try { await toggleProductActive(row.productId, !row.isActive); onDone(); }
-    catch { /* ignore */ }
-    finally { setBusy(false); }
+    setErr(null);
+    try {
+      if (onToggleActive) {
+        await onToggleActive(row.productId, row.inventoryId, row.isActive);
+      }
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setBusy(false);
+    }
   };
   return (
-    <button
-      onClick={handle} disabled={busy} title={row.isActive ? t('toggleDeactivate') : t('toggleActivate')}
-      className={cn(
-        "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50",
-        row.isActive
-          ? "bg-primary/10 text-primary hover:bg-red-50 hover:text-red-600"
-          : "bg-surface-container text-on-surface-variant hover:bg-primary/10 hover:text-primary",
-      )}
-    >
-      {busy
-        ? <Loader2 className="h-3 w-3 animate-spin" />
-        : row.isActive
-          ? <ToggleRight className="h-3.5 w-3.5" />
-          : <ToggleLeft  className="h-3.5 w-3.5" />}
-      {row.isActive ? t('statusActive') : t('statusInactive')}
-    </button>
+    <div className="flex flex-col gap-0.5">
+      <button
+        onClick={handle} disabled={busy || !onToggleActive} title={row.isActive ? t('toggleDeactivate') : t('toggleActivate')}
+        className={cn(
+          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50",
+          row.isActive
+            ? "bg-primary/10 text-primary hover:bg-red-50 hover:text-red-600"
+            : "bg-surface-container text-on-surface-variant hover:bg-primary/10 hover:text-primary",
+        )}
+      >
+        {busy
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : row.isActive
+            ? <ToggleRight className="h-3.5 w-3.5" />
+            : <ToggleLeft  className="h-3.5 w-3.5" />}
+        {row.isActive ? t('statusActive') : t('statusInactive')}
+      </button>
+      {err && <p className="text-[10px] text-red-600 max-w-[120px]">{err}</p>}
+    </div>
   );
 }
 
-export function ManufacturerCatalogueTable({ rows, onRefresh }: Props) {
+export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: Props) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<ManufacturerProductRow | null>(null);
 
@@ -142,7 +162,7 @@ export function ManufacturerCatalogueTable({ rows, onRefresh }: Props) {
 
                     {/* Status toggle */}
                     <td className="px-3 py-3 md:px-4">
-                      <ToggleBtn row={r} onDone={onRefresh} />
+                      <ToggleBtn row={r} onDone={onRefresh} onToggleActive={onToggleActive} />
                     </td>
 
                     <td className="whitespace-nowrap px-3 py-3 text-on-surface-variant md:px-4 text-xs">{updatedLabel}</td>
