@@ -11,6 +11,8 @@ import { storage, fetchAllMarketplaceProducts } from "../../firebase";
 import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
 import { createProductAndInventory } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
+import { useI18n } from "../../i18n/I18nContext";
+import { HelperIcon } from "../../../components/helpers";
 import type { MarketplaceProduct } from "../../../types/product";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -106,6 +108,7 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
   slot: ImageSlot; index: number; disabled: boolean;
   onChange: (p: Partial<ImageSlot>) => void; onClear: () => void;
 }) {
+  const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -133,13 +136,13 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
             <X className="h-3 w-3" />
           </button>
           {index === 0 && (
-            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white">Main</span>
+            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white">{t('formMainBadge')}</span>
           )}
         </div>
       ) : (
         <div className="flex h-28 flex-col items-center justify-center gap-1 text-on-surface-variant/50">
           <ImageIcon className="h-7 w-7" />
-          <span className="text-[10px]">{index === 0 ? "Main image" : `Image ${index + 1}`}</span>
+          <span className="text-[10px]">{index === 0 ? t('formMainImage') : `${t('formImageLabel')} ${index + 1}`}</span>
         </div>
       )}
       <div className="flex flex-col gap-2 p-2.5">
@@ -152,7 +155,7 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
               } disabled:opacity-50`}
             >
               {m === "url" ? <LinkIcon className="h-3 w-3" /> : <Upload className="h-3 w-3" />}
-              {m === "url" ? "Link" : "Upload"}
+              {m === "url" ? t('formLinkLabel') : t('formUploadLabel')}
             </button>
           ))}
         </div>
@@ -166,15 +169,10 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             <button type="button" disabled={disabled || slot.uploading}
               onClick={() => fileRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors">
-              {slot.uploading ? (
-                <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</>
-              ) : (
-                <>
-                  <span className="flex items-center gap-1"><Upload className="h-3 w-3" />Choose image</span>
-                  <span className="text-[9px] text-on-surface-variant/60">JPG, PNG, WEBP, GIF</span>
-                </>
-              )}
+              className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors">
+              {slot.uploading
+                ? <><Loader2 className="h-3 w-3 animate-spin" />{t('formUploadingLabel')}</>
+                : <><Upload className="h-3 w-3" />{t('formChooseFile')}</>}
             </button>
           </>
         )}
@@ -194,6 +192,7 @@ export function AddProductInventoryForm({
   seatStats,
   storeName,
 }: AddProductInventoryFormProps) {
+  const { t } = useI18n();
   // Basic fields
   const [name,        setName]        = useState("");
   const [category,    setCategory]    = useState<string>(CATEGORIES[0]);
@@ -349,7 +348,7 @@ export function AddProductInventoryForm({
           existingProductId: existingProductId ?? undefined,
         });
       }
-      setMessage({ type: "ok", text: isManufacturer ? "Product added to your catalogue." : "Product added to your inventory." });
+      setMessage({ type: "ok", text: isManufacturer ? t('formProductAdded') : t('formProductAddedInv') });
       setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false); setExistingProductId(null);
       setVariants([newVariant()]);
       setImages([newSlot()]);
@@ -368,24 +367,24 @@ export function AddProductInventoryForm({
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-base font-semibold text-on-surface">
-          {isManufacturer ? "Add product to catalogue" : "Add product to inventory"}
+          {isManufacturer ? t('addProductToCatalogue') : t('addProductToInventory')}
         </h2>
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
           hasSeats ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"
         }`}>
-          {seatStats.available} seat{seatStats.available !== 1 ? "s" : ""} available
+          {seatStats.available} {seatStats.available !== 1 ? t('seatsAvailableLabel') : t('seatAvailableLabel')}
         </span>
       </div>
 
       {noSubscription && (
         <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          No active subscription. <Link href="/dashboard/upgrade" className="font-semibold underline">Purchase a plan</Link> to start listing products.
+          {t('noActiveSub')} <Link href="/dashboard/upgrade" className="font-semibold underline">{t('purchasePlanLink')}</Link> {t('toStartListing')}
         </div>
       )}
       {!noSubscription && !hasSeats && (
         <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          All {seatStats.totalPurchased} seat{seatStats.totalPurchased !== 1 ? "s" : ""} used.{" "}
-          <Link href="/dashboard/upgrade" className="font-semibold underline">Buy more seats</Link> to continue.
+          {t('allSeatsUsed')}{" "}
+          <Link href="/dashboard/upgrade" className="font-semibold underline">{t('buyMoreSeatsLink')}</Link> {t('toContinue')}
         </div>
       )}
 
@@ -404,14 +403,15 @@ export function AddProductInventoryForm({
         {/* ── Section 1: Product details ────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-            <Tag className="h-4 w-4 text-primary" /> Product details
+            <Tag className="h-4 w-4 text-primary" /> {t('formProductDetails')}
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormProductDetails" ariaLabel={`${t('formProductDetails')} help`} />
           </div>
 
           {/* Product name — with search */}
           <div className="flex flex-col gap-1.5 text-sm name-search-wrap relative">
             <span className="font-medium text-on-surface">
-              Product name <span className="text-red-500">*</span>
-              <span className="ml-2 text-xs font-normal text-on-surface-variant">Search existing catalogue to auto-fill</span>
+              {t('formProductNameLabel')} <span className="text-red-500">*</span>
+              <span className="ml-2 text-xs font-normal text-on-surface-variant">{t('formSearchAutofill')}</span>
             </span>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant/60" />
@@ -423,14 +423,14 @@ export function AddProductInventoryForm({
                 value={name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-                placeholder="e.g. SOYA 335 or start typing…"
+                placeholder={t('formProductNamePlaceholder')}
               />
             </div>
 
             {/* Autofill badge */}
             {autofilled && (
               <div className="flex items-center gap-2 rounded-xl bg-primary/5 border border-primary/20 px-3 py-2">
-                <span className="text-xs text-primary font-medium">✓ Details auto-filled from existing catalogue. You can adjust prices and stock.</span>
+                <span className="text-xs text-primary font-medium">{t('formAutofilledMsg')}</span>
                 <button type="button" onClick={() => setAutofilled(false)} className="ml-auto text-primary/60 hover:text-primary">
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -440,7 +440,7 @@ export function AddProductInventoryForm({
             {/* Dropdown */}
             {showDropdown && suggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-xl border border-outline-variant/40 bg-white shadow-lg overflow-hidden">
-                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">Existing products — click to auto-fill</p>
+                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">{t('formExistingProducts')}</p>
                 {suggestions.map((s) => (
                   <button key={s.id} type="button"
                     onMouseDown={(e) => { e.preventDefault(); applyAutofill(s); }}
@@ -459,7 +459,7 @@ export function AddProductInventoryForm({
                   </button>
                 ))}
                 <div className="px-3 py-2 border-t border-outline-variant/10 bg-surface-container-low">
-                  <p className="text-[11px] text-on-surface-variant">Not found? Keep typing to add new product to master catalogue.</p>
+                  <p className="text-[11px] text-on-surface-variant">{t('formNotFound')}</p>
                 </div>
               </div>
             )}
@@ -467,7 +467,7 @@ export function AddProductInventoryForm({
 
           {/* Category */}
           <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-on-surface">Category <span className="text-red-500">*</span></span>
+            <span className="font-medium text-on-surface">{t('formCategoryLabel')} <span className="text-red-500">*</span></span>
             <select required disabled={isDisabled}
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 appearance-none"
               value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -478,12 +478,12 @@ export function AddProductInventoryForm({
           {/* Description */}
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-on-surface flex items-center gap-1.5">
-              <AlignLeft className="h-3.5 w-3.5 text-on-surface-variant" /> Description
+              <AlignLeft className="h-3.5 w-3.5 text-on-surface-variant" /> {t('formDescriptionLabel')}
             </span>
             <textarea rows={3} disabled={isDisabled}
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 resize-none"
               value={description} onChange={(e) => setDescription(e.target.value)}
-              placeholder="Crop suitability, yield, dosage, soil type…" />
+              placeholder={t('formDescPlaceholder')} />
           </label>
         </div>
 
@@ -491,14 +491,15 @@ export function AddProductInventoryForm({
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Layers className="h-4 w-4 text-primary" /> Pack sizes &amp; prices
+              <Layers className="h-4 w-4 text-primary" /> {t('formPackSizes')}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormPackSizes" ariaLabel={`${t('formPackSizes')} help`} />
             </div>
-            <span className="text-xs text-on-surface-variant">{variants.length}/{MAX_VARIANTS} sizes</span>
+            <span className="text-xs text-on-surface-variant">{variants.length}/{MAX_VARIANTS} {t('formSizesCount')}</span>
           </div>
 
           {/* Quick presets */}
           <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-on-surface-variant">Quick add:</p>
+            <p className="text-xs text-on-surface-variant">{t('formQuickAdd')}</p>
             <div className="flex flex-wrap gap-2">
               {SIZE_PRESETS.map((p) => {
                 const active = variants.some((v) => (v.unit === "custom" ? v.customUnit : v.unit) === p.unit);
@@ -521,9 +522,9 @@ export function AddProductInventoryForm({
 
           {/* Column headers */}
           <div className="grid grid-cols-12 gap-2 px-1">
-            <span className="col-span-4 text-xs font-medium text-on-surface-variant">Unit / Size</span>
-            <span className="col-span-4 text-xs font-medium text-on-surface-variant">Price (₹)</span>
-            <span className="col-span-3 text-xs font-medium text-on-surface-variant">Stock qty</span>
+            <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formUnitSize')}</span>
+            <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formPriceCol')}</span>
+            <span className="col-span-3 text-xs font-medium text-on-surface-variant">{t('formStockQty')}</span>
             <span className="col-span-1" />
           </div>
 
@@ -583,25 +584,19 @@ export function AddProductInventoryForm({
             <button type="button" disabled={isDisabled}
               onClick={() => setVariants((vs) => [...vs, newVariant()])}
               className="flex w-fit items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors">
-              <Plus className="h-4 w-4" /> Add another size
+              <Plus className="h-4 w-4" /> {t('formAddAnotherSize')}
             </button>
           )}
         </div>
 
         {/* ── Section 3: Images ─────────────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-                <ImageIcon className="h-4 w-4 text-primary" /> Product images
-              </div>
-              <p className="text-xs text-on-surface-variant">
-                Images only — JPG, PNG, WEBP, GIF &nbsp;·&nbsp; max 5 &nbsp;·&nbsp; recommended 800×800 px
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <ImageIcon className="h-4 w-4 text-primary" /> {t('formProductImages')}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormProductImages" ariaLabel={`${t('formProductImages')} help`} />
             </div>
-            <span className="shrink-0 rounded-full bg-surface-container px-2.5 py-0.5 text-xs font-medium text-on-surface-variant">
-              {images.length}/{MAX_IMAGES}
-            </span>
+            <span className="text-xs text-on-surface-variant">{t('formUploadOrPaste')} {MAX_IMAGES}</span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {images.map((slot, i) => (
@@ -619,7 +614,7 @@ export function AddProductInventoryForm({
               <Plus className="h-4 w-4" /> Add another image
             </button>
           )}
-          <p className="text-xs text-on-surface-variant">First image is used as the main photo.</p>
+          <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 
         {/* Submit */}
@@ -627,12 +622,12 @@ export function AddProductInventoryForm({
           <button type="submit" disabled={isDisabled}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 transition-all">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
-            {!hasSeats ? "No seats available" : submitting ? "Saving…" : isManufacturer ? "Add to catalogue" : "Add to inventory"}
+            {!hasSeats ? t('formNoSeats') : submitting ? t('formSavingLabel') : isManufacturer ? t('formAddToCatalogue') : t('formAddToInventory')}
           </button>
           {!hasSeats && (
             <Link href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl border-2 border-primary text-primary px-5 py-3 text-sm font-bold hover:bg-primary/5 transition-all">
-              Buy More Seats
+              {t('formBuyMoreSeats')}
             </Link>
           )}
         </div>

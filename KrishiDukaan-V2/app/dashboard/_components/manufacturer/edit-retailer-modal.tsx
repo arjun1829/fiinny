@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint } from "firebase/firestore";
 import { Loader2, LocateFixed, MapPin, Save, X } from "lucide-react";
+import { useI18n } from "../../../i18n/I18nContext";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import { updateNetworkRetailer } from "../../_lib/manufacturer-retailers-firestore";
 import { parseGoogleMapsUrl } from "./add-retailer-form";
@@ -37,6 +38,7 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const [shopName,  setShopName]  = useState(row.shopName);
   const [ownerName, setOwnerName] = useState(row.ownerName);
   const [phone,     setPhone]     = useState(row.retailerPhone);
@@ -197,7 +199,7 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
           <div>
-            <h2 className="text-base font-bold text-on-surface">Edit retailer</h2>
+            <h2 className="text-base font-bold text-on-surface">{t('rnEditRetailer')}</h2>
             <p className="text-xs text-on-surface-variant mt-0.5">{row.shopName}</p>
           </div>
           <button type="button" onClick={onClose}
@@ -214,24 +216,24 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
 
           {/* ── Basic info ── */}
           <section className="flex flex-col gap-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Basic info</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('rnBasicInfo')}</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Shop name <span className="text-red-500">*</span></span>
+                <span className="font-medium text-on-surface">{t('rnShopNameLabel')} <span className="text-red-500">*</span></span>
                 <input type="text" value={shopName} onChange={(e) => setShopName(e.target.value)} className={inputCls} />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Owner name <span className="text-red-500">*</span></span>
+                <span className="font-medium text-on-surface">{t('rnOwnerNameLabel')} <span className="text-red-500">*</span></span>
                 <input type="text" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} className={inputCls} />
               </label>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Phone</span>
+                <span className="font-medium text-on-surface">{t('rnPhoneLabel')}</span>
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Email</span>
+                <span className="font-medium text-on-surface">{t('rnEmailLabel')}</span>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
               </label>
             </div>
@@ -239,19 +241,19 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
 
           {/* ── Location ── */}
           <section className="flex flex-col gap-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Location</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('rnLocationSection')}</h3>
 
             {/* Google Maps search autocomplete */}
             <label className={labelCls}>
               <span className="font-medium text-on-surface">
-                Search on Google Maps
-                <span className="ml-1 font-normal text-on-surface-variant">— auto-fills address fields</span>
+                {t('rnSearchGoogleMaps')}
+                <span className="ml-1 font-normal text-on-surface-variant">{t('rnAutoFillsAddress')}</span>
               </span>
               <input
                 ref={addressInputRef}
                 type="text"
                 defaultValue={line1}
-                placeholder="Type shop name or address…"
+                placeholder={t('rnAddressPlaceholder')}
                 autoComplete="off"
                 className={inputCls}
               />
@@ -259,20 +261,20 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
 
             {/* Address fields */}
             <label className={labelCls}>
-              <span className="font-medium text-on-surface">Address line 1</span>
-              <input type="text" value={line1} onChange={(e) => setLine1(e.target.value)} placeholder="Street / locality" className={inputCls} />
+              <span className="font-medium text-on-surface">{t('rnAddressLine1')}</span>
+              <input type="text" value={line1} onChange={(e) => setLine1(e.target.value)} placeholder={t('rnStreetLocality')} className={inputCls} />
             </label>
             <div className="grid gap-4 sm:grid-cols-3">
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">City</span>
-                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className={inputCls} />
+                <span className="font-medium text-on-surface">{t('rnCityLabel')}</span>
+                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder={t('rnCityLabel')} className={inputCls} />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">State</span>
-                <input type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder="State" className={inputCls} />
+                <span className="font-medium text-on-surface">{t('rnStateLabel')}</span>
+                <input type="text" value={state} onChange={(e) => setState(e.target.value)} placeholder={t('rnStateLabel')} className={inputCls} />
               </label>
               <label className={labelCls}>
-                <span className="font-medium text-on-surface">Pincode</span>
+                <span className="font-medium text-on-surface">{t('rnPincodeLabel')}</span>
                 <input type="text" value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="PIN" className={inputCls} />
               </label>
             </div>
@@ -286,7 +288,7 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
                 className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60"
               >
                 {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-                Use current location
+                {t('rnUseCurrentLocation')}
               </button>
               {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
             </div>
@@ -294,8 +296,8 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
             {/* Paste Maps link */}
             <label className={labelCls}>
               <span className="font-medium text-on-surface">
-                Paste Google Maps link
-                <span className="ml-1 font-normal text-on-surface-variant">— pins location from a shared URL</span>
+                {t('rnPasteGoogleMaps')}
+                <span className="ml-1 font-normal text-on-surface-variant">{t('rnPinsLocation')}</span>
               </span>
               <input
                 type="url"
@@ -322,7 +324,7 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                   <MapPin className="h-3.5 w-3.5" />
-                  Location pinned · {geo.latitude.toFixed(5)}, {geo.longitude.toFixed(5)}
+                  {t('rnLocationPinned')} · {geo.latitude.toFixed(5)}, {geo.longitude.toFixed(5)}
                 </div>
                 <div className="overflow-hidden rounded-xl border border-outline-variant/30">
                   <iframe
@@ -342,12 +344,12 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
         <div className="flex items-center justify-end gap-3 border-t border-outline-variant/30 px-5 py-4 shrink-0">
           <button type="button" onClick={onClose}
             className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors">
-            Cancel
+            {t('cancelBtn')}
           </button>
           <button type="button" disabled={saving} onClick={handleSave}
             className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? t('formSavingLabel') : t('rnSaveChanges')}
           </button>
         </div>
       </div>

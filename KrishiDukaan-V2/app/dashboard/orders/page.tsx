@@ -7,6 +7,7 @@ import { Truck } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
+import { useI18n } from "../../i18n/I18nContext";
 
 const transitions: Record<OrderStatus, OrderStatus[]> = {
   placed: ["accepted", "rejected"],
@@ -17,6 +18,7 @@ const transitions: Record<OrderStatus, OrderStatus[]> = {
 };
 
 export default function OrdersPage() {
+  const { t } = useI18n();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,14 +80,14 @@ export default function OrdersPage() {
   return (
     <>
       <PageHeader
-        title="Incoming Orders"
-        description="Orders placed by farmers for your online-delivery products."
+        title={t('incomingOrdersTitle')}
+        description={t('ordersDesc')}
         helperKey="dashOrders"
       />
 
       {!uid || !sellerType ? (
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
-          Sign in as retailer or manufacturer to view orders.
+          {t('signInForOrders')}
         </p>
       ) : onlineDelivery === false ? (
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-16 text-center">
@@ -93,14 +95,14 @@ export default function OrdersPage() {
             <Truck className="h-9 w-9 text-on-surface-variant/40" />
           </div>
           <div>
-            <p className="text-base font-semibold text-on-surface">Online delivery not enabled</p>
+            <p className="text-base font-semibold text-on-surface">{t('onlineDeliveryNotEnabled')}</p>
             <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
-              Enable online delivery in your Profile settings to start accepting online orders.
+              {t('enableOnlineDeliveryHint')}
             </p>
           </div>
           <Link href="/dashboard/profile?tab=settings"
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            Go to Settings
+            {t('goToSettingsBtn')}
           </Link>
         </div>
       ) : loading ? (
@@ -111,7 +113,7 @@ export default function OrdersPage() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       ) : !orders.length ? (
         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
-          No incoming orders yet.
+          {t('noOrdersYet')}
         </div>
       ) : (
         <div className="space-y-4">
@@ -119,7 +121,7 @@ export default function OrdersPage() {
             <div key={order.id} className="rounded-2xl border border-outline-variant/30 bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-bold text-on-surface">Order #{order.id.slice(0, 8)}</p>
+                  <p className="font-bold text-on-surface">{t('orderPrefix')}{order.id.slice(0, 8)}</p>
                   <p className="text-xs text-on-surface-variant mt-0.5">
                     {order.customerName} · {order.customerPhone}
                   </p>
@@ -146,7 +148,7 @@ export default function OrdersPage() {
                       onClick={() => void onAdvance(order.id, next)}
                       className="rounded-lg border border-outline-variant/40 px-3 py-1.5 text-xs font-bold uppercase tracking-wider hover:bg-surface-container-low"
                     >
-                      Mark {next.replaceAll("_", " ")}
+                      {t('markLabel')} {next.replaceAll("_", " ")}
                     </button>
                   ))}
                 </div>
@@ -158,4 +160,3 @@ export default function OrdersPage() {
     </>
   );
 }
-

@@ -6,6 +6,7 @@ import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
 import { updateInventoryRecord, acceptAssignedProduct } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
+import { useI18n } from "../../i18n/I18nContext";
 
 type RowDraft = {
   stockQuantity: number;
@@ -188,6 +189,7 @@ export function InventoryManagementTable({
   onToggleActive,
   onDelete,
 }: InventoryManagementTableProps) {
+  const { t } = useI18n();
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -404,7 +406,7 @@ export function InventoryManagementTable({
                         ) : (
                           <Save className="h-3.5 w-3.5" />
                         )}
-                        Save
+                        {t('saveBtn')}
                       </button>
                     </td>
                     {hasActions ? (

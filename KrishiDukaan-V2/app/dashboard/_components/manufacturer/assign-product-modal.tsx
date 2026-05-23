@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, CheckSquare, Loader2, PackagePlus, Search, Square, Trash2, X } from "lucide-react";
+import { useI18n } from "../../../i18n/I18nContext";
 import { doc, getDoc } from "firebase/firestore";
 import {
   bulkAssignProductsToRetailer,
@@ -32,6 +33,7 @@ export function AssignProductModal({
   onAssigned,
   onClose,
 }: AssignProductModalProps) {
+  const { t } = useI18n();
   // Active listings for this retailer keyed by manufacturerProductId
   const activeListingsForRetailer = seatListings.filter(
     (l) => l.retailerDocId === retailer.retailerDocId && l.status === "active",
@@ -190,9 +192,9 @@ export function AssignProductModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-on-surface">Assign Products</h2>
+            <h2 className="text-base font-semibold text-on-surface">{t('rnAssignProductsTitle')}</h2>
             <p className="text-xs text-on-surface-variant mt-0.5">
-              To {retailer.shopName || retailer.ownerName}
+              {t('rnToRetailer')} {retailer.shopName || retailer.ownerName}
             </p>
           </div>
           <button
@@ -212,14 +214,14 @@ export function AssignProductModal({
             onClick={() => setActiveTab("own")}
             className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${activeTab === "own" ? "text-primary border-b-2 border-primary" : "text-on-surface-variant"}`}
           >
-            Your Products
+            {t('rnYourProducts')}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("marketplace")}
             className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-widest transition-all ${activeTab === "marketplace" ? "text-primary border-b-2 border-primary" : "text-on-surface-variant"}`}
           >
-            Marketplace
+            {t('rnMarketplace')}
           </button>
         </div>
 
@@ -229,7 +231,7 @@ export function AssignProductModal({
             <Search className="h-4 w-4 text-outline shrink-0" />
             <input
               type="text"
-              placeholder={`Search ${activeTab === "own" ? "your" : "marketplace"} products…`}
+              placeholder={activeTab === "own" ? t('rnSearchYourProducts') : t('rnSearchMarketplace')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
@@ -244,16 +246,16 @@ export function AssignProductModal({
               <PackagePlus className="h-6 w-6 text-harvest" />
             </div>
             <div>
-              <p className="font-semibold text-on-surface">No seats available</p>
+              <p className="font-semibold text-on-surface">{t('rnNoSeatsAvailable')}</p>
               <p className="mt-1 text-sm text-on-surface-variant max-w-xs mx-auto">
-                You have used all your seats. Purchase more to assign additional products.
+                {t('rnNoSeatsDesc')}
               </p>
             </div>
             <a
               href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95"
             >
-              Buy seats
+              {t('rnBuySeats')}
             </a>
           </div>
         ) : loadingMarketplace ? (
@@ -262,11 +264,11 @@ export function AssignProductModal({
           </div>
         ) : displayProducts.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-            <p className="font-semibold text-on-surface">No products found</p>
+            <p className="font-semibold text-on-surface">{t('rnNoProductsFound')}</p>
             <p className="text-sm text-on-surface-variant">
               {activeTab === "own" 
-                ? "Add products to your catalogue before assigning them."
-                : "No products match your search in the marketplace."}
+                ? t('rnNoOwnProducts')
+                : t('rnNoMarketProducts')}
             </p>
           </div>
         ) : (
@@ -278,7 +280,7 @@ export function AssignProductModal({
             ) : null}
 
             <p className="px-5 pt-4 pb-2 text-xs font-medium text-on-surface-variant">
-              Select products to assign · 1 seat per product per month
+              {t('rnSelectProducts')}
               {newAssignCount > 0 ? (
                 <span className="ml-1 font-semibold text-primary">
                   ({newAssignCount} selected)
@@ -324,7 +326,7 @@ export function AssignProductModal({
                         {isConfirmingRemove ? (
                           <div className="flex items-center gap-1 shrink-0 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
                             <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-                            <span className="text-xs font-medium text-red-700">Free seat?</span>
+                            <span className="text-xs font-medium text-red-700">{t('rnFreeSeat')}</span>
                             <button
                               type="button"
                               disabled={removing}
@@ -332,7 +334,7 @@ export function AssignProductModal({
                               className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
                             >
                               {removing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                              {removing ? "Removing…" : "Confirm"}
+                              {removing ? t('rnRemoving') : t('confirmBtn')}
                             </button>
                             <button
                               type="button"
@@ -340,13 +342,13 @@ export function AssignProductModal({
                               onClick={() => setConfirmRemoveId(null)}
                               className="rounded-lg px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100"
                             >
-                              Cancel
+                              {t('cancelBtn')}
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                              Assigned
+                              {t('rnAssignedBadge')}
                             </span>
                             <button
                               type="button"
@@ -355,7 +357,7 @@ export function AssignProductModal({
                               className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
-                              Remove
+                              {t('removeBtn')}
                             </button>
                           </div>
                         )}
@@ -388,7 +390,7 @@ export function AssignProductModal({
                         <p className="text-xs text-on-surface-variant">
                           {product.category}
                           {product.price ? ` · ₹${product.price}` : ""}
-                          {activeTab === "marketplace" && product.store && ` · from ${product.store}`}
+                          {activeTab === "marketplace" && product.store && ` · ${t('rnFromStore')} ${product.store}`}
                         </p>
                       </div>
                       <span
@@ -414,7 +416,7 @@ export function AssignProductModal({
                 disabled={submitting}
                 className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60"
               >
-                Cancel
+                {t('cancelBtn')}
               </button>
               <button
                 type="button"
@@ -425,12 +427,12 @@ export function AssignProductModal({
                 {submitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Assigning…
+                    {t('rnAssigning')}
                   </>
                 ) : (
                   <>
                     <PackagePlus className="h-4 w-4" />
-                    Assign {newAssignCount > 0 ? `${newAssignCount} product${newAssignCount > 1 ? "s" : ""}` : "Products"}
+                    Assign {newAssignCount > 0 ? `${newAssignCount} ${newAssignCount > 1 ? t('rnAssignCountPlural') : t('rnAssignCount')}` : t('rnAssignBtnFallback')}
                   </>
                 )}
               </button>

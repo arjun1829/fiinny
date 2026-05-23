@@ -22,6 +22,7 @@ import { fetchManufacturerRetailers } from "../_lib/manufacturer-retailers-fires
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 import { HelperTextKey } from "../../i18n/helperTexts";
+import { useI18n } from "../../i18n/I18nContext";
 
 type Role = "manufacturer" | "retailer";
 type AccessState = "checking" | "ready" | "denied";
@@ -71,58 +72,61 @@ function SeatStatTile({
 }
 
 function SubStatusBadge({ sub }: { sub: Subscription }) {
+  const { t } = useI18n();
   if (!isSubscriptionActive(sub)) {
     return (
       <span className="inline-flex items-center rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-        Expired
+        {t('expiredBadge')}
       </span>
     );
   }
   if (isExpiringSoon(sub, 30)) {
     return (
       <span className="inline-flex items-center rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
-        Expiring soon
+        {t('expiringSoonBadge')}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
-      Active
+      {t('activeBadge')}
     </span>
   );
 }
 
 function ListingBadge({ listing }: { listing: RetailerSeatListing }) {
+  const { t } = useI18n();
   const active = isListingActive(listing);
   if (active) {
     return (
       <span className="inline-flex items-center rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
-        Active
+        {t('activeBadge')}
       </span>
     );
   }
   if (listing.status === "released") {
     return (
       <span className="inline-flex items-center rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-        Released
+        {t('releasedBadge')}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
-      Expired
+      {t('expiredBadge')}
     </span>
   );
 }
 
 function ListingTypeBadge({ type }: { type: RetailerSeatListing["listingType"] }) {
+  const { t } = useI18n();
   return type === "assigned" ? (
     <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-      Assigned to retailer
+      {t('assignedToRetailer')}
     </span>
   ) : (
     <span className="inline-flex items-center rounded-full bg-on-surface/8 px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-      Own product
+      {t('ownProductListing')}
     </span>
   );
 }
@@ -136,6 +140,7 @@ function ReleaseAction({
   listing: RetailerSeatListing;
   onReleased: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [releasing,  setReleasing]  = useState(false);
 
@@ -145,7 +150,7 @@ function ReleaseAction({
     return (
       <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1">
         <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
-        <span className="text-xs font-medium text-red-700">Release?</span>
+        <span className="text-xs font-medium text-red-700">{t('releaseQ')}</span>
         <button type="button" disabled={releasing}
           onClick={async () => {
             setReleasing(true);
@@ -154,10 +159,10 @@ function ReleaseAction({
             finally { setReleasing(false); setConfirming(false); }
           }}
           className="rounded px-1.5 py-0.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60">
-          {releasing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes"}
+          {releasing ? <Loader2 className="h-3 w-3 animate-spin" /> : t('yesLabel')}
         </button>
         <button type="button" disabled={releasing} onClick={() => setConfirming(false)}
-          className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60">No</button>
+          className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60">{t('noLabel')}</button>
       </div>
     );
   }
@@ -165,7 +170,7 @@ function ReleaseAction({
   return (
     <button type="button" onClick={() => setConfirming(true)}
       className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-      <Trash2 className="h-3 w-3" /> Release
+      <Trash2 className="h-3 w-3" /> {t('releaseBtn')}
     </button>
   );
 }
@@ -185,6 +190,7 @@ function ActiveListingsSection({
   productMap: Map<string, { name: string; image: string }>;
   onRefresh: () => void;
 }) {
+  const { t } = useI18n();
   const [page, setPage] = useState(1);
   const [search,       setSearch]       = useState("");
   const [typeFilter,   setTypeFilter]   = useState<"all" | "own" | "assigned">("all");
@@ -307,10 +313,9 @@ function ActiveListingsSection({
             <HelperIcon size="xs" variant="ghost" side="right" textKey="dashActiveListings" ariaLabel="Active listings help" />
           </h2>
           <p className="text-sm text-on-surface-variant">
-            Each row consumes one seat from your subscription.
             {isManufacturer
-              ? " Includes your own products and products you've assigned to retailers."
-              : " Your own products that consume your subscription seats."}
+              ? t('activeListingsDescMfg')
+              : t('activeListingsDescRetailer')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -325,12 +330,12 @@ function ActiveListingsSection({
                 : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/30 hover:text-primary"
             }`}>
             <Filter className="h-3.5 w-3.5" />
-            Filters {hasActiveFilters ? "•" : ""}
+            {t('filtersLabel')} {hasActiveFilters ? "•" : ""}
           </button>
           {hasActiveFilters && (
             <button type="button" onClick={clearAll}
               className="flex items-center gap-1 rounded-xl border border-outline-variant/30 px-2.5 py-1.5 text-xs text-on-surface-variant hover:text-red-500 transition-colors">
-              <X className="h-3.5 w-3.5" /> Clear
+              <X className="h-3.5 w-3.5" /> {t('clearLabel')}
             </button>
           )}
         </div>
@@ -340,64 +345,64 @@ function ActiveListingsSection({
       {showFilters && (
         <div className="mb-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-            <span className="font-medium text-on-surface-variant">Search</span>
+            <span className="font-medium text-on-surface-variant">{t('searchLabel')}</span>
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant/50" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border border-outline-variant/40 bg-white pl-8 pr-3 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="Product ID, shop name, status…" />
+                placeholder={t('listingSearchPlaceholder')} />
             </div>
           </label>
 
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Type</span>
+            <span className="font-medium text-on-surface-variant">{t('typeLabel')}</span>
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
-              <option value="all">All types</option>
-              <option value="own">Own product</option>
-              <option value="assigned">Assigned to retailer</option>
+              <option value="all">{t('allTypes')}</option>
+              <option value="own">{t('ownProductType')}</option>
+              <option value="assigned">{t('assignedToRetailerType')}</option>
             </select>
           </label>
 
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Status</span>
+            <span className="font-medium text-on-surface-variant">{t('statusLabel')}</span>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
-              <option value="all">All statuses</option>
-              <option value="active">Active</option>
-              <option value="released">Released</option>
-              <option value="expired">Expired</option>
+              <option value="all">{t('allStatuses')}</option>
+              <option value="active">{t('activeFilter')}</option>
+              <option value="released">{t('releasedFilter')}</option>
+              <option value="expired">{t('expiredFilter')}</option>
             </select>
           </label>
 
           {isManufacturer && shopNames.length > 0 && (
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-              <span className="font-medium text-on-surface-variant">Shop / Retailer</span>
+              <span className="font-medium text-on-surface-variant">{t('shopRetailerLabel')}</span>
               <select value={shopFilter} onChange={(e) => setShopFilter(e.target.value)}
                 className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
-                <option value="all">All retailers</option>
+                <option value="all">{t('allRetailers')}</option>
                 {shopNames.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
           )}
 
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Assigned from</span>
+            <span className="font-medium text-on-surface-variant">{t('assignedFromLabel')}</span>
             <input type="date" value={assignedFrom} onChange={(e) => setAssignedFrom(e.target.value)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           </label>
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Assigned to</span>
+            <span className="font-medium text-on-surface-variant">{t('assignedToDateLabel')}</span>
             <input type="date" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           </label>
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Expires from</span>
+            <span className="font-medium text-on-surface-variant">{t('expiresFromLabel')}</span>
             <input type="date" value={expiresFrom} onChange={(e) => setExpiresFrom(e.target.value)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           </label>
           <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">Expires to</span>
+            <span className="font-medium text-on-surface-variant">{t('expiresToLabel')}</span>
             <input type="date" value={expiresTo} onChange={(e) => setExpiresTo(e.target.value)}
               className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           </label>
@@ -413,11 +418,11 @@ function ActiveListingsSection({
           <button type="button" onClick={handleBulkRelease} disabled={bulkReleasing}
             className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60">
             {bulkReleasing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            {bulkReleasing ? "Releasing…" : "Release selected"}
+            {bulkReleasing ? t('releasingText') : t('releaseSelectedBtn')}
           </button>
           <button type="button" onClick={() => setSelected(new Set())}
             className="rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container">
-            Deselect all
+            {t('deselectAllBtn')}
           </button>
           {bulkError && <span className="text-xs text-red-600">{bulkError}</span>}
         </div>
@@ -425,18 +430,18 @@ function ActiveListingsSection({
 
       {listings.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-10 text-center">
-          <p className="text-base font-semibold text-on-surface">No listings yet</p>
+          <p className="text-base font-semibold text-on-surface">{t('noListingsYet')}</p>
           <p className="mt-1 text-sm text-on-surface-variant">
             {isManufacturer
-              ? "Create products or assign products to retailers to consume seats."
-              : "Add products to your inventory to consume seats."}
+              ? t('noListingsDescMfg')
+              : t('noListingsDescRetailer')}
           </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-8 text-center">
-          <p className="text-sm font-semibold text-on-surface">No listings match your filters</p>
+          <p className="text-sm font-semibold text-on-surface">{t('noListingsMatch')}</p>
           <button type="button" onClick={clearAll}
-            className="mt-2 text-xs text-primary underline hover:no-underline">Clear all filters</button>
+            className="mt-2 text-xs text-primary underline hover:no-underline">{t('clearAllFilters')}</button>
         </div>
       ) : (
         <>
@@ -456,13 +461,13 @@ function ActiveListingsSection({
                           : <Square className="h-4 w-4" />}
                     </button>
                   </th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Type</th>
-                  {isManufacturer && <th className="whitespace-nowrap px-4 py-3 font-medium">Shop / Retailer</th>}
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Product</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Assigned</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Expires</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Actions</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colType')}</th>
+                  {isManufacturer && <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colShopRetailer')}</th>}
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colProduct')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colStatus')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colAssigned')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colExpires')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">{t('colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
@@ -537,7 +542,7 @@ function ActiveListingsSection({
             <div className="flex items-center gap-1">
               <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
                 className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-40">
-                <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                <ChevronLeft className="h-3.5 w-3.5" /> {t('prevBtn')}
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button key={p} type="button" onClick={() => setPage(p)}
@@ -551,7 +556,7 @@ function ActiveListingsSection({
               ))}
               <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
                 className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:bg-surface-container disabled:opacity-40">
-                Next <ChevronRight className="h-3.5 w-3.5" />
+                {t('nextBtn')} <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -563,6 +568,7 @@ function ActiveListingsSection({
 }
 
 export default function SubscriptionPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [access, setAccess] = useState<AccessState>("checking");
   const [uid, setUid] = useState<string | null>(null);
@@ -656,7 +662,7 @@ export default function SubscriptionPage() {
     return (
       <div className="flex min-h-[320px] flex-col items-center justify-center gap-3">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm font-medium text-on-surface-variant">Loading…</p>
+        <p className="text-sm font-medium text-on-surface-variant">{t('loadingText')}</p>
       </div>
     );
   }
@@ -669,8 +675,8 @@ export default function SubscriptionPage() {
     <>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <PageHeader
-          title="Subscription"
-          description="1 seat = 1 active product listing. Seats are consumed when you create a product or assign one to a retailer."
+          title={t('subscriptionTitle')}
+          description={t('subscriptionDesc')}
           helperKey="dashSubscription"
         />
         <HelperTooltip side="bottom" textKey="dashBuySeats">
@@ -679,7 +685,7 @@ export default function SubscriptionPage() {
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 active:scale-95 transition-all shrink-0"
           >
             <CreditCard className="h-4 w-4" />
-            Buy seats
+            {t('buySeatsBtn')}
           </a>
         </HelperTooltip>
       </div>
@@ -699,34 +705,34 @@ export default function SubscriptionPage() {
           {/* ── Seat stats (seats = own listings only — their subscription pays) ── */}
           <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <SeatStatTile
-              label="Seats purchased"
+              label={t('seatsPurchasedLabel')}
               value={stats?.totalPurchased ?? 0}
-              sub="From active subscriptions"
+              sub={t('fromActiveSubs')}
               helperKey="dashSeatsPurchased"
             />
             <SeatStatTile
-              label="Seats used"
+              label={t('seatsUsedLabel')}
               value={stats?.activeUsed ?? 0}
               highlight="primary"
-              sub="Active product listings"
+              sub={t('activeProductListings')}
               helperKey="dashSeatsUsed"
             />
             <SeatStatTile
-              label="Available"
+              label={t('availableLabel')}
               value={stats?.available ?? 0}
               highlight={
                 (stats?.available ?? 0) === 0 && (stats?.totalPurchased ?? 0) > 0
                   ? "harvest"
                   : undefined
               }
-              sub="Ready to use"
+              sub={t('readyToUse')}
               helperKey="dashSeatsAvailable"
             />
             <SeatStatTile
-              label="Expiring soon"
+              label={t('expiringSoonLabel')}
               value={stats?.expiringSoon ?? 0}
               highlight={(stats?.expiringSoon ?? 0) > 0 ? "harvest" : undefined}
-              sub="Subscriptions in 30 days"
+              sub={t('subsIn30Days')}
               helperKey="dashSeatsExpiring"
             />
           </div>
@@ -735,7 +741,7 @@ export default function SubscriptionPage() {
           <section aria-label="Subscription history" className="mb-8">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-base font-semibold text-on-surface inline-flex items-center gap-1.5">
-                Subscription history
+                {t('subHistory')}
                 <HelperIcon
                   size="xs"
                   variant="ghost"
@@ -750,15 +756,15 @@ export default function SubscriptionPage() {
                 className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-on-surface-variant hover:bg-surface-container"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
+                {t('refreshBtn')}
               </button>
             </div>
 
             {subs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-10 text-center">
-                <p className="text-base font-semibold text-on-surface">No subscriptions yet</p>
+                <p className="text-base font-semibold text-on-surface">{t('noSubsYet')}</p>
                 <p className="mt-1 text-sm text-on-surface-variant">
-                  Purchase seats to start listing products.
+                  {t('purchaseSeatsStart')}
                 </p>
               </div>
             ) : (
@@ -767,12 +773,12 @@ export default function SubscriptionPage() {
                   <table className="min-w-full text-left text-sm">
                     <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
                       <tr>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Plan</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Seats</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Start</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Expires</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Payment ID</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('planCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('seatsCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('statusCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('startCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('expiresCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('paymentIdCol')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/20">
@@ -817,11 +823,10 @@ export default function SubscriptionPage() {
             <section aria-label="Products assigned by manufacturers">
               <div className="mb-3">
                 <h2 className="text-base font-semibold text-on-surface">
-                  Assigned by manufacturers
+                  {t('assignedByMfgTitle')}
                 </h2>
                 <p className="text-sm text-on-surface-variant">
-                  Manufacturers have placed these products in your store. They consume the
-                  manufacturer&apos;s seats, not yours. Manage stock in Inventory.
+                  {t('assignedByMfgDesc')}
                 </p>
               </div>
               <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -829,9 +834,9 @@ export default function SubscriptionPage() {
                   <table className="min-w-full text-left text-sm">
                     <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
                       <tr>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Status</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Assigned</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Expires</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('statusCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('assignedCol')}</th>
+                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('expiresCol')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/20">

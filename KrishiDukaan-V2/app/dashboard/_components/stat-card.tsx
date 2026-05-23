@@ -1,8 +1,11 @@
+"use client";
+
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
 import type { StatMetric } from "../_data/mock";
 import { cn } from "../_lib/cn";
 import { HelperIcon } from "../../../components/helpers";
 import { HelperTextKey } from "../../i18n/helperTexts";
+import { useI18n } from "../../i18n/I18nContext";
 
 type StatCardProps = {
   metric: StatMetric;
@@ -10,6 +13,7 @@ type StatCardProps = {
 };
 
 export function StatCard({ metric, helperKey }: StatCardProps) {
+  const { t } = useI18n();
   const TrendIcon =
     metric.trend === "up"
       ? TrendingUp
@@ -44,7 +48,7 @@ export function StatCard({ metric, helperKey }: StatCardProps) {
           )}
         >
           <TrendIcon className="h-3.5 w-3.5" />
-          {metric.change} <span className="font-normal text-on-surface-variant">vs last week</span>
+          {metric.change} <span className="font-normal text-on-surface-variant">{t('vsLastWeek')}</span>
         </p>
       ) : null}
     </div>
