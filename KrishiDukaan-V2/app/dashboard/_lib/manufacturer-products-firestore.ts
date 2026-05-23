@@ -61,12 +61,14 @@ export async function createManufacturerProduct(
   const subExpiry = getSubscriptionExpiryDate(subs);
   if (!subExpiry) throw new Error("No active subscription found.");
 
-  // Resolve phone (for users/{phone} update) and business name (for store field) in parallel
-  const [idxSnap, mfgSnap] = await Promise.all([
-    getDoc(doc(db, "uidIndex", manufacturerId)),
-    getDoc(doc(db, "manufacturers", manufacturerId)),
-  ]);
+  // Resolve phone first, then read profile from the phone-keyed doc (new schema)
+  const idxSnap = await getDoc(doc(db, "uidIndex", manufacturerId));
   const manufacturerPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
+
+  // Read manufacturer profile using phone as doc ID; fall back to uid for legacy accounts
+  const mfgSnap = await getDoc(
+    doc(db, "manufacturers", manufacturerPhone || manufacturerId),
+  );
   const storeName = mfgSnap.exists()
     ? String(mfgSnap.data().businessName ?? mfgSnap.data().ownerName ?? "")
     : "";

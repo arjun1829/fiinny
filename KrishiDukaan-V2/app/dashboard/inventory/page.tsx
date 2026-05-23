@@ -9,6 +9,7 @@ import { InventoryHealthCards } from "../_components/inventory-health-cards";
 import { InventoryManagementTable } from "../_components/inventory-management-table";
 import { ManufacturerCatalogueTable } from "../_components/manufacturer-catalogue-table";
 import { AddProductInventoryForm } from "../_components/add-product-inventory-form";
+import { BulkProductUpload } from "../_components/bulk-product-upload";
 import {
   fetchRetailerInventoryRows,
   fetchManufacturerCatalogueRows,
@@ -524,13 +525,20 @@ export default function InventoryPage() {
       </section>
 
       {/* Add product form — both manufacturers and retailers can now add products */}
-      <section className="mt-8" aria-label="Add product">
+      <section className="mt-8 flex flex-col gap-4" aria-label="Add product">
         <AddProductInventoryForm
           userId={userId}
           role={role}
           disabled={loading}
           onCreated={refresh}
           seatStats={seatStats}
+          storeName={profile?.shopName}
+        />
+        <BulkProductUpload
+          userId={userId}
+          role={role}
+          seatStats={seatStats}
+          onDone={refresh}
           storeName={profile?.shopName}
         />
       </section>

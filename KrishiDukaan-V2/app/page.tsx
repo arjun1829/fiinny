@@ -20,6 +20,7 @@ import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart } from './firebase';
+import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MarketplaceProduct } from '../types/product';
 import { LatLng } from './utils/haversine';
@@ -80,6 +81,11 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   /** Preserved `inviteCode` query param for manufacturer → retailer signup links (legacy `invite` also read). */
   const [signupInviteCode, setSignupInviteCode] = useState<string | null>(null);
+  /** Result of auto-accepting an invite for an already-logged-in user. */
+  const [inviteAccept, setInviteAccept] = useState<{
+    status: 'accepting' | 'success' | 'already_accepted' | 'error';
+    message?: string;
+  } | null>(null);
 
   const resolveViewForAccess = useCallback((view: View): View => {
     if (
@@ -173,6 +179,7 @@ export default function App() {
       setSelectedProductId(nextProductId);
       setSelectedStoreId(nextStoreId);
       setSelectedHubId(nextHubId);
+      window.scrollTo({ top: 0, behavior: 'instant' });
 
       if (typeof window !== 'undefined') {
         const inviteForUrl = options?.clearInvite ? null : undefined;
@@ -206,6 +213,7 @@ export default function App() {
       setSelectedProductId(next.productId);
       setSelectedStoreId(next.storeId);
       setSelectedHubId(next.hubId);
+      window.scrollTo({ top: 0, behavior: 'instant' });
     };
 
     window.addEventListener('popstate', onPopState);
@@ -228,6 +236,33 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
   }, [cartItems]);
+
+  // Auto-accept invite for already-logged-in users who click an invite link.
+  // Fires whenever both user and signupInviteCode become non-null.
+  useEffect(() => {
+    if (!user || !signupInviteCode) return;
+    const code = signupInviteCode;
+    setSignupInviteCode(null); // clear immediately so effect doesn't re-run
+    setInviteAccept({ status: 'accepting' });
+    acceptManufacturerInvite({ uid: user.uid, inviteCode: code })
+      .then((result) => {
+        if (!result.ok) {
+          const msg = (result as { ok: false; message: string }).message;
+          const isAlreadyUsed = /already|active/i.test(msg);
+          setInviteAccept({ status: isAlreadyUsed ? 'already_accepted' : 'error', message: msg });
+          return;
+        }
+        if (result.alreadyActive) {
+          setInviteAccept({ status: 'already_accepted' });
+        } else {
+          setInviteAccept({ status: 'success' });
+          setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
+        }
+      })
+      .catch(() =>
+        setInviteAccept({ status: 'error', message: 'Could not accept invite. Please try again.' })
+      );
+  }, [user, signupInviteCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Geolocation state ---
   const [userLocation, setUserLocation] = useState<LatLng>(DEFAULT_LOCATION);
@@ -343,11 +378,12 @@ export default function App() {
     });
 
     if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
-      navigate('subscription', { replace: true, clearInvite: true });
+      // Keep invite code in state so the auto-accept effect can claim it after redirect
+      navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
       window.location.href = '/dashboard';
     } else {
-      navigate('home', { replace: true, clearInvite: true });
+      navigate('home', { replace: true });
     }
   };
 
@@ -738,6 +774,73 @@ export default function App() {
       case 'login':
         return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
       case 'signup':
+        // Already-logged-in user arrived via an invite link — show accept result instead of signup form
+        if (user) {
+          return (
+            <div className="flex min-h-[80vh] items-center justify-center px-4 py-10">
+              <div className="w-full max-w-md rounded-3xl border border-surface-container bg-white p-8 shadow-ambient text-center">
+                <div className="flex flex-col items-center mb-6">
+                  <img src="/images/krishidukan icon.webp" alt="KrishiDukan" className="w-16 h-16 object-contain mb-2" />
+                  <span className="font-black text-2xl text-primary">Krishi<span className="text-secondary">Dukan</span></span>
+                </div>
+
+                {(!inviteAccept || inviteAccept.status === 'accepting') && (
+                  <>
+                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                    <p className="font-semibold text-on-surface">Accepting your invite…</p>
+                    <p className="text-sm text-on-surface-variant mt-1">Linking you to the manufacturer's network</p>
+                  </>
+                )}
+
+                {inviteAccept?.status === 'success' && (
+                  <>
+                    <div className="h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                      <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-on-surface mb-2">Invite Accepted!</h2>
+                    <p className="text-sm text-on-surface-variant">You are now part of the retailer network. Redirecting to your dashboard…</p>
+                  </>
+                )}
+
+                {inviteAccept?.status === 'already_accepted' && (
+                  <>
+                    <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+                      <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-on-surface mb-2">Already Accepted</h2>
+                    <p className="text-sm text-on-surface-variant mb-6">
+                      {inviteAccept.message || "You have already accepted this invitation."}
+                    </p>
+                    <a href="/dashboard" className="inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-bold text-white hover:opacity-90 transition-opacity">
+                      Go to Dashboard →
+                    </a>
+                  </>
+                )}
+
+                {inviteAccept?.status === 'error' && (
+                  <>
+                    <div className="h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                      <svg className="h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-on-surface mb-2">Could not accept invite</h2>
+                    <p className="text-sm text-on-surface-variant mb-6">{inviteAccept.message || 'Something went wrong.'}</p>
+                    <div className="flex flex-col gap-3">
+                      <a href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-bold text-white hover:opacity-90 transition-opacity">
+                        Go to Dashboard →
+                      </a>
+                      <button
+                        onClick={() => navigate('home', { clearInvite: true })}
+                        className="text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
+                      >
+                        Back to home
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        }
         return (
           <SignupView
             inviteCode={signupInviteCode}

@@ -11,6 +11,7 @@ import { HelperIcon } from "../../../components/helpers";
 import {
   fetchDashboardUserRole,
   loadProfileState,
+  resolveManufacturerDocId,
   saveManufacturerProfile,
   saveRetailerProfile,
   type DashboardProfileRole,
@@ -18,6 +19,7 @@ import {
   type RetailerProfileExtras,
 } from "../_lib/profile-persistence";
 import { useI18n } from "../../i18n/I18nContext";
+import { StatusToast } from "../../components/shared/status-toast";
 import { fetchManufacturerCatalogueRows } from "../_lib/inventory-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
 
@@ -110,6 +112,7 @@ function ProfilePageInner() {
     searchParams?.get("tab") === "settings" ? "settings" : "profile",
   );
   const [uid,       setUid]       = useState<string | null>(null);
+  const [mfrDocId,  setMfrDocId]  = useState<string | null>(null); // phone-based doc ID for manufacturers
   const [userRole,  setUserRole]  = useState<DashboardProfileRole | null>(null);
   const [form,      setForm]      = useState<ProfileFormValues>(initialForm);
   const [social,    setSocial]    = useState<SocialLinks>(emptySocial);
@@ -144,7 +147,21 @@ function ProfilePageInner() {
   const loadSocial = useCallback(async (userId: string, role: DashboardProfileRole) => {
     try {
       const col = role === "manufacturer" ? "manufacturers" : "retailers";
-      const snap = await getDoc(doc(db, col, userId));
+
+      // For manufacturers: resolve phone-based doc ID (new schema), fall back to uid
+      let docId = userId;
+      if (role === "manufacturer") {
+        const resolved = await resolveManufacturerDocId(userId);
+        docId = resolved;
+        setMfrDocId(resolved !== userId ? resolved : null);
+      }
+
+      let snap = await getDoc(doc(db, col, docId));
+      // Fallback for manufacturers: try uid-keyed legacy doc
+      if (!snap.exists() && role === "manufacturer" && docId !== userId) {
+        snap = await getDoc(doc(db, col, userId));
+      }
+
       if (snap.exists()) {
         const d = snap.data() as any;
         setSocial({
@@ -298,8 +315,10 @@ function ProfilePageInner() {
     setSaving(true); setStatus(null);
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
+      // For manufacturers use phone-based doc ID; for retailers fall back to uid
+      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : uid!;
       // Save social links alongside profile
-      await setDoc(doc(db, col, uid), { socialLinks: social, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, col, profileDocId), { socialLinks: social, updatedAt: serverTimestamp() }, { merge: true });
 
       if (userRole === "manufacturer") {
         await saveManufacturerProfile(uid, formToSave, geo, manufacturerCreatedAt);
@@ -361,7 +380,8 @@ function ProfilePageInner() {
     setStatus(null);
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
-      await setDoc(doc(db, col, uid), { tagline, updatedAt: serverTimestamp() }, { merge: true });
+      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : uid!;
+      await setDoc(doc(db, col, profileDocId), { tagline, updatedAt: serverTimestamp() }, { merge: true });
 
       // Write onlineDelivery to users/{phone} (new schema) via uidIndex
       const idxSnap = await getDoc(doc(db, "uidIndex", uid));
@@ -398,11 +418,12 @@ function ProfilePageInner() {
       return (
         <>
           <TabBar />
-          {status && (
-            <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
-              status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
-            }`}>{status.message}</div>
-          )}
+          <StatusToast
+            message={status?.message ?? null}
+            type={status?.type}
+            onDismiss={() => setStatus(null)}
+            autoClose={status?.type === "error" ? 0 : 3500}
+          />
           <div className="space-y-6">
             {/* Online delivery toggle */}
             <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
@@ -500,11 +521,12 @@ function ProfilePageInner() {
     return (
       <>
         <TabBar />
-        {status && (
-          <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
-            status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
-          }`}>{status.message}</div>
-        )}
+        <StatusToast
+          message={status?.message ?? null}
+          type={status?.type}
+          onDismiss={() => setStatus(null)}
+          autoClose={status?.type === "error" ? 0 : 3500}
+        />
 
         {/* Profile header card */}
         <div className="mb-6 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
@@ -606,11 +628,12 @@ function ProfilePageInner() {
         </button>
       </div>
 
-      {status && (
-        <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
-          status.type === "success" ? "border border-primary/30 bg-primary/10 text-primary" : "border border-red-200 bg-red-50 text-red-700"
-        }`}>{status.message}</div>
-      )}
+      <StatusToast
+        message={status?.message ?? null}
+        type={status?.type}
+        onDismiss={() => setStatus(null)}
+        autoClose={status?.type === "error" ? 0 : 3500}
+      />
 
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient md:p-6">
         <form className="flex flex-col gap-6" onSubmit={handleSave}>

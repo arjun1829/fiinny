@@ -13,6 +13,7 @@ import { AssignProductModal } from "../../_components/manufacturer/assign-produc
 import { EditRetailerModal } from "../../_components/manufacturer/edit-retailer-modal";
 import { RetailerDetailsModal } from "../../_components/manufacturer/retailer-details-modal";
 import { InviteCard } from "../../_components/manufacturer/invite-card";
+import { BulkRetailerUpload } from "../../_components/manufacturer/bulk-retailer-upload";
 import {
   fetchManufacturerRetailers,
   removeNetworkRetailer,
@@ -37,6 +38,7 @@ type ToastPayload = {
   shopName: string;
   retailerEmail: string;
   retailerPhone: string;
+  retailerDocId: string;
 };
 
 export default function ManufacturerRetailersPage() {
@@ -116,6 +118,13 @@ export default function ManufacturerRetailersPage() {
     if (manufacturerId) await loadAll(manufacturerId);
     setAddModalOpen(false);
     setToast(payload);
+    // Auto-open product assignment for the new retailer so the manufacturer
+    // can assign their first product immediately (retailer stays "pending" until then).
+    setRows((current) => {
+      const newRow = current.find((r) => r.retailerDocId === payload.retailerDocId);
+      if (newRow) setAssignTarget(newRow);
+      return current;
+    });
   };
 
   const handleRemove = async (row: ManufacturerRetailerRow) => {
@@ -212,6 +221,23 @@ export default function ManufacturerRetailersPage() {
           />
         </div>
       ) : null}
+
+      {/* Bulk retailer upload */}
+      <section className="mb-6" aria-label="Bulk add retailers">
+        <BulkRetailerUpload
+          manufacturerId={manufacturerId}
+          manufacturerName={manufacturerName}
+          seatsRemaining={seatsRemaining}
+          existingPhones={
+            new Set(
+              rows
+                .map((r) => r.retailerPhone)
+                .filter((p): p is string => !!p),
+            )
+          }
+          onDone={async () => { if (manufacturerId) await loadAll(manufacturerId); }}
+        />
+      </section>
 
       <section aria-label="Retailer list">
         <RetailerTable

@@ -180,7 +180,12 @@ export async function assignProductToRetailer(
   //    That doc exists before signup and remains the canonical public store record after claim.
   const availabilityStoreId = input.retailerDocId;
   batch.update(doc(db, "products", input.productId), {
-    availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
+    availability: arrayUnion({
+      storeId: availabilityStoreId,
+      storePhone: retailerPhone ?? null,
+      storeName: retailerStoreName || null,
+      stockLevel: "In Stock",
+    }),
   });
 
   await batch.commit();
@@ -265,9 +270,18 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
       const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
       if (mfgProductId) {
-        await updateDoc(doc(db, "products", mfgProductId), {
-          availability: arrayRemove({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
-        });
+        const mfgSnap = await getDoc(doc(db, "products", mfgProductId));
+        if (mfgSnap.exists()) {
+          const mfgData = mfgSnap.data() as Record<string, unknown>;
+          const avArr = Array.isArray(mfgData.availability) ? mfgData.availability : [];
+          // Find the exact entry to remove (may be old shape without storePhone/storeName)
+          const entryToRemove = avArr.find((e: Record<string, unknown>) => e.storeId === availabilityStoreId);
+          if (entryToRemove) {
+            await updateDoc(doc(db, "products", mfgProductId), {
+              availability: arrayRemove(entryToRemove),
+            });
+          }
+        }
       }
     } catch { /* non-critical — product may already be deleted */ }
   }
@@ -455,7 +469,12 @@ export async function bulkAssignProductsToRetailer(
     // 4. Add the canonical invited retailer doc to the manufacturer product's availability array.
     const availabilityStoreId = retailerDocId;
     batch.update(doc(db, "products", productId), {
-      availability: arrayUnion({ storeId: availabilityStoreId, stockLevel: "In Stock" }),
+      availability: arrayUnion({
+        storeId: availabilityStoreId,
+        storePhone: retailerPhone ?? null,
+        storeName: retailerStoreName || null,
+        stockLevel: "In Stock",
+      }),
     });
 
     assigned.push(productId);

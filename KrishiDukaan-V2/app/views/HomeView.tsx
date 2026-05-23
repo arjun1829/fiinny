@@ -99,7 +99,7 @@ export default function HomeView({
     },
     {
       id: 'retailer',
-      eyebrow: 'Become a Retailer',
+      eyebrow: 'Register Your Business',
       title: (
         <>
           Run your shop,<br />reach more farmers.
@@ -359,91 +359,9 @@ export default function HomeView({
         </div>
       </section>
 
-      {/* KaranArjun Power Plus bestsellers */}
-      {powerPlusProducts.length > 0 && (
-        <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
-          <div className="rounded-3xl overflow-hidden bg-gradient-to-br from-primary/95 via-primary to-primary/90 p-8 md:p-12 relative">
-            <div className="absolute -top-12 -right-12 w-80 h-80 rounded-full bg-secondary/20 blur-3xl" />
-            <div className="absolute -bottom-20 -left-12 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
-            <div className="relative z-10 flex flex-col lg:flex-row gap-10 items-center">
-              <div className="flex-1 text-white">
-                <HelperTooltip side="bottom" textKey="homePowerPlus">
-                  <span className="inline-block text-[11px] uppercase tracking-[0.2em] font-black bg-white/20 px-3 py-1 rounded-full mb-4 cursor-help">
-                    {t('directFromMfg')}
-                  </span>
-                </HelperTooltip>
-                <h2 className="text-3xl md:text-4xl font-bold leading-tight mb-3">
-                  KaranArjun<br />Power Plus™
-                </h2>
-                <p className="text-white/90 text-base mb-2 max-w-md">
-                  {t('powerPlusDesc')}
-                </p>
-                <p className="text-white/80 text-sm font-semibold">
-                  {t('trustedByFarmers')} <span className="text-white font-black">75,800+ {t('farmersSuffix')}</span>.
-                </p>
-              </div>
-              <div className="flex-1 w-full">
-                <div className="grid grid-cols-3 gap-3">
-                  {powerPlusProducts.map((p) => {
-                    const sizeLabel =
-                      p.fullName?.replace('Power Plus', '').trim() || 'Pack';
-                    return (
-                      <motion.button
-                        key={p.id}
-                        whileHover={{ y: -6 }}
-                        onClick={() => onProductClick(p.id)}
-                        className="bg-white rounded-2xl p-3 shadow-xl text-left flex flex-col group"
-                      >
-                        <div className="aspect-square bg-surface-container-low rounded-xl overflow-hidden mb-2">
-                          <img
-                            src={p.image}
-                            alt={p.fullName || p.name}
-                            className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500"
-                          />
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">
-                          {sizeLabel}
-                        </span>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-base font-bold text-secondary">
-                            ₹{p.price.toLocaleString('en-IN')}
-                          </span>
-                          {p.oldPrice && p.oldPrice > p.price && (
-                            <span className="text-[10px] text-outline line-through">
-                              ₹{p.oldPrice}
-                            </span>
-                          )}
-                        </div>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Service strip */}
       <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <HelperTooltip side="top" textKey="homeServicePowerPlus">
-            <button
-              onClick={() => powerPlusProducts[0] && onProductClick(powerPlusProducts[0].id)}
-              className="text-left rounded-3xl p-6 bg-gradient-to-br from-emerald-500 to-emerald-700 text-white relative overflow-hidden group min-h-[170px] w-full"
-            >
-              <ICONS.Sprout className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
-              <div className="relative z-10">
-                <h3 className="text-xl font-black mb-1">{t('serviceOrderPowerPlusTitle')}</h3>
-                <p className="text-white/85 text-sm mb-4 max-w-[200px]">
-                  {t('serviceOrderPowerPlusDesc')}
-                </p>
-                <span className="inline-block bg-white text-emerald-700 text-xs font-bold px-3 py-1.5 rounded-full">
-                  {t('serviceShopNow')}
-                </span>
-              </div>
-            </button>
-          </HelperTooltip>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <HelperTooltip side="top" textKey="homeServiceRetailer">
             <button
               onClick={() => onHubClick()}
