@@ -308,11 +308,42 @@ function ProfilePageInner() {
   const handleSave = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!uid || !userRole) return;
-    if (!geo) { setStatus({ type: "error", message: "Please select an address from autocomplete or use current location." }); return; }
     // Capture the uncontrolled address input's current DOM value before saving
     const currentLine1 = addressInputRef.current?.value?.trim() || form.line1;
     const formToSave = { ...form, line1: currentLine1 };
+    if (!geo && !formToSave.city && !formToSave.state) {
+      setStatus({ type: "error", message: "Please select an address from autocomplete or use current location." });
+      return;
+    }
     setSaving(true); setStatus(null);
+    let resolvedGeo = geo;
+    if (!resolvedGeo) {
+      // 1. Try to resolve coordinates from a pasted Google Maps URL
+      if (currentLine1.includes('maps.app.goo.gl') || currentLine1.includes('maps.google.com')) {
+        try {
+          const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(currentLine1)}`);
+          const data = await res.json();
+          if (data.lat && data.lng) {
+            resolvedGeo = new GeoPoint(data.lat, data.lng);
+            setGeo(resolvedGeo);
+          }
+        } catch { /* fall through to city/state geocode */ }
+      }
+      // 2. Fall back to geocoding from city + state
+      if (!resolvedGeo && (formToSave.city || formToSave.state)) {
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          const q = encodeURIComponent([formToSave.city, formToSave.state, formToSave.pincode].filter(Boolean).join(', '));
+          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${q}&key=${apiKey}`);
+          const data = await res.json();
+          if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+            const { lat, lng } = data.results[0].geometry.location;
+            resolvedGeo = new GeoPoint(lat, lng);
+            setGeo(resolvedGeo);
+          }
+        } catch { /* non-critical — save without geo */ }
+      }
+    }
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
       // For manufacturers use phone-based doc ID; for retailers fall back to uid
@@ -321,9 +352,9 @@ function ProfilePageInner() {
       await setDoc(doc(db, col, profileDocId), { socialLinks: social, updatedAt: serverTimestamp() }, { merge: true });
 
       if (userRole === "manufacturer") {
-        await saveManufacturerProfile(uid, formToSave, geo, manufacturerCreatedAt);
+        await saveManufacturerProfile(uid, formToSave, resolvedGeo, manufacturerCreatedAt);
       } else {
-        await saveRetailerProfile(uid, formToSave, geo, retailerExtras ?? {
+        await saveRetailerProfile(uid, formToSave, resolvedGeo, retailerExtras ?? {
           createdAt: null, onboardingType: null, manufacturerId: null, active: true, subscriptionStatus: "free",
         });
       }

@@ -1,5 +1,5 @@
 import { MarketplaceProduct } from "../../types/product";
-import { ICONS, PRODUCTS, STORES } from '../constants';
+import { ICONS, PRODUCTS, STORES, MANUFACTURERS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
 import { StoreWithDistance } from '../utils/nearby';
@@ -29,6 +29,7 @@ interface ProductDetailViewProps {
   onStoreClick: (storeId: string) => void;
   onProductClick?: (id: string) => void;
   onViewSellerAll?: (storeName: string) => void;
+  onViewBrand?: (manufacturerId: string) => void;
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
 }
@@ -164,13 +165,14 @@ function RetailerProfileSection({
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export default function ProductDetailView({
-  products = PRODUCTS, 
-  stores = STORES, 
-  productId, 
-  onBack, 
-  onStoreClick, 
-  onProductClick, 
+  products = PRODUCTS,
+  stores = STORES,
+  productId,
+  onBack,
+  onStoreClick,
+  onProductClick,
   onViewSellerAll,
+  onViewBrand,
   storesWithDistance = [],
   onAddToCart,
 }: ProductDetailViewProps) {
@@ -178,9 +180,18 @@ export default function ProductDetailView({
   const product = products.find(p => p.id === productId) || products[0];
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
 
+  // Gallery: use product.images if available, else fall back to product.image alone
+  const galleryImages = (product.images && product.images.length > 0)
+    ? product.images.slice(0, 5)
+    : [product.image];
+  const [activeImage, setActiveImage] = useState(galleryImages[0]);
+
   useEffect(() => {
     if (product && product.id) {
       trackProductClick(product.id);
+      // Reset gallery to first image when product changes
+      const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
+      setActiveImage(imgs[0]);
     }
   }, [product.id]);
 
@@ -189,6 +200,11 @@ export default function ProductDetailView({
     if (product.retailerId && p.retailerId) return p.retailerId === product.retailerId;
     return product.store !== 'Local Store' && p.store === product.store;
   }).slice(0, 6);
+
+  const manufacturerProducts = product.manufacturerId
+    ? products.filter(p => p.id !== product.id && p.manufacturerId === product.manufacturerId).slice(0, 4)
+    : [];
+  const brandInfo = product.manufacturerId ? MANUFACTURERS[product.manufacturerId] : null;
 
   // Use storesWithDistance for computed distances, fallback to STORES constant
   const availableStores = useMemo(() => {
@@ -240,9 +256,10 @@ export default function ProductDetailView({
         <div className="flex flex-col gap-4">
           <motion.div
             layoutId={`prod-img-${product.id}`}
-            className="aspect-[4/3] rounded-3xl overflow-hidden bg-white shadow-ambient border border-surface-container relative"
+            className="rounded-3xl overflow-hidden bg-[#f7f5f0] shadow-ambient border border-surface-container relative flex items-center justify-center"
+            style={{ minHeight: '280px', maxHeight: '480px', height: 'auto' }}
           >
-            <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
+            <img src={activeImage} className="w-full object-contain" style={{ maxHeight: '480px' }} alt={product.name} />
             <HelperTooltip side="bottom" textKey="productQualityBadge">
               <div className="absolute top-6 left-6 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
                 <ICONS.Check className="w-4 h-4" />
@@ -250,14 +267,24 @@ export default function ProductDetailView({
               </div>
             </HelperTooltip>
           </motion.div>
-          <div className="flex gap-4">
-            <div className="w-24 h-24 rounded-2xl border-2 border-primary overflow-hidden cursor-pointer shadow-sm">
-              <img src={product.image} className="w-full h-full object-cover" alt="thumb1" />
+          {galleryImages.length > 1 && (
+            <div className="flex gap-3">
+              {galleryImages.map((img, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActiveImage(img)}
+                  className={`w-20 h-20 rounded-2xl overflow-hidden shrink-0 transition-all bg-[#f7f5f0] flex items-center justify-center ${
+                    activeImage === img
+                      ? 'border-2 border-primary shadow-sm scale-105'
+                      : 'border border-surface-container-highest opacity-60 hover:opacity-100 hover:border-outline-variant'
+                  }`}
+                >
+                  <img src={img} className="w-full h-full object-contain" alt={`${product.name} view ${i + 1}`} />
+                </button>
+              ))}
             </div>
-            <div className="w-24 h-24 rounded-2xl border border-surface-container-highest overflow-hidden opacity-50 hover:opacity-100 transition-opacity cursor-pointer">
-              <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRy2KbS0xyVt7brjix_bSB7rxB4v7-foDeu7vBzhgbFNrZJwXRzXVQJIffFqGQN-xSvlGNa8GnrS4ej7VfxD6s7IdXzJbsi48RIR99heAy7LwMPJlXATrIo7Z_Hbh7nepdxevHns9C2UFx7XZ-MwcG8DQUEChNv7RfIr-Au9NoHXB1CkTBegc6gwZ6BjBVWrib4jdYGmBV6X1SNuftWfSkukjiJ1FjMfEfMp3RbOFzfiZ8wGfLGcxHfzWzeROMHKAh68-N5Oqavxuo" className="w-full h-full object-cover" alt="thumb2" />
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Right — Store cards (click to expand) */}
@@ -309,6 +336,11 @@ export default function ProductDetailView({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {availability?.sellingPrice && availability.sellingPrice > 0 && (
+                        <span className="text-sm font-bold text-secondary">
+                          ₹{availability.sellingPrice.toLocaleString('en-IN')}
+                        </span>
+                      )}
                       <HelperTooltip side="left" textKey="productStockStatus">
                         <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full cursor-help ${
                           availability?.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
@@ -432,9 +464,21 @@ export default function ProductDetailView({
         <div className="flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t border-surface-container">
           <HelperTooltip side="top" textKey="marketPriceInfo">
             <div className="flex items-end gap-3 cursor-help">
-              <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.price}</span>
-              {product.oldPrice && (
-                <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
+              {product.lowestPrice && product.lowestPrice < product.price ? (
+                <>
+                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.lowestPrice.toLocaleString('en-IN')}</span>
+                  <div className="flex flex-col mb-1">
+                    <span className="text-sm text-outline line-through">₹{product.price.toLocaleString('en-IN')}</span>
+                    <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Lowest nearby</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.price}</span>
+                  {product.oldPrice && (
+                    <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
+                  )}
+                </>
               )}
               {product.oldPrice && (
                 <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
@@ -463,82 +507,85 @@ export default function ProductDetailView({
 
       {/* Product Insights */}
       <section>
-        <div className="flex items-center gap-2 mb-6">
-          <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
-          <HelperIcon
-            size="sm"
-            variant="ghost"
-            side="right"
-            textKey="productInsights"
-            ariaLabel="Product insights help"
-          />
+        <div className="flex items-center gap-2 mb-5">
+          <h2 className="text-xl md:text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
+          <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-            <div className="flex items-center gap-3 text-secondary">
-              <ICONS.Science className="w-5 h-5" />
-              <h3 className="font-bold uppercase tracking-widest text-xs">{t('composition')}</h3>
-              <HelperIcon
-                size="xs"
-                variant="ghost"
-                side="right"
-                textKey="productComposition"
-                ariaLabel="Composition help"
-              />
-            </div>
-            {[
-              { label: t('nitrogenN'), val: '19%' },
-              { label: t('phosphorusP'), val: '19%' },
-              { label: t('potassiumK'), val: '19%' }
-            ].map((row, i) => (
-              <div key={i} className="flex justify-between items-center py-2 border-b border-surface-container-low last:border-0">
-                <span className="text-on-surface text-sm opacity-60 font-semibold">{row.label}</span>
-                <span className="text-on-surface font-black">{row.val}</span>
-              </div>
-            ))}
-          </div>
 
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-            <div className="flex items-center gap-3 text-primary">
-              <ICONS.Water className="w-5 h-5" />
-              <h3 className="font-bold uppercase tracking-widest text-xs">{t('application')}</h3>
-              <HelperIcon
-                size="xs"
-                variant="ghost"
-                side="right"
-                textKey="productApplication"
-                ariaLabel="Application help"
-              />
-            </div>
-            <p className="text-on-surface-variant font-medium text-sm">{t('applicationDesc')}</p>
-            <HelperTooltip side="top" textKey="productDosage">
-              <div className="mt-auto bg-primary/5 rounded-2xl p-4 border border-primary/10 cursor-help">
-                <span className="block text-[10px] font-black uppercase tracking-widest text-primary mb-1">{t('recommendedDosage')}</span>
-                <span className="text-2xl font-bold text-on-surface">{t('dosageValue')}</span>
-              </div>
-            </HelperTooltip>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-            <div className="flex items-center gap-3 text-secondary">
-              <ICONS.Sprout className="w-5 h-5" />
-              <h3 className="font-bold uppercase tracking-widest text-xs">{t('bestForCrops')}</h3>
-              <HelperIcon
-                size="xs"
-                variant="ghost"
-                side="right"
-                textKey="productCropSupport"
-                ariaLabel="Best for crops help"
-              />
+          {/* Composition */}
+          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
+            <div className="bg-amber-50 border-b border-amber-100 px-5 py-3 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center">
+                <ICONS.Science className="w-4 h-4 text-amber-600" />
+              </div>
+              <h3 className="font-bold text-amber-800 text-xs uppercase tracking-widest">{t('composition')}</h3>
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="productComposition" ariaLabel="Composition help" />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {[t('cropTomatoes'), t('cropWheat'), t('cropSugarcane'), t('cropGrapes')].map((crop, i) => (
-                <span key={i} className="bg-surface-container px-4 py-2 rounded-full text-xs font-bold text-on-surface-variant border border-surface-container-highest">
-                  {crop}
-                </span>
+            <div className="bg-white px-5 py-4 flex flex-col gap-1">
+              {[
+                { label: t('nitrogenN'), val: '19%', pct: 19, color: 'bg-blue-400' },
+                { label: t('phosphorusP'), val: '19%', pct: 19, color: 'bg-amber-400' },
+                { label: t('potassiumK'), val: '19%', pct: 19, color: 'bg-green-400' },
+              ].map((row) => (
+                <div key={row.label} className="py-2.5 border-b border-surface-container last:border-0">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-on-surface-variant text-xs font-semibold">{row.label}</span>
+                    <span className="text-on-surface font-black text-sm">{row.val}</span>
+                  </div>
+                  <div className="h-1.5 bg-surface-container rounded-full overflow-hidden">
+                    <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
+                  </div>
+                </div>
               ))}
             </div>
           </div>
+
+          {/* Application */}
+          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
+            <div className="bg-primary/5 border-b border-primary/10 px-5 py-3 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <ICONS.Water className="w-4 h-4 text-primary" />
+              </div>
+              <h3 className="font-bold text-primary text-xs uppercase tracking-widest">{t('application')}</h3>
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="productApplication" ariaLabel="Application help" />
+            </div>
+            <div className="bg-white px-5 py-4 flex flex-col gap-4">
+              <p className="text-on-surface-variant text-sm leading-relaxed">{t('applicationDesc')}</p>
+              <HelperTooltip side="top" textKey="productDosage">
+                <div className="bg-primary rounded-xl p-4 cursor-help">
+                  <span className="block text-white/70 text-[10px] font-black uppercase tracking-widest mb-0.5">{t('recommendedDosage')}</span>
+                  <span className="text-2xl font-extrabold text-white">{t('dosageValue')}</span>
+                </div>
+              </HelperTooltip>
+            </div>
+          </div>
+
+          {/* Best for Crops */}
+          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
+            <div className="bg-green-50 border-b border-green-100 px-5 py-3 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-green-500/15 flex items-center justify-center">
+                <ICONS.Sprout className="w-4 h-4 text-green-600" />
+              </div>
+              <h3 className="font-bold text-green-800 text-xs uppercase tracking-widest">{t('bestForCrops')}</h3>
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="productCropSupport" ariaLabel="Best for crops help" />
+            </div>
+            <div className="bg-white px-5 py-4">
+              <div className="flex flex-wrap gap-2">
+                {[t('cropTomatoes'), t('cropWheat'), t('cropSugarcane'), t('cropGrapes')].map((crop, i) => (
+                  <span key={i} className="flex items-center gap-1.5 bg-green-50 border border-green-100 text-green-800 px-3 py-1.5 rounded-full text-xs font-bold">
+                    🌱 {crop}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 p-3 bg-surface-container-low rounded-xl border border-surface-container">
+                <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">Works best for</p>
+                <p className="text-xs text-on-surface font-semibold leading-relaxed">All soil types · Kharif & Rabi seasons · Drip & flood irrigation</p>
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -576,6 +623,54 @@ export default function ProductDetailView({
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* Manufacturer brand section */}
+      {brandInfo && manufacturerProducts.length > 0 && (
+        <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
+          {/* Brand header */}
+          <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
+              <h2 className="text-xl font-bold text-white leading-tight">{brandInfo.name}</h2>
+              <p className="text-white/60 text-xs mt-0.5">{brandInfo.location} · Est. {brandInfo.founded}</p>
+            </div>
+            {onViewBrand && (
+              <button
+                onClick={() => onViewBrand(product.manufacturerId!)}
+                className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+              >
+                View Brand <ICONS.ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Other products from this manufacturer */}
+          <div className="p-6 bg-white flex flex-col gap-4">
+            <p className="text-sm font-semibold text-on-surface">
+              More products from {brandInfo.name.split(' ').slice(0, 2).join(' ')}
+            </p>
+            <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
+              {manufacturerProducts.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onProductClick?.(p.id)}
+                  className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
+                >
+                  <div className="aspect-square overflow-hidden bg-surface-container">
+                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                  </div>
+                  <div className="p-2.5 flex flex-col gap-0.5">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-primary">{p.category}</span>
+                    <p className="text-sm font-bold text-on-surface truncate leading-tight">{p.name}</p>
+                    <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       )}

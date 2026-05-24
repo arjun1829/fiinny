@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
 
 interface NavbarProps {
   currentView?: View;
@@ -225,7 +225,7 @@ export function Navbar({
     { id: 'hub', label: t('hub') },
     { id: 'map', label: t('stores') }
   ];
-  const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && userProfile.isPaid && !isDashboard;
+  const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
 
   const SearchDropdown = () => (
@@ -414,6 +414,20 @@ export function Navbar({
             title="Detect current location"
           >
             <ICONS.Location className="w-5 h-5" />
+          </button>
+
+          {/* Language toggle — always visible on mobile */}
+          <button
+            className="md:hidden flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl px-2.5 py-1.5 text-[11px] font-black text-on-surface hover:bg-surface-container transition-colors min-w-[36px]"
+            onClick={() => {
+              const langs = ['en', 'mr', 'hi'] as const;
+              const idx = langs.indexOf(language as any);
+              setLanguage(langs[(idx + 1) % langs.length]!);
+            }}
+            title="Change language"
+            aria-label="Change language"
+          >
+            {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
           </button>
 
           <div className="relative" ref={accountMenuRef}>

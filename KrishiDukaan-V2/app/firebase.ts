@@ -22,7 +22,9 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778",
-  authDomain: "krishidukan.com",
+  authDomain: typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? "krishidukan-e8315.firebaseapp.com"
+    : "krishidukan.com",
   projectId: "krishidukan-e8315",
   storageBucket: "krishidukan-e8315.firebasestorage.app",
   messagingSenderId: "650303885415",
@@ -221,41 +223,45 @@ export async function saveRetailerProduct(
 export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> {
   try {
     const snapshot = await getDocs(collection(db, 'products'));
-    const raw = snapshot.docs
-      .map((item) => {
-        const data = item.data();
-        return {
-          id: item.id,
-          name: String(data.name || ''),
-          fullName: data.fullName ? String(data.fullName) : undefined,
-          price: Number(data.price || 0),
-          oldPrice: data.oldPrice ? Number(data.oldPrice) : undefined,
-          category: String(data.category || 'general'),
-          description: String(data.description || ''),
-          image: String(data.image || ''),
-          stock: String(data.stock || 'In Stock'),
-          store: String(data.store || 'Local Store'),
-          distance: String(data.distance || 'Nearby'),
-          retailerId: data.retailerId ? String(data.retailerId) : undefined,
-          retailerPhone: data.retailerPhone ? String(data.retailerPhone) : undefined,
-          ownerId: data.ownerId ? String(data.ownerId) : undefined,
-          manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
-          manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
-          sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
-          isOnline: data.isOnline === true || data.sellMode === "online_delivery",
-          availability: data.availability || undefined,
-          source: data.source ? String(data.source) : undefined,
-        } as MarketplaceProduct;
-      })
-      // Exclude per-retailer copies — represented by the original product's availability[].
-      // Exclude manufacturer_assigned — retailer manages their own listing.
-      .filter((product) =>
+    const allMapped = snapshot.docs.map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        name: String(data.name || ''),
+        fullName: data.fullName ? String(data.fullName) : undefined,
+        price: Number(data.price || 0),
+        oldPrice: data.oldPrice ? Number(data.oldPrice) : undefined,
+        category: String(data.category || 'general'),
+        description: String(data.description || ''),
+        image: String(data.image || ''),
+        stock: String(data.stock || 'In Stock'),
+        store: String(data.store || 'Local Store'),
+        distance: String(data.distance || 'Nearby'),
+        retailerId: data.retailerId ? String(data.retailerId) : undefined,
+        retailerPhone: data.retailerPhone ? String(data.retailerPhone) : undefined,
+        ownerId: data.ownerId ? String(data.ownerId) : undefined,
+        manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
+        manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
+        sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
+        isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+        availability: data.availability || undefined,
+        source: data.source ? String(data.source) : undefined,
+      } as MarketplaceProduct;
+    });
+
+    // Retailer copies hold each store's selling price — collect separately before filtering
+    const retailerCopies = allMapped.filter(
+      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned',
+    );
+
+    const raw = allMapped.filter(
+      (product) =>
         product.name &&
         product.image &&
         Number.isFinite(product.price) &&
-        (product as any).source !== 'manufacturer_assigned' &&
-        (product as any).source !== 'retailer_inventory_copy'
-      );
+        product.source !== 'manufacturer_assigned' &&
+        product.source !== 'retailer_inventory_copy',
+    );
 
     // Deduplicate by name: if two products share the same name (case-insensitive),
     // keep the manufacturer_inventory card as canonical and merge the retailer's
@@ -304,7 +310,45 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       byName.set(key, { ...canonical, availability: av.length > 0 ? av : undefined });
     }
 
-    return Array.from(byName.values());
+    // Merge each retailer copy's price into the canonical product's availability
+    for (const copy of retailerCopies) {
+      if (!copy.name || !copy.price) continue;
+      const key = copy.name.toLowerCase().trim();
+      const canonical = byName.get(key);
+      if (!canonical) continue;
+
+      const copyStoreId = (copy as any).ownerId || copy.retailerId || '';
+      const copyPhone = copy.retailerPhone;
+      if (!copyStoreId && !copyPhone) continue;
+
+      const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
+      const existing = av.find(
+        (a) =>
+          (copyStoreId && a.storeId === copyStoreId) ||
+          (copyPhone && a.storePhone === copyPhone),
+      );
+      if (existing) {
+        existing.sellingPrice = copy.price;
+      } else {
+        av.push({
+          storeId: copyStoreId,
+          storePhone: copyPhone,
+          storeName: copy.store || undefined,
+          stockLevel: copy.stock || 'In Stock',
+          sellingPrice: copy.price,
+        });
+      }
+      byName.set(key, { ...canonical, availability: av });
+    }
+
+    // Compute lowestPrice across all stores for each product
+    return Array.from(byName.values()).map((p) => {
+      const prices = (p.availability ?? [])
+        .map((a) => a.sellingPrice)
+        .filter((v): v is number => typeof v === 'number' && v > 0);
+      const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
+      return lowestPrice !== undefined ? { ...p, lowestPrice } : p;
+    });
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
     throw error;
@@ -354,8 +398,8 @@ export async function fetchStores(): Promise<Store[]> {
         status: data.status || 'Active',
         stock: Array.isArray(data.products) ? data.products.map((p: any) => p.name || p) : [],
         location: {
-          lat: data.location?.latitude ?? data.location?.lat ?? 0,
-          lng: data.location?.longitude ?? data.location?.lng ?? 0
+          lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
+          lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
         }
       } as Store & { retailerId?: string; userId?: string; city?: string; state?: string; pincode?: string };
     });
@@ -973,6 +1017,20 @@ function getLocalDayKey(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export async function trackPageView(page: string = 'home') {
+  try {
+    const dayKey = getLocalDayKey();
+    const ref = doc(db, 'siteVisits', dayKey);
+    await setDoc(ref, {
+      date: dayKey,
+      total: increment(1),
+      [`pages.${page}`]: increment(1),
+    }, { merge: true });
+  } catch {
+    // silent fail
+  }
+}
+
 export async function trackProductImpression(productId: string, position: number) {
   try {
     const ref = doc(db, 'products', productId);
@@ -1145,4 +1203,180 @@ export async function importHubs(hubsList: Hub[]): Promise<void> {
       source: 'admin_import'
     });
   }
+}
+
+// ─── Company Pages (Brand Pages) ──────────────────────────────────────────────
+// Collection: companyPages/{companyId}
+// Products:   companyProducts/{productId}  (field: companyId)
+// Stores:     companyStores/{storeId}       (field: companyId)
+
+export type CompanyPageDoc = {
+  id: string;
+  name: string;
+  tagline: string;
+  location: string;
+  about: string;
+  founded: string;
+  website?: string;
+  socialProof: string;
+  certifications: string[];
+  primaryColor: string;
+  accentColor: string;
+  phone?: string;
+  email?: string;
+  videos?: string[];
+  ownerPhone?: string;        // phone of the assigned owner (THE LINK)
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export type CompanyProduct = {
+  id?: string;
+  companyId: string;
+  name: string;
+  fullName?: string;
+  price: number;
+  oldPrice?: number;
+  category: string;
+  description: string;
+  image: string;
+  images?: string[];
+  composition?: { name: string; value: string; color: string }[];
+  benefits?: string[];
+  application?: string;
+  stock?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export type CompanyStore = {
+  id?: string;
+  companyId: string;
+  name: string;
+  ownerName?: string;
+  phone?: string;
+  address: string;
+  status?: string;
+  lat: number;
+  lng: number;
+  stock?: string[];
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export async function fetchAllCompanyPages(): Promise<CompanyPageDoc[]> {
+  const snap = await getDocs(collection(db, 'companyPages'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as CompanyPageDoc));
+}
+
+export async function fetchCompanyPageByOwnerPhone(phone: string): Promise<CompanyPageDoc | null> {
+  const q = query(collection(db, 'companyPages'), where('ownerPhone', '==', phone));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() } as CompanyPageDoc;
+}
+
+export async function fetchCompanyPageById(companyId: string): Promise<CompanyPageDoc | null> {
+  const snap = await getDoc(doc(db, 'companyPages', companyId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as CompanyPageDoc;
+}
+
+export async function saveCompanyPage(companyId: string, data: Partial<CompanyPageDoc>): Promise<void> {
+  await setDoc(doc(db, 'companyPages', companyId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+/** Admin: assign a phone number as the owner of a company page.
+ *  Also writes ownerCompanyId to users/{phone} so the dashboard sidebar
+ *  can detect ownership without an extra query. */
+export async function assignCompanyOwner(companyId: string, ownerPhone: string): Promise<void> {
+  const phone = ownerPhone.trim();
+  // Write ownerPhone to the company doc
+  await setDoc(doc(db, 'companyPages', companyId), {
+    ownerPhone: phone,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  // Write ownerCompanyId back to the user doc so getUserProfile returns it
+  if (phone) {
+    await setDoc(doc(db, 'users', phone), {
+      ownerCompanyId: companyId,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
+}
+
+/** Admin: remove ownership from a company page. */
+export async function removeCompanyOwner(companyId: string, previousPhone: string): Promise<void> {
+  await setDoc(doc(db, 'companyPages', companyId), {
+    ownerPhone: '',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  if (previousPhone) {
+    await setDoc(doc(db, 'users', previousPhone), {
+      ownerCompanyId: '',
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }
+}
+
+// ── Company Products ───────────────────────────────────────────────────────────
+
+export async function fetchCompanyProducts(companyId: string): Promise<CompanyProduct[]> {
+  const q = query(collection(db, 'companyProducts'), where('companyId', '==', companyId));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as CompanyProduct));
+}
+
+export async function saveCompanyProduct(product: Omit<CompanyProduct, 'id'>, productId?: string): Promise<string> {
+  if (productId) {
+    await setDoc(doc(db, 'companyProducts', productId), {
+      ...product,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return productId;
+  } else {
+    const ref = await addDoc(collection(db, 'companyProducts'), {
+      ...product,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return ref.id;
+  }
+}
+
+export async function deleteCompanyProduct(productId: string): Promise<void> {
+  await deleteDoc(doc(db, 'companyProducts', productId));
+}
+
+// ── Company Stores ─────────────────────────────────────────────────────────────
+
+export async function fetchCompanyStores(companyId: string): Promise<CompanyStore[]> {
+  const q = query(collection(db, 'companyStores'), where('companyId', '==', companyId));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as CompanyStore));
+}
+
+export async function saveCompanyStore(store: Omit<CompanyStore, 'id'>, storeId?: string): Promise<string> {
+  if (storeId) {
+    await setDoc(doc(db, 'companyStores', storeId), {
+      ...store,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return storeId;
+  } else {
+    const ref = await addDoc(collection(db, 'companyStores'), {
+      ...store,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return ref.id;
+  }
+}
+
+export async function deleteCompanyStore(storeId: string): Promise<void> {
+  await deleteDoc(doc(db, 'companyStores', storeId));
 }

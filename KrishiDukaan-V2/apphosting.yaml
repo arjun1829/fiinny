@@ -10,7 +10,7 @@ env:
     value: https://krishidukan.com
 
   - variable: NEXT_PUBLIC_RAZORPAY_KEY_ID
-    value: rzp_test_SmPxtEcNJ25LUj
+    value: rzp_live_S1aAwIHZXLMSDG
 
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     value: AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778
@@ -40,7 +40,7 @@ env:
 
   # ─── Razorpay (server-side) ────────────────────────────────────────────────
   - variable: RAZORPAY_KEY_ID
-    value: rzp_test_SmPxtEcNJ25LUj
+    value: rzp_live_S1aAwIHZXLMSDG
 
   - variable: RAZORPAY_KEY_SECRET
     secret: RAZORPAY_KEY_SECRET

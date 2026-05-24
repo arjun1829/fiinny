@@ -100,15 +100,6 @@ export default function SignupView({
     return `+${digits}`;
   };
 
-  useEffect(() => {
-    const verifier = new RecaptchaVerifier(auth, "recaptcha-container-signup", { size: "invisible" });
-    recaptchaRef.current = verifier;
-    return () => {
-      try { verifier.clear(); } catch { /* ignore */ }
-      recaptchaRef.current = null;
-    };
-  }, []);
-
   const effectiveRole = inviteRetailerOnly ? "retailer" : role;
 
   // ── Shared invite acceptance ────────────────────────────────────────────────
@@ -134,15 +125,33 @@ export default function SignupView({
     }
     const normalizedPhone = normalizePhone(phone);
     if (normalizedPhone.length < 10) { setError("Please enter a valid 10-digit mobile number."); return; }
-    if (!recaptchaRef.current) { setError("reCAPTCHA not ready. Please refresh and try again."); return; }
     setLoading(true);
     try {
-      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), recaptchaRef.current);
+      try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
+      // Always pass a fresh div — avoids "already rendered" error on retries
+      const freshDiv = document.createElement("div");
+      document.body.appendChild(freshDiv);
+      const verifier = new RecaptchaVerifier(auth, freshDiv, {
+        size: "invisible",
+        callback: () => { /* OTP send proceeds silently */ },
+        "expired-callback": () => { /* token expired — next send will recreate verifier */ },
+      });
+      recaptchaRef.current = verifier;
+      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), verifier);
       confirmationRef.current = result;
       setStep("otp");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to send OTP. Try again.";
-      setError(msg);
+      console.error("[OTP Send Error]", (err as any)?.code, (err as any)?.message, err);
+      const code = (err as any)?.code ?? "";
+      if (code.includes("recaptcha") || code.includes("captcha") || code.includes("app-not-authorized")) {
+        setError("Could not send OTP. Please check your internet connection and try again.");
+      } else if (code === "auth/invalid-phone-number") {
+        setError("Please enter a valid 10-digit mobile number.");
+      } else if (code === "auth/too-many-requests") {
+        setError("Too many attempts. Please wait a few minutes and try again.");
+      } else {
+        setError("Could not send OTP. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -150,7 +159,10 @@ export default function SignupView({
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirmationRef.current) return;
+    if (!confirmationRef.current) {
+      setError("OTP session expired. Please go back and resend the OTP.");
+      return;
+    }
     setError(null);
     setLoading(true);
     const normalizedPhone = normalizePhone(phone);
@@ -170,12 +182,16 @@ export default function SignupView({
       onInviteConsumed?.();
       onSuccess(user, profile);
     } catch (err: unknown) {
-      const e = err as any;
-      setError(
-        e?.message?.includes("invalid-verification-code") || e?.code === "auth/invalid-verification-code"
-          ? "Incorrect OTP. Please check and try again."
-          : e instanceof Error ? e.message : "Verification failed. Try again."
-      );
+      const code = (err as any)?.code ?? "";
+      if (code === "auth/invalid-verification-code") {
+        setError("Incorrect OTP. Please check and try again.");
+      } else if (code === "auth/code-expired") {
+        setError("OTP expired. Please go back and request a new one.");
+      } else if (code === "auth/too-many-requests") {
+        setError("Too many attempts. Please wait a few minutes and try again.");
+      } else {
+        setError("Verification failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

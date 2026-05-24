@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   BarChart3,
+  Building2,
   CreditCard,
   LayoutDashboard,
   Lock,
@@ -74,12 +75,14 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const { t } = useI18n();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
+  const [ownerCompanyId, setOwnerCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole(null);
         setOnlineDelivery(false);
+        setOwnerCompanyId(null);
         return;
       }
       try {
@@ -87,28 +90,42 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         const r = profile?.role;
         setRole(r === "manufacturer" || r === "retailer" ? r : null);
         setOnlineDelivery(!!(profile as any)?.onlineDelivery);
+        setOwnerCompanyId((profile as any)?.ownerCompanyId ?? null);
       } catch {
         setRole(null);
         setOnlineDelivery(false);
+        setOwnerCompanyId(null);
       }
     });
     return () => unsub();
   }, []);
 
-  const nav = (() => {
-    const base = [...baseNav];
+  type NavItem = { href: string; labelKey: string; icon: React.ElementType };
+
+  const companyPageNavItem: NavItem | null = ownerCompanyId
+    ? { href: "/dashboard/company", labelKey: "sideCompanyPage", icon: Building2 }
+    : null;
+
+  const nav: NavItem[] = (() => {
+    const base: NavItem[] = [...baseNav];
     if (role === "manufacturer") {
-      return [
+      const items: NavItem[] = [
         ...base.slice(0, 3),
         ...manufacturerExtrasKeys,
         subscriptionNavKey,
         ...base.slice(3),
       ];
+      if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+      return items;
     }
     if (role === "retailer") {
-      return [...base.slice(0, 3), subscriptionNavKey, ...base.slice(3)];
+      const items: NavItem[] = [...base.slice(0, 3), subscriptionNavKey, ...base.slice(3)];
+      if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+      return items;
     }
-    return base;
+    const items: NavItem[] = [...base];
+    if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+    return items;
   })();
 
   return (
@@ -173,7 +190,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                   className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-on-surface-variant/50 hover:bg-surface-container/50"
                 >
                   <Icon className="h-5 w-5 shrink-0" />
-                  <span>{t(labelKey)}</span>
+                  <span>{t(labelKey as any)}</span>
                   <Lock className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
                 </Link>
               );
@@ -193,7 +210,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0 opacity-90" />
-                {t(labelKey)}
+                {t(labelKey as any)}
               </Link>
             );
           })}

@@ -394,13 +394,27 @@ export default function MarketView({
                       </HelperTooltip>
                       <HelperTooltip side="top" textKey="marketPriceInfo">
                         <div className="flex items-baseline gap-1 cursor-help">
-                          <span className="text-lg font-bold text-secondary">
-                            ₹{product.price.toLocaleString('en-IN')}
-                          </span>
-                          {product.oldPrice && product.oldPrice > product.price && (
-                            <span className="text-[10px] text-outline line-through">
-                              ₹{product.oldPrice}
-                            </span>
+                          {product.lowestPrice && product.lowestPrice < product.price ? (
+                            <>
+                              <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
+                              <span className="text-lg font-bold text-secondary">
+                                ₹{product.lowestPrice.toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[10px] text-outline line-through">
+                                ₹{product.price.toLocaleString('en-IN')}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-lg font-bold text-secondary">
+                                ₹{product.price.toLocaleString('en-IN')}
+                              </span>
+                              {product.oldPrice && product.oldPrice > product.price && (
+                                <span className="text-[10px] text-outline line-through">
+                                  ₹{product.oldPrice}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                       </HelperTooltip>

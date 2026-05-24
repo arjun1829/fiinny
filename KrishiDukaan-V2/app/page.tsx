@@ -6,7 +6,7 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { ICONS, PRODUCTS, STORES, INVENTORY } from './constants';
+import { ICONS, PRODUCTS, STORES, INVENTORY, MANUFACTURERS } from './constants';
 import HomeView from './views/HomeView';
 import MarketView from './views/MarketView';
 import HubView from './views/HubView';
@@ -18,8 +18,9 @@ import LoginView from './views/LoginView';
 import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
+import BrandView from './views/BrandView';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart } from './firebase';
+import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MarketplaceProduct } from '../types/product';
@@ -33,7 +34,7 @@ import Footer from '../components/shared/footer';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -44,7 +45,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 export default function App() {
@@ -52,6 +53,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('home');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [selectedManufacturerId, setSelectedManufacturerId] = useState<string | null>(null);
+  const [mapFilterProductId, setMapFilterProductId] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState('Pune, Maharashtra');
   const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 }); // Default Pune
   const [productSearch, setProductSearch] = useState('');
@@ -109,12 +112,14 @@ export default function App() {
       storeId?: string | null,
       inviteCodeParam?: string | null,
       hubId?: string | null,
+      manufacturerId?: string | null,
     ) => {
       const params = new URLSearchParams();
       if (view !== 'home') params.set('view', view);
       if (productId) params.set('product', productId);
       if (storeId) params.set('store', storeId);
       if (hubId) params.set('hub', hubId);
+      if (manufacturerId) params.set('manufacturer', manufacturerId);
       const code =
         inviteCodeParam === undefined
           ? signupInviteCode?.trim() || null
@@ -152,6 +157,7 @@ export default function App() {
       storeId: params.get('store'),
       inviteCode,
       hubId: params.get('hub'),
+      manufacturerId: params.get('manufacturer'),
     };
   }, []);
 
@@ -162,6 +168,7 @@ export default function App() {
         productId?: string | null;
         storeId?: string | null;
         hubId?: string | null;
+        manufacturerId?: string | null;
         replace?: boolean;
         clearInvite?: boolean;
       },
@@ -170,6 +177,7 @@ export default function App() {
       const nextProductId = options?.productId ?? (nextView === 'product' ? selectedProductId : null);
       const nextStoreId = options?.storeId ?? (nextView === 'map' ? selectedStoreId : null);
       const nextHubId = options?.hubId ?? (nextView === 'hub' ? selectedHubId : null);
+      const nextManufacturerId = options?.manufacturerId ?? (nextView === 'brand' ? selectedManufacturerId : null);
 
       if (options?.clearInvite) {
         setSignupInviteCode(null);
@@ -179,19 +187,22 @@ export default function App() {
       setSelectedProductId(nextProductId);
       setSelectedStoreId(nextStoreId);
       setSelectedHubId(nextHubId);
+      setSelectedManufacturerId(nextManufacturerId);
       window.scrollTo({ top: 0, behavior: 'instant' });
 
       if (typeof window !== 'undefined') {
         const inviteForUrl = options?.clearInvite ? null : undefined;
-        const nextUrl = buildUrl(nextView, nextProductId, nextStoreId, inviteForUrl, nextHubId);
+        const nextUrl = buildUrl(nextView, nextProductId, nextStoreId, inviteForUrl, nextHubId, nextManufacturerId);
         if (options?.replace) {
           window.history.replaceState(null, '', nextUrl);
         } else {
           window.history.pushState(null, '', nextUrl);
         }
+        // Always scroll to top when navigating
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }
     },
-    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId],
+    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId, selectedManufacturerId],
   );
 
   useEffect(() => {
@@ -204,7 +215,8 @@ export default function App() {
     setSelectedProductId(route.productId);
     setSelectedStoreId(route.storeId);
     setSelectedHubId(route.hubId);
-    window.history.replaceState(null, '', buildUrl(routeView, route.productId, route.storeId, route.inviteCode, route.hubId));
+    setSelectedManufacturerId(route.manufacturerId);
+    window.history.replaceState(null, '', buildUrl(routeView, route.productId, route.storeId, route.inviteCode, route.hubId, route.manufacturerId));
 
     const onPopState = () => {
       const next = readRouteFromUrl();
@@ -213,6 +225,7 @@ export default function App() {
       setSelectedProductId(next.productId);
       setSelectedStoreId(next.storeId);
       setSelectedHubId(next.hubId);
+      setSelectedManufacturerId(next.manufacturerId);
       window.scrollTo({ top: 0, behavior: 'instant' });
     };
 
@@ -273,6 +286,7 @@ export default function App() {
     try {
       setLoading(true);
       setErrorMsg(null);
+      trackPageView('home');
 
       console.log('Fetching products, stores and hubs...');
       let products = await fetchMarketplaceProducts();
@@ -430,25 +444,46 @@ export default function App() {
     }
   };
 
+  // Always include constant-defined manufacturer products/stores not yet in Firebase
+  const mergedProducts = useMemo(() => {
+    const fbIds = new Set(allProducts.map((p) => p.id));
+    const constManufacturerProducts = PRODUCTS.filter(
+      (p) => p.manufacturerId && !fbIds.has(p.id)
+    );
+    return constManufacturerProducts.length > 0
+      ? [...allProducts, ...constManufacturerProducts]
+      : allProducts;
+  }, [allProducts]);
+
+  const mergedStores = useMemo(() => {
+    const fbIds = new Set(allStores.map((s) => s.id));
+    const constManufacturerStores = STORES.filter(
+      (s) => Object.values(MANUFACTURERS).some((m) => m.storeIds.includes(s.id)) && !fbIds.has(s.id)
+    );
+    return constManufacturerStores.length > 0
+      ? [...allStores, ...constManufacturerStores]
+      : allStores;
+  }, [allStores]);
+
   const storeNameById = useMemo(() => {
     return new Map(
-      allStores.map((store) => [
+      mergedStores.map((store) => [
         String(store.id),
         String(store.name || store.shopName || store.ownerName || '')
       ])
     );
-  }, [allStores]);
+  }, [mergedStores]);
 
   const storesWithDistance = useMemo(
-    () => computeStoreDistances(allStores, coordinates),
-    [allStores, coordinates]
+    () => computeStoreDistances(mergedStores, coordinates),
+    [mergedStores, coordinates]
   );
 
   const productsWithDistance = useMemo(() => {
     const storeMap = new Map(storesWithDistance.map(s => [s.name, s]));
     const storeIdMap = new Map(storesWithDistance.map(s => [s.id, s]));
 
-    return allProducts.map(product => {
+    return mergedProducts.map(product => {
       let minDistance = Infinity;
       let distanceLabel = 'Unknown';
 
@@ -624,7 +659,8 @@ export default function App() {
     }
   };
 
-  const navigateToMap = (storeId?: string) => {
+  const navigateToMap = (storeId?: string, fromProductId?: string | null) => {
+    setMapFilterProductId(fromProductId !== undefined ? fromProductId : null);
     navigate('map', { storeId: storeId || null });
   };
 
@@ -707,15 +743,18 @@ export default function App() {
         );
       case 'product':
         return <ProductDetailView
-          products={allProducts}
+          products={mergedProducts}
           productId={selectedProductId}
           onBack={() => navigate('market')}
-          onStoreClick={navigateToMap}
+          onStoreClick={(storeId) => navigateToMap(storeId, selectedProductId)}
           storesWithDistance={storesWithDistance}
           onProductClick={navigateToProduct}
           onViewSellerAll={(storeName) => {
             setProductSearch(storeName);
             navigate('market');
+          }}
+          onViewBrand={(manufacturerId) => {
+            navigate('brand', { manufacturerId });
           }}
           onAddToCart={addToCart}
         />;
@@ -747,11 +786,18 @@ export default function App() {
         );
       case 'map':
         return (
-          <StoreLocatorView 
-            onBack={() => navigate('home')} 
-            selectedStoreId={selectedStoreId} 
+          <StoreLocatorView
+            onBack={() => { setMapFilterProductId(null); navigate('home'); }}
+            selectedStoreId={selectedStoreId}
             onStoreSelect={setSelectedStoreId}
-            stores={searchedStores}
+            stores={mapFilterProductId
+              ? (() => {
+                  const prod = mergedProducts.find(p => p.id === mapFilterProductId);
+                  const ids = new Set((prod?.availability ?? []).map(a => a.storeId));
+                  return ids.size ? searchedStores.filter(s => ids.has(s.id)) : searchedStores;
+                })()
+              : searchedStores
+            }
             location={locationQuery}
             onLocationChange={(loc, coords) => {
               setLocationQuery(loc);
@@ -774,6 +820,11 @@ export default function App() {
       case 'login':
         return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
       case 'signup':
+        // Already-logged-in user with no invite — send them home
+        if (user && !signupInviteCode) {
+          navigate('home');
+          return null;
+        }
         // Already-logged-in user arrived via an invite link — show accept result instead of signup form
         if (user) {
           return (
@@ -788,7 +839,7 @@ export default function App() {
                   <>
                     <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
                     <p className="font-semibold text-on-surface">Accepting your invite…</p>
-                    <p className="text-sm text-on-surface-variant mt-1">Linking you to the manufacturer's network</p>
+                    <p className="text-sm text-on-surface-variant mt-1">Linking you to the manufacturer&apos;s network</p>
                   </>
                 )}
 
@@ -852,6 +903,21 @@ export default function App() {
         );
       case 'subscription':
         return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
+      case 'brand':
+        return (
+          <BrandView
+            manufacturerId={selectedManufacturerId || 'golden-future-life-care'}
+            products={mergedProducts}
+            stores={mergedStores}
+            onProductClick={navigateToProduct}
+            onFindNearYou={(_mfgId) => {
+              setProductSearch('');
+              setSelectedCategory('fertilizers');
+              navigate('market');
+            }}
+            onStoreClick={navigateToMap}
+          />
+        );
       case 'about':
         return <AboutView />;
       default:
@@ -877,7 +943,10 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-surface">
       <Navbar
         currentView={currentView}
-        onNavigate={navigate}
+        onNavigate={(view) => {
+          if (view === 'map') setMapFilterProductId(null);
+          navigate(view);
+        }}
         productSearch={productSearch}
         setProductSearch={setProductSearch}
         locationQuery={locationQuery}

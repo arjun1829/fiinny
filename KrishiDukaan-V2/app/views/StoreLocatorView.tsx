@@ -45,7 +45,7 @@ export default function StoreLocatorView({
   const { t } = useI18n();
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [storeSearch, setStoreSearch] = useState('');
-  const [showMobileMap, setShowMobileMap] = useState(false);
+  const [mobileMapOverlay, setMobileMapOverlay] = useState(false);
   const [detailStore, setDetailStore] = useState<any | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -54,6 +54,9 @@ export default function StoreLocatorView({
     id: 'google-map-script',
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
   });
+
+  // stripMapRef keeps the strip/desktop map instance so controls work after the overlay unmounts
+  const stripMapRef = useRef<google.maps.Map | null>(null);
 
   const displayedStores = useMemo(() => {
     return filterStoresByQuery(stores as StoreWithDistance[], storeSearch);
@@ -80,6 +83,13 @@ export default function StoreLocatorView({
 
   const onUnmount = useCallback(function callback() {
     setMap(null);
+    stripMapRef.current = null;
+  }, []);
+
+  // When the overlay map unmounts, restore the strip/desktop map reference
+  const onOverlayUnmount = useCallback(function callback() {
+    if (stripMapRef.current) setMap(stripMapRef.current);
+    // else leave map as-is — don't null it
   }, []);
 
   // Effect to pan map when store selection or user coords change
@@ -100,19 +110,46 @@ export default function StoreLocatorView({
     }
   }, [activeStoreId]);
 
-  const handleStoreClick = (storeId: string) => {
+  const handleStoreClick = (storeId: string, showMap = false) => {
     onStoreSelect?.(storeId);
+    if (showMap) setMobileMapOverlay(true);
   };
 
   const handleGetDirections = (store: StoreWithDistance) => {
     const loc = store.location as any;
-    const lat = loc?.lat || loc?.latitude;
-    const lng = loc?.lng || loc?.longitude;
+    const lat = loc?.lat ?? loc?.latitude;
+    const lng = loc?.lng ?? loc?.longitude;
+
     if (lat && lng) {
-      window.open(
-        `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
-        '_blank'
-      );
+      const link = document.createElement('a');
+      link.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
+      return;
+    }
+
+    // Fallback: use a Maps short URL stored in the address line
+    const line1: string = (store as any).address?.line1 ?? (store as any).line1 ?? '';
+    if (line1.includes('maps.app.goo.gl') || line1.includes('maps.google.com')) {
+      const link = document.createElement('a');
+      link.href = line1;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
+      return;
+    }
+
+    // Last resort: text search by name + city + state
+    const city = (store as any).address?.city ?? (store as any).city ?? '';
+    const state = (store as any).address?.state ?? (store as any).state ?? '';
+    const query = [store.name, city, state].filter(Boolean).join(', ');
+    if (query) {
+      const link = document.createElement('a');
+      link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
     }
   };
 
@@ -180,6 +217,9 @@ export default function StoreLocatorView({
   const mapOptions = {
     disableDefaultUI: true,
     zoomControl: false,
+    // 'cooperative' requires Ctrl+scroll on desktop (shows hint overlay) so the page scrolls normally
+    // and pinch-to-zoom on mobile — prevents the map eating scroll events
+    gestureHandling: 'cooperative',
     styles: [
       {
         featureType: 'poi',
@@ -189,28 +229,281 @@ export default function StoreLocatorView({
     ]
   };
 
+  // Shared map markers renderer
+  const renderMarkers = () => (
+    <>
+      <MarkerF
+        position={userCoords}
+        icon={{
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: '#4285F4',
+          fillOpacity: 1,
+          strokeWeight: 4,
+          strokeColor: '#FFFFFF',
+          scale: 8,
+        }}
+      />
+      {displayedStores.map((store) => {
+        const loc = store.location as { lat?: number; lng?: number; latitude?: number; longitude?: number } | undefined;
+        const lat = loc?.lat ?? loc?.latitude;
+        const lng = loc?.lng ?? loc?.longitude;
+        if (lat == null || lng == null || Number(lat) === 0 || Number(lng) === 0) return null;
+        const pos = { lat: Number(lat), lng: Number(lng) };
+        const isSelected = store.id === activeStoreId;
+        const pinUrl = makePinSvg(isSelected ? '#16A34A' : '#DC2626', isSelected);
+        const pinSize = isSelected ? new google.maps.Size(36, 46) : new google.maps.Size(30, 38);
+        const pinAnchor = isSelected ? new google.maps.Point(18, 46) : new google.maps.Point(15, 38);
+        return (
+          <MarkerF
+            key={store.id}
+            position={pos}
+            title={store.name}
+            icon={{ url: pinUrl, scaledSize: pinSize, anchor: pinAnchor }}
+            onClick={() => { handleStoreClick(store.id); map?.panTo(pos); map?.setZoom(15); }}
+          />
+        );
+      })}
+    </>
+  );
+
   return (
     <>
-    <div className="flex flex-col md:flex-row h-[calc(100vh-64px)] overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-full md:w-[400px] bg-white border-r border-surface-container flex flex-col z-20 shadow-xl overflow-hidden">
-        <div className="p-4 md:p-6 border-b border-surface-container shrink-0">
-          <div className="flex items-center gap-4 mb-4">
-            <button onClick={onBack} className="p-2 hover:bg-surface-container-low rounded-full md:hidden">
-              <ICONS.ChevronRight className="w-5 h-5 rotate-180" />
+
+    {/* ── MOBILE LAYOUT ──────────────────────────────────────────────────────── */}
+    <div className="md:hidden flex flex-col">
+
+      {/* Map strip — scrolls away naturally as user scrolls down */}
+      <div className="h-[45vw] min-h-[200px] max-h-[260px] relative bg-surface-container-high overflow-hidden">
+        {isLoaded ? (
+          <GoogleMap mapContainerStyle={mapContainerStyle} center={center} zoom={13}
+            onLoad={(m) => { stripMapRef.current = m; setMap(m); }} onUnmount={onUnmount} options={mapOptions}>
+            {renderMarkers()}
+          </GoogleMap>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-surface-container-low">
+            <div className="animate-spin w-7 h-7 border-4 border-primary border-t-transparent rounded-full" />
+          </div>
+        )}
+        {/* Compact map controls */}
+        <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-10">
+          <button type="button" onClick={() => map?.panTo(userCoords)}
+            className="w-8 h-8 bg-white rounded-lg shadow-lg flex items-center justify-center text-primary border border-surface-container">
+            <ICONS.MyPosition className="w-4 h-4" />
+          </button>
+          <div className="flex flex-col bg-white rounded-lg shadow-lg border border-surface-container overflow-hidden">
+            <button type="button" onClick={() => map?.setZoom((map.getZoom() || 13) + 1)}
+              className="w-8 h-8 flex items-center justify-center text-on-surface-variant border-b border-surface-container">
+              <ICONS.Plus className="w-3.5 h-3.5" />
             </button>
-            <h2 className="text-2xl font-bold text-on-surface">{t('nearbyStores')}</h2>
-            {/* Mobile map toggle */}
-            <button
-              onClick={() => setShowMobileMap(!showMobileMap)}
-              className="md:hidden ml-auto p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            <button type="button" onClick={() => map?.setZoom((map.getZoom() || 13) - 1)}
+              className="w-8 h-8 flex items-center justify-center text-on-surface-variant">
+              <ICONS.Minus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky search + filter header */}
+      <div className="sticky top-0 z-20 bg-white border-b border-surface-container px-3 pt-3 pb-2 shadow-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={onBack} className="p-1.5 hover:bg-surface-container-low rounded-full shrink-0">
+            <ICONS.ChevronRight className="w-4 h-4 rotate-180" />
+          </button>
+          <h2 className="text-base font-bold text-on-surface flex-1">{t('nearbyStores')}</h2>
+          <HelperTooltip side="bottom" textKey="storeLocateMe">
+            <button onClick={handleLocateMe}
+              className="flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/8 px-2.5 py-1 rounded-full shrink-0">
+              <ICONS.MyPosition className="w-3 h-3" /> {location.split(',')[0]}
+            </button>
+          </HelperTooltip>
+        </div>
+        <div data-tour="store-search"
+          className="flex items-center bg-surface-container-low rounded-xl px-3 py-2 border border-outline-variant focus-within:border-primary transition-all mb-2">
+          <ICONS.Search className="w-3.5 h-3.5 text-outline mr-2 shrink-0" />
+          <input type="text" value={storeSearch} onChange={(e) => setStoreSearch(e.target.value)}
+            placeholder={t('searchStoresPlaceholder')}
+            className="bg-transparent border-none w-full focus:ring-0 text-sm text-on-surface placeholder:font-normal" />
+          {storeSearch && (
+            <button onClick={() => setStoreSearch('')} className="text-outline ml-1">
+              <ICONS.Minus className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-0.5">
+          <button className="whitespace-nowrap px-4 py-1.5 rounded-full bg-primary text-white text-xs font-bold flex items-center gap-1.5 shrink-0">
+            <ICONS.Check className="w-3.5 h-3.5" /> {t('openNow')}
+          </button>
+          <button className="whitespace-nowrap px-4 py-1.5 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold shrink-0">
+            {t('ureaInStock')}
+          </button>
+          <button className="whitespace-nowrap px-4 py-1.5 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold shrink-0">
+            {t('npkFertilizer')}
+          </button>
+        </div>
+      </div>
+
+      {/* Store count */}
+      <div className="px-4 py-2 bg-surface-container-low">
+        <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+          {displayedStores.length} {displayedStores.length !== 1 ? t('storesFound') : t('storeFound')}
+        </p>
+      </div>
+
+      {/* Store list — scrolls naturally with page */}
+      <div className="flex flex-col gap-3 px-3 py-3 bg-surface-container-lowest">
+        {displayedStores.map((store, i) => {
+          const addressLine = storeAddressToDisplayString(store.address);
+          const isActive = store.id === activeStoreId;
+          return (
+            <div
+              key={store.id}
+              className={`rounded-2xl border-2 overflow-hidden transition-all ${
+                isActive ? 'border-primary bg-white shadow-md' : 'border-surface-container bg-white shadow-sm'
+              }`}
             >
-              <ICONS.Location className="w-5 h-5" />
-            </button>
+              <div className="flex items-center gap-3 p-3.5">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isActive ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface-variant'}`}>
+                  <ICONS.Market className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0" onClick={() => handleStoreClick(store.id)}>
+                  <p className={`font-bold text-sm truncate ${isActive ? 'text-primary' : 'text-on-surface'}`}>{store.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-on-surface-variant flex items-center gap-0.5">
+                      <ICONS.Location className="w-2.5 h-2.5" /> {(store as any).distanceLabel || store.distance || t('nearby')}
+                    </span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                    <span className="text-[10px] text-on-surface-variant">{(store.status || '').split('•')[0].trim()}</span>
+                  </div>
+                </div>
+                {/* MAP button — shows map overlay from top */}
+                <button
+                  onClick={() => { handleStoreClick(store.id, true); }}
+                  className="shrink-0 flex items-center gap-1 bg-primary text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                >
+                  <ICONS.Directions className="w-3 h-3" /> MAP
+                </button>
+              </div>
+              {addressLine && (
+                <p className="px-3.5 pb-2 text-[11px] text-on-surface-variant font-medium -mt-1">{addressLine}</p>
+              )}
+              {/* Action buttons */}
+              <div className="flex gap-2 px-3.5 pb-3">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleGetDirections(store); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-white py-2 rounded-xl text-[11px] font-bold"
+                >
+                  <ICONS.Directions className="w-3 h-3" /> Directions
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleStoreClick(store.id, true); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-primary text-primary py-2 rounded-xl text-[11px] font-bold"
+                >
+                  <ICONS.Location className="w-3 h-3" /> View on Map
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {displayedStores.length === 0 && storeSearch && (
+          <div className="p-8 text-center">
+            <ICONS.Search className="w-8 h-8 text-outline mx-auto mb-3" />
+            <p className="text-sm font-bold text-on-surface-variant">{t('noStoresMatch')} &ldquo;{storeSearch}&rdquo;</p>
+          </div>
+        )}
+        <div className="h-6" />
+      </div>
+    </div>
+
+    {/* Mobile Map Overlay — slides down from top when MAP button tapped */}
+    <AnimatePresence>
+      {mobileMapOverlay && (
+        <motion.div
+          initial={{ y: '-100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '-100%' }}
+          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          className="fixed inset-0 z-50 md:hidden flex flex-col bg-white"
+        >
+          {/* Map fills top portion */}
+          <div className="flex-1 relative bg-surface-container-high">
+            {isLoaded ? (
+              <GoogleMap mapContainerStyle={mapContainerStyle} center={center} zoom={15}
+                onLoad={(m) => setMap(m)} onUnmount={onOverlayUnmount} options={mapOptions}>
+                {renderMarkers()}
+              </GoogleMap>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+              </div>
+            )}
+            {/* Map controls */}
+            <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+              <button type="button" onClick={() => map?.panTo(userCoords)}
+                className="w-9 h-9 bg-white rounded-xl shadow-xl flex items-center justify-center text-primary border border-surface-container">
+                <ICONS.MyPosition className="w-4 h-4" />
+              </button>
+              <div className="flex flex-col bg-white rounded-xl shadow-xl border border-surface-container overflow-hidden">
+                <button type="button" onClick={() => map?.setZoom((map.getZoom() || 13) + 1)}
+                  className="w-9 h-9 flex items-center justify-center text-on-surface-variant border-b border-surface-container">
+                  <ICONS.Plus className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => map?.setZoom((map.getZoom() || 13) - 1)}
+                  className="w-9 h-9 flex items-center justify-center text-on-surface-variant">
+                  <ICONS.Minus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom drawer with selected store + back button */}
+          {focusedStore && (
+            <div className="bg-white border-t border-surface-container px-4 py-4 flex flex-col gap-3 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-on-surface text-base truncate">{focusedStore.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${(focusedStore.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                    <span className="text-xs text-on-surface-variant">{(focusedStore.status || '').split('•')[0].trim()}</span>
+                    <span className="text-xs text-on-surface-variant">·</span>
+                    <span className="text-xs text-on-surface-variant flex items-center gap-0.5">
+                      <ICONS.Location className="w-3 h-3" /> {(focusedStore as any).distanceLabel || focusedStore.distance || t('nearby')}
+                    </span>
+                  </div>
+                  {storeAddressToDisplayString(focusedStore.address) && (
+                    <p className="text-xs text-on-surface-variant mt-1">{storeAddressToDisplayString(focusedStore.address)}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setMobileMapOverlay(false)}
+                  className="shrink-0 flex items-center gap-1.5 bg-surface-container-low text-on-surface px-3 py-2 rounded-xl text-xs font-bold border border-surface-container"
+                >
+                  <ICONS.ChevronRight className="w-3.5 h-3.5 rotate-[270deg]" /> Back to list
+                </button>
+              </div>
+              <button
+                onClick={() => handleGetDirections(focusedStore)}
+                className="w-full bg-primary text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+              >
+                <ICONS.Directions className="w-4 h-4" /> {t('getDirections')}
+              </button>
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* ── DESKTOP LAYOUT ─────────────────────────────────────────────────────── */}
+    <div className="hidden md:flex flex-row h-[calc(100vh-64px)] overflow-hidden">
+
+      {/* Sidebar */}
+      <div className="w-[400px] bg-white border-r border-surface-container flex flex-col z-20 shadow-xl overflow-hidden shrink-0">
+        <div className="p-6 border-b border-surface-container shrink-0">
+          <div className="flex items-center gap-4 mb-4">
+            <h2 className="text-2xl font-bold text-on-surface">{t('nearbyStores')}</h2>
           </div>
 
           {/* Location label */}
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2 md:mb-3">
             <HelperTooltip side="bottom" textKey="storeLocateMe">
               <button
                 onClick={handleLocateMe}
@@ -223,7 +516,7 @@ export default function StoreLocatorView({
           </div>
 
           {/* Location search (geocode on Enter) */}
-          <div className="flex items-center bg-surface-container-low rounded-2xl px-4 py-3 mb-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+          <div className="flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 mb-2 md:mb-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
             <ICONS.Location className="w-4 h-4 text-outline mr-3 shrink-0" />
             <input
               type="text"
@@ -238,7 +531,7 @@ export default function StoreLocatorView({
           {/* Store name / area search */}
           <div
             data-tour="store-search"
-            className="flex items-center bg-surface-container-low rounded-2xl px-4 py-3 mb-4 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all"
+            className="flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 mb-2 md:mb-4 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all"
           >
             <ICONS.Search className="w-4 h-4 text-outline mr-3 group-focus-within:text-primary transition-colors shrink-0" />
             <input
@@ -268,7 +561,7 @@ export default function StoreLocatorView({
             )}
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-4 hide-scrollbar">
+          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-4 hide-scrollbar">
             <HelperTooltip
               side="bottom"
               textKey="storeOpenNow"
@@ -408,114 +701,52 @@ export default function StoreLocatorView({
         </div>
       </div>
 
-      {/* Map — Google Maps only (Leaflet removed) */}
-      <div
-        className={`relative flex-1 min-h-[280px] bg-surface-container-high overflow-hidden ${
-          showMobileMap ? 'flex' : 'hidden'
-        } md:flex`}
-      >
+      {/* Map panel */}
+      <div className="flex-1 relative bg-surface-container-high">
         {isLoaded ? (
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             center={center}
             zoom={13}
-            onLoad={(m) => setMap(m)}
+            onLoad={(m) => { stripMapRef.current = m; setMap(m); }}
             onUnmount={onUnmount}
             options={mapOptions}
           >
-            <MarkerF
-              position={userCoords}
-              icon={{
-                path: google.maps.SymbolPath.CIRCLE,
-                fillColor: '#4285F4',
-                fillOpacity: 1,
-                strokeWeight: 4,
-                strokeColor: '#FFFFFF',
-                scale: 8,
-              }}
-            />
-
-            {displayedStores.map((store) => {
-              const loc = store.location as
-                | { lat?: number; lng?: number; latitude?: number; longitude?: number }
-                | undefined;
-              const lat = loc?.lat ?? loc?.latitude;
-              const lng = loc?.lng ?? loc?.longitude;
-              if (lat == null || lng == null || Number(lat) === 0 || Number(lng) === 0) return null;
-              const pos = { lat: Number(lat), lng: Number(lng) };
-              const isSelected = store.id === activeStoreId;
-
-              const pinUrl = makePinSvg(isSelected ? '#16A34A' : '#DC2626', isSelected);
-              const pinSize = isSelected
-                ? new google.maps.Size(36, 46)
-                : new google.maps.Size(30, 38);
-              const pinAnchor = isSelected
-                ? new google.maps.Point(18, 46)
-                : new google.maps.Point(15, 38);
-
-              return (
-                <MarkerF
-                  key={store.id}
-                  position={pos}
-                  title={store.name}
-                  icon={{ url: pinUrl, scaledSize: pinSize, anchor: pinAnchor }}
-                  onClick={() => {
-                    handleStoreClick(store.id);
-                    map?.panTo(pos);
-                    map?.setZoom(15);
-                  }}
-                />
-              );
-            })}
+            {renderMarkers()}
           </GoogleMap>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+          <div className="w-full h-full flex items-center justify-center bg-surface-container-low">
+            <div className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
           </div>
         )}
-
-        <div className="absolute top-10 right-10 flex flex-col gap-4 z-10 pointer-events-auto" data-tour="store-map">
-          <HelperTooltip
-            side="left"
-            textKey="storeMap"
+        {/* Zoom controls */}
+        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+          <button
+            type="button"
+            onClick={() => map?.panTo(userCoords)}
+            className="w-10 h-10 bg-white rounded-xl shadow-xl flex items-center justify-center text-primary border border-surface-container hover:bg-surface-container-low transition-colors"
           >
+            <ICONS.MyPosition className="w-4 h-4" />
+          </button>
+          <div className="flex flex-col bg-white rounded-xl shadow-xl border border-surface-container overflow-hidden">
             <button
               type="button"
-              aria-label="Map information"
-              className="w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-primary hover:scale-110 active:scale-90 transition-all border border-surface-container"
+              onClick={() => map?.setZoom((map.getZoom() || 13) + 1)}
+              className="w-10 h-10 flex items-center justify-center text-on-surface-variant border-b border-surface-container hover:bg-surface-container-low transition-colors"
             >
-              <ICONS.Info className="w-5 h-5" />
+              <ICONS.Plus className="w-4 h-4" />
             </button>
-          </HelperTooltip>
-          <HelperTooltip side="left" textKey="storeLocateMe">
             <button
               type="button"
-              onClick={() => map?.panTo(userCoords)}
-              className="w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center text-primary hover:scale-110 active:scale-90 transition-all border border-surface-container group"
+              onClick={() => map?.setZoom((map.getZoom() || 13) - 1)}
+              className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors"
             >
-              <ICONS.MyPosition className="w-6 h-6 group-hover:animate-pulse" />
+              <ICONS.Minus className="w-4 h-4" />
             </button>
-          </HelperTooltip>
-          <HelperTooltip side="left" textKey="mapZoomControls">
-            <div className="flex flex-col bg-white rounded-3xl shadow-xl border border-surface-container overflow-hidden">
-              <button
-                type="button"
-                onClick={() => map?.setZoom((map.getZoom() || 13) + 1)}
-                className="w-12 h-12 flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors border-b border-surface-container"
-              >
-                <ICONS.Plus className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => map?.setZoom((map.getZoom() || 13) - 1)}
-                className="w-12 h-12 flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors"
-              >
-                <ICONS.Minus className="w-5 h-5" />
-              </button>
-            </div>
-          </HelperTooltip>
+          </div>
         </div>
       </div>
+
     </div>
 
     {/* Store Details Modal */}

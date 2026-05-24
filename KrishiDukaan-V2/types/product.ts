@@ -7,7 +7,8 @@ export type MarketplaceProduct = {
   category: string;
   description: string;
   image: string;
-  
+  images?: string[];
+
   /** Ownership — primary query fields */
   ownerId?: string;
   ownerType?: "manufacturer" | "retailer";
@@ -38,4 +39,12 @@ export type MarketplaceProduct = {
     stockLevel: string;
     sellingPrice?: number;
   }[];
+
+  /** Lowest selling price across all stores that stock this product */
+  lowestPrice?: number;
+
+  /** Product detail enrichment */
+  composition?: { name: string; value: string; color: string }[];
+  benefits?: string[];
+  application?: string;
 };
