@@ -1,0 +1,134 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "catalog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category",  "order": "ASCENDING" },
+        { "fieldPath": "isActive",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "nameSearch", "order": "ASCENDING" },
+        { "fieldPath": "isActive",   "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "catalog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdByPhone", "order": "ASCENDING" },
+        { "fieldPath": "isActive",       "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "catalogId", "order": "ASCENDING" },
+        { "fieldPath": "isActive",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "catalogId",   "order": "ASCENDING" },
+        { "fieldPath": "isActive",    "order": "ASCENDING" },
+        { "fieldPath": "sellerType",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sellerPhone", "order": "ASCENDING" },
+        { "fieldPath": "isActive",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignedByManufacturerPhone", "order": "ASCENDING" },
+        { "fieldPath": "isActive",                    "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "manufacturerNetwork",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "manufacturerPhone", "order": "ASCENDING" },
+        { "fieldPath": "status",            "order": "ASCENDING" },
+        { "fieldPath": "addedAt",           "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "manufacturerNetwork",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "retailerPhone", "order": "ASCENDING" },
+        { "fieldPath": "status",        "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerPhone", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",     "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sellerPhone", "order": "ASCENDING" },
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerPhone",          "order": "ASCENDING" },
+        { "fieldPath": "subscriptionStatus",  "order": "ASCENDING" },
+        { "fieldPath": "expiryDate",          "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "seatListings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerPhone",  "order": "ASCENDING" },
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "listingType", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "seatListings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerPhone", "order": "ASCENDING" },
+        { "fieldPath": "catalogId",  "order": "ASCENDING" },
+        { "fieldPath": "status",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userPhone", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -2,7 +2,7 @@ export type InviteDocStatus = "invited" | "active" | "revoked";
 
 export type InviteAcceptanceFailureReason =
   | "invalid_code"
-  | "already_used"
+  | { type: "already_used"; uid: string }
   | "expired"
   | "not_invited";
 
@@ -14,17 +14,23 @@ export interface ManufacturerRetailerInviteSnapshot {
   id: string;
   status: InviteDocStatus;
   retailerId: string;
+  /** Pre-created retailers/{docId} — used to query products/inventory assigned pre-signup. */
+  retailerDocId: string;
   inviteCode: string;
   /** True when status === "invited" and claimable === true in Firestore. */
   claimable: boolean;
+  /** Normalized phone number from the invite. */
+  retailerPhone: string;
 }
 
 export function mapInviteAcceptanceError(reason: InviteAcceptanceFailureReason): string {
+  if (typeof reason === "object" && reason.type === "already_used") {
+    return `This invite was already accepted by a different account (UID ending in ...${reason.uid.slice(-6)}). Sign in with that account or request a new invite.`;
+  }
+
   switch (reason) {
     case "invalid_code":
       return "Invalid invite code. Check the link or ask the manufacturer for a new invite.";
-    case "already_used":
-      return "This invite has already been used. Sign in with the account that accepted it, or request a new invite.";
     case "expired":
       return "This invite is no longer valid or has been revoked.";
     case "not_invited":
@@ -51,18 +57,20 @@ export function mapInviteSnapshot(
     id,
     status,
     retailerId,
+    retailerDocId: String(data.retailerDocId ?? "").trim(),
     inviteCode: String(data.inviteCode ?? ""),
     claimable,
+    retailerPhone: String(data.retailerPhone ?? "").trim(),
   };
 }
 
 /**
- * Rules: claim when status is invited, retailerId empty, claimable true (or legacy undefined),
- * or idempotent when already active for the same uid.
+ * Rules: claim when status is invited, claimable true,
+ * or idempotent when already active for the same phone.
  */
 export function precheckInviteForAcceptance(
   doc: ManufacturerRetailerInviteSnapshot | null,
-  currentUid: string,
+  currentPhone: string,
 ): InviteAcceptancePrecheck {
   if (!doc) {
     return { ok: false, reason: "invalid_code" };
@@ -72,21 +80,21 @@ export function precheckInviteForAcceptance(
     return { ok: false, reason: "expired" };
   }
 
+  const rPhone = doc.retailerPhone;
+
   if (doc.status === "active") {
-    const rid = doc.retailerId.trim();
-    if (rid === currentUid) {
+    if (rPhone === currentPhone) {
       return { ok: true, docId: doc.id };
     }
-    if (rid) {
-      return { ok: false, reason: "already_used" };
+    if (rPhone) {
+      return { ok: false, reason: { type: "already_used", uid: rPhone } }; // using phone as 'uid' in message
     }
     return { ok: false, reason: "not_invited" };
   }
 
   if (doc.status === "invited") {
-    const rid = doc.retailerId.trim();
-    if (rid && rid !== currentUid) {
-      return { ok: false, reason: "already_used" };
+    if (rPhone && rPhone !== currentPhone) {
+      return { ok: false, reason: { type: "already_used", uid: rPhone } };
     }
     if (!doc.claimable) {
       return { ok: false, reason: "not_invited" };

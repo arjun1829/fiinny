@@ -1,125 +1,353 @@
+"use client";
+
+import { useEffect, useState } from 'react';
 import { ICONS, CROPS, PRODUCTS } from '../constants';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MarketplaceProduct } from '../../types/product';
+import { Hub } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
-import { HelperIcon } from '../../components/helpers';
+import { HelperIcon, HelperTooltip } from '../../components/helpers';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
+  hubs?: Hub[];
   onProductClick: (id: string) => void;
-  onHubClick: () => void;
+  onHubClick: (hubId?: string) => void;
+  onCategoryClick?: (categoryId: string) => void;
 }
 
-export default function HomeView({ products = PRODUCTS, onProductClick, onHubClick }: HomeViewProps) {
+type Slide = {
+  id: string;
+  eyebrow: string;
+  title: React.ReactNode;
+  subtitle: string;
+  ctaLabel: string;
+  bgClass: string;
+  bgImg?: string;
+  imgUrl?: string;
+  onCta: 'powerPlus' | 'hub' | 'retailer';
+};
+
+export default function HomeView({
+  products = PRODUCTS,
+  hubs = [],
+  onProductClick,
+  onHubClick,
+  onCategoryClick,
+}: HomeViewProps) {
   const { t } = useI18n();
+
+  // Prepare crop list for "Shop by Crop"
+  // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
+  const displayCrops = hubs.length > 0 
+    ? hubs.map(h => ({ 
+        id: h.id, 
+        name: h.name, 
+        image: h.iconImage || h.heroImage 
+      }))
+    : CROPS;
+
+  const powerPlusProducts = products
+    .filter((p) => p.name === 'Power Plus' && p.manufacturerId === 'karanarjun-mfg')
+    .sort((a, b) => a.price - b.price);
+
+  const slides: Slide[] = [
+    {
+      id: 'rooted',
+      eyebrow: 'Modern Produce, Rooted Locally',
+      title: (
+        <>
+          Modern Produce,<br />Rooted Locally.
+        </>
+      ),
+      subtitle:
+        'Find the freshest harvest and agricultural supplies directly from local stores in your area.',
+      ctaLabel: 'Explore Products',
+      bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
+      bgImg: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1400&q=80',
+      onCta: 'hub',
+    },
+    {
+      id: 'genuine',
+      eyebrow: 'Genuine inputs',
+      title: (
+        <>
+          Genuine inputs,<br />grown for your soil.
+        </>
+      ),
+      subtitle:
+        'Fresh agri supplies from trusted local stores — no middlemen, no fakes.',
+      ctaLabel: 'Explore products',
+      bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
+      bgImg: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=1400&q=80',
+      onCta: 'hub',
+    },
+    {
+      id: 'manufacturer',
+      eyebrow: 'Direct from Manufacturer',
+      title: (
+        <>
+          KaranArjun<br />Power Plus™
+        </>
+      ),
+      subtitle: 'Trusted by 75,800+ farmers. Stimulates root growth, improves fruit colour & weight.',
+      ctaLabel: 'Shop Power Plus',
+      bgClass: 'from-emerald-950 via-emerald-900/90 to-emerald-700/10',
+      bgImg: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1400&q=80',
+      imgUrl: '/product-images/Product_Images/Power Plus.png',
+      onCta: 'powerPlus',
+    },
+    {
+      id: 'retailer',
+      eyebrow: 'Register Your Business',
+      title: (
+        <>
+          Run your shop,<br />reach more farmers.
+        </>
+      ),
+      subtitle:
+        'Join 50+ dealers stocking trusted agri products. Manage inventory, get listed nearby.',
+      ctaLabel: 'Join the network',
+      bgClass: 'from-amber-950 via-orange-900/90 to-amber-800/10',
+      bgImg: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1400&q=80',
+      onCta: 'retailer',
+    },
+  ];
+
+  const [slideIdx, setSlideIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setSlideIdx((i) => (i + 1) % slides.length), 6000);
+    return () => clearInterval(id);
+  }, [slides.length]);
+
+  const goToSlideCta = (s: Slide) => {
+    if (s.onCta === 'powerPlus' && powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
+    else if (s.onCta === 'hub') onHubClick();
+    else if (s.onCta === 'retailer') onHubClick();
+  };
+
+  // Quick-access category tiles. Map clicks to Market with that category preselected.
+  const categoryTiles = [
+    { id: 'pesticides', label: t('catPesticides'), imgUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-emerald-50 to-emerald-100' },
+    { id: 'fertilizers', label: t('catFertilizers'), imgUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-amber-50 to-orange-100' },
+    { id: 'pesticides', label: t('catHerbicides'), imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-rose-50 to-pink-100' },
+    { id: 'fertilizers', label: t('catBioStimulants'), imgUrl: 'https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-teal-50 to-cyan-100' },
+    { id: 'tools', label: t('catSprayers'), imgUrl: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-sky-50 to-blue-100' },
+    { id: 'seeds', label: t('catSeeds'), imgUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-yellow-50 to-amber-100' },
+    { id: 'tools', label: t('catTools'), imgUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-slate-50 to-gray-100' },
+    { id: 'all', label: t('catViewAll'), imgUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-primary/10 to-primary/20' },
+  ];
 
   return (
     <div className="flex flex-col gap-10 py-6 md:py-10">
-      {/* Hero Section */}
+      {/* Hero — rotating carousel */}
       <section data-tour="hero" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
-        <div className="relative rounded-3xl overflow-hidden shadow-ambient min-h-[400px] flex flex-col justify-center p-8 md:p-12">
-          <div className="absolute inset-0 z-0">
-            <img
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcJewaf8J1gWZEdY6ipzy3p0M5aZoePmxCri9BSh7nbzy4FW-i7Azi-fBl6G0vr9TDZY9Q0XxD_GHq2_mJECmXU0oGsqJSZEnh1-5IRtoFi-mxGzKT9SHQH5HJW6wrhRD4Z98Wjo19TKEXGiIpyPXcFVZVvSuhCD9bXXV1kQRL_o0HNQ6-7KIySLLVdAddKSxPd14-jD0W8uG58KaJpjHYahRINJqJMRzG_CvOOiM2CGpIBu5yKjDn4P8gspnpRXThlkMm_JgsHX0L"
-              className="w-full h-full object-cover"
-              alt="Farm hero"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-primary/90 to-primary/40" />
-          </div>
-          
-          <div className="absolute top-4 right-4 z-20">
-            <HelperIcon
-              size="sm"
-              variant="onDark"
-              side="left"
-              title="Getting started"
-              ariaLabel="Hero help"
-              content="Start by exploring nearby products or browse crop categories below."
-            />
+        <div className="relative rounded-3xl overflow-hidden shadow-ambient min-h-[340px] md:min-h-[400px]">
+          <AnimatePresence mode="wait">
+            {slides.map((s, i) =>
+              i === slideIdx ? (
+                <motion.div
+                  key={s.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="absolute inset-0 flex items-center overflow-hidden"
+                >
+                  {s.bgImg && (
+                    <img
+                      src={s.bgImg}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  )}
+                  <div className={`absolute inset-0 bg-gradient-to-r ${s.bgClass}`} />
+                  <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
+                  <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-black/10 blur-3xl" />
+                  <div className="relative z-10 flex flex-col md:flex-row items-center gap-8 w-full px-8 md:px-14 py-10">
+                    <div className="flex-1 max-w-xl text-white">
+                      <h1 className="text-4xl md:text-6xl font-bold leading-[1.05] mb-4">
+                        {s.title}
+                      </h1>
+                      <p className="text-white/85 text-base md:text-lg mb-7 max-w-md">
+                        {s.subtitle}
+                      </p>
+                      <HelperTooltip side="bottom" textKey="homeHeroCta">
+                        <button
+                          onClick={() => goToSlideCta(s)}
+                          className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl hover:scale-105 transition-transform shadow-xl inline-flex items-center gap-2"
+                        >
+                          <ICONS.ArrowRight className="w-5 h-5" />
+                          {s.ctaLabel}
+                        </button>
+                      </HelperTooltip>
+                    </div>
+                    {s.imgUrl && (
+                      <div className="flex-shrink-0 w-48 md:w-64">
+                        <img
+                          src={s.imgUrl}
+                          alt=""
+                          className="w-full h-auto object-contain drop-shadow-2xl"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ) : null
+            )}
+          </AnimatePresence>
+
+          {/* Dots */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setSlideIdx(i)}
+                className={`h-1.5 rounded-full transition-all ${
+                  i === slideIdx ? 'w-8 bg-white' : 'w-1.5 bg-white/50'
+                }`}
+                aria-label={`Slide ${i + 1}`}
+              />
+            ))}
           </div>
 
-          <div className="relative z-10 max-w-2xl">
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-white text-5xl md:text-7xl font-bold font-sans tracking-tight leading-[1.3] mb-4"
-            >
-              {t('heroTitleLine1')}<br />{t('heroTitleLine2')}
-            </motion.h1>
-            <p className="text-white text-lg md:text-xl max-w-lg mb-8">
-              {t('heroSubtitle')}
-            </p>
-
-            <button
-              onClick={onHubClick}
-              className="bg-white text-primary font-bold px-8 py-3 rounded-xl w-full sm:w-auto hover:bg-primary-container hover:text-white transition-colors flex items-center justify-center gap-2 shadow-xl max-w-xs"
-            >
-              <ICONS.ArrowRight className="w-5 h-5" />
-              {t('exploreProducts')}
-            </button>
-          </div>
+          {/* Arrows */}
+          <button
+            onClick={() => setSlideIdx((i) => (i - 1 + slides.length) % slides.length)}
+            className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-white/20 backdrop-blur-md text-white rounded-full items-center justify-center hover:bg-white/30 transition-colors"
+            aria-label="Previous slide"
+          >
+            <ICONS.ChevronRight className="w-5 h-5 rotate-180" />
+          </button>
+          <button
+            onClick={() => setSlideIdx((i) => (i + 1) % slides.length)}
+            className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-white/20 backdrop-blur-md text-white rounded-full items-center justify-center hover:bg-white/30 transition-colors"
+            aria-label="Next slide"
+          >
+            <ICONS.ChevronRight className="w-5 h-5" />
+          </button>
         </div>
       </section>
 
-      {/* Shop by Crop */}
-      <section data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
-        <div className="flex items-center gap-2 mb-8">
-          <h2 className="text-3xl font-bold text-on-surface">{t('shopByCrop')}</h2>
+      {/* Shop by Category — 8 tiles */}
+      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('shopByCategory')}</h2>
           <HelperIcon
             size="sm"
+            variant="ghost"
             side="right"
-            title="Crop hubs"
-            ariaLabel="Shop by crop help"
-            content="Crop hubs organize products, fertilizers, and tools specifically for each crop."
+            textKey="homeCategories"
+            ariaLabel="Shop by category help"
           />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {CROPS.map((crop, i) => (
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
+          {categoryTiles.map((c, i) => (
             <motion.button
-              key={crop.id}
-              whileHover={{ y: -5 }}
-              onClick={onHubClick}
-              className="group bg-surface-container-low rounded-3xl p-6 flex flex-col items-center gap-4 shadow-sm hover:shadow-ambient hover:bg-surface-container transition-all border border-transparent hover:border-outline-variant"
+              key={`${c.id}-${i}`}
+              whileHover={{ y: -3 }}
+              onClick={() => onCategoryClick?.(c.id)}
+              className={`group bg-gradient-to-br ${c.color} rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm hover:shadow-ambient border border-white transition-all`}
             >
-              <div className="w-20 h-20 rounded-full bg-white shadow-sm overflow-hidden border border-surface-container-highest group-hover:scale-110 transition-transform">
-                <img src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+              <div className="w-12 h-12 rounded-full overflow-hidden shadow-sm bg-white group-hover:scale-110 transition-transform">
+                <img src={c.imgUrl} alt={c.label} className="w-full h-full object-cover" />
               </div>
-              <span className="font-bold text-on-surface">{crop.name}</span>
+              <span className="text-[11px] font-bold text-on-surface text-center leading-tight">
+                {c.label}
+              </span>
             </motion.button>
           ))}
         </div>
       </section>
 
-      {/* Trending Section */}
-      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full py-10 bg-white shadow-sm border-y border-surface-container">
-        <div className="flex justify-between items-end mb-8">
-          <h2 className="text-3xl font-bold text-on-surface">{t('trendingNearYou')}</h2>
-          <button className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform">
+      {/* Shop by Crop */}
+      <section data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-2 mb-6">
+          <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('shopByCrop')}</h2>
+          <HelperIcon
+            size="sm"
+            side="right"
+            textKey="shopByCrop"
+            ariaLabel="Shop by crop help"
+          />
+        </div>
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
+          {displayCrops.map((crop) => (
+            <motion.button
+              key={crop.id}
+              whileHover={{ y: -3 }}
+              onClick={() => onHubClick(crop.id)}
+              className="group bg-surface-container-low rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm hover:shadow-ambient hover:bg-surface-container transition-all border border-transparent hover:border-outline-variant"
+            >
+              <div className="w-14 h-14 rounded-full bg-white shadow-sm overflow-hidden border border-surface-container-highest group-hover:scale-110 transition-transform">
+                <img src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+              </div>
+              <span className="text-[11px] font-bold text-on-surface text-center leading-tight">
+                {crop.name}
+              </span>
+            </motion.button>
+          ))}
+        </div>
+      </section>
+
+      {/* Trending — denser grid, contained product shots */}
+      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 bg-white shadow-sm border-y border-surface-container">
+        <div className="flex justify-between items-end mb-6">
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('trendingNearYou')}</h2>
+            <HelperIcon
+              size="sm"
+              variant="ghost"
+              side="right"
+              textKey="homeTrending"
+              ariaLabel="Trending near you help"
+            />
+          </div>
+          <button className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform text-sm">
             {t('viewAll')} <ICONS.ArrowRight className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-          {products.length > 0 ? products.map((product) => (
-            <motion.div 
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          {products.length > 0 ? products.slice(0, 10).map((product) => (
+            <motion.div
               key={product.id}
-              className="bg-surface rounded-3xl overflow-hidden shadow-ambient border border-surface-container flex flex-col group cursor-pointer"
+              whileHover={{ y: -4 }}
+              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-surface-container flex flex-col group cursor-pointer"
               onClick={() => onProductClick(product.id)}
             >
-              <div className="h-56 relative overflow-hidden">
-                <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                <div className="absolute top-4 left-4 bg-primary-container/90 text-on-primary-container backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold shadow-sm">
-                  {product.stock}
+              <div className="aspect-square relative overflow-hidden bg-surface-container-low">
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute top-2 left-2" onClick={(e) => e.stopPropagation()}>
+                  <HelperTooltip side="bottom" textKey="stockBadge">
+                    <span className="bg-primary-container/90 text-on-primary-container backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-sm cursor-help">
+                      {product.stock}
+                    </span>
+                  </HelperTooltip>
                 </div>
               </div>
-              <div className="p-6 flex flex-col flex-1">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-xl font-bold text-on-surface line-clamp-1">{product.name}</h3>
-                  <span className="text-xl font-bold text-secondary">₹{product.price}</span>
+              <div className="p-3 flex flex-col flex-1">
+                <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>
+                <div className="mt-auto flex items-baseline gap-1.5">
+                  <span className="text-base font-bold text-secondary">₹{product.price}</span>
+                  {product.oldPrice && product.oldPrice > product.price && (
+                    <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
+                  )}
                 </div>
-                <p className="text-on-surface-variant text-sm mb-6 flex-1 line-clamp-2">{product.description}</p>
-                <div className="flex gap-3">
-                  <button className="flex-1 bg-primary text-white font-bold py-3 rounded-xl hover:bg-primary/90 transition-colors">{t('viewDetails')}</button>
+                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                  <HelperTooltip side="top" textKey="marketAddToCart">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
+                      className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                    >
+                      {t('addToCart')}
+                    </button>
+                  </HelperTooltip>
                 </div>
               </div>
             </motion.div>
@@ -131,42 +359,43 @@ export default function HomeView({ products = PRODUCTS, onProductClick, onHubCli
         </div>
       </section>
 
-      {/* Value Proposition */}
-      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full mb-10">
-        <div className="bg-surface-container-low rounded-3xl p-8 md:p-16 flex flex-col md:flex-row gap-12 items-center">
-          <div className="flex-1">
-            <h2 className="text-4xl font-bold text-on-surface mb-6">{t('whyKrishidukan')}</h2>
-            <p className="text-on-surface-variant text-lg mb-10">
-              {t('whySubtitle')}
-            </p>
-            <div className="flex flex-col gap-8">
-              {[
-                { icon: ICONS.Trust, title: t('localTrustTitle'), desc: t('localTrustDesc') },
-                { icon: ICONS.Efficiency, title: t('digitalEfficiencyTitle'), desc: t('digitalEfficiencyDesc') }
-              ].map((prop, i) => (
-                <div key={i} className="flex items-start gap-4">
-                  <div className="bg-primary-container text-white p-3 rounded-2xl shadow-sm">
-                    <prop.icon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-on-surface">{prop.title}</h4>
-                    <p className="text-on-surface-variant">{prop.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex-1 w-full relative">
-            <div className="w-full max-w-md mx-auto relative z-10 transition-transform hover:scale-105 duration-500 scale-110 drop-shadow-2xl">
-              <img 
-                src="/images/regenerated_image_1778300850830.png" 
-                alt="Farmer with Agricultural Supplies"
-                className="w-full h-auto object-contain"
-              />
-            </div>
-            {/* Decorative shape */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-primary/5 rounded-full blur-3xl opacity-50 z-0" />
-          </div>
+      {/* Service strip */}
+      <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <HelperTooltip side="top" textKey="homeServiceRetailer">
+            <button
+              onClick={() => onHubClick()}
+              className="text-left rounded-3xl p-6 bg-gradient-to-br from-amber-500 to-orange-600 text-white relative overflow-hidden group min-h-[170px] w-full"
+            >
+              <ICONS.Market className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
+              <div className="relative z-10">
+                <h3 className="text-xl font-black mb-1">{t('serviceBecomeRetailerTitle')}</h3>
+                <p className="text-white/85 text-sm mb-4 max-w-[220px]">
+                  {t('serviceBecomeRetailerDesc')}
+                </p>
+                <span className="inline-block bg-white text-orange-700 text-xs font-bold px-3 py-1.5 rounded-full">
+                  {t('serviceJoinNetwork')}
+                </span>
+              </div>
+            </button>
+          </HelperTooltip>
+          <HelperTooltip side="top" textKey="homeServiceAdvisory">
+            <button
+              onClick={() => onHubClick()}
+              className="text-left rounded-3xl p-6 bg-gradient-to-br from-sky-500 to-indigo-600 text-white relative overflow-hidden group min-h-[170px] w-full"
+            >
+              <ICONS.Science className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
+              <div className="relative z-10">
+                <h3 className="text-xl font-black mb-1">{t('serviceAdvisoryTitle')}</h3>
+                <p className="text-white/85 text-sm mb-4 max-w-[220px]">
+                  {t('serviceAdvisoryDesc')}
+                </p>
+                <span className="inline-block bg-white text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-full">
+                  {t('serviceExploreHubs')}
+                </span>
+              </div>
+            </button>
+          </HelperTooltip>
         </div>
       </section>
     </div>

@@ -3,11 +3,15 @@
 import { ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import HelperTooltip from './HelperTooltip';
+import { HelperTextKey } from '../../app/i18n/helperTexts';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
 
 interface HelperIconProps {
-  content: ReactNode;
+  /** Optional raw content. Ignored if `textKey` is provided. */
+  content?: ReactNode;
+  /** Key into HELPER_TEXTS — preferred path for localized helpers. */
+  textKey?: HelperTextKey;
   title?: string;
   side?: Side;
   className?: string;
@@ -30,6 +34,7 @@ const BTN_SIZES = {
 
 export function HelperIcon({
   content,
+  textKey,
   title,
   side = 'top',
   className = '',
@@ -45,7 +50,7 @@ export function HelperIcon({
       : 'text-primary/70 hover:text-primary bg-primary/5 hover:bg-primary/10';
 
   return (
-    <HelperTooltip content={content} title={title} side={side}>
+    <HelperTooltip content={content} textKey={textKey} title={title} side={side}>
       <button
         type="button"
         aria-label={ariaLabel}

@@ -1,7 +1,13 @@
 'use client';
 
 import { DashboardShell } from "./_components/dashboard-shell";
+import { DashboardTour } from "./_components/dashboard-tour";
 import { auth, getUserProfile } from '../firebase';
+import {
+  autoAcceptPendingInvitesForPhone,
+  grantAccessIfManufacturerLinked,
+  grantAccessIfHasActiveSeat,
+} from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -18,14 +24,37 @@ export default function DashboardLayout({
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push('/');
+        router.push('/?view=login');
       } else {
         const profile = await getUserProfile(user.uid);
-        // Only allow retailers and manufacturers who have paid
-        if (profile && (profile.role === 'retailer' || profile.role === 'manufacturer') && profile.isPaid) {
+        const role = profile?.role;
+        const isPaid = profile?.isPaid;
+
+        if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
           setLoading(false);
+        } else if (role === 'retailer') {
+          // Retailer not yet marked paid — try progressively cheaper checks:
+          // 1. Auto-accept any pending phone-matched invites (sets isPaid:true via backfill).
+          // 2. Grant access if already linked to an active manufacturer network.
+          // 3. Direct seat check: has at least one active assigned seat listing (source of truth).
+          //    This catches cases where steps 1/2 failed but the seat was already created.
+          const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
+          if (accepted) {
+            setLoading(false);
+          } else {
+            const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
+            if (linked) {
+              setLoading(false);
+            } else {
+              const hasSeat = await grantAccessIfHasActiveSeat(user.uid).catch(() => false);
+              if (hasSeat) {
+                setLoading(false);
+              } else {
+                router.push('/');
+              }
+            }
+          }
         } else {
-          // Redirect to home (which handles paywall/role check)
           router.push('/');
         }
       }
@@ -41,11 +70,12 @@ export default function DashboardLayout({
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" data-tour="dash-shell">
       <Navbar isDashboard={true} />
       <div className="flex-1 flex overflow-hidden">
         <DashboardShell>{children}</DashboardShell>
       </div>
+      <DashboardTour />
     </div>
   );
 }

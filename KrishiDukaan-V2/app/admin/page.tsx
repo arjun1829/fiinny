@@ -18,15 +18,18 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
   );
 }
 
-export default function AdminOverviewPage() {
+export default function AdminPage() {
   const [stats, setStats] = useState({
     total: 0, retailers: 0, manufacturers: 0, admins: 0,
     paid: 0, products: 0, hubs: 0,
   });
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadData = () => {
+    setLoading(true);
+    setError(null);
     Promise.all([fetchAllUsers(), fetchMarketplaceProducts(), fetchHubs()])
       .then(([users, products, hubs]) => {
         const retailers = users.filter(u => u.role === "retailer").length;
@@ -40,7 +43,15 @@ export default function AdminOverviewPage() {
           return bT - aT;
         }).slice(0, 8));
       })
+      .catch(err => {
+        console.error("Failed to load admin overview data:", err);
+        setError("Failed to load dashboard statistics from Firebase. Please check your connection.");
+      })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   if (loading) {

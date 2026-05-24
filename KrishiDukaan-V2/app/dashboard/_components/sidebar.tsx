@@ -6,9 +6,12 @@ import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   BarChart3,
+  Building2,
+  CreditCard,
   LayoutDashboard,
+  Lock,
   Package,
-  Settings,
+  ReceiptText,
   Star,
   UserCircle2,
   UsersRound,
@@ -16,21 +19,51 @@ import {
 } from "lucide-react";
 import { auth, getUserProfile } from "../../firebase";
 import { cn } from "../_lib/cn";
+import { useI18n } from "../../i18n/I18nContext";
 
 const baseNav = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/dashboard/inventory", label: "Inventory", icon: Package },
-  { href: "/dashboard/reviews", label: "Reviews", icon: Star },
-  { href: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
+  { href: "/dashboard/analytics", labelKey: "sideAnalytics" as const, icon: BarChart3 },
+  { href: "/dashboard/inventory", labelKey: "sideInventory" as const, icon: Package },
+  { href: "/dashboard/orders", labelKey: "sideOrders" as const, icon: ReceiptText },
+  { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+  { href: "/dashboard/profile", labelKey: "sideProfile" as const, icon: UserCircle2 },
 ] as const;
 
-const manufacturerNav = {
-  href: "/dashboard/manufacturer/retailers",
-  label: "Retailer network",
-  icon: UsersRound,
-} as const;
+const subscriptionNavKey = {
+  href: "/dashboard/subscription",
+  labelKey: "sideSubscription" as const,
+  icon: CreditCard,
+};
+
+const manufacturerExtrasKeys = [
+  { href: "/dashboard/manufacturer/retailers", labelKey: "sideRetailerNetwork" as const, icon: UsersRound },
+];
+
+function hrefToTourKey(href: string): string {
+  switch (href) {
+    case "/dashboard":
+      return "overview";
+    case "/dashboard/analytics":
+      return "analytics";
+    case "/dashboard/inventory":
+      return "inventory";
+    case "/dashboard/subscription":
+      return "subscription";
+    case "/dashboard/orders":
+      return "orders";
+    case "/dashboard/reviews":
+      return "reviews";
+    case "/dashboard/profile":
+      return "profile";
+    case "/dashboard/settings":
+      return "settings";
+    case "/dashboard/manufacturer/retailers":
+      return "retailer-network";
+    default:
+      return "";
+  }
+}
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -39,31 +72,61 @@ type SidebarProps = {
 
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
-  const [isManufacturer, setIsManufacturer] = useState(false);
+  const { t } = useI18n();
+  const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
+  const [onlineDelivery, setOnlineDelivery] = useState(false);
+  const [ownerCompanyId, setOwnerCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        setIsManufacturer(false);
+        setRole(null);
+        setOnlineDelivery(false);
+        setOwnerCompanyId(null);
         return;
       }
       try {
         const profile = await getUserProfile(user.uid);
-        setIsManufacturer(profile?.role === "manufacturer");
+        const r = profile?.role;
+        setRole(r === "manufacturer" || r === "retailer" ? r : null);
+        setOnlineDelivery(!!(profile as any)?.onlineDelivery);
+        setOwnerCompanyId((profile as any)?.ownerCompanyId ?? null);
       } catch {
-        setIsManufacturer(false);
+        setRole(null);
+        setOnlineDelivery(false);
+        setOwnerCompanyId(null);
       }
     });
     return () => unsub();
   }, []);
 
-  const nav = isManufacturer
-    ? [
-        ...baseNav.slice(0, 4),
-        manufacturerNav,
-        ...baseNav.slice(4),
-      ]
-    : [...baseNav];
+  type NavItem = { href: string; labelKey: string; icon: React.ElementType };
+
+  const companyPageNavItem: NavItem | null = ownerCompanyId
+    ? { href: "/dashboard/company", labelKey: "sideCompanyPage", icon: Building2 }
+    : null;
+
+  const nav: NavItem[] = (() => {
+    const base: NavItem[] = [...baseNav];
+    if (role === "manufacturer") {
+      const items: NavItem[] = [
+        ...base.slice(0, 3),
+        ...manufacturerExtrasKeys,
+        subscriptionNavKey,
+        ...base.slice(3),
+      ];
+      if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+      return items;
+    }
+    if (role === "retailer") {
+      const items: NavItem[] = [...base.slice(0, 3), subscriptionNavKey, ...base.slice(3)];
+      if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+      return items;
+    }
+    const items: NavItem[] = [...base];
+    if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+    return items;
+  })();
 
   return (
     <>
@@ -85,10 +148,17 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         <div className="flex h-14 items-center justify-between gap-2 border-b border-outline-variant/30 px-4 md:h-16">
           <Link
             href="/dashboard"
-            className="font-semibold text-primary"
+            className="flex items-center gap-2 hover:scale-[1.02] transition-transform"
             onClick={() => onMobileOpenChange(false)}
           >
-            Shop Dashboard
+            <img 
+              src="/images/krishidukan icon.webp" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain"
+            />
+            <span className="font-black text-sm text-primary tracking-tight">
+              Krishi<span className="text-secondary">Dukan</span>
+            </span>
           </Link>
           <button
             type="button"
@@ -101,15 +171,36 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {nav.map(({ href, label, icon: Icon }) => {
+          {nav.map(({ href, labelKey, icon: Icon }) => {
             const active =
               href === "/dashboard"
                 ? pathname === "/dashboard"
                 : pathname.startsWith(href);
+            const tourKey = hrefToTourKey(href);
+            const isOrdersLocked = href === "/dashboard/orders" && !onlineDelivery;
+
+            if (isOrdersLocked) {
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  data-tour-dash={tourKey}
+                  onClick={() => onMobileOpenChange(false)}
+                  title={t('enableOnlineDeliveryHint')}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-on-surface-variant/50 hover:bg-surface-container/50"
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <span>{t(labelKey as any)}</span>
+                  <Lock className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+                </Link>
+              );
+            }
+
             return (
               <Link
                 key={href}
                 href={href}
+                data-tour-dash={tourKey}
                 onClick={() => onMobileOpenChange(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
@@ -119,7 +210,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0 opacity-90" />
-                {label}
+                {t(labelKey as any)}
               </Link>
             );
           })}

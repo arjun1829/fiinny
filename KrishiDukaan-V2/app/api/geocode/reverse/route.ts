@@ -46,18 +46,16 @@ export async function GET(req: NextRequest) {
     process.env.GOOGLE_MAPS_API_KEY?.trim() ||
     process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
 
-  if (!key) {
-    return NextResponse.json({ formatted_address: null, geocode_status: 'NO_API_KEY' });
-  }
-
-  let data: { status?: string; error_message?: string; results?: GeocodeResult[] };
-  try {
-    const upstream = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latNum},${lngNum}&key=${encodeURIComponent(key)}`
-    );
-    data = await upstream.json();
-  } catch {
-    return NextResponse.json({ formatted_address: null, geocode_status: 'FETCH_FAILED' });
+  let data: { status?: string; error_message?: string; results?: GeocodeResult[] } = {};
+  if (key) {
+    try {
+      const upstream = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latNum},${lngNum}&key=${encodeURIComponent(key)}`
+      );
+      data = await upstream.json();
+    } catch {
+      // fall through to OSM fallback below
+    }
   }
 
   if (data.status === 'OK' && data.results?.length) {
@@ -65,6 +63,31 @@ export async function GET(req: NextRequest) {
     if (formatted) {
       return NextResponse.json({ formatted_address: formatted, geocode_status: 'OK' });
     }
+  }
+
+  // Fallback: OpenStreetMap Nominatim (free, no API key).
+  // Used when Google Geocoding API is disabled or quota-exceeded.
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latNum}&lon=${lngNum}&zoom=12&accept-language=en`,
+      { headers: { 'User-Agent': 'krishidukan-app/1.0' } }
+    );
+    if (r.ok) {
+      const j = (await r.json()) as { display_name?: string; address?: Record<string, string> };
+      const a = j.address || {};
+      const city =
+        a.city || a.town || a.village || a.suburb || a.county || a.state_district || a.state;
+      const stateName = a.state;
+      const compact = [city, stateName].filter(Boolean).join(', ');
+      if (compact) {
+        return NextResponse.json({ formatted_address: compact, geocode_status: 'OSM_FALLBACK' });
+      }
+      if (j.display_name) {
+        return NextResponse.json({ formatted_address: j.display_name, geocode_status: 'OSM_FALLBACK' });
+      }
+    }
+  } catch {
+    // ignore
   }
 
   return NextResponse.json({

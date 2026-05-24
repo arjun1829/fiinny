@@ -2,28 +2,39 @@
 
 import { useEffect, useState } from "react";
 import { Layers, Plus, Pencil, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon } from "lucide-react";
-import { fetchHubs, saveHub, updateHub, deleteHub } from "../../firebase";
+import { fetchHubs, saveHub, updateHub, deleteHub, importHubs } from "../../firebase";
 import type { Hub } from "../../firebase";
+import { INITIAL_HUBS } from "../../initialHubs";
 
 type HubForm = {
   name: string;
   tagline: string;
   heroImage: string;
+  iconImage: string;
   seeds: { name: string; price: string; img: string }[];
   nutrition: { name: string; desc: string; icon: string }[];
   irrigationImage: string;
   irrigationItems: { name: string; price: string }[];
   advisoryTitle: string;
   advisoryDescription: string;
+  growthStages: { phase: string; duration: string; description: string; products: string }[];
+  commonMistakes: string[];
+  idealClimate: string;
+  soilType: string;
+  waterNeeds: string;
+  bestSeason: string;
 };
 
 const EMPTY_FORM: HubForm = {
-  name: "", tagline: "", heroImage: "",
+  name: "", tagline: "", heroImage: "", iconImage: "",
   seeds: [{ name: "", price: "", img: "" }],
   nutrition: [{ name: "", desc: "", icon: "Sprout" }],
   irrigationImage: "",
   irrigationItems: [{ name: "", price: "" }],
   advisoryTitle: "", advisoryDescription: "",
+  growthStages: [{ phase: "", duration: "", description: "", products: "" }],
+  commonMistakes: [""],
+  idealClimate: "", soilType: "", waterNeeds: "", bestSeason: "",
 };
 
 const ICON_OPTIONS = ["Sprout", "Water", "Science", "Check"];
@@ -33,6 +44,7 @@ function formToHub(f: HubForm): Omit<Hub, "id"> {
     name: f.name.trim(),
     tagline: f.tagline.trim(),
     heroImage: f.heroImage.trim(),
+    iconImage: f.iconImage.trim() || undefined,
     seeds: f.seeds.filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), price: Number(s.price) || 0, img: s.img.trim() })),
     nutrition: f.nutrition.filter(n => n.name.trim()).map(n => ({ name: n.name.trim(), desc: n.desc.trim(), icon: n.icon })),
     irrigation: {
@@ -40,17 +52,37 @@ function formToHub(f: HubForm): Omit<Hub, "id"> {
       items: f.irrigationItems.filter(i => i.name.trim()).map(i => ({ name: i.name.trim(), price: i.price.trim() })),
     },
     advisory: { title: f.advisoryTitle.trim(), description: f.advisoryDescription.trim() },
+    growthStages: f.growthStages.filter(s => s.phase.trim()).map(s => ({
+      phase: s.phase.trim(),
+      duration: s.duration.trim(),
+      description: s.description.trim(),
+      products: s.products.split(",").map(p => p.trim()).filter(Boolean)
+    })),
+    commonMistakes: f.commonMistakes.map(m => m.trim()).filter(Boolean),
+    idealClimate: f.idealClimate.trim(),
+    soilType: f.soilType.trim(),
+    waterNeeds: f.waterNeeds.trim(),
+    bestSeason: f.bestSeason.trim(),
   };
 }
 
 function hubToForm(h: Hub): HubForm {
   return {
     name: h.name, tagline: h.tagline, heroImage: h.heroImage,
+    iconImage: h.iconImage || "",
     seeds: h.seeds.length ? h.seeds.map(s => ({ name: s.name, price: String(s.price), img: s.img })) : [{ name: "", price: "", img: "" }],
     nutrition: h.nutrition.length ? h.nutrition.map(n => ({ name: n.name, desc: n.desc, icon: n.icon })) : [{ name: "", desc: "", icon: "Sprout" }],
     irrigationImage: h.irrigation.image,
     irrigationItems: h.irrigation.items.length ? h.irrigation.items.map(i => ({ name: i.name, price: i.price })) : [{ name: "", price: "" }],
     advisoryTitle: h.advisory.title, advisoryDescription: h.advisory.description,
+    growthStages: h.growthStages?.length 
+      ? h.growthStages.map(s => ({ phase: s.phase, duration: s.duration, description: s.description, products: s.products.join(", ") }))
+      : [{ phase: "", duration: "", description: "", products: "" }],
+    commonMistakes: h.commonMistakes?.length ? h.commonMistakes : [""],
+    idealClimate: h.idealClimate || "",
+    soilType: h.soilType || "",
+    waterNeeds: h.waterNeeds || "",
+    bestSeason: h.bestSeason || "",
   };
 }
 
@@ -103,6 +135,7 @@ function ArrayField<T extends Record<string, string>>({
 export default function AdminHubsPage() {
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<HubForm>(EMPTY_FORM);
@@ -112,7 +145,14 @@ export default function AdminHubsPage() {
 
   const load = () => {
     setLoading(true);
-    fetchHubs().then(setHubs).finally(() => setLoading(false));
+    setError(null);
+    fetchHubs()
+      .then(setHubs)
+      .catch(err => {
+        console.error("Failed to fetch hubs:", err);
+        setError("Failed to load hubs from Firebase. Please make sure you are logged in and have admin permissions.");
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -156,6 +196,21 @@ export default function AdminHubsPage() {
     }
   };
 
+  const handleImportDefaults = async () => {
+    if (!confirm("This will write the 10 default crop hubs into your Firebase database. Proceed?")) return;
+    setSaving(true);
+    try {
+      await importHubs(INITIAL_HUBS);
+      alert("Successfully seeded 10 default crop hubs in Firestore!");
+      load();
+    } catch (err) {
+      console.error("Failed to seed default hubs:", err);
+      alert("Failed to seed default hubs. Check console/Firestore Rules.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const f = form;
   const setF = setForm;
 
@@ -171,11 +226,24 @@ export default function AdminHubsPage() {
             Manage crop hubs — add, edit, delete. Hubs saved here replace the default mock hubs on the public site.
           </p>
         </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors shrink-0">
-          <Plus className="h-4 w-4" /> New Hub
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={handleImportDefaults} disabled={saving}
+            className="flex items-center gap-2 border border-outline bg-surface-container-low text-on-surface-variant text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-50">
+            {saving ? "Importing..." : "Import Default Hubs"}
+          </button>
+          <button onClick={openAdd}
+            className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors">
+            <Plus className="h-4 w-4" /> New Hub
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center justify-between gap-4">
+          <p className="font-semibold">{error}</p>
+          <button onClick={load} className="shrink-0 bg-red-100 hover:bg-red-200 text-red-900 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors">Retry</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-60 items-center justify-center">
@@ -185,10 +253,15 @@ export default function AdminHubsPage() {
         <div className="rounded-3xl border-2 border-dashed border-outline-variant p-16 text-center">
           <Layers className="h-10 w-10 text-outline mx-auto mb-4" />
           <h3 className="text-lg font-bold text-on-surface mb-1">No hubs yet</h3>
-          <p className="text-sm text-on-surface-variant mb-6">The public site uses built-in fallback hubs until you add real ones here.</p>
-          <button onClick={openAdd} className="bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
-            Create your first hub
-          </button>
+          <p className="text-sm text-on-surface-variant mb-6">Your Firestore database has no hubs. You can seed it with the 10 default hubs or create a new one.</p>
+          <div className="flex items-center justify-center gap-4">
+            <button onClick={openAdd} className="bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
+              Create Custom Hub
+            </button>
+            <button onClick={handleImportDefaults} disabled={saving} className="bg-secondary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-secondary-container transition-colors disabled:opacity-50">
+              {saving ? "Importing..." : "Seed 10 Default Hubs"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -284,6 +357,36 @@ export default function AdminHubsPage() {
                       <p className="text-xs text-on-surface-variant mt-1 line-clamp-3">{h.advisory.description}</p>
                     </div>
                   </div>
+
+                  {/* Growth Stages (New Row or spanned) */}
+                  <div className="md:col-span-3 border-t border-outline-variant/10 pt-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">Growth Journey</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                      {h.growthStages?.map((s, i) => (
+                        <div key={i} className="bg-white p-3 rounded-xl border border-surface-container">
+                          <p className="text-[10px] font-black text-primary uppercase mb-1">Stage {i+1}: {s.phase}</p>
+                          <p className="text-[10px] font-bold text-on-surface line-clamp-2">{s.description}</p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {s.products.map((p, pi) => (
+                              <span key={pi} className="text-[8px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant">{p}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Common Mistakes */}
+                  <div className="md:col-span-3 border-t border-outline-variant/10 pt-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">Common Mistakes</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {h.commonMistakes?.map((m, i) => (
+                        <div key={i} className="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-[10px] font-bold border border-red-100 flex items-center gap-1">
+                          <X className="h-3 w-3" /> {m}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -328,6 +431,45 @@ export default function AdminHubsPage() {
                       <img src={f.heroImage} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     </div>
                   )}
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Crop Icon URL (Home Page)</label>
+                  <input value={f.iconImage} onChange={e => setF(p => ({ ...p, iconImage: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                  {f.iconImage && (
+                    <div className="mt-2 rounded-xl overflow-hidden w-16 h-16 border border-surface-container">
+                      <img src={f.iconImage} alt="icon preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Profile Stats */}
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Ideal Climate</label>
+                    <input value={f.idealClimate} onChange={e => setF(p => ({ ...p, idealClimate: e.target.value }))}
+                      placeholder="e.g. Tropical"
+                      className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Soil Type</label>
+                    <input value={f.soilType} onChange={e => setF(p => ({ ...p, soilType: e.target.value }))}
+                      placeholder="e.g. Well-drained"
+                      className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Water Needs</label>
+                    <input value={f.waterNeeds} onChange={e => setF(p => ({ ...p, waterNeeds: e.target.value }))}
+                      placeholder="e.g. Moderate"
+                      className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Best Season</label>
+                    <input value={f.bestSeason} onChange={e => setF(p => ({ ...p, bestSeason: e.target.value }))}
+                      placeholder="e.g. Spring"
+                      className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                  </div>
                 </div>
               </div>
 
@@ -439,6 +581,86 @@ export default function AdminHubsPage() {
                       rows={4} placeholder="Detailed advisory text for farmers…"
                       className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none resize-none" />
                   </div>
+                </div>
+              </div>
+
+              {/* Growth Stages */}
+              <div className="border-t border-surface-container pt-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-primary">Growth Journey</h3>
+                  <button type="button"
+                    onClick={() => setF(p => ({ ...p, growthStages: [...p.growthStages, { phase: "", duration: "", description: "", products: "" }] }))}
+                    className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
+                    <Plus className="h-3 w-3" /> Add Stage
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {f.growthStages.map((stage, i) => (
+                    <div key={i} className="rounded-2xl border border-outline-variant bg-surface-container-low p-4 space-y-3 relative">
+                      <button type="button"
+                        onClick={() => setF(p => ({ ...p, growthStages: p.growthStages.filter((_, j) => j !== i) }))}
+                        className="absolute top-2 right-2 p-1 text-on-surface-variant hover:text-red-500 transition-colors">
+                        <X className="h-4 w-4" />
+                      </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Phase Name</label>
+                          <input
+                            type="text" value={stage.phase} placeholder="e.g. Flowering"
+                            onChange={e => { const s = [...f.growthStages]; s[i] = { ...s[i], phase: e.target.value }; setF(p => ({ ...p, growthStages: s })); }}
+                            className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Duration</label>
+                          <input
+                            type="text" value={stage.duration} placeholder="e.g. 2-3 Weeks"
+                            onChange={e => { const s = [...f.growthStages]; s[i] = { ...s[i], duration: e.target.value }; setF(p => ({ ...p, growthStages: s })); }}
+                            className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Description</label>
+                        <textarea
+                          value={stage.description} placeholder="What happens in this stage?" rows={2}
+                          onChange={e => { const s = [...f.growthStages]; s[i] = { ...s[i], description: e.target.value }; setF(p => ({ ...p, growthStages: s })); }}
+                          className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Recommended Products (comma separated)</label>
+                        <input
+                          type="text" value={stage.products} placeholder="e.g. Urea, NPK 19:19:19"
+                          onChange={e => { const s = [...f.growthStages]; s[i] = { ...s[i], products: e.target.value }; setF(p => ({ ...p, growthStages: s })); }}
+                          className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Common Mistakes */}
+              <div className="border-t border-surface-container pt-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-primary">Common Mistakes</h3>
+                  <button type="button"
+                    onClick={() => setF(p => ({ ...p, commonMistakes: [...p.commonMistakes, ""] }))}
+                    className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
+                    <Plus className="h-3 w-3" /> Add Mistake
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {f.commonMistakes.map((mistake, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        type="text" value={mistake} placeholder="Mistake to avoid..."
+                        onChange={e => { const m = [...f.commonMistakes]; m[i] = e.target.value; setF(p => ({ ...p, commonMistakes: m })); }}
+                        className="flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                      <button type="button"
+                        onClick={() => setF(p => ({ ...p, commonMistakes: p.commonMistakes.filter((_, j) => j !== i) }))}
+                        className="p-2 text-on-surface-variant hover:text-red-500 transition-colors shrink-0">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 

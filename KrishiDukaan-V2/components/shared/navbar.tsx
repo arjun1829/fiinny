@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
 
 interface NavbarProps {
   currentView?: View;
@@ -28,6 +28,8 @@ interface NavbarProps {
   allStores?: any[];
   onProductClick?: (id: string) => void;
   onStoreClick?: (id: string) => void;
+  cartCount?: number;
+  onCartClick?: () => void;
 }
 
 export function Navbar({
@@ -45,6 +47,8 @@ export function Navbar({
   allStores = [],
   onProductClick,
   onStoreClick,
+  cartCount = 0,
+  onCartClick,
 }: NavbarProps) {
   const router = useRouter();
   const [localUser, setLocalUser] = useState<any>(null);
@@ -221,7 +225,7 @@ export function Navbar({
     { id: 'hub', label: t('hub') },
     { id: 'map', label: t('stores') }
   ];
-  const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && userProfile.isPaid && !isDashboard;
+  const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
 
   const SearchDropdown = () => (
@@ -294,10 +298,17 @@ export function Navbar({
     <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
       <div className="flex justify-between items-center gap-4">
         <div
-          className="font-bold text-xl text-primary tracking-tight cursor-pointer hover:scale-105 transition-transform shrink-0"
+          className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
           onClick={() => navigate('home')}
         >
-          Krishidukan
+          <img 
+            src="/images/krishidukan icon.webp" 
+            alt="KrishiDukan Logo" 
+            className="w-8 h-8 md:w-10 md:h-10 object-contain"
+          />
+          <span className="font-black text-xl md:text-2xl text-primary group-hover:text-primary/90 transition-colors">
+            Krishi<span className="text-secondary">Dukan</span>
+          </span>
         </div>
 
         {/* Desktop Nav */}
@@ -349,16 +360,9 @@ export function Navbar({
                     size="xs"
                     variant="ghost"
                     side="bottom"
-                    title="Search tip"
+                    textKey="searchBar"
                     ariaLabel="Search help"
                     className="mr-2"
-                    content={
-                      <>
-                        Search products, crops, fertilizers, or nearby stores.
-                        <br />
-                        <span className="text-outline">Example: &ldquo;Urea&rdquo;, &ldquo;Tomato Seeds&rdquo;</span>
-                      </>
-                    }
                   />
                 )}
               </div>
@@ -368,6 +372,22 @@ export function Navbar({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Cart icon (placeholder) */}
+          <button
+            onClick={() => {
+              if (onCartClick) onCartClick();
+              else navigate('cart');
+            }}
+            className="relative p-2 rounded-xl bg-surface-container-low hover:bg-surface-container border border-outline-variant transition-colors text-on-surface"
+            aria-label="Cart"
+            title="Cart"
+          >
+            <ICONS.Cart className="w-4 h-4" />
+            <span className="absolute -top-1 -right-1 bg-secondary text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+              {Math.min(99, cartCount)}
+            </span>
+          </button>
+
           {/* Current Location Display */}
           <div
             data-tour="location"
@@ -383,9 +403,8 @@ export function Navbar({
               size="xs"
               variant="ghost"
               side="bottom"
-              title="Why we ask"
+              textKey="location"
               ariaLabel="Location help"
-              content="Your location helps us show nearby stores, stock availability, and delivery range."
             />
           </div>
 
@@ -395,6 +414,20 @@ export function Navbar({
             title="Detect current location"
           >
             <ICONS.Location className="w-5 h-5" />
+          </button>
+
+          {/* Language toggle — always visible on mobile */}
+          <button
+            className="md:hidden flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl px-2.5 py-1.5 text-[11px] font-black text-on-surface hover:bg-surface-container transition-colors min-w-[36px]"
+            onClick={() => {
+              const langs = ['en', 'mr', 'hi'] as const;
+              const idx = langs.indexOf(language as any);
+              setLanguage(langs[(idx + 1) % langs.length]!);
+            }}
+            title="Change language"
+            aria-label="Change language"
+          >
+            {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
           </button>
 
           <div className="relative" ref={accountMenuRef}>
@@ -420,6 +453,7 @@ export function Navbar({
                 >
                   <option value="en">English</option>
                   <option value="mr">मराठी</option>
+                  <option value="hi">हिंदी</option>
                 </select>
               </div>
 
@@ -447,15 +481,6 @@ export function Navbar({
                       {t('dashboard')}
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      setIsAccountMenuOpen(false);
-                      navigate('profile');
-                    }}
-                    className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                  >
-                    {t('profile')}
-                  </button>
                   <button
                     onClick={() => {
                       setIsAccountMenuOpen(false);
@@ -510,16 +535,9 @@ export function Navbar({
                 size="xs"
                 variant="ghost"
                 side="bottom"
-                title="Search tip"
+                textKey="searchBar"
                 ariaLabel="Search help"
                 className="mr-2"
-                content={
-                  <>
-                    Search products, crops, fertilizers, or nearby stores.
-                    <br />
-                    <span className="text-outline">Example: &ldquo;Urea&rdquo;, &ldquo;Tomato Seeds&rdquo;</span>
-                  </>
-                }
               />
             )}
           </div>

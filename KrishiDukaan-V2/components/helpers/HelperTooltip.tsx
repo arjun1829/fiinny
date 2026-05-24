@@ -12,17 +12,36 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useI18n } from '../../app/i18n/I18nContext';
+import {
+  HELPER_TEXTS,
+  HelperTextKey,
+  formatHelperEntry,
+} from '../../app/i18n/helperTexts';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
 
 interface HelperTooltipProps {
   children: ReactNode;
-  content: ReactNode;
+  /** Optional raw content. Ignored if `textKey` is provided. */
+  content?: ReactNode;
+  /** Key into HELPER_TEXTS — preferred path for localized helpers. */
+  textKey?: HelperTextKey;
   side?: Side;
   title?: string;
   className?: string;
   maxWidth?: number;
   openOn?: 'hover' | 'click';
+}
+
+function renderLocalizedBody(text: string) {
+  const lines = text.split('\n');
+  if (lines.length === 1) return lines[0];
+  return lines.map((line, i) => (
+    <span key={i} className={i > 0 ? 'block mt-1' : 'block'}>
+      {line}
+    </span>
+  ));
 }
 
 const useIsomorphicLayoutEffect =
@@ -75,12 +94,22 @@ function computePosition(
 export function HelperTooltip({
   children,
   content,
+  textKey,
   side = 'top',
   title,
   className = '',
   maxWidth = 260,
   openOn,
 }: HelperTooltipProps) {
+  const { language } = useI18n();
+
+  const resolvedTitle = textKey
+    ? formatHelperEntry(HELPER_TEXTS[textKey].title, language) || title
+    : title;
+
+  const resolvedBody: ReactNode = textKey
+    ? renderLocalizedBody(formatHelperEntry(HELPER_TEXTS[textKey].body, language))
+    : content;
   const anchorRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -139,21 +168,40 @@ export function HelperTooltip({
     };
   }, [open]);
 
+  const childProps = (isValidElement(children) ? (children as any).props : {}) || {};
+  const childOnClick: ((e: React.MouseEvent) => void) | undefined = childProps.onClick;
+  const childOnMouseEnter: ((e: React.MouseEvent) => void) | undefined = childProps.onMouseEnter;
+  const childOnMouseLeave: ((e: React.MouseEvent) => void) | undefined = childProps.onMouseLeave;
+  const childOnFocus: ((e: React.FocusEvent) => void) | undefined = childProps.onFocus;
+  const childOnBlur: ((e: React.FocusEvent) => void) | undefined = childProps.onBlur;
+
   const handlers =
     trigger === 'hover'
       ? {
-          onMouseEnter: () => setOpen(true),
-          onMouseLeave: () => setOpen(false),
-          onFocus: () => setOpen(true),
-          onBlur: () => setOpen(false),
-          onClick: (e: React.MouseEvent) => {
-            e.stopPropagation();
-            setOpen((v) => !v);
+          onMouseEnter: (e: React.MouseEvent) => {
+            childOnMouseEnter?.(e);
+            setOpen(true);
           },
+          onMouseLeave: (e: React.MouseEvent) => {
+            childOnMouseLeave?.(e);
+            setOpen(false);
+          },
+          onFocus: (e: React.FocusEvent) => {
+            childOnFocus?.(e);
+            setOpen(true);
+          },
+          onBlur: (e: React.FocusEvent) => {
+            childOnBlur?.(e);
+            setOpen(false);
+          },
+          // On hover devices, click should run the child's original action;
+          // the tooltip is already shown via hover/focus and will close on outside click.
+          onClick: childOnClick,
         }
       : {
+          // On touch devices, run the child's action and toggle the tooltip too.
           onClick: (e: React.MouseEvent) => {
-            e.stopPropagation();
+            childOnClick?.(e);
             setOpen((v) => !v);
           },
         };
@@ -202,13 +250,13 @@ export function HelperTooltip({
                 }}
                 className={`pointer-events-auto bg-white border border-surface-container-highest rounded-2xl shadow-ambient px-3.5 py-2.5 text-xs text-on-surface ${className}`}
               >
-                {title ? (
+                {resolvedTitle ? (
                   <div className="font-bold text-primary mb-1 text-[11px] uppercase tracking-wider">
-                    {title}
+                    {resolvedTitle}
                   </div>
                 ) : null}
                 <div className="text-on-surface-variant font-medium leading-relaxed">
-                  {content}
+                  {resolvedBody}
                 </div>
               </motion.div>
             )}

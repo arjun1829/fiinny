@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "krishidukan-e8315"
+  },
+  "targets": {
+    "krishidukan-e8315": {
+      "hosting": {
+        "main": [
+          "krishidukan-e8315"
+        ],
+        "admin": [
+          "krishidukan-admin"
+        ]
+      }
+    }
   }
 }

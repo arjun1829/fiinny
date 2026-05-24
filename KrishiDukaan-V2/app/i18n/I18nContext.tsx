@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { translations } from './translations';
 
-type Language = 'en' | 'mr';
+export type Language = 'en' | 'mr' | 'hi';
 
 interface I18nContextType {
   language: Language;
@@ -18,7 +18,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const savedLang = localStorage.getItem('language') as Language;
-    if (savedLang && (savedLang === 'en' || savedLang === 'mr')) {
+    if (savedLang === 'en' || savedLang === 'mr' || savedLang === 'hi') {
       setLanguage(savedLang);
     }
   }, []);
@@ -29,7 +29,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   };
 
   const t = (key: keyof typeof translations['en'], params?: Record<string, string | number>) => {
-    let text = translations[language][key] || translations['en'][key] || key;
+    const dict = (translations as Record<string, typeof translations['en']>)[language];
+    let text = (dict && dict[key]) || translations['en'][key] || key;
     if (params) {
       Object.keys(params).forEach(paramKey => {
         text = text.replace(`{${paramKey}}`, String(params[paramKey]));

@@ -22,6 +22,9 @@ export default function AdminProductsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<MarketplaceProduct | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -37,22 +40,24 @@ export default function AdminProductsPage() {
     return matchSearch && matchCat;
   });
 
-  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setShowForm(true); };
+  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setFormError(null); setShowForm(true); };
   const openEdit = (p: MarketplaceProduct) => {
     setForm({
       name: p.name, fullName: p.fullName || "", price: String(p.price), category: p.category,
       description: p.description, image: p.image, stock: p.stock, store: p.store, distance: p.distance,
     });
     setEditId(p.id);
+    setFormError(null);
     setShowForm(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.price || !form.image) {
-      alert("Name, price, and image URL are required."); return;
+      setFormError("Name, price, and image URL are required."); return;
     }
     setSaving(true);
+    setFormError(null);
     try {
       const payload = {
         name: form.name.trim(), fullName: form.fullName.trim() || form.name.trim(),
@@ -68,20 +73,21 @@ export default function AdminProductsPage() {
       setShowForm(false);
     } catch (err) {
       console.error(err);
-      alert("Save failed. Check console.");
+      setFormError("Save failed. Please try again.");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (p: MarketplaceProduct) => {
-    if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+  const performDelete = async (p: MarketplaceProduct) => {
     setDeleting(p.id);
+    setDeleteError(null);
     try {
       await adminDeleteProduct(p.id);
       setProducts(prev => prev.filter(x => x.id !== p.id));
+      setConfirmDelete(null);
     } catch {
-      alert("Delete failed.");
+      setDeleteError("Delete failed. Please try again.");
     } finally {
       setDeleting(null);
     }
@@ -166,7 +172,7 @@ export default function AdminProductsPage() {
                         <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
                           <Pencil className="h-4 w-4" />
                         </button>
-                        <button onClick={() => handleDelete(p)} disabled={deleting === p.id}
+                        <button onClick={() => { setConfirmDelete(p); setDeleteError(null); }} disabled={deleting === p.id}
                           className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-variant hover:text-red-600 transition-colors disabled:opacity-50">
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -192,6 +198,11 @@ export default function AdminProductsPage() {
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-surface-container transition-colors"><X className="h-5 w-5" /></button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-4">
+              {formError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">
+                  {formError}
+                </div>
+              )}
               {[
                 { label: "Product Name *", key: "name", placeholder: "e.g. Organic Urea" },
                 { label: "Full Name", key: "fullName", placeholder: "Extended product name" },
@@ -234,6 +245,55 @@ export default function AdminProductsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-bold text-on-surface">Delete Product</h3>
+              <p className="text-sm text-on-surface-variant mt-2">
+                Are you sure you want to delete <span className="font-semibold text-on-surface">&quot;{confirmDelete.name}&quot;</span>? This action cannot be undone.
+              </p>
+            </div>
+            
+            {deleteError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button 
+                type="button" 
+                onClick={() => { setConfirmDelete(null); setDeleteError(null); }} 
+                disabled={deleting === confirmDelete.id}
+                className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => performDelete(confirmDelete)} 
+                disabled={deleting === confirmDelete.id}
+                className="flex-1 py-3 bg-red-600 text-white text-sm font-bold rounded-2xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {deleting === confirmDelete.id ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  "Delete"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

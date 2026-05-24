@@ -3,18 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, Menu, Package, Settings, Star, UserCircle2 } from "lucide-react";
+import { LayoutDashboard, Menu, Package, ReceiptText, Star, UserCircle2 } from "lucide-react";
 import { Sidebar } from "./sidebar";
+import { useI18n } from "../../i18n/I18nContext";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { t } = useI18n();
   const mobileNav = [
-    { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-    { href: "/dashboard/inventory", label: "Stock", icon: Package },
-    { href: "/dashboard/reviews", label: "Reviews", icon: Star },
-    { href: "/dashboard/profile", label: "Profile", icon: UserCircle2 },
-    { href: "/dashboard/settings", label: "Settings", icon: Settings },
+    { href: "/dashboard", labelKey: "mobileNavHome" as const, icon: LayoutDashboard },
+    { href: "/dashboard/inventory", labelKey: "mobileNavStock" as const, icon: Package },
+    { href: "/dashboard/orders", labelKey: "mobileNavOrders" as const, icon: ReceiptText },
+    { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+    { href: "/dashboard/profile", labelKey: "mobileNavProfile" as const, icon: UserCircle2 },
   ] as const;
 
   return (
@@ -31,7 +33,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold text-on-surface">Dashboard</span>
+          <span className="text-sm font-semibold text-on-surface">{t('dashTitle')}</span>
         </header>
 
         <main className="mx-auto w-full max-w-7xl p-4 pb-24 md:p-8 md:pb-8">{children}</main>
@@ -39,7 +41,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-outline-variant/30 bg-white/95 backdrop-blur md:hidden">
         <div className="grid h-16 grid-cols-5">
-          {mobileNav.map(({ href, label, icon: Icon }) => {
+          {mobileNav.map(({ href, labelKey, icon: Icon }) => {
             const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
             return (
               <Link
@@ -50,7 +52,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{label}</span>
+                <span>{t(labelKey)}</span>
               </Link>
             );
           })}

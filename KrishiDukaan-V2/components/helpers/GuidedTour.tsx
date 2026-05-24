@@ -3,11 +3,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useI18n } from '../../app/i18n/I18nContext';
+import {
+  HELPER_TEXTS,
+  HelperTextKey,
+  formatHelperEntry,
+} from '../../app/i18n/helperTexts';
 
 export interface TourStep {
   selector: string;
-  title: string;
-  body: string;
+  /** Localized text key (preferred). When set, title/body are ignored. */
+  textKey?: HelperTextKey;
+  title?: string;
+  body?: string;
   side?: 'top' | 'bottom' | 'left' | 'right' | 'auto';
   /** Optional navigation hint — invoked just before showing this step */
   beforeShow?: () => void;
@@ -24,6 +32,12 @@ interface GuidedTourProps {
 }
 
 const DEFAULT_KEY = 'kd_onboarding_complete';
+
+const TOUR_LABELS = {
+  en: { step: 'Step {n} of {total}', skip: 'Skip', back: 'Back', next: 'Next', done: 'Got it' },
+  mr: { step: 'पायरी {n} / {total}', skip: 'वगळा', back: 'मागे', next: 'पुढे', done: 'समजले' },
+  hi: { step: 'चरण {n} / {total}', skip: 'छोड़ें', back: 'पीछे', next: 'अगला', done: 'समझ गया' },
+} as const;
 const PADDING = 8;
 const POPOVER_OFFSET = 14;
 
@@ -117,6 +131,7 @@ export function GuidedTour({
   startDelay = 800,
   onFinish,
 }: GuidedTourProps) {
+  const { language } = useI18n();
   const [active, setActive] = useState(false);
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
@@ -125,6 +140,18 @@ export function GuidedTour({
   const [popSize, setPopSize] = useState({ w: 320, h: 180 });
 
   const step = steps[index];
+
+  const resolved = useMemo(() => {
+    if (!step) return { title: '', body: '' };
+    if (step.textKey) {
+      const entry = HELPER_TEXTS[step.textKey];
+      return {
+        title: formatHelperEntry(entry?.title, language),
+        body: formatHelperEntry(entry?.body, language),
+      };
+    }
+    return { title: step.title || '', body: step.body || '' };
+  }, [step, language]);
 
   useEffect(() => {
     setMounted(true);
@@ -318,23 +345,27 @@ export function GuidedTour({
           className="bg-white rounded-3xl shadow-ambient border border-surface-container-highest p-5"
           role="dialog"
           aria-modal="true"
-          aria-label={step.title}
+          aria-label={resolved.title}
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-              Step {index + 1} of {steps.length}
+              {TOUR_LABELS[language].step
+                .replace('{n}', String(index + 1))
+                .replace('{total}', String(steps.length))}
             </span>
             <button
               onClick={finish}
-              aria-label="Skip onboarding"
+              aria-label={TOUR_LABELS[language].skip}
               className="text-xs font-bold text-on-surface-variant hover:text-primary transition-colors"
             >
-              Skip
+              {TOUR_LABELS[language].skip}
             </button>
           </div>
-          <h3 className="text-lg font-bold text-on-surface mb-1.5 leading-tight">{step.title}</h3>
-          <p className="text-sm text-on-surface-variant font-medium leading-relaxed mb-4">
-            {step.body}
+          <h3 className="text-lg font-bold text-on-surface mb-1.5 leading-tight whitespace-pre-line">
+            {resolved.title}
+          </h3>
+          <p className="text-sm text-on-surface-variant font-medium leading-relaxed mb-4 whitespace-pre-line">
+            {resolved.body}
           </p>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -353,14 +384,16 @@ export function GuidedTour({
                   onClick={prev}
                   className="text-xs font-bold text-on-surface-variant hover:text-on-surface px-3 py-2 rounded-xl hover:bg-surface-container-low transition-colors"
                 >
-                  Back
+                  {TOUR_LABELS[language].back}
                 </button>
               ) : null}
               <button
                 onClick={next}
                 className="text-xs font-bold text-white bg-primary hover:bg-primary-container px-4 py-2 rounded-xl shadow-sm transition-colors"
               >
-                {index === steps.length - 1 ? 'Got it' : 'Next'}
+                {index === steps.length - 1
+                  ? TOUR_LABELS[language].done
+                  : TOUR_LABELS[language].next}
               </button>
             </div>
           </div>
