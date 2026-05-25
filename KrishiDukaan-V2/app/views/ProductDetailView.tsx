@@ -1,9 +1,10 @@
 import { MarketplaceProduct } from "../../types/product";
-import { ICONS, PRODUCTS, STORES, MANUFACTURERS } from '../constants';
+import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
-import { trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
+import { db, trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -162,6 +163,152 @@ function RetailerProfileSection({
   );
 }
 
+// ─── Manufacturer Brand Section (Firestore-backed) ────────────────────────────
+
+type MfrProduct = { id: string; name: string; category: string; price: number; image: string };
+type MfrInfo = { name: string; slug: string; location: string; founded: string } | null;
+
+function ManufacturerBrandSection({
+  manufacturerId,
+  currentProductId,
+  onProductClick,
+  onViewBrand,
+}: {
+  manufacturerId: string;
+  currentProductId: string;
+  onProductClick?: (id: string) => void;
+  onViewBrand?: (manufacturerId: string) => void;
+}) {
+  const [mfrInfo, setMfrInfo] = useState<MfrInfo>(null);
+  const [mfrProducts, setMfrProducts] = useState<MfrProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!manufacturerId) return;
+    setLoading(true);
+
+    async function fetchAll() {
+      // Resolve manufacturer profile doc (keyed by phone, uid stored as field)
+      const mfrSnap = await getDocs(
+        query(collection(db, "manufacturers"), where("uid", "==", manufacturerId), limit(1)),
+      );
+      if (!mfrSnap.empty) {
+        const d = mfrSnap.docs[0].data() as Record<string, unknown>;
+        const addr = (d.address ?? {}) as Record<string, unknown>;
+        setMfrInfo({
+          name: String(d.businessName ?? d.ownerName ?? ""),
+          slug: String(d.slug ?? ""),
+          location: [addr.city, addr.state].filter(Boolean).join(", "),
+          founded: String(d.establishedYear ?? ""),
+        });
+      }
+
+      // Fetch manufacturer-owned catalog products (exclude assigned retailer copies)
+      const prodsSnap = await getDocs(
+        query(
+          collection(db, "products"),
+          where("manufacturerId", "==", manufacturerId),
+          where("isActive", "==", true),
+          limit(20),
+        ),
+      );
+      const others = prodsSnap.docs
+        .filter((d) => {
+          const r = d.data() as Record<string, unknown>;
+          return d.id !== currentProductId && r.source !== "manufacturer_assigned";
+        })
+        .slice(0, 6)
+        .map((d) => {
+          const r = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            name: String(r.name ?? ""),
+            category: String(r.category ?? ""),
+            price: Number(r.price ?? 0),
+            image: String(r.image ?? ""),
+          };
+        });
+      setMfrProducts(others);
+    }
+
+    fetchAll().finally(() => setLoading(false));
+  }, [manufacturerId, currentProductId]);
+
+  // Nothing to show while loading or if we got no data at all
+  if (loading) {
+    return (
+      <div className="rounded-3xl border border-surface-container bg-white p-6 animate-pulse">
+        <div className="h-4 w-48 rounded-full bg-surface-container-highest mb-3" />
+        <div className="h-3 w-32 rounded-full bg-surface-container-highest" />
+      </div>
+    );
+  }
+
+  if (!mfrInfo && mfrProducts.length === 0) return null;
+
+  const brandName = mfrInfo?.name || "This Manufacturer";
+  const hasBrandPage = !!mfrInfo?.slug;
+
+  return (
+    <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
+      {/* Brand header */}
+      <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
+          <h2 className="text-xl font-bold text-white leading-tight truncate">{brandName}</h2>
+          {(mfrInfo?.location || mfrInfo?.founded) && (
+            <p className="text-white/60 text-xs mt-0.5">
+              {[mfrInfo.location, mfrInfo.founded ? `Est. ${mfrInfo.founded}` : ""].filter(Boolean).join(" · ")}
+            </p>
+          )}
+        </div>
+        {hasBrandPage && mfrInfo?.slug && (
+          <a
+            href={`/brand/${mfrInfo.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+          >
+            Visit Brand Store <ICONS.ChevronRight className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+
+      {/* More from this manufacturer */}
+      {mfrProducts.length > 0 && (
+        <div className="p-6 bg-white flex flex-col gap-4">
+          <p className="text-sm font-semibold text-on-surface">More from {brandName}</p>
+          <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
+            {mfrProducts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onProductClick?.(p.id)}
+                className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
+              >
+                <div className="aspect-square overflow-hidden bg-surface-container">
+                  {p.image ? (
+                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-on-surface-variant/30">
+                      <ICONS.Market className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-2.5 flex flex-col gap-0.5">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-primary">{p.category}</span>
+                  <p className="text-sm font-bold text-on-surface truncate leading-tight">{p.name}</p>
+                  <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export default function ProductDetailView({
@@ -200,11 +347,6 @@ export default function ProductDetailView({
     if (product.retailerId && p.retailerId) return p.retailerId === product.retailerId;
     return product.store !== 'Local Store' && p.store === product.store;
   }).slice(0, 6);
-
-  const manufacturerProducts = product.manufacturerId
-    ? products.filter(p => p.id !== product.id && p.manufacturerId === product.manufacturerId).slice(0, 4)
-    : [];
-  const brandInfo = product.manufacturerId ? MANUFACTURERS[product.manufacturerId] : null;
 
   // Use storesWithDistance for computed distances, fallback to STORES constant
   const availableStores = useMemo(() => {
@@ -627,52 +769,14 @@ export default function ProductDetailView({
         </section>
       )}
 
-      {/* Manufacturer brand section */}
-      {brandInfo && manufacturerProducts.length > 0 && (
-        <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
-          {/* Brand header */}
-          <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
-              <h2 className="text-xl font-bold text-white leading-tight">{brandInfo.name}</h2>
-              <p className="text-white/60 text-xs mt-0.5">{brandInfo.location} · Est. {brandInfo.founded}</p>
-            </div>
-            {onViewBrand && (
-              <button
-                onClick={() => onViewBrand(product.manufacturerId!)}
-                className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
-              >
-                View Brand <ICONS.ChevronRight className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          {/* Other products from this manufacturer */}
-          <div className="p-6 bg-white flex flex-col gap-4">
-            <p className="text-sm font-semibold text-on-surface">
-              More products from {brandInfo.name.split(' ').slice(0, 2).join(' ')}
-            </p>
-            <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
-              {manufacturerProducts.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onProductClick?.(p.id)}
-                  className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
-                >
-                  <div className="aspect-square overflow-hidden bg-surface-container">
-                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
-                  </div>
-                  <div className="p-2.5 flex flex-col gap-0.5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-primary">{p.category}</span>
-                    <p className="text-sm font-bold text-on-surface truncate leading-tight">{p.name}</p>
-                    <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
+      {/* Manufacturer brand section — Firestore-backed, replaces legacy MANUFACTURERS constant */}
+      {product.manufacturerId && (
+        <ManufacturerBrandSection
+          manufacturerId={product.manufacturerId}
+          currentProductId={product.id}
+          onProductClick={onProductClick}
+          onViewBrand={onViewBrand}
+        />
       )}
 
       {/* Retailer Profile Section — phone-keyed, efficient subcollection fetch */}

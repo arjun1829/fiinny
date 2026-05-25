@@ -223,6 +223,10 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
+    // Public list/count — needed for brand page retailer count (unauthenticated visitors).
+      // Individual doc reads still restricted to the manufacturer or the retailer themselves.
+      allow list: if true;
+      allow get: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer reads their roster; retailer reads their own entry.
       allow read: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer manages their roster; retailer can update their own entry
@@ -315,7 +319,16 @@ service cloud.firestore {
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
       );
     }
-
+    
+           // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
+    // Optional brand-page customization — public read, manufacturer owner write.
+    // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
+    match /brandPages/{manufacturerPhone} {
+      allow read: if true;
+      allow create, update: if isAuthed() && myPhone() == manufacturerPhone;
+      allow delete: if isAdmin();
+    }
+    
     match /inventory/{inventoryId} {
       allow read: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -398,6 +411,41 @@ service cloud.firestore {
 
     match /reportLogs/{docId} {
       allow read, write: if isAdmin();
+    }
+
+    match /contactMessages/{docId} {
+      allow create: if true;
+      allow read, write: if isAdmin();
+    }
+
+    // ─── companyPages ────────────────────────────────────────────────────────
+    // Brand pages created by manufacturers. Public read, owner or admin write.
+    match /companyPages/{companyId} {
+      allow read: if true;
+      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow update: if isAdmin() || (isAuthed() && (
+        resource.data.ownerPhone == myPhone() ||
+        companyId == myPhone()
+      ));
+      allow delete: if isAdmin();
+    }
+
+    // ─── companyProducts ─────────────────────────────────────────────────────
+    // Products belonging to a company page. Public read.
+    match /companyProducts/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow update: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow delete: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+    }
+
+    // ─── companyStores ───────────────────────────────────────────────────────
+    // Stores belonging to a company page. Public read.
+    match /companyStores/{storeId} {
+      allow read: if true;
+      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow update: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow delete: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
     }
 
   }
