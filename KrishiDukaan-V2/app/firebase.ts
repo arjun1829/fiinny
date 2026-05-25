@@ -1203,6 +1203,33 @@ export async function fetchAllUsers(): Promise<any[]> {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export type StoreAutocompleteOption = {
+  phone: string;
+  shopName: string;
+  ownerName: string;
+  address: string;
+  lat: number;
+  lng: number;
+};
+
+export async function fetchRetailerProfiles(): Promise<StoreAutocompleteOption[]> {
+  const q = query(collection(db, 'users'), where('role', '==', 'retailer'));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map(d => {
+      const data = d.data();
+      return {
+        phone: d.id,
+        shopName: data.shopName || data.businessName || data.name || d.id,
+        ownerName: data.name || '',
+        address: [data.address, data.city, data.state, data.pincode].filter(Boolean).join(', '),
+        lat: data.latitude ? Number(data.latitude) : 0,
+        lng: data.longitude ? Number(data.longitude) : 0,
+      };
+    })
+    .filter(r => r.shopName && r.address);
+}
+
 export async function fetchAllRetailers(): Promise<any[]> {
   const snapshot = await getDocs(collection(db, 'retailers'));
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Loader2, Building2, Package, Store, Video,
@@ -14,10 +14,11 @@ import {
   fetchCompanyPageById, saveCompanyPage,
   fetchCompanyProducts, saveCompanyProduct, deleteCompanyProduct,
   fetchCompanyStores, saveCompanyStore, deleteCompanyStore,
-  fetchManufacturerProducts, fetchManufacturerNetworkStores,
-  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore,
+  fetchManufacturerProducts, fetchManufacturerNetworkStores, fetchRetailerProfiles,
+  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore, type StoreAutocompleteOption,
 } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { usePlacesInput } from "../../lib/usePlacesInput";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -772,6 +773,49 @@ function StoreForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Retailer search
+  const [retailers, setRetailers] = useState<StoreAutocompleteOption[]>([]);
+  const [nameSearch, setNameSearch] = useState(initial?.name ?? "");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const nameContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchRetailerProfiles().then(setRetailers).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (nameContainerRef.current && !nameContainerRef.current.contains(e.target as Node))
+        setDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = retailers
+    .filter(r => nameSearch.length > 0 && r.shopName.toLowerCase().includes(nameSearch.toLowerCase()))
+    .slice(0, 8);
+
+  const fillFromRetailer = (r: StoreAutocompleteOption) => {
+    setForm(p => ({
+      ...p, name: r.shopName, ownerName: r.ownerName,
+      phone: r.phone, address: r.address,
+      lat: r.lat ? String(r.lat) : p.lat,
+      lng: r.lng ? String(r.lng) : p.lng,
+    }));
+    setNameSearch(r.shopName);
+    setDropdownOpen(false);
+  };
+
+  // Google Places address autocomplete
+  const addressRef = useRef<HTMLInputElement>(null);
+  usePlacesInput(addressRef, ({ name, address, lat, lng }) => {
+    setForm(p => ({
+      ...p, address, lat: String(lat), lng: String(lng),
+      name: p.name || name,
+    }));
+  });
+
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -813,10 +857,31 @@ function StoreForm({
         <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
       <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelCls}>
+        {/* Store Name — with retailer search dropdown */}
+        <div className={`${labelCls} relative`} ref={nameContainerRef}>
           <span className="font-medium text-on-surface">Store Name <span className="text-red-500">*</span></span>
-          <input className={inputCls} value={form.name} onChange={set("name")} placeholder="e.g. Karjat Krishi Seva Kendra" />
-        </label>
+          <input className={inputCls} value={nameSearch}
+            onChange={e => { setNameSearch(e.target.value); setForm(p => ({ ...p, name: e.target.value })); setDropdownOpen(true); }}
+            onFocus={() => setDropdownOpen(true)}
+            placeholder="Search KrishiDukan retailers or type name…" />
+          {dropdownOpen && filtered.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-outline-variant/40 bg-white shadow-lg overflow-hidden">
+              {filtered.map(r => (
+                <button key={r.phone} type="button" onMouseDown={() => fillFromRetailer(r)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primary/5 border-b border-outline-variant/10 last:border-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Store className="w-3.5 h-3.5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-on-surface truncate">{r.shopName}</p>
+                    <p className="text-xs text-on-surface-variant truncate">{r.address}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <label className={labelCls}>
           <span className="font-medium text-on-surface">Owner Name</span>
           <input className={inputCls} value={form.ownerName} onChange={set("ownerName")} placeholder="e.g. Ramesh Shinde" />
@@ -829,9 +894,16 @@ function StoreForm({
           <span className="font-medium text-on-surface">Store Hours</span>
           <input className={inputCls} value={form.status} onChange={set("status")} placeholder="Open until 7:00 PM" />
         </label>
+
+        {/* Address with Google Places Autocomplete */}
         <label className={`${labelCls} md:col-span-2`}>
-          <span className="font-medium text-on-surface">Address <span className="text-red-500">*</span></span>
-          <input className={inputCls} value={form.address} onChange={set("address")} placeholder="Shop no, Street, Village/City, District, PIN" />
+          <span className="font-medium text-on-surface">
+            Address <span className="text-red-500">*</span>
+            <span className="font-normal text-on-surface-variant text-xs ml-2">(search to auto-fill location)</span>
+          </span>
+          <input ref={addressRef} className={inputCls} value={form.address}
+            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
+            placeholder="Search business name or address on Google Maps…" />
         </label>
         <label className={labelCls}>
           <span className="font-medium text-on-surface">Latitude</span>
@@ -843,7 +915,7 @@ function StoreForm({
         </label>
       </div>
       <p className="text-xs text-on-surface-variant">
-        💡 To get Lat/Lng: open Google Maps, right-click on the store location, copy the coordinates.
+        💡 Type in the address field to get Google Places suggestions — selecting one auto-fills the coordinates.
       </p>
 
       {/* Stock items */}

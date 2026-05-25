@@ -15,8 +15,10 @@ import {
   fetchCompanyStores, saveCompanyStore, deleteCompanyStore,
   fetchAllUsers, adminAutoSeedCompanyPage,
   fetchManufacturerProducts, fetchUserProfileByPhone, fetchManufacturerNetworkStores,
-  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore,
+  fetchRetailerProfiles,
+  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore, type StoreAutocompleteOption,
 } from "../../firebase";
+import { usePlacesInput } from "../../lib/usePlacesInput";
 import { MANUFACTURERS } from "../../constants";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -659,6 +661,48 @@ function StoreForm({ companyId, initial, onDone, onCancel }: {
   const [stock, setStock] = useState<string[]>(initial?.stock ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Retailer search
+  const [retailers, setRetailers] = useState<StoreAutocompleteOption[]>([]);
+  const [nameSearch, setNameSearch] = useState(initial?.name ?? "");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const nameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchRetailerProfiles().then(setRetailers).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (nameRef.current && !nameRef.current.contains(e.target as Node)) setDropdownOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = retailers.filter(r =>
+    nameSearch.length > 0 && r.shopName.toLowerCase().includes(nameSearch.toLowerCase())
+  ).slice(0, 8);
+
+  const fillFromRetailer = (r: StoreAutocompleteOption) => {
+    setForm(p => ({
+      ...p, name: r.shopName, ownerName: r.ownerName,
+      phone: r.phone, address: r.address,
+      lat: r.lat ? String(r.lat) : p.lat,
+      lng: r.lng ? String(r.lng) : p.lng,
+    }));
+    setNameSearch(r.shopName);
+    setDropdownOpen(false);
+  };
+
+  // Google Places autocomplete on address
+  const addressRef = useRef<HTMLInputElement>(null);
+  usePlacesInput(addressRef, ({ name, address, lat, lng }) => {
+    setForm(p => ({
+      ...p, address,
+      lat: String(lat), lng: String(lng),
+      name: p.name || name,
+    }));
+  });
+
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   const handleSave = async () => {
@@ -683,16 +727,53 @@ function StoreForm({ companyId, initial, onDone, onCancel }: {
   return (
     <div className="space-y-4">
       {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+
       <div className="grid gap-3 md:grid-cols-2">
-        <label className={labelCls}><span className="font-medium text-on-surface">Store Name *</span><input className={inputCls} value={form.name} onChange={set("name")} placeholder="Karjat Krishi Seva" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Owner Name</span><input className={inputCls} value={form.ownerName} onChange={set("ownerName")} placeholder="Ramesh Shinde" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Phone</span><input type="tel" className={inputCls} value={form.phone} onChange={set("phone")} placeholder="+919307199040" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Store Hours</span><input className={inputCls} value={form.status} onChange={set("status")} placeholder="Open until 7 PM" /></label>
-        <label className={`${labelCls} md:col-span-2`}><span className="font-medium text-on-surface">Address *</span><input className={inputCls} value={form.address} onChange={set("address")} placeholder="Shop no, Street, Village, District, PIN" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Latitude</span><input type="number" step="any" className={inputCls} value={form.lat} onChange={set("lat")} placeholder="18.9602" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Longitude</span><input type="number" step="any" className={inputCls} value={form.lng} onChange={set("lng")} placeholder="75.1705" /></label>
+        {/* Store Name with retailer dropdown */}
+        <div className={`${labelCls} relative`} ref={nameRef}>
+          <span className="font-medium text-on-surface">Store Name *</span>
+          <input className={inputCls} value={nameSearch}
+            onChange={e => { setNameSearch(e.target.value); setForm(p => ({ ...p, name: e.target.value })); setDropdownOpen(true); }}
+            onFocus={() => setDropdownOpen(true)}
+            placeholder="Search KrishiDukan retailers or type name…" />
+          {dropdownOpen && filtered.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-outline-variant/40 bg-white shadow-lg overflow-hidden">
+              {filtered.map(r => (
+                <button key={r.phone} type="button" onMouseDown={() => fillFromRetailer(r)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primary/5 border-b border-outline-variant/10 last:border-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Store className="w-3.5 h-3.5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-on-surface truncate">{r.shopName}</p>
+                    <p className="text-xs text-on-surface-variant truncate">{r.address}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label className={labelCls}><span className="font-medium text-on-surface">Owner Name</span>
+          <input className={inputCls} value={form.ownerName} onChange={set("ownerName")} placeholder="Ramesh Shinde" /></label>
+        <label className={labelCls}><span className="font-medium text-on-surface">Phone</span>
+          <input type="tel" className={inputCls} value={form.phone} onChange={set("phone")} placeholder="+919307199040" /></label>
+        <label className={labelCls}><span className="font-medium text-on-surface">Store Hours</span>
+          <input className={inputCls} value={form.status} onChange={set("status")} placeholder="Open until 7 PM" /></label>
+
+        {/* Address with Google Places */}
+        <label className={`${labelCls} md:col-span-2`}><span className="font-medium text-on-surface">Address * <span className="font-normal text-on-surface-variant text-xs">(search to auto-fill location)</span></span>
+          <input ref={addressRef} className={inputCls} value={form.address}
+            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
+            placeholder="Search Google Maps address, business name…" /></label>
+
+        <label className={labelCls}><span className="font-medium text-on-surface">Latitude</span>
+          <input type="number" step="any" className={inputCls} value={form.lat} onChange={set("lat")} placeholder="18.9602" /></label>
+        <label className={labelCls}><span className="font-medium text-on-surface">Longitude</span>
+          <input type="number" step="any" className={inputCls} value={form.lng} onChange={set("lng")} placeholder="75.1705" /></label>
       </div>
-      <p className="text-xs text-on-surface-variant">💡 Right-click on Google Maps → copy coordinates for Lat/Lng.</p>
+      <p className="text-xs text-on-surface-variant">💡 Select an address from the dropdown to auto-fill lat/lng, or paste coordinates manually.</p>
+
       <div className="space-y-2">
         <p className="text-xs font-semibold text-on-surface">Products in Stock</p>
         <div className="flex flex-wrap gap-2">
