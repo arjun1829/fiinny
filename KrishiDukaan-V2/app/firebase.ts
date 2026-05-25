@@ -10,6 +10,7 @@ import {
   getFirestore,
   increment,
   query,
+  orderBy,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -91,6 +92,12 @@ type CreateRetailProductInput = {
   store: string;
   distance: string;
   sellMode?: "online_delivery" | "offline_store_only";
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 };
 
 export type RetailerApplication = {
@@ -207,7 +214,13 @@ export async function saveRetailerProduct(
     sellMode,
     isOnline: sellMode === "online_delivery",
     source: 'retailer',
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
+    nitrogen: product.nitrogen?.trim() || null,
+    phosphorus: product.phosphorus?.trim() || null,
+    potassium: product.potassium?.trim() || null,
+    applicationDesc: product.applicationDesc?.trim() || null,
+    dosage: product.dosage?.trim() || null,
+    bestForCrops: product.bestForCrops || null,
   });
 
   // 2. Increment productCount in user profile
@@ -246,6 +259,12 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         isOnline: data.isOnline === true || data.sellMode === "online_delivery",
         availability: data.availability || undefined,
         source: data.source ? String(data.source) : undefined,
+        nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
+        phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
+        potassium: data.potassium ? String(data.potassium) : undefined,
+        applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
+        dosage: data.dosage ? String(data.dosage) : undefined,
+        bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
       } as MarketplaceProduct;
     });
 
@@ -1379,4 +1398,40 @@ export async function saveCompanyStore(store: Omit<CompanyStore, 'id'>, storeId?
 
 export async function deleteCompanyStore(storeId: string): Promise<void> {
   await deleteDoc(doc(db, 'companyStores', storeId));
+}
+
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  message: string;
+  createdAt: any;
+}
+
+export async function saveContactMessage(name: string, email: string, message: string): Promise<string> {
+  const ref = await addDoc(collection(db, 'contactMessages'), {
+    name: name.trim(),
+    email: email.trim(),
+    message: message.trim(),
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function fetchContactMessages(): Promise<ContactMessage[]> {
+  try {
+    const q = query(collection(db, 'contactMessages'), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as ContactMessage[];
+  } catch (error) {
+    console.error('Error fetching contact messages:', error);
+    throw error;
+  }
+}
+
+export async function deleteContactMessage(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'contactMessages', id));
 }

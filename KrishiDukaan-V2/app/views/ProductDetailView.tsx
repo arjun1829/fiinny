@@ -506,88 +506,113 @@ export default function ProductDetailView({
       </div>
 
       {/* Product Insights */}
-      <section>
-        <div className="flex items-center gap-2 mb-5">
-          <h2 className="text-xl md:text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
-          <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
-        </div>
+      {(() => {
+        const hasComposition = !!(product.nitrogen || product.phosphorus || product.potassium);
+        const hasApplication = !!(product.applicationDesc || product.dosage);
+        const hasCrops = !!(product.bestForCrops && product.bestForCrops.length > 0);
+        const hasInsights = hasComposition || hasApplication || hasCrops;
+        
+        if (!hasInsights) return null;
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        const cardCount = [hasComposition, hasApplication, hasCrops].filter(Boolean).length;
+        const gridColsClass = cardCount === 3
+          ? "md:grid-cols-3"
+          : cardCount === 2
+            ? "md:grid-cols-2 max-w-4xl"
+            : "md:grid-cols-1 max-w-md";
 
-          {/* Composition */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-amber-50 border-b border-amber-100 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center">
-                <ICONS.Science className="w-4 h-4 text-amber-600" />
-              </div>
-              <h3 className="font-bold text-amber-800 text-xs uppercase tracking-widest">{t('composition')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productComposition" ariaLabel="Composition help" />
+        return (
+          <section>
+            <div className="flex items-center gap-2 mb-6">
+              <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
+              <HelperIcon
+                size="sm"
+                variant="ghost"
+                side="right"
+                textKey="productInsights"
+                ariaLabel="Product insights help"
+              />
             </div>
-            <div className="bg-white px-5 py-4 flex flex-col gap-1">
-              {[
-                { label: t('nitrogenN'), val: '19%', pct: 19, color: 'bg-blue-400' },
-                { label: t('phosphorusP'), val: '19%', pct: 19, color: 'bg-amber-400' },
-                { label: t('potassiumK'), val: '19%', pct: 19, color: 'bg-green-400' },
-              ].map((row) => (
-                <div key={row.label} className="py-2.5 border-b border-surface-container last:border-0">
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-on-surface-variant text-xs font-semibold">{row.label}</span>
-                    <span className="text-on-surface font-black text-sm">{row.val}</span>
+            <div className={`grid grid-cols-1 ${gridColsClass} gap-6`}>
+              {hasComposition && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-secondary">
+                    <ICONS.Science className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('composition')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productComposition"
+                      ariaLabel="Composition help"
+                    />
                   </div>
-                  <div className="h-1.5 bg-surface-container rounded-full overflow-hidden">
-                    <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
+                  {[
+                    { label: t('nitrogenN'), val: product.nitrogen },
+                    { label: t('phosphorusP'), val: product.phosphorus },
+                    { label: t('potassiumK'), val: product.potassium }
+                  ].filter(row => !!row.val).map((row, i) => (
+                    <div key={i} className="flex justify-between items-center py-2 border-b border-surface-container-low last:border-0">
+                      <span className="text-on-surface text-sm opacity-60 font-semibold">{row.label}</span>
+                      <span className="text-on-surface font-black">{row.val}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hasApplication && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-primary">
+                    <ICONS.Water className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('application')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productApplication"
+                      ariaLabel="Application help"
+                    />
+                  </div>
+                  {product.applicationDesc && (
+                    <p className="text-on-surface-variant font-medium text-sm">{product.applicationDesc}</p>
+                  )}
+                  {product.dosage && (
+                    <HelperTooltip side="top" textKey="productDosage">
+                      <div className="mt-auto bg-primary/5 rounded-2xl p-4 border border-primary/10 cursor-help">
+                        <span className="block text-[10px] font-black uppercase tracking-widest text-primary mb-1">{t('recommendedDosage')}</span>
+                        <span className="text-2xl font-bold text-on-surface">{product.dosage}</span>
+                      </div>
+                    </HelperTooltip>
+                  )}
+                </div>
+              )}
+
+              {hasCrops && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-secondary">
+                    <ICONS.Sprout className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('bestForCrops')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productCropSupport"
+                      ariaLabel="Best for crops help"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {product.bestForCrops?.map((crop, i) => (
+                      <span key={i} className="bg-surface-container px-4 py-2 rounded-full text-xs font-bold text-on-surface-variant border border-surface-container-highest">
+                        {crop}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* Application */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-primary/5 border-b border-primary/10 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-                <ICONS.Water className="w-4 h-4 text-primary" />
-              </div>
-              <h3 className="font-bold text-primary text-xs uppercase tracking-widest">{t('application')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productApplication" ariaLabel="Application help" />
-            </div>
-            <div className="bg-white px-5 py-4 flex flex-col gap-4">
-              <p className="text-on-surface-variant text-sm leading-relaxed">{t('applicationDesc')}</p>
-              <HelperTooltip side="top" textKey="productDosage">
-                <div className="bg-primary rounded-xl p-4 cursor-help">
-                  <span className="block text-white/70 text-[10px] font-black uppercase tracking-widest mb-0.5">{t('recommendedDosage')}</span>
-                  <span className="text-2xl font-extrabold text-white">{t('dosageValue')}</span>
-                </div>
-              </HelperTooltip>
-            </div>
-          </div>
-
-          {/* Best for Crops */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-green-50 border-b border-green-100 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-green-500/15 flex items-center justify-center">
-                <ICONS.Sprout className="w-4 h-4 text-green-600" />
-              </div>
-              <h3 className="font-bold text-green-800 text-xs uppercase tracking-widest">{t('bestForCrops')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productCropSupport" ariaLabel="Best for crops help" />
-            </div>
-            <div className="bg-white px-5 py-4">
-              <div className="flex flex-wrap gap-2">
-                {[t('cropTomatoes'), t('cropWheat'), t('cropSugarcane'), t('cropGrapes')].map((crop, i) => (
-                  <span key={i} className="flex items-center gap-1.5 bg-green-50 border border-green-100 text-green-800 px-3 py-1.5 rounded-full text-xs font-bold">
-                    🌱 {crop}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-4 p-3 bg-surface-container-low rounded-xl border border-surface-container">
-                <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">Works best for</p>
-                <p className="text-xs text-on-surface font-semibold leading-relaxed">All soil types · Kharif & Rabi seasons · Drip & flood irrigation</p>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </section>
+          </section>
+        );
+      })()}
 
       {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
       {sellerProducts.length > 0 && !product.retailerPhone && (

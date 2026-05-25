@@ -400,5 +400,10 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /contactMessages/{docId} {
+      allow create: if true;
+      allow read, write: if isAdmin();
+    }
+
   }
 }

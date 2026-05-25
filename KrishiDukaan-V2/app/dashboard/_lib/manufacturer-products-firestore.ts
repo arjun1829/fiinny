@@ -38,6 +38,12 @@ export type ManufacturerProductInput = {
   description: string;
   image?: string;
   images?: string[];
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 };
 
 /**
@@ -99,6 +105,12 @@ export async function createManufacturerProduct(
     source: "manufacturer_inventory",
     createdAt: now,
     updatedAt: now,
+    nitrogen: input.nitrogen?.trim() || null,
+    phosphorus: input.phosphorus?.trim() || null,
+    potassium: input.potassium?.trim() || null,
+    applicationDesc: input.applicationDesc?.trim() || null,
+    dosage: input.dosage?.trim() || null,
+    bestForCrops: input.bestForCrops || null,
   });
 
   // Inventory record for the manufacturer's own stock
@@ -229,6 +241,12 @@ export async function updateManufacturerProduct(
   if (input.description !== undefined) patch.description = input.description.trim();
   if (input.image !== undefined)       patch.image       = (input.image ?? "").trim();
   if (input.images !== undefined)      patch.images      = input.images;
+  if (input.nitrogen !== undefined)        patch.nitrogen        = input.nitrogen ? input.nitrogen.trim() : null;
+  if (input.phosphorus !== undefined)      patch.phosphorus      = input.phosphorus ? input.phosphorus.trim() : null;
+  if (input.potassium !== undefined)       patch.potassium       = input.potassium ? input.potassium.trim() : null;
+  if (input.applicationDesc !== undefined)  patch.applicationDesc  = input.applicationDesc ? input.applicationDesc.trim() : null;
+  if (input.dosage !== undefined)          patch.dosage          = input.dosage ? input.dosage.trim() : null;
+  if (input.bestForCrops !== undefined)    patch.bestForCrops    = input.bestForCrops || null;
   await updateDoc(ref, patch);
 }
 
@@ -244,6 +262,7 @@ export async function toggleProductActive(productId: string, isActive: boolean):
 export async function searchProductsByName(term: string): Promise<Array<{
   id: string; name: string; category: string; unit: string; price: number;
   description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
+  nitrogen?: string; phosphorus?: string; potassium?: string; applicationDesc?: string; dosage?: string; bestForCrops?: string[];
 }>> {
   if (!term.trim()) return [];
   const snap = await getDocs(query(collection(db, "products"), orderBy("name")));
@@ -275,6 +294,12 @@ export async function searchProductsByName(term: string): Promise<Array<{
         manufacturerProductId: String(r.manufacturerProductId ?? ""),
         originalProductId: String(r.originalProductId ?? ""),
         score: rankProduct(r),
+        nitrogen: r.nitrogen ? String(r.nitrogen) : "",
+        phosphorus: r.phosphorus ? String(r.phosphorus) : "",
+        potassium: r.potassium ? String(r.potassium) : "",
+        applicationDesc: r.applicationDesc ? String(r.applicationDesc) : "",
+        dosage: r.dosage ? String(r.dosage) : "",
+        bestForCrops: Array.isArray(r.bestForCrops) ? r.bestForCrops : [],
       };
     })
     .filter((p) => p.name.toLowerCase().includes(lower))

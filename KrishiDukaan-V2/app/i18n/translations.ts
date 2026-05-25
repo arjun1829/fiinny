@@ -191,6 +191,9 @@ export const translations = {
     aboutContactEmailPlaceholder: 'Email address',
     aboutContactMessagePlaceholder: 'Your message...',
     aboutContactSendLabel: 'Send Message',
+    aboutContactSuccess: 'Message sent successfully! We will get back to you soon.',
+    aboutContactError: 'Failed to send message. Please try again.',
+    aboutContactSending: 'Sending message...',
 
     // StoreLocatorView
     nearbyStores: 'Nearby Stores',
@@ -741,6 +744,7 @@ export const translations = {
     noReviewsYet: 'No reviews yet',
     noReviewsDesc: "When customers leave reviews on your products, they'll appear here.",
 
+    // Crop Hub (HubView)
     // ─── Crop names (Shop by Crop + Hub) ───
     crop_watermelon: 'Watermelon',
     crop_cotton: 'Cotton',
@@ -829,6 +833,8 @@ export const translations = {
     pvPublishFailed: 'Failed to publish product.',
 
     // ─── Additional multilingual keys ───
+    additionalDataLabel: 'Additional Data',
+    formBestForCropsHint: 'Enter crops separated by commas',
     enableOnlineDeliveryHint: 'Enable online delivery in your Profile settings to start accepting online orders.',
     goToSettingsBtn: 'Go to Settings',
     yesLabel: 'Yes',
@@ -1189,6 +1195,9 @@ export const translations = {
     aboutContactEmailPlaceholder: 'ईमेल पत्ता',
     aboutContactMessagePlaceholder: 'तुमचा संदेश...',
     aboutContactSendLabel: 'संदेश पाठवा',
+    aboutContactSuccess: 'संदेश यशस्वीरित्या पाठवला गेला! आम्ही लवकरच तुमच्याशी संपर्क साधू.',
+    aboutContactError: 'संदेश पाठवण्यात अयशस्वी. कृपया पुन्हा प्रयत्न करा.',
+    aboutContactSending: 'संदेश पाठवत आहे...',
 
     // StoreLocatorView
     nearbyStores: 'जवळची दुकाने',
@@ -1739,6 +1748,7 @@ export const translations = {
     noReviewsYet: 'अद्याप कोणतीही पुनरावलोकने नाहीत',
     noReviewsDesc: 'जेव्हा ग्राहक तुमच्या उत्पादनांवर पुनरावलोकने देतील, तेव्हा ती येथे दिसतील.',
 
+    // Crop Hub (HubView)
     // ─── Crop names (Shop by Crop + Hub) ───
     crop_watermelon: 'कलिंगड',
     crop_cotton: 'कापूस',
@@ -1827,6 +1837,8 @@ export const translations = {
     pvPublishFailed: 'उत्पादन प्रकाशित करण्यात अयशस्वी.',
 
     // ─── Additional multilingual keys ───
+    additionalDataLabel: 'अतिरिक्त माहिती',
+    formBestForCropsHint: 'कॉमाने वेगळे केलेले पिके प्रविष्ट करा',
     enableOnlineDeliveryHint: 'ऑनलाइन ऑर्डर्स स्वीकारण्यासाठी तुमच्या Profile सेटिंग्जमध्ये ऑनलाइन डिलिव्हरी सक्षम करा.',
     goToSettingsBtn: 'सेटिंग्जवर जा',
     yesLabel: 'होय',
@@ -2188,6 +2200,9 @@ export const translations = {
     aboutContactEmailPlaceholder: 'ईमेल पता',
     aboutContactMessagePlaceholder: 'आपका संदेश...',
     aboutContactSendLabel: 'संदेश भेजें',
+    aboutContactSuccess: 'संदेश सफलतापूर्वक भेजा गया! हम जल्द ही आपसे संपर्क करेंगे।',
+    aboutContactError: 'संदेश भेजने में विफल। कृपया पुन: प्रयास करें।',
+    aboutContactSending: 'संदेश भेजा जा रहा है...',
 
     // StoreLocatorView
     nearbyStores: 'नज़दीकी दुकानें',
@@ -2738,6 +2753,7 @@ export const translations = {
     noReviewsYet: 'अभी तक कोई समीक्षा नहीं',
     noReviewsDesc: 'जब ग्राहक आपके उत्पादों पर समीक्षाएँ देंगे, वे यहाँ दिखेंगी.',
 
+    // Crop Hub (HubView)
     // ─── Crop names (Shop by Crop + Hub) ───
     crop_watermelon: 'तरबूज',
     crop_cotton: 'कपास',
@@ -2826,6 +2842,8 @@ export const translations = {
     pvPublishFailed: 'उत्पाद प्रकाशित करने में विफल।',
 
     // ─── Additional multilingual keys ───
+    additionalDataLabel: 'अतिरिक्त डेटा',
+    formBestForCropsHint: 'अल्पविराम से अलग किए गए फसल दर्ज करें',
     enableOnlineDeliveryHint: 'ऑनलाइन ऑर्डर स्वीकारने के लिए अपनी Profile सेटिंग्स में ऑनलाइन डिलीवरी सक्षम करें.',
     goToSettingsBtn: 'सेटिंग्स पर जाएँ',
     yesLabel: 'हाँ',

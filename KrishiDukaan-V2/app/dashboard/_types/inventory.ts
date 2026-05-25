@@ -29,6 +29,14 @@ export interface ProductDoc {
   store?: string;
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
+
+  /** Optional Product Insights fields */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 }
 
 /**
@@ -88,6 +96,14 @@ export interface ManufacturerProductRow {
   source: string;
   isActive: boolean;
   updatedAt: Date | null;
+
+  /** Optional Product Insights fields */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 }
 
 export function deriveStockStatus(

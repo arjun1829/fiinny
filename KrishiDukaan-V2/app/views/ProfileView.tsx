@@ -7,6 +7,7 @@ import { saveManufacturerProduct, saveRetailerProduct, db } from '../firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon } from '../../components/helpers';
+import { ChevronDown, Layers } from 'lucide-react';
 
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 
@@ -36,6 +37,12 @@ interface ProductFormState {
   category: string;
   distance: string;
   sellMode: "online_delivery" | "offline_store_only";
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string;
 }
 
 const initialProductForm: ProductFormState = {
@@ -46,7 +53,13 @@ const initialProductForm: ProductFormState = {
   stock: 'In Stock',
   category: 'general',
   distance: 'Nearby',
-  sellMode: 'offline_store_only'
+  sellMode: 'offline_store_only',
+  nitrogen: '',
+  phosphorus: '',
+  potassium: '',
+  applicationDesc: '',
+  dosage: '',
+  bestForCrops: ''
 };
 
 export default function ProfileView({
@@ -63,6 +76,7 @@ export default function ProfileView({
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [showAdditionalData, setShowAdditionalData] = useState(false);
 
   const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -98,19 +112,34 @@ export default function ProfileView({
     setLoadingProduct(true);
     setStatus(null);
     try {
+      const cleanBestForCrops = productForm.bestForCrops
+        ? productForm.bestForCrops.split(',').map((s) => s.trim()).filter(Boolean)
+        : null;
+
+      const payload = {
+        ...productForm,
+        bestForCrops: cleanBestForCrops,
+        nitrogen: productForm.nitrogen?.trim() || null,
+        phosphorus: productForm.phosphorus?.trim() || null,
+        potassium: productForm.potassium?.trim() || null,
+        applicationDesc: productForm.applicationDesc?.trim() || null,
+        dosage: productForm.dosage?.trim() || null,
+      };
+
       if (role === 'retailer') {
         await saveRetailerProduct(uid, {
-          ...productForm,
+          ...payload,
           store: localProfile.name
         });
       } else {
         await saveManufacturerProduct(uid, {
-          ...productForm,
+          ...payload,
           manufacturerName: localProfile.name
         });
       }
       await onRetailerProductSaved();
       setProductForm(initialProductForm);
+      setShowAdditionalData(false);
       setStatus({ type: 'success', message: t('pvProductPublished') });
     } catch (error) {
       const message = error instanceof Error ? error.message : t('pvPublishFailed');
@@ -249,6 +278,90 @@ export default function ProfileView({
             <input type="text" required value={productForm.distance} onChange={(e) => setProductForm((p) => ({ ...p, distance: e.target.value }))} placeholder={t('pvDistancePlaceholder')} className="bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
             <input type="url" required value={productForm.image} onChange={(e) => setProductForm((p) => ({ ...p, image: e.target.value }))} placeholder={t('pvImageUrlPlaceholder')} className="bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
             <textarea value={productForm.description} required onChange={(e) => setProductForm((p) => ({ ...p, description: e.target.value }))} placeholder={t('pvDescriptionPlaceholder')} className="md:col-span-2 bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm min-h-24 focus:outline-none focus:ring-1 focus:ring-primary" />
+
+            {/* Additional details collapsible button */}
+            <div className="md:col-span-2 border-t border-outline-variant/20 pt-4 mt-2">
+              <button
+                type="button"
+                onClick={() => setShowAdditionalData(!showAdditionalData)}
+                className="flex items-center justify-between text-sm font-semibold text-on-surface w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 focus:outline-none"
+              >
+                <span className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-primary" /> {t('additionalDataLabel') || 'Additional Data'} (Optional)
+                </span>
+                <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${showAdditionalData ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showAdditionalData && (
+                <div className="flex flex-col gap-4 mt-4 bg-surface-container-low/40 p-4 rounded-2xl border border-outline-variant/20">
+                  {/* Composition */}
+                  <div>
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-2">{t('composition')}</span>
+                    <div className="grid grid-cols-3 gap-3">
+                      <input
+                        type="text"
+                        disabled={loadingProduct}
+                        value={productForm.nitrogen || ''}
+                        onChange={(e) => setProductForm((p) => ({ ...p, nitrogen: e.target.value }))}
+                        placeholder={t('nitrogenN') || 'Nitrogen (N)'}
+                        className="bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <input
+                        type="text"
+                        disabled={loadingProduct}
+                        value={productForm.phosphorus || ''}
+                        onChange={(e) => setProductForm((p) => ({ ...p, phosphorus: e.target.value }))}
+                        placeholder={t('phosphorusP') || 'Phosphorus (P)'}
+                        className="bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <input
+                        type="text"
+                        disabled={loadingProduct}
+                        value={productForm.potassium || ''}
+                        onChange={(e) => setProductForm((p) => ({ ...p, potassium: e.target.value }))}
+                        placeholder={t('potassiumK') || 'Potassium (K)'}
+                        className="bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Application */}
+                  <div className="border-t border-outline-variant/20 pt-4 flex flex-col gap-3">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider block">{t('application')}</span>
+                    <textarea
+                      disabled={loadingProduct}
+                      rows={2}
+                      value={productForm.applicationDesc || ''}
+                      onChange={(e) => setProductForm((p) => ({ ...p, applicationDesc: e.target.value }))}
+                      placeholder={t('application') || 'Application Instructions'}
+                      className="bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                    />
+                    <input
+                      type="text"
+                      disabled={loadingProduct}
+                      value={productForm.dosage || ''}
+                      onChange={(e) => setProductForm((p) => ({ ...p, dosage: e.target.value }))}
+                      placeholder={t('recommendedDosage') || 'Recommended Dosage'}
+                      className="bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  {/* Best for Crops */}
+                  <div className="border-t border-outline-variant/20 pt-4">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-1">{t('bestForCrops')}</span>
+                    <p className="text-[10px] text-on-surface-variant mb-2">{t('formBestForCropsHint')}</p>
+                    <input
+                      type="text"
+                      disabled={loadingProduct}
+                      value={productForm.bestForCrops || ''}
+                      onChange={(e) => setProductForm((p) => ({ ...p, bestForCrops: e.target.value }))}
+                      placeholder="e.g. Tomatoes, Wheat, Sugarcane"
+                      className="w-full bg-white border border-outline-variant rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {seatsRemaining <= 0 && (
               <div className="md:col-span-2 bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-sm font-medium">

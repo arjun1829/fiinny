@@ -93,6 +93,14 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     sellMode:
       data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
     isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+
+    // Optional Product Insights fields
+    nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
+    phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
+    potassium: data.potassium ? String(data.potassium) : undefined,
+    applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
+    dosage: data.dosage ? String(data.dosage) : undefined,
+    bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
   };
 }
 
@@ -369,6 +377,12 @@ export async function fetchManufacturerCatalogueRows(
       source: p.source ?? "manufacturer_inventory",
       isActive: p.isActive,
       updatedAt: timestampToDate(p.updatedAt),
+      nitrogen: p.nitrogen ?? "",
+      phosphorus: p.phosphorus ?? "",
+      potassium: p.potassium ?? "",
+      applicationDesc: p.applicationDesc ?? "",
+      dosage: p.dosage ?? "",
+      bestForCrops: p.bestForCrops ?? [],
     };
   });
 
@@ -422,6 +436,12 @@ export type AddProductInventoryInput = {
   storeName?: string;
   sellMode: "online_delivery" | "offline_store_only";
   existingProductId?: string;
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 };
 
 export async function createProductAndInventory(
@@ -497,6 +517,14 @@ export async function createProductAndInventory(
     sellMode,
     isOnline: sellMode === "online_delivery",
     originalProductId: input.existingProductId || null,
+
+    // Optional Product Insights fields
+    nitrogen: input.nitrogen?.trim() || null,
+    phosphorus: input.phosphorus?.trim() || null,
+    potassium: input.potassium?.trim() || null,
+    applicationDesc: input.applicationDesc?.trim() || null,
+    dosage: input.dosage?.trim() || null,
+    bestForCrops: input.bestForCrops || null,
   });
 
   if (isCopy && input.existingProductId) {

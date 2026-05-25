@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, Building2, BarChart3 } from "lucide-react";
+import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3 } from "lucide-react";
 import { cn } from "../../dashboard/_lib/cn";
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/admin/companies", label: "Company Pages", icon: Building2 },
   { href: "/admin/hubs", label: "Hubs", icon: Layers },
   { href: "/admin/reports", label: "Reports", icon: Mail },
+  { href: "/admin/messages", label: "Messages", icon: MessageSquare },
 ] as const;
 
 type Props = { mobileOpen: boolean; onClose: () => void };

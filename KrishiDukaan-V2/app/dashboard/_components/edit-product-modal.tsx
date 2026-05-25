@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft } from "lucide-react";
+import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
@@ -171,6 +171,15 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [toggling, setToggling]       = useState(false);
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  // Optional Product Insights fields
+  const [nitrogen, setNitrogen]               = useState(row.nitrogen || "");
+  const [phosphorus, setPhosphorus]           = useState(row.phosphorus || "");
+  const [potassium, setPotassium]             = useState(row.potassium || "");
+  const [applicationDesc, setApplicationDesc] = useState(row.applicationDesc || "");
+  const [dosage, setDosage]                   = useState(row.dosage || "");
+  const [bestForCrops, setBestForCrops]       = useState(row.bestForCrops?.join(", ") || "");
+  const [showAdditionalData, setShowAdditionalData] = useState(false);
+
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -214,6 +223,12 @@ export function EditProductModal({ row, onClose, onSaved }: {
         variants: parsedVariants,
         image: imageUrls[0] ?? "",
         images: imageUrls,
+        nitrogen: nitrogen.trim() || "",
+        phosphorus: phosphorus.trim() || "",
+        potassium: potassium.trim() || "",
+        applicationDesc: applicationDesc.trim() || "",
+        dosage: dosage.trim() || "",
+        bestForCrops: bestForCrops.trim() ? bestForCrops.split(",").map((s) => s.trim()).filter(Boolean) : [],
       });
       setMessage({ type: "ok", text: "Saved successfully." });
       onSaved();
@@ -317,6 +332,109 @@ export function EditProductModal({ row, onClose, onSaved }: {
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
                 placeholder={t('descModalPlaceholder')} />
             </label>
+          </div>
+
+          {/* Collapsible: Additional Data */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+            <button
+              type="button"
+              onClick={() => setShowAdditionalData(!showAdditionalData)}
+              className="flex items-center justify-between text-sm font-semibold text-on-surface w-full"
+            >
+              <span className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" /> {t('additionalDataLabel')} (Optional)
+              </span>
+              <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${showAdditionalData ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {showAdditionalData && (
+              <div className="flex flex-col gap-4 mt-2 border-t border-outline-variant/20 pt-4">
+                {/* Composition: Nitrogen, Phosphorus, Potassium */}
+                <div>
+                  <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-2">{t('composition')}</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="font-medium text-on-surface">{t('nitrogenN')}</span>
+                      <input
+                        type="text"
+                        disabled={saving}
+                        placeholder="e.g. 19%"
+                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
+                        value={nitrogen}
+                        onChange={(e) => setNitrogen(e.target.value)}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="font-medium text-on-surface">{t('phosphorusP')}</span>
+                      <input
+                        type="text"
+                        disabled={saving}
+                        placeholder="e.g. 19%"
+                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
+                        value={phosphorus}
+                        onChange={(e) => setPhosphorus(e.target.value)}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="font-medium text-on-surface">{t('potassiumK')}</span>
+                      <input
+                        type="text"
+                        disabled={saving}
+                        placeholder="e.g. 19%"
+                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
+                        value={potassium}
+                        onChange={(e) => setPotassium(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Application Details */}
+                <div className="border-t border-outline-variant/20 pt-4 flex flex-col gap-3">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wider block">{t('application')}</span>
+                  
+                  <label className="flex flex-col gap-1.5 text-sm">
+                    <span className="font-medium text-on-surface text-xs">{t('application') || 'Application'}</span>
+                    <textarea
+                      disabled={saving}
+                      rows={2}
+                      placeholder="e.g. Suitable for foliar spray and fertigation..."
+                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs resize-none"
+                      value={applicationDesc}
+                      onChange={(e) => setApplicationDesc(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-medium text-on-surface">{t('recommendedDosage')}</span>
+                    <input
+                      type="text"
+                      disabled={saving}
+                      placeholder="e.g. 3-5 gm / Litre"
+                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
+                      value={dosage}
+                      onChange={(e) => setDosage(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                {/* Best for Crops */}
+                <div className="border-t border-outline-variant/20 pt-4">
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-bold text-primary uppercase tracking-wider block mb-1">{t('bestForCrops')}</span>
+                    <span className="text-[10px] text-on-surface-variant font-normal mb-1">{t('formBestForCropsHint')}</span>
+                    <input
+                      type="text"
+                      disabled={saving}
+                      placeholder="e.g. Tomatoes, Wheat, Sugarcane, Grapes"
+                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
+                      value={bestForCrops}
+                      onChange={(e) => setBestForCrops(e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Variants ──────────────────────────────────────────────────── */}
