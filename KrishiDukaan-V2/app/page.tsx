@@ -157,7 +157,7 @@ export default function App() {
       storeId: params.get('store'),
       inviteCode,
       hubId: params.get('hub'),
-      manufacturerId: params.get('manufacturer'),
+      manufacturerId: params.get('manufacturer')?.replace(/^ /, '+') ?? null,
     };
   }, []);
 

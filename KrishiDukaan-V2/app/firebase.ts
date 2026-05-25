@@ -719,7 +719,64 @@ export async function requestRoleUpgrade(
       createdAt: now,
       updatedAt: now,
     }, { merge: true });
+
+    // Auto-create a company page if none exists yet
+    const cpRef = doc(db, 'companyPages', phone);
+    const cpSnap = await getDoc(cpRef);
+    if (!cpSnap.exists()) {
+      const locationStr = [details.city, details.state].filter(Boolean).join(', ');
+      await setDoc(cpRef, {
+        id: phone,
+        name: (details.businessName || userSnap.data().name || 'My Brand').trim(),
+        tagline: '',
+        about: '',
+        location: locationStr,
+        founded: '',
+        website: '',
+        socialProof: '',
+        certifications: [],
+        primaryColor: '#154212',
+        accentColor: '#f57c00',
+        phone: phone,
+        email: userSnap.data().email || '',
+        videos: [],
+        ownerPhone: phone,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await setDoc(userRef, { ownerCompanyId: phone, updatedAt: now }, { merge: true });
+    }
   }
+}
+
+export async function adminAutoSeedCompanyPage(userDocId: string): Promise<void> {
+  const userRef = doc(db, 'users', userDocId);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) throw new Error('User not found.');
+  const u = userSnap.data();
+  const now = serverTimestamp();
+  const cpRef = doc(db, 'companyPages', userDocId);
+  const locationStr = [u.city, u.state].filter(Boolean).join(', ');
+  await setDoc(cpRef, {
+    id: userDocId,
+    name: (u.businessName || u.shopName || u.name || 'My Brand').trim(),
+    tagline: '',
+    about: '',
+    location: locationStr,
+    founded: '',
+    website: u.website || '',
+    socialProof: '',
+    certifications: [],
+    primaryColor: '#154212',
+    accentColor: '#f57c00',
+    phone: userDocId,
+    email: u.email || '',
+    videos: [],
+    ownerPhone: userDocId,
+    createdAt: now,
+    updatedAt: now,
+  }, { merge: true });
+  await setDoc(userRef, { ownerCompanyId: userDocId, updatedAt: now }, { merge: true });
 }
 
 export async function fetchAllMarketplaceProducts(): Promise<MarketplaceProduct[]> {
@@ -1165,6 +1222,19 @@ export async function adminUpdateUser(uid: string, updates: {
   email?: string;
   phone?: string;
   role?: string;
+  isPaid?: boolean;
+  totalSeats?: number;
+  productCount?: number;
+  subscriptionStatus?: string;
+  shopName?: string;
+  businessName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  socialLinks?: { instagram?: string; facebook?: string; whatsapp?: string; youtube?: string };
+  latitude?: number | null;
+  longitude?: number | null;
 }): Promise<void> {
   const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
   if (updates.name !== undefined) payload.name = updates.name.trim();
@@ -1174,7 +1244,114 @@ export async function adminUpdateUser(uid: string, updates: {
     payload.role = updates.role;
     if (updates.role === 'admin') payload.isPaid = true;
   }
+  if (updates.isPaid !== undefined) payload.isPaid = updates.isPaid;
+  if (updates.totalSeats !== undefined) payload.totalSeats = Number(updates.totalSeats);
+  if (updates.productCount !== undefined) payload.productCount = Number(updates.productCount);
+  if (updates.subscriptionStatus !== undefined) payload.subscriptionStatus = updates.subscriptionStatus;
+  if (updates.shopName !== undefined) payload.shopName = updates.shopName.trim();
+  if (updates.businessName !== undefined) payload.businessName = updates.businessName.trim();
+  if (updates.address !== undefined) payload.address = updates.address.trim();
+  if (updates.city !== undefined) payload.city = updates.city.trim();
+  if (updates.state !== undefined) payload.state = updates.state.trim();
+  if (updates.pincode !== undefined) payload.pincode = updates.pincode.trim();
+  if (updates.socialLinks !== undefined) payload.socialLinks = updates.socialLinks;
+  if (updates.latitude !== undefined) payload.latitude = updates.latitude;
+  if (updates.longitude !== undefined) payload.longitude = updates.longitude;
   await setDoc(doc(db, 'users', uid), payload, { merge: true });
+}
+
+export async function fetchAllSubscriptions(): Promise<any[]> {
+  const snapshot = await getDocs(collection(db, 'subscriptions'));
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function adminRevokeSubscription(userDocId: string): Promise<void> {
+  await setDoc(doc(db, 'users', userDocId), {
+    isPaid: false,
+    subscriptionStatus: 'revoked',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function adminExtendSubscription(subId: string, userDocId: string, extraMonths: number): Promise<void> {
+  const subRef = doc(db, 'subscriptions', subId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) throw new Error('Subscription not found.');
+  const data = subSnap.data();
+  const currentExpiry: Date = data.expiryDate?.toDate ? data.expiryDate.toDate() : new Date();
+  const newExpiry = new Date(currentExpiry);
+  newExpiry.setMonth(newExpiry.getMonth() + extraMonths);
+  await setDoc(subRef, {
+    expiryDate: Timestamp.fromDate(newExpiry),
+    subscriptionStatus: 'active',
+    durationMonths: (data.durationMonths || 0) + extraMonths,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  await setDoc(doc(db, 'users', userDocId), {
+    isPaid: true,
+    subscriptionStatus: 'paid',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function adminManualActivate(
+  userDocId: string,
+  paymentId: string,
+  orderId: string,
+  seats: number,
+  durationMonths: number,
+): Promise<void> {
+  const userRef = doc(db, 'users', userDocId);
+  const userSnap = await getDoc(userRef);
+  const userData = userSnap.exists() ? userSnap.data() : {};
+  const currentSeats = Number(userData.totalSeats) || 0;
+  const now = new Date();
+  const expiry = new Date(now);
+  expiry.setMonth(expiry.getMonth() + durationMonths);
+  const PRICE_PER_SEAT: Record<number, number> = { 1: 21, 3: 54, 6: 90, 12: 144 };
+  const pricePerSeat = PRICE_PER_SEAT[durationMonths] ?? 21;
+  const totalAmount = seats * pricePerSeat;
+  const ts = serverTimestamp();
+
+  await setDoc(userRef, {
+    isPaid: true,
+    subscriptionStatus: 'paid',
+    totalSeats: currentSeats + seats,
+    updatedAt: ts,
+  }, { merge: true });
+
+  await addDoc(collection(db, 'payments'), {
+    userId: userDocId,
+    userPhone: userDocId,
+    amount: totalAmount,
+    seatCount: seats,
+    durationMonths,
+    currency: 'INR',
+    razorpayOrderId: orderId || null,
+    razorpayPaymentId: paymentId,
+    timestamp: ts,
+    status: 'manual_admin',
+  });
+
+  const role = userData.role === 'manufacturer' ? 'manufacturer' : 'retailer';
+  await addDoc(collection(db, 'subscriptions'), {
+    ownerId: userDocId,
+    ownerPhone: userDocId,
+    ownerType: role,
+    planName: 'Standard',
+    seatsPurchased: seats,
+    durationMonths,
+    amountPaid: totalAmount,
+    currency: 'INR',
+    razorpayOrderId: orderId || null,
+    razorpayPaymentId: paymentId,
+    subscriptionStatus: 'active',
+    startDate: Timestamp.fromDate(now),
+    expiryDate: Timestamp.fromDate(expiry),
+    activatedByAdmin: true,
+    createdAt: ts,
+    updatedAt: ts,
+  });
 }
 
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {
@@ -1245,6 +1422,14 @@ export type CompanyPageDoc = {
   email?: string;
   videos?: string[];
   ownerPhone?: string;        // phone of the assigned owner (THE LINK)
+  heroImage?: string;
+  logoUrl?: string;
+  socialLinks?: {
+    instagram?: string;
+    facebook?: string;
+    whatsapp?: string;
+    youtube?: string;
+  };
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -1303,10 +1488,8 @@ export async function fetchCompanyPageById(companyId: string): Promise<CompanyPa
 }
 
 export async function saveCompanyPage(companyId: string, data: Partial<CompanyPageDoc>): Promise<void> {
-  await setDoc(doc(db, 'companyPages', companyId), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
+  const clean = stripUndefined(data as any);
+  await setDoc(doc(db, 'companyPages', companyId), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 /** Admin: assign a phone number as the owner of a company page.
@@ -1350,19 +1533,26 @@ export async function fetchCompanyProducts(companyId: string): Promise<CompanyPr
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as CompanyProduct));
 }
 
+function stripUndefined(obj: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(
+    Object.entries(obj)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [
+        k,
+        v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+          ? stripUndefined(v)
+          : v,
+      ])
+  );
+}
+
 export async function saveCompanyProduct(product: Omit<CompanyProduct, 'id'>, productId?: string): Promise<string> {
+  const clean = stripUndefined(product as any);
   if (productId) {
-    await setDoc(doc(db, 'companyProducts', productId), {
-      ...product,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+    await setDoc(doc(db, 'companyProducts', productId), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
     return productId;
   } else {
-    const ref = await addDoc(collection(db, 'companyProducts'), {
-      ...product,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    const ref = await addDoc(collection(db, 'companyProducts'), { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     return ref.id;
   }
 }
@@ -1380,20 +1570,64 @@ export async function fetchCompanyStores(companyId: string): Promise<CompanyStor
 }
 
 export async function saveCompanyStore(store: Omit<CompanyStore, 'id'>, storeId?: string): Promise<string> {
+  const clean = stripUndefined(store as any);
   if (storeId) {
-    await setDoc(doc(db, 'companyStores', storeId), {
-      ...store,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+    await setDoc(doc(db, 'companyStores', storeId), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
     return storeId;
   } else {
-    const ref = await addDoc(collection(db, 'companyStores'), {
-      ...store,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    const ref = await addDoc(collection(db, 'companyStores'), { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     return ref.id;
   }
+}
+
+export async function fetchUserProfileByPhone(phone: string): Promise<Record<string, any> | null> {
+  try {
+    const snap = await getDoc(doc(db, 'users', phone));
+    return snap.exists() ? (snap.data() as Record<string, any>) : null;
+  } catch {
+    return null;
+  }
+}
+
+export type RetailerNetworkStore = {
+  phone: string;
+  name: string;
+  ownerName: string;
+  address: string;
+  lat: number;
+  lng: number;
+  storePhone: string;
+};
+
+export async function fetchManufacturerNetworkStores(manufacturerPhone: string): Promise<RetailerNetworkStore[]> {
+  const [snap, legacySnap] = await Promise.all([
+    getDocs(query(collection(db, 'manufacturerNetwork'), where('manufacturerPhone', '==', manufacturerPhone))),
+    getDocs(query(collection(db, 'manufacturerRetailers'), where('manufacturerPhone', '==', manufacturerPhone))).catch(() => ({ docs: [] })),
+  ]);
+  const allLinks = [...snap.docs, ...(legacySnap as any).docs].map((d: any) => d.data());
+  const seenPhones = new Set<string>();
+  const phones = allLinks
+    .map((l: any) => l.retailerPhone as string)
+    .filter((p): p is string => !!p && !seenPhones.has(p) && !!seenPhones.add(p));
+  const profiles = await Promise.all(
+    phones.map(async (phone) => {
+      try {
+        const s = await getDoc(doc(db, 'users', phone));
+        if (!s.exists()) return null;
+        const d = s.data();
+        return {
+          phone,
+          name: d.shopName || d.name || phone,
+          ownerName: d.name || '',
+          address: [d.address, d.city, d.state, d.pincode].filter(Boolean).join(', '),
+          lat: d.latitude ? Number(d.latitude) : 0,
+          lng: d.longitude ? Number(d.longitude) : 0,
+          storePhone: d.phone || phone,
+        } as RetailerNetworkStore;
+      } catch { return null; }
+    })
+  );
+  return profiles.filter((p): p is RetailerNetworkStore => p !== null);
 }
 
 export async function deleteCompanyStore(storeId: string): Promise<void> {

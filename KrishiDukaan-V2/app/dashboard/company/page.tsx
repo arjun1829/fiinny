@@ -11,17 +11,11 @@ import {
 } from "lucide-react";
 import {
   auth, getUserProfile, db,
-  fetchCompanyPageById,
-  saveCompanyPage,
-  fetchCompanyProducts,
-  saveCompanyProduct,
-  deleteCompanyProduct,
-  fetchCompanyStores,
-  saveCompanyStore,
-  deleteCompanyStore,
-  type CompanyPageDoc,
-  type CompanyProduct,
-  type CompanyStore,
+  fetchCompanyPageById, saveCompanyPage,
+  fetchCompanyProducts, saveCompanyProduct, deleteCompanyProduct,
+  fetchCompanyStores, saveCompanyStore, deleteCompanyStore,
+  fetchManufacturerProducts, fetchManufacturerNetworkStores,
+  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore,
 } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -55,11 +49,11 @@ type Tab = "brand" | "products" | "stores" | "videos";
 // ─── Brand Info Tab ───────────────────────────────────────────────────────────
 
 function BrandTab({
-  company,
-  onSaved,
+  company, onSaved, userProfile,
 }: {
   company: CompanyPageDoc;
   onSaved: (updated: Partial<CompanyPageDoc>) => void;
+  userProfile: any;
 }) {
   const [form, setForm] = useState({
     name: company.name ?? "",
@@ -78,6 +72,35 @@ function BrandTab({
   const [certifications, setCertifications] = useState<string[]>(company.certifications ?? []);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<Status>(null);
+  const [syncDismissed, setSyncDismissed] = useState(false);
+
+  // Build profile-sourced values
+  const profileData = userProfile ? {
+    name: userProfile.businessName || userProfile.shopName || userProfile.name || "",
+    phone: userProfile.phone || userProfile.id || "",
+    email: userProfile.email || "",
+    location: [userProfile.city, userProfile.state].filter(Boolean).join(", "),
+    website: userProfile.website || "",
+  } : null;
+
+  // Detect which fields differ between current form and profile
+  const syncFields = profileData ? (Object.entries(profileData) as [keyof typeof profileData, string][]).filter(
+    ([k, v]) => v && form[k as keyof typeof form] !== v
+  ) : [];
+  const showSyncBanner = !syncDismissed && syncFields.length > 0;
+
+  const applySync = () => {
+    if (!profileData) return;
+    setForm(p => ({
+      ...p,
+      name: profileData.name || p.name,
+      phone: profileData.phone || p.phone,
+      email: profileData.email || p.email,
+      location: profileData.location || p.location,
+      website: profileData.website || p.website,
+    }));
+    setSyncDismissed(true);
+  };
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [key]: e.target.value }));
@@ -122,6 +145,30 @@ function BrandTab({
   return (
     <div className="space-y-6">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
+
+      {/* Sync from profile banner */}
+      {showSyncBanner && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-primary flex items-center gap-2">
+              <Sparkles className="w-4 h-4 shrink-0" /> Your profile has data not yet on this page
+            </p>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Auto-fill: {syncFields.map(([k]) => k).join(", ")} — from your registered account details.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={applySync}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90">
+              <Check className="w-3.5 h-3.5" /> Sync from Profile
+            </button>
+            <button type="button" onClick={() => setSyncDismissed(true)}
+              className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-5">
         <h3 className="text-xs font-black uppercase tracking-widest text-primary">Basic Information</h3>
@@ -441,12 +488,19 @@ function ProductForm({
 
 // ─── Products Tab ─────────────────────────────────────────────────────────────
 
-function ProductsTab({ companyId }: { companyId: string }) {
+function ProductsTab({ companyId, uid }: { companyId: string; uid: string }) {
   const [products, setProducts] = useState<CompanyProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<CompanyProduct | null>(null);
   const [status, setStatus] = useState<Status>(null);
+
+  // Import from inventory state
+  const [inventoryProducts, setInventoryProducts] = useState<any[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [importPanel, setImportPanel] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -457,6 +511,60 @@ function ProductsTab({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadInventory = useCallback(async () => {
+    if (inventoryProducts.length > 0) { setImportPanel(true); return; }
+    setInventoryLoading(true);
+    try {
+      // Try both uid and phone (companyId) as ownerId
+      const [byUid, byPhone] = await Promise.all([
+        fetchManufacturerProducts(uid).catch(() => []),
+        uid !== companyId ? fetchManufacturerProducts(companyId).catch(() => []) : Promise.resolve([]),
+      ]);
+      const seen = new Set<string>();
+      const merged = [...byUid, ...byPhone].filter(p => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id); return true;
+      });
+      setInventoryProducts(merged);
+      setImportPanel(true);
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, [uid, companyId, inventoryProducts.length]);
+
+  const alreadyImported = new Set(products.map(p => p.name?.toLowerCase().trim()));
+
+  const handleImport = async () => {
+    const toImport = inventoryProducts.filter(p => selected.has(p.id));
+    if (!toImport.length) return;
+    setImporting(true);
+    try {
+      for (const p of toImport) {
+        await saveCompanyProduct({
+          companyId,
+          name: p.name || p.fullName || "",
+          fullName: p.fullName || p.name || "",
+          price: Number(p.price) || 0,
+          oldPrice: p.oldPrice ? Number(p.oldPrice) : undefined,
+          category: p.category || "general",
+          description: p.description || "",
+          image: p.image || (p.images?.[0] ?? ""),
+          stock: p.stock || "In Stock",
+          application: p.application || undefined,
+          benefits: p.benefits || undefined,
+        });
+      }
+      setStatus({ type: "ok", msg: `✓ Imported ${toImport.length} product(s) from your inventory.` });
+      setSelected(new Set());
+      setImportPanel(false);
+      load();
+    } catch (err) {
+      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleDelete = async (product: CompanyProduct) => {
     if (!product.id) return;
@@ -496,23 +604,100 @@ function ProductsTab({ companyId }: { companyId: string }) {
     <div className="space-y-5">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
 
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-on-surface-variant">{products.length} product{products.length !== 1 ? "s" : ""} in Firestore</p>
-        <button type="button" onClick={() => setAdding(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-          <Plus className="w-4 h-4" /> Add Product
-        </button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-on-surface-variant">{products.length} product{products.length !== 1 ? "s" : ""} on brand page</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={loadInventory} disabled={inventoryLoading}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10 disabled:opacity-60">
+            {inventoryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Import from Inventory
+          </button>
+          <button type="button" onClick={() => setAdding(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
+            <Plus className="w-4 h-4" /> Add New
+          </button>
+        </div>
       </div>
+
+      {/* Import from inventory panel */}
+      {importPanel && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/3 p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-on-surface text-sm">Your Inventory Products</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">Select products to publish on your brand page. Already-added ones are marked.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {selected.size > 0 && (
+                <button type="button" onClick={handleImport} disabled={importing}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-60">
+                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Import {selected.size}
+                </button>
+              )}
+              <button type="button" onClick={() => setImportPanel(false)}
+                className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          {inventoryProducts.length === 0 ? (
+            <p className="text-sm text-on-surface-variant py-4 text-center">No products found in your inventory yet.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {inventoryProducts.map(p => {
+                const imported = alreadyImported.has((p.name || p.fullName || "").toLowerCase().trim());
+                const isSelected = selected.has(p.id);
+                return (
+                  <button key={p.id} type="button"
+                    disabled={imported}
+                    onClick={() => setSelected(prev => {
+                      const next = new Set(prev);
+                      next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+                      return next;
+                    })}
+                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                      imported ? "opacity-50 cursor-not-allowed bg-surface-container border-outline-variant/20"
+                        : isSelected ? "border-primary/50 bg-primary/8 shadow-sm"
+                        : "border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30"
+                    }`}>
+                    {(p.image || p.images?.[0]) ? (
+                      <img src={p.image || p.images?.[0]} alt="" className="w-10 h-10 rounded-lg object-contain bg-gray-50 shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <Package className="w-5 h-5 text-primary/40" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-on-surface truncate">{p.name || p.fullName}</p>
+                      <p className="text-xs text-on-surface-variant">₹{p.price} · {p.category}</p>
+                    </div>
+                    {imported ? (
+                      <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">Added</span>
+                    ) : isSelected ? (
+                      <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shrink-0">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 rounded-full border-2 border-outline-variant/40 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading…
         </div>
       ) : products.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-2">
+        <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Package className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No products yet.</p>
-          <p className="text-sm text-on-surface-variant">Click &quot;Add Product&quot; to create your first product in Firestore.</p>
+          <p className="font-semibold text-on-surface-variant">No products on brand page yet.</p>
+          <p className="text-sm text-on-surface-variant">Click <strong>Import from Inventory</strong> to pull in products you&apos;ve already added, or <strong>Add New</strong> to create from scratch.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -703,12 +888,18 @@ function StoreForm({
 
 // ─── Stores Tab ───────────────────────────────────────────────────────────────
 
-function StoresTab({ companyId }: { companyId: string }) {
+function StoresTab({ companyId, userPhone }: { companyId: string; userPhone: string }) {
   const [stores, setStores] = useState<CompanyStore[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<CompanyStore | null>(null);
   const [status, setStatus] = useState<Status>(null);
+
+  // Import from network state
+  const [networkStores, setNetworkStores] = useState<RetailerNetworkStore[]>([]);
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkPanel, setNetworkPanel] = useState(false);
+  const [importingStore, setImportingStore] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -719,6 +910,43 @@ function StoresTab({ companyId }: { companyId: string }) {
   }, [companyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadNetwork = useCallback(async () => {
+    if (networkStores.length > 0) { setNetworkPanel(true); return; }
+    setNetworkLoading(true);
+    try {
+      const result = await fetchManufacturerNetworkStores(userPhone);
+      setNetworkStores(result);
+      setNetworkPanel(true);
+    } catch {
+      setStatus({ type: "err", msg: "Could not load retailer network." });
+    } finally {
+      setNetworkLoading(false);
+    }
+  }, [userPhone, networkStores.length]);
+
+  const alreadyImported = new Set(stores.map(s => s.name?.toLowerCase().trim()));
+
+  const handleImportStore = async (retailer: RetailerNetworkStore) => {
+    setImportingStore(retailer.phone);
+    try {
+      await saveCompanyStore({
+        companyId,
+        name: retailer.name,
+        ownerName: retailer.ownerName || undefined,
+        phone: retailer.storePhone,
+        address: retailer.address,
+        lat: retailer.lat,
+        lng: retailer.lng,
+      });
+      setStatus({ type: "ok", msg: `✓ "${retailer.name}" added to your brand page stores.` });
+      load();
+    } catch (err) {
+      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
+    } finally {
+      setImportingStore(null);
+    }
+  };
 
   const handleDelete = async (store: CompanyStore) => {
     if (!store.id) return;
@@ -758,23 +986,79 @@ function StoresTab({ companyId }: { companyId: string }) {
     <div className="space-y-5">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
 
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-on-surface-variant">{stores.length} store{stores.length !== 1 ? "s" : ""} in Firestore</p>
-        <button type="button" onClick={() => setAdding(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-          <Plus className="w-4 h-4" /> Add Store
-        </button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-on-surface-variant">{stores.length} store{stores.length !== 1 ? "s" : ""} on brand page</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={loadNetwork} disabled={networkLoading}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10 disabled:opacity-60">
+            {networkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Import from Network
+          </button>
+          <button type="button" onClick={() => setAdding(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
+            <Plus className="w-4 h-4" /> Add New
+          </button>
+        </div>
       </div>
+
+      {/* Import from retailer network panel */}
+      {networkPanel && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/3 p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-on-surface text-sm">Your Retailer Network</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">Retailers selling your products — add them as "Where to Buy" stores on your brand page.</p>
+            </div>
+            <button type="button" onClick={() => setNetworkPanel(false)}
+              className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {networkStores.length === 0 ? (
+            <p className="text-sm text-on-surface-variant py-4 text-center">No retailers found in your network yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {networkStores.map((retailer) => {
+                const imported = alreadyImported.has(retailer.name?.toLowerCase().trim());
+                return (
+                  <div key={retailer.phone}
+                    className="flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                      <Store className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-on-surface text-sm truncate">{retailer.name}</p>
+                      <p className="text-xs text-on-surface-variant truncate">
+                        {retailer.address || retailer.storePhone}
+                      </p>
+                    </div>
+                    {imported ? (
+                      <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">Added</span>
+                    ) : (
+                      <button type="button" onClick={() => handleImportStore(retailer)}
+                        disabled={importingStore === retailer.phone}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-60 shrink-0">
+                        {importingStore === retailer.phone ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                        Add
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading…
         </div>
       ) : stores.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-2">
+        <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Store className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No stores yet.</p>
-          <p className="text-sm text-on-surface-variant">Click &quot;Add Store&quot; to list distribution points in Firestore.</p>
+          <p className="font-semibold text-on-surface-variant">No stores on brand page yet.</p>
+          <p className="text-sm text-on-surface-variant">Click <strong>Import from Network</strong> to add your retailers, or <strong>Add New</strong> to add manually.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -954,12 +1238,23 @@ export default function CompanyDashboardPage() {
   const [company, setCompany] = useState<CompanyPageDoc | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("brand");
   const [error, setError] = useState<string | null>(null);
+  const [uid, setUid] = useState("");
+  const [userPhone, setUserPhone] = useState("");
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) { setLoading(false); return; }
       try {
         const profile = await getUserProfile(user.uid);
+        setUserProfile(profile);
+        setUid(user.uid);
+
+        // Resolve phone: from uidIndex or profile
+        const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid)).catch(() => null);
+        const phone: string = idxSnap?.exists() ? idxSnap.data().phone : ((profile as any)?.phone || user.uid);
+        setUserPhone(phone);
+
         const companyId = (profile as any)?.ownerCompanyId;
         if (!companyId) {
           setError("No company page is assigned to your account. Ask an admin to assign your phone number.");
@@ -1061,10 +1356,11 @@ export default function CompanyDashboardPage() {
           <BrandTab
             company={company}
             onSaved={(updated) => setCompany((p) => p ? { ...p, ...updated } : p)}
+            userProfile={userProfile}
           />
         )}
-        {activeTab === "products" && <ProductsTab companyId={company.id} />}
-        {activeTab === "stores" && <StoresTab companyId={company.id} />}
+        {activeTab === "products" && <ProductsTab companyId={company.id} uid={uid} />}
+        {activeTab === "stores" && <StoresTab companyId={company.id} userPhone={userPhone} />}
         {activeTab === "videos" && (
           <VideosTab
             companyId={company.id}
