@@ -1,5 +1,6 @@
 import { doc, GeoPoint, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { generateSlug } from "./brand-page-types";
 
 export type DashboardProfileRole = "retailer" | "manufacturer";
 
@@ -215,6 +216,11 @@ export async function saveManufacturerProfile(
   // Phone is the canonical doc ID so profile and subcollections share the same parent doc
   const manufacturerDocId = phone || uid;
 
+  // Read existing doc to check for slug (only generate once — slugs must be stable)
+  const existingSnap = await getDoc(doc(db, "manufacturers", manufacturerDocId));
+  const existingSlug = existingSnap.exists() ? String(existingSnap.data().slug ?? "") : "";
+  const slug = existingSlug || generateSlug(form.businessName.trim(), form.phone.trim() || phone || uid);
+
   await setDoc(
     doc(db, "manufacturers", manufacturerDocId),
     {
@@ -231,6 +237,7 @@ export async function saveManufacturerProfile(
         state:   form.state.trim(),
         pincode: form.pincode.trim(),
       },
+      slug,
       createdAt: existingCreatedAt ?? serverTimestamp(),
       updatedAt: serverTimestamp(),
     },

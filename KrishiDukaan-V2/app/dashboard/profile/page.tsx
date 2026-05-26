@@ -3,8 +3,9 @@
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X, TrendingUp } from "lucide-react";
+import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X, TrendingUp, ExternalLink, Building2 } from "lucide-react";
 import { auth, db, requestRoleUpgrade } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { HelperIcon } from "../../../components/helpers";
@@ -124,6 +125,7 @@ function ProfilePageInner() {
   const [tagline,        setTagline]        = useState("");
   const [totalSeats,     setTotalSeats]     = useState(0);
 
+  const [slug,      setSlug]      = useState<string>("");
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -171,6 +173,7 @@ function ProfilePageInner() {
           youtube:   d.socialLinks?.youtube   ?? "",
         });
         setTagline(d.tagline ?? "");
+        if (role === "manufacturer") setSlug(String(d.slug ?? ""));
       }
       // onlineDelivery and totalSeats live on users/{phone} (new schema) — resolve via uidIndex
       try {
@@ -625,6 +628,53 @@ function ProfilePageInner() {
             </div>
           </div>
         </div>
+
+        {/* Company Page section — manufacturers only */}
+        {userRole === "manufacturer" && (
+          <section className="mb-6 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-on-surface flex items-center gap-2">
+                <Building2 className="h-4 w-4" /> Company Page
+              </h2>
+              {slug && (
+                <a
+                  href={`/brand/${slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3 w-3" /> View live
+                </a>
+              )}
+            </div>
+            <p className="mb-4 text-xs text-on-surface-variant">
+              Your public brand page. Customize it with a tagline, about section, products, videos, and more.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/company"
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit Brand Page
+              </Link>
+              {slug && (
+                <a
+                  href={`/brand/${slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-white px-4 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> View Brand Page
+                </a>
+              )}
+              {!slug && (
+                <p className="text-xs text-on-surface-variant italic">
+                  Save your profile once to generate your brand page URL.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Products grid */}
         {userRole === "manufacturer" && (

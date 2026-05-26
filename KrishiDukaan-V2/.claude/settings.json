@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(find /Users/sai/Work/fiinnybusiness/KrishiDukaan-V2 -name \"firestore.rules\" 2>/dev/null; find /Users/sai/Work/fiinnybusiness -maxdepth 3 -name \"firestore.rules\" 2>/dev/null)",
-      "Read(//Users/sai/Work/fiinnybusiness/**)"
+      "Read(//Users/sai/Work/fiinnybusiness/**)",
+      "Bash(mkdir -p /Users/sai/Work/fiinnybusiness/KrishiDukaan-V2/app/brand/\\\\[slug\\\\])",
+      "Bash(node_modules/.bin/firebase deploy *)"
+    ],
+    "additionalDirectories": [
+      "/Users/sai/Work/fiinnybusiness/KrishiDukaan-V2/app/brand"
     ]
   }
 }

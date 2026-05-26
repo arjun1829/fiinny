@@ -903,21 +903,51 @@ export default function App() {
         );
       case 'subscription':
         return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
-      case 'brand':
+      case 'brand': {
+        const mfrId = selectedManufacturerId || 'golden-future-life-care';
+        const mfrConst = MANUFACTURERS[mfrId];
+        // Adapt legacy constants to the new BrandView prop shape
+        const adaptedBrand = mfrConst ? {
+          phone: mfrConst.phone || mfrId,
+          uid: null,
+          businessName: mfrConst.name,
+          ownerName: "",
+          address: { city: mfrConst.location.split(',')[0]?.trim() || "", state: mfrConst.location.split(',').pop()?.trim() || "", line1: mfrConst.location },
+          geo: null,
+          email: mfrConst.email || "",
+          slug: mfrConst.id,
+          tagline: mfrConst.tagline,
+          about: mfrConst.about,
+          establishedYear: mfrConst.founded,
+          website: mfrConst.website || "",
+          socialProof: mfrConst.socialProof,
+          certifications: mfrConst.certifications,
+          videos: mfrConst.videos || [],
+          primaryColor: mfrConst.primaryColor,
+          accentColor: mfrConst.accentColor,
+          logo: "",
+          banner: "",
+        } : {
+          phone: "", uid: null, businessName: "Brand not found", ownerName: "", address: { city: "", state: "", line1: "" }, geo: null, email: "", slug: mfrId,
+          tagline: "", about: "", establishedYear: "", website: "", socialProof: "", certifications: [], videos: [], primaryColor: "#154212", accentColor: "#f57c00", logo: "", banner: "",
+        };
+        const adaptedProducts = mergedProducts
+          .filter((p) => p.manufacturerId === mfrId)
+          .map((p) => ({ id: p.id, name: p.name, category: p.category, price: p.price, image: p.image || "" }));
         return (
           <BrandView
-            manufacturerId={selectedManufacturerId || 'golden-future-life-care'}
-            products={mergedProducts}
-            stores={mergedStores}
+            brand={adaptedBrand}
+            products={adaptedProducts}
+            retailers={[]}
             onProductClick={navigateToProduct}
-            onFindNearYou={(_mfgId) => {
+            onFindNearYou={() => {
               setProductSearch('');
               setSelectedCategory('fertilizers');
               navigate('market');
             }}
-            onStoreClick={navigateToMap}
           />
         );
+      }
       case 'about':
         return <AboutView />;
       default:
