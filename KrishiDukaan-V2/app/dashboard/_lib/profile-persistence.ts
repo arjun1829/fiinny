@@ -244,11 +244,13 @@ export async function saveManufacturerProfile(
     { merge: true },
   );
 
-  // Sync email to users/{phone} so notifications work
-  if (trimmedEmail) {
-    const target = phone ? doc(db, "users", phone) : doc(db, "users", uid);
-    await setDoc(target, { email: trimmedEmail, updatedAt: serverTimestamp() }, { merge: true });
-  }
+  // Sync email + profileComplete flag to users/{phone}
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(
+    userTarget,
+    { profileComplete: true, ...(trimmedEmail ? { email: trimmedEmail } : {}), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
 }
 
 export async function saveRetailerProfile(
@@ -288,10 +290,12 @@ export async function saveRetailerProfile(
     { merge: true },
   );
 
-  // Sync email to users/{phone} so notifications work
-  if (trimmedEmail) {
-    const phone = await phoneFromUid(uid);
-    const target = phone ? doc(db, "users", phone) : doc(db, "users", uid);
-    await setDoc(target, { email: trimmedEmail, updatedAt: serverTimestamp() }, { merge: true });
-  }
+  // Sync email + profileComplete flag to users/{phone}
+  const rPhone = await phoneFromUid(uid);
+  const rTarget = rPhone ? doc(db, "users", rPhone) : doc(db, "users", uid);
+  await setDoc(
+    rTarget,
+    { profileComplete: true, ...(trimmedEmail ? { email: trimmedEmail } : {}), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
 }

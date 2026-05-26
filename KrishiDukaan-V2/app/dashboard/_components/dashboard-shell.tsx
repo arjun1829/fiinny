@@ -7,7 +7,7 @@ import { LayoutDashboard, Menu, Package, ReceiptText, Star, UserCircle2 } from "
 import { Sidebar } from "./sidebar";
 import { useI18n } from "../../i18n/I18nContext";
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({ children, banner }: { children: React.ReactNode; banner?: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { t } = useI18n();
@@ -36,6 +36,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-semibold text-on-surface">{t('dashTitle')}</span>
         </header>
 
+        {banner && <div className="border-b border-amber-200">{banner}</div>}
         <main className="mx-auto w-full max-w-7xl p-4 pb-24 md:p-8 md:pb-8">{children}</main>
       </div>
 
