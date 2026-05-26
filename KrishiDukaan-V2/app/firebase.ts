@@ -16,6 +16,7 @@ import {
   Timestamp,
   updateDoc,
   where,
+  GeoPoint,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
@@ -1284,7 +1285,106 @@ export async function adminUpdateUser(uid: string, updates: {
   if (updates.socialLinks !== undefined) payload.socialLinks = updates.socialLinks;
   if (updates.latitude !== undefined) payload.latitude = updates.latitude;
   if (updates.longitude !== undefined) payload.longitude = updates.longitude;
-  await setDoc(doc(db, 'users', uid), payload, { merge: true });
+  
+  // 1. Update users/{uid}
+  const userRef = doc(db, 'users', uid);
+  await setDoc(userRef, payload, { merge: true });
+
+  // 2. Fetch current user data to see current role & phone
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    const userData = userSnap.data();
+    const role = updates.role || userData.role;
+    const phone = updates.phone || userData.phone || (uid.startsWith('+') ? uid : '');
+    const userAuthUid = userData.uid || (uid.startsWith('+') ? '' : uid);
+
+    if (role === 'retailer' || role === 'manufacturer') {
+      const isRetailer = role === 'retailer';
+      const profileCol = isRetailer ? 'retailers' : 'manufacturers';
+      const profileDocId = isRetailer ? (userAuthUid || phone || uid) : (phone || userAuthUid || uid);
+
+      if (profileDocId) {
+        const profileRef = doc(db, profileCol, profileDocId);
+        const profileUpdates: Record<string, any> = {
+          updatedAt: serverTimestamp(),
+        };
+
+        if (updates.name !== undefined) profileUpdates.ownerName = updates.name.trim();
+        if (updates.phone !== undefined) profileUpdates.phone = updates.phone.trim();
+        if (updates.email !== undefined) profileUpdates.email = updates.email.trim();
+
+        if (isRetailer) {
+          if (updates.shopName !== undefined) profileUpdates.shopName = updates.shopName.trim();
+        } else {
+          if (updates.businessName !== undefined) profileUpdates.businessName = updates.businessName.trim();
+        }
+
+        if (updates.address !== undefined || updates.city !== undefined || updates.state !== undefined || updates.pincode !== undefined) {
+          const existingSnap = await getDoc(profileRef);
+          const existingData = existingSnap.exists() ? existingSnap.data() : {};
+          const existingAddr = existingData.address || {};
+
+          profileUpdates.address = {
+            line1: updates.address !== undefined ? updates.address.trim() : (existingAddr.line1 || ''),
+            city: updates.city !== undefined ? updates.city.trim() : (existingAddr.city || ''),
+            state: updates.state !== undefined ? updates.state.trim() : (existingAddr.state || ''),
+            pincode: updates.pincode !== undefined ? updates.pincode.trim() : (existingAddr.pincode || ''),
+          };
+        }
+
+        if (updates.latitude !== undefined && updates.longitude !== undefined && updates.latitude !== null && updates.longitude !== null) {
+          profileUpdates.geo = new GeoPoint(updates.latitude, updates.longitude);
+        }
+
+        if (updates.socialLinks !== undefined) {
+          profileUpdates.socialLinks = updates.socialLinks;
+        }
+
+        await setDoc(profileRef, profileUpdates, { merge: true });
+      }
+
+      // Sync to profiles/{phone}
+      if (phone) {
+        const globalProfileRef = doc(db, 'profiles', phone);
+        const globalUpdates: Record<string, any> = {
+          phone,
+          role,
+          updatedAt: serverTimestamp(),
+        };
+
+        if (updates.name !== undefined) globalUpdates.ownerName = updates.name.trim();
+        if (isRetailer) {
+          if (updates.shopName !== undefined) {
+            globalUpdates.shopName = updates.shopName.trim();
+            globalUpdates.businessName = updates.shopName.trim();
+          }
+        } else {
+          if (updates.businessName !== undefined) globalUpdates.businessName = updates.businessName.trim();
+        }
+
+        if (updates.email !== undefined) globalUpdates.email = updates.email.trim();
+
+        if (updates.address !== undefined || updates.city !== undefined || updates.state !== undefined || updates.pincode !== undefined) {
+          const existingSnap = await getDoc(globalProfileRef);
+          const existingData = existingSnap.exists() ? existingSnap.data() : {};
+          const existingAddr = existingData.address || {};
+
+          globalUpdates.address = {
+            line1: updates.address !== undefined ? updates.address.trim() : (existingAddr.line1 || ''),
+            city: updates.city !== undefined ? updates.city.trim() : (existingAddr.city || ''),
+            state: updates.state !== undefined ? updates.state.trim() : (existingAddr.state || ''),
+            pincode: updates.pincode !== undefined ? updates.pincode.trim() : (existingAddr.pincode || ''),
+          };
+        }
+
+        if (updates.latitude !== undefined && updates.longitude !== undefined && updates.latitude !== null && updates.longitude !== null) {
+          globalUpdates.geo = new GeoPoint(updates.latitude, updates.longitude);
+        }
+
+        await setDoc(globalProfileRef, globalUpdates, { merge: true });
+      }
+    }
+  }
 }
 
 export async function fetchAllSubscriptions(): Promise<any[]> {
@@ -1617,6 +1717,7 @@ export async function fetchUserProfileByPhone(phone: string): Promise<Record<str
 }
 
 export type RetailerNetworkStore = {
+  id: string;
   phone: string;
   name: string;
   ownerName: string;
@@ -1643,6 +1744,7 @@ export async function fetchManufacturerNetworkStores(manufacturerPhone: string):
         if (!s.exists()) return null;
         const d = s.data();
         return {
+          id: s.id || phone,
           phone,
           name: d.shopName || d.name || phone,
           ownerName: d.name || '',
@@ -1695,4 +1797,71 @@ export async function fetchContactMessages(): Promise<ContactMessage[]> {
 
 export async function deleteContactMessage(id: string): Promise<void> {
   await deleteDoc(doc(db, 'contactMessages', id));
+}
+
+export interface BusinessProfileDetails {
+  shopName?: string;
+  businessName?: string;
+  address?: {
+    line1?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+  };
+  latitude?: number | null;
+  longitude?: number | null;
+  socialLinks?: {
+    instagram?: string;
+    facebook?: string;
+    whatsapp?: string;
+    youtube?: string;
+  };
+}
+
+export async function fetchBusinessProfile(uid: string, role: string, phone?: string): Promise<BusinessProfileDetails | null> {
+  try {
+    const col = role === 'manufacturer' ? 'manufacturers' : 'retailers';
+    let snap;
+    if (role === 'manufacturer') {
+      const docId = phone || uid;
+      snap = await getDoc(doc(db, col, docId));
+      if (!snap.exists() && docId !== uid) {
+        snap = await getDoc(doc(db, col, uid));
+      }
+    } else {
+      snap = await getDoc(doc(db, col, uid));
+      if (!snap.exists() && phone) {
+        snap = await getDoc(doc(db, col, phone));
+      }
+    }
+
+    if (snap.exists()) {
+      const data = snap.data();
+      if (!data) return null;
+      const addr = data.address || {};
+      const geo = data.geo;
+      let lat = data.latitude ?? null;
+      let lng = data.longitude ?? null;
+      if (geo && typeof geo.latitude === 'number') {
+        lat = geo.latitude;
+        lng = geo.longitude;
+      }
+      return {
+        shopName: data.shopName || undefined,
+        businessName: data.businessName || undefined,
+        address: {
+          line1: addr.line1 || undefined,
+          city: addr.city || undefined,
+          state: addr.state || undefined,
+          pincode: addr.pincode || undefined,
+        },
+        latitude: lat,
+        longitude: lng,
+        socialLinks: data.socialLinks || data.social || undefined,
+      };
+    }
+  } catch (error) {
+    console.error('Error fetching business profile:', error);
+  }
+  return null;
 }

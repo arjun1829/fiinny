@@ -1,24 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Loader2, Building2, Package, Store, Video,
-  Plus, Pencil, Trash2, Save, X, Check,
-  Phone, Mail, Globe, Youtube, MapPin,
-  ChevronDown, ChevronUp, Image as ImageIcon,
+  Plus, Save, X, Check,
+  Phone, Youtube, MapPin,
   Tag, Info, Sparkles
 } from "lucide-react";
 import {
   auth, getUserProfile, db,
   fetchCompanyPageById, saveCompanyPage,
-  fetchCompanyProducts, saveCompanyProduct, deleteCompanyProduct,
-  fetchCompanyStores, saveCompanyStore, deleteCompanyStore,
-  fetchManufacturerProducts, fetchManufacturerNetworkStores, fetchRetailerProfiles,
-  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore, type StoreAutocompleteOption,
+  fetchManufacturerProducts, fetchManufacturerNetworkStores,
+  type CompanyPageDoc, type RetailerNetworkStore,
 } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { usePlacesInput } from "../../lib/usePlacesInput";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -286,410 +282,29 @@ function BrandTab({
   );
 }
 
-// ─── Product Form (shared for add + edit) ─────────────────────────────────────
-
-const CATEGORIES = ["fertilizers", "pesticides", "seeds", "tools", "general"];
-const STOCK_OPTIONS = ["In Stock", "Fast Selling", "Trending", "Low Stock", "Out of Stock"];
-
-function ProductForm({
-  companyId,
-  initial,
-  onDone,
-  onCancel,
-}: {
-  companyId: string;
-  initial?: CompanyProduct;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const [form, setForm] = useState({
-    name: initial?.name ?? "",
-    fullName: initial?.fullName ?? "",
-    price: String(initial?.price ?? ""),
-    oldPrice: String(initial?.oldPrice ?? ""),
-    category: initial?.category ?? "fertilizers",
-    description: initial?.description ?? "",
-    image: initial?.image ?? "",
-    stock: initial?.stock ?? "In Stock",
-    application: initial?.application ?? "",
-  });
-  const [benefits, setBenefits] = useState<string[]>(initial?.benefits ?? []);
-  const [benefitInput, setBenefitInput] = useState("");
-  const [composition, setComposition] = useState<{ name: string; value: string; color: string }[]>(
-    initial?.composition ?? []
-  );
-  const [compRow, setCompRow] = useState({ name: "", value: "", color: "#154212" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setForm((p) => ({ ...p, [k]: e.target.value }));
-
-  const addBenefit = () => {
-    const v = benefitInput.trim();
-    if (v) { setBenefits((p) => [...p, v]); setBenefitInput(""); }
-  };
-
-  const addCompRow = () => {
-    if (compRow.name.trim() && compRow.value.trim()) {
-      setComposition((p) => [...p, { ...compRow }]);
-      setCompRow({ name: "", value: "", color: "#154212" });
-    }
-  };
-
-  const handleSave = async () => {
-    if (!form.name.trim()) { setError("Product name is required."); return; }
-    if (!form.price || isNaN(Number(form.price))) { setError("Valid price required."); return; }
-    setSaving(true); setError(null);
-    try {
-      await saveCompanyProduct(
-        {
-          companyId,
-          name: form.name.trim(),
-          fullName: form.fullName.trim() || form.name.trim(),
-          price: Number(form.price),
-          oldPrice: form.oldPrice ? Number(form.oldPrice) : undefined,
-          category: form.category,
-          description: form.description.trim(),
-          image: form.image.trim(),
-          stock: form.stock,
-          application: form.application.trim() || undefined,
-          benefits: benefits.length ? benefits : undefined,
-          composition: composition.length ? composition : undefined,
-        },
-        initial?.id
-      );
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-5">
-      {error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Product Name <span className="text-red-500">*</span></span>
-          <input className={inputCls} value={form.name} onChange={set("name")} placeholder="e.g. Power Plus 1L" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Full Name</span>
-          <input className={inputCls} value={form.fullName} onChange={set("fullName")} placeholder="e.g. Power Plus™ – Growth Stimulator (1 Litre)" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Category</span>
-          <select className={inputCls} value={form.category} onChange={set("category")}>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Stock Status</span>
-          <select className={inputCls} value={form.stock} onChange={set("stock")}>
-            {STOCK_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Price (₹) <span className="text-red-500">*</span></span>
-          <input type="number" className={inputCls} value={form.price} onChange={set("price")} placeholder="500" min={0} />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Original Price (₹) <span className="text-xs font-normal text-on-surface-variant">for strikethrough</span></span>
-          <input type="number" className={inputCls} value={form.oldPrice} onChange={set("oldPrice")} placeholder="620" min={0} />
-        </label>
-        <label className={`${labelCls} md:col-span-2`}>
-          <span className="font-medium text-on-surface">Image URL</span>
-          <input className={inputCls} value={form.image} onChange={set("image")} placeholder="/images/karan-arjun/bottle-1l.png or https://..." />
-        </label>
-        <label className={`${labelCls} md:col-span-2`}>
-          <span className="font-medium text-on-surface">Description</span>
-          <textarea rows={3} className={`${inputCls} resize-none`} value={form.description} onChange={set("description")}
-            placeholder="Describe what this product does, what crops it's for, key benefits..." />
-        </label>
-        <label className={`${labelCls} md:col-span-2`}>
-          <span className="font-medium text-on-surface">Application Instructions</span>
-          <textarea rows={2} className={`${inputCls} resize-none`} value={form.application} onChange={set("application")}
-            placeholder="e.g. Drip: 2–3 L/acre. Foliar: 3–5 ml/litre..." />
-        </label>
-      </div>
-
-      {/* Benefits */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-on-surface">Benefits</p>
-        <div className="flex flex-wrap gap-2">
-          {benefits.map((b, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full font-medium">
-              {b}
-              <button type="button" onClick={() => setBenefits((p) => p.filter((_, j) => j !== i))}>
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input className={`${inputCls} flex-1`} value={benefitInput}
-            onChange={(e) => setBenefitInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addBenefit(); } }}
-            placeholder="e.g. Drought Tolerance — press Enter" />
-          <button type="button" onClick={addBenefit}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Composition */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-on-surface">Composition <span className="font-normal text-on-surface-variant">(optional)</span></p>
-        {composition.map((row, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded-full shrink-0" style={{ background: row.color }} />
-            <span className="font-medium text-on-surface">{row.name}</span>
-            <span className="text-on-surface-variant">—</span>
-            <span className="font-bold text-primary">{row.value}</span>
-            <button type="button" onClick={() => setComposition((p) => p.filter((_, j) => j !== i))}
-              className="ml-auto text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-          </div>
-        ))}
-        <div className="flex gap-2">
-          <input className={`${inputCls} flex-1`} placeholder="Name (e.g. Humates)" value={compRow.name}
-            onChange={(e) => setCompRow((p) => ({ ...p, name: e.target.value }))} />
-          <input className={`${inputCls} w-24`} placeholder="Value (22%)" value={compRow.value}
-            onChange={(e) => setCompRow((p) => ({ ...p, value: e.target.value }))} />
-          <input type="color" value={compRow.color}
-            onChange={(e) => setCompRow((p) => ({ ...p, color: e.target.value }))}
-            className="w-10 h-10 rounded-lg border border-outline-variant/30 cursor-pointer" />
-          <button type="button" onClick={addCompRow}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex gap-3 pt-2">
-        <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {saving ? "Saving…" : initial ? "Update Product" : "Add Product"}
-        </button>
-        <button type="button" onClick={onCancel}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-outline-variant/40 text-on-surface-variant text-sm font-semibold hover:bg-surface-container">
-          <X className="w-4 h-4" /> Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Products Tab ─────────────────────────────────────────────────────────────
 
-function ProductsTab({ companyId, uid }: { companyId: string; uid: string }) {
-  const [products, setProducts] = useState<CompanyProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<CompanyProduct | null>(null);
+function ProductsTab({ uid }: { uid: string }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
 
-  // Import from inventory state
-  const [inventoryProducts, setInventoryProducts] = useState<any[]>([]);
-  const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [importPanel, setImportPanel] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [importing, setImporting] = useState(false);
-
-  const load = useCallback(() => {
+  useEffect(() => {
+    if (!uid) { setProducts([]); return; }
     setLoading(true);
-    fetchCompanyProducts(companyId)
+    fetchManufacturerProducts(uid)
       .then(setProducts)
-      .catch((err) => setStatus({ type: "err", msg: err.message }))
+      .catch(() => setStatus({ type: "err", msg: "Could not load products." }))
       .finally(() => setLoading(false));
-  }, [companyId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadInventory = useCallback(async () => {
-    if (inventoryProducts.length > 0) { setImportPanel(true); return; }
-    setInventoryLoading(true);
-    try {
-      // Try both uid and phone (companyId) as ownerId
-      const [byUid, byPhone] = await Promise.all([
-        fetchManufacturerProducts(uid).catch(() => []),
-        uid !== companyId ? fetchManufacturerProducts(companyId).catch(() => []) : Promise.resolve([]),
-      ]);
-      const seen = new Set<string>();
-      const merged = [...byUid, ...byPhone].filter(p => {
-        if (seen.has(p.id)) return false;
-        seen.add(p.id); return true;
-      });
-      setInventoryProducts(merged);
-      setImportPanel(true);
-    } finally {
-      setInventoryLoading(false);
-    }
-  }, [uid, companyId, inventoryProducts.length]);
-
-  const alreadyImported = new Set(products.map(p => p.name?.toLowerCase().trim()));
-
-  const handleImport = async () => {
-    const toImport = inventoryProducts.filter(p => selected.has(p.id));
-    if (!toImport.length) return;
-    setImporting(true);
-    try {
-      for (const p of toImport) {
-        await saveCompanyProduct({
-          companyId,
-          name: p.name || p.fullName || "",
-          fullName: p.fullName || p.name || "",
-          price: Number(p.price) || 0,
-          oldPrice: p.oldPrice ? Number(p.oldPrice) : undefined,
-          category: p.category || "general",
-          description: p.description || "",
-          image: p.image || (p.images?.[0] ?? ""),
-          stock: p.stock || "In Stock",
-          application: p.application || undefined,
-          benefits: p.benefits || undefined,
-        });
-      }
-      setStatus({ type: "ok", msg: `✓ Imported ${toImport.length} product(s) from your inventory.` });
-      setSelected(new Set());
-      setImportPanel(false);
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const handleDelete = async (product: CompanyProduct) => {
-    if (!product.id) return;
-    if (!confirm(`Delete "${product.name}"? This cannot be undone.`)) return;
-    try {
-      await deleteCompanyProduct(product.id);
-      setStatus({ type: "ok", msg: `"${product.name}" deleted.` });
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Delete failed." });
-    }
-  };
-
-  if (adding || editing) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => { setAdding(false); setEditing(null); }}
-            className="text-on-surface-variant hover:text-on-surface">
-            <X className="w-5 h-5" />
-          </button>
-          <h3 className="font-bold text-on-surface">{editing ? "Edit Product" : "Add New Product"}</h3>
-        </div>
-        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
-          <ProductForm
-            companyId={companyId}
-            initial={editing ?? undefined}
-            onDone={() => { setAdding(false); setEditing(null); setStatus({ type: "ok", msg: "Product saved." }); load(); }}
-            onCancel={() => { setAdding(false); setEditing(null); }}
-          />
-        </div>
-      </div>
-    );
-  }
+  }, [uid]);
 
   return (
     <div className="space-y-5">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
-
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-on-surface-variant">{products.length} product{products.length !== 1 ? "s" : ""} on brand page</p>
-        <div className="flex gap-2">
-          <button type="button" onClick={loadInventory} disabled={inventoryLoading}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10 disabled:opacity-60">
-            {inventoryLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Import from Inventory
-          </button>
-          <button type="button" onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-            <Plus className="w-4 h-4" /> Add New
-          </button>
-        </div>
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-3">
+        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+        <p>Products are pulled live from your inventory. To manage products, go to <strong>Inventory</strong> in the main menu.</p>
       </div>
-
-      {/* Import from inventory panel */}
-      {importPanel && (
-        <div className="rounded-2xl border border-primary/20 bg-primary/3 p-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-bold text-on-surface text-sm">Your Inventory Products</p>
-              <p className="text-xs text-on-surface-variant mt-0.5">Select products to publish on your brand page. Already-added ones are marked.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {selected.size > 0 && (
-                <button type="button" onClick={handleImport} disabled={importing}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-60">
-                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  Import {selected.size}
-                </button>
-              )}
-              <button type="button" onClick={() => setImportPanel(false)}
-                className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          {inventoryProducts.length === 0 ? (
-            <p className="text-sm text-on-surface-variant py-4 text-center">No products found in your inventory yet.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {inventoryProducts.map(p => {
-                const imported = alreadyImported.has((p.name || p.fullName || "").toLowerCase().trim());
-                const isSelected = selected.has(p.id);
-                return (
-                  <button key={p.id} type="button"
-                    disabled={imported}
-                    onClick={() => setSelected(prev => {
-                      const next = new Set(prev);
-                      next.has(p.id) ? next.delete(p.id) : next.add(p.id);
-                      return next;
-                    })}
-                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
-                      imported ? "opacity-50 cursor-not-allowed bg-surface-container border-outline-variant/20"
-                        : isSelected ? "border-primary/50 bg-primary/8 shadow-sm"
-                        : "border-outline-variant/30 bg-surface-container-lowest hover:border-primary/30"
-                    }`}>
-                    {(p.image || p.images?.[0]) ? (
-                      <img src={p.image || p.images?.[0]} alt="" className="w-10 h-10 rounded-lg object-contain bg-gray-50 shrink-0" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Package className="w-5 h-5 text-primary/40" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-on-surface truncate">{p.name || p.fullName}</p>
-                      <p className="text-xs text-on-surface-variant">₹{p.price} · {p.category}</p>
-                    </div>
-                    {imported ? (
-                      <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">Added</span>
-                    ) : isSelected ? (
-                      <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shrink-0">
-                        <Check className="w-3 h-3 text-white" />
-                      </div>
-                    ) : (
-                      <div className="w-5 h-5 rounded-full border-2 border-outline-variant/40 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading…
@@ -697,431 +312,67 @@ function ProductsTab({ companyId, uid }: { companyId: string; uid: string }) {
       ) : products.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Package className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No products on brand page yet.</p>
-          <p className="text-sm text-on-surface-variant">Click <strong>Import from Inventory</strong> to pull in products you&apos;ve already added, or <strong>Add New</strong> to create from scratch.</p>
+          <p className="font-semibold text-on-surface-variant">No products in your inventory yet.</p>
+          <p className="text-sm text-on-surface-variant">Add products from the Inventory section — they will appear here automatically.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {products.map((product) => (
             <div key={product.id}
-              className="flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 hover:border-primary/30 transition-colors">
-              {/* Image */}
+              className="flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4">
               <div className="w-14 h-14 rounded-xl overflow-hidden bg-surface-container shrink-0 flex items-center justify-center">
-                {product.image ? (
-                  <img src={product.image} alt={product.name} className="w-full h-full object-contain" />
+                {(product.image || product.images?.[0]) ? (
+                  <img src={product.image || product.images?.[0]} alt={product.name} className="w-full h-full object-contain" />
                 ) : (
-                  <ImageIcon className="w-6 h-6 text-on-surface-variant/30" />
+                  <Package className="w-6 h-6 text-on-surface-variant/30" />
                 )}
               </div>
-              {/* Info */}
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-on-surface text-sm truncate">{product.name}</p>
+                <p className="font-semibold text-on-surface text-sm truncate">{product.name || product.fullName}</p>
                 <p className="text-xs text-on-surface-variant capitalize">{product.category}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-sm font-bold text-primary">₹{product.price}</span>
                   {product.oldPrice && (
                     <span className="text-xs line-through text-on-surface-variant">₹{product.oldPrice}</span>
                   )}
-                  <span className="text-[10px] bg-green-50 text-green-700 border border-green-100 px-1.5 py-0.5 rounded-full font-semibold">
-                    {product.stock ?? "In Stock"}
-                  </span>
+                  {product.stock && (
+                    <span className="text-[10px] bg-green-50 text-green-700 border border-green-100 px-1.5 py-0.5 rounded-full font-semibold">
+                      {product.stock}
+                    </span>
+                  )}
                 </div>
               </div>
-              {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button type="button" onClick={() => setEditing(product)}
-                  className="p-2 rounded-xl hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button type="button" onClick={() => handleDelete(product)}
-                  className="p-2 rounded-xl hover:bg-red-50 text-on-surface-variant hover:text-red-600 transition-colors">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── Store Form ───────────────────────────────────────────────────────────────
-
-function StoreForm({
-  companyId,
-  initial,
-  onDone,
-  onCancel,
-}: {
-  companyId: string;
-  initial?: CompanyStore;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const [form, setForm] = useState({
-    name: initial?.name ?? "",
-    ownerName: initial?.ownerName ?? "",
-    phone: initial?.phone ?? "",
-    address: initial?.address ?? "",
-    status: initial?.status ?? "Open until 7:00 PM",
-    lat: String(initial?.lat ?? ""),
-    lng: String(initial?.lng ?? ""),
-    stockInput: "",
-  });
-  const [stock, setStock] = useState<string[]>(initial?.stock ?? []);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Retailer search
-  const [retailers, setRetailers] = useState<StoreAutocompleteOption[]>([]);
-  const [nameSearch, setNameSearch] = useState(initial?.name ?? "");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const nameContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetchRetailerProfiles().then(setRetailers).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (nameContainerRef.current && !nameContainerRef.current.contains(e.target as Node))
-        setDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const filtered = retailers
-    .filter(r => nameSearch.length > 0 && r.shopName.toLowerCase().includes(nameSearch.toLowerCase()))
-    .slice(0, 8);
-
-  const fillFromRetailer = (r: StoreAutocompleteOption) => {
-    setForm(p => ({
-      ...p, name: r.shopName, ownerName: r.ownerName,
-      phone: r.phone, address: r.address,
-      lat: r.lat ? String(r.lat) : p.lat,
-      lng: r.lng ? String(r.lng) : p.lng,
-    }));
-    setNameSearch(r.shopName);
-    setDropdownOpen(false);
-  };
-
-  // Google Places address autocomplete
-  const addressRef = useRef<HTMLInputElement>(null);
-  usePlacesInput(addressRef, ({ name, address, lat, lng }) => {
-    setForm(p => ({
-      ...p, address, lat: String(lat), lng: String(lng),
-      name: p.name || name,
-    }));
-  });
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((p) => ({ ...p, [k]: e.target.value }));
-
-  const addStock = () => {
-    const v = form.stockInput.trim();
-    if (v && !stock.includes(v)) { setStock((p) => [...p, v]); setForm((p) => ({ ...p, stockInput: "" })); }
-  };
-
-  const handleSave = async () => {
-    if (!form.name.trim()) { setError("Store name is required."); return; }
-    if (!form.address.trim()) { setError("Address is required."); return; }
-    setSaving(true); setError(null);
-    try {
-      await saveCompanyStore(
-        {
-          companyId,
-          name: form.name.trim(),
-          ownerName: form.ownerName.trim() || undefined,
-          phone: form.phone.trim() || undefined,
-          address: form.address.trim(),
-          status: form.status.trim() || undefined,
-          lat: Number(form.lat) || 0,
-          lng: Number(form.lng) || 0,
-          stock: stock.length ? stock : undefined,
-        },
-        initial?.id
-      );
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-5">
-      {error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Store Name — with retailer search dropdown */}
-        <div className={`${labelCls} relative`} ref={nameContainerRef}>
-          <span className="font-medium text-on-surface">Store Name <span className="text-red-500">*</span></span>
-          <input className={inputCls} value={nameSearch}
-            onChange={e => { setNameSearch(e.target.value); setForm(p => ({ ...p, name: e.target.value })); setDropdownOpen(true); }}
-            onFocus={() => setDropdownOpen(true)}
-            placeholder="Search KrishiDukan retailers or type name…" />
-          {dropdownOpen && filtered.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-outline-variant/40 bg-white shadow-lg overflow-hidden">
-              {filtered.map(r => (
-                <button key={r.phone} type="button" onMouseDown={() => fillFromRetailer(r)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primary/5 border-b border-outline-variant/10 last:border-0">
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Store className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-on-surface truncate">{r.shopName}</p>
-                    <p className="text-xs text-on-surface-variant truncate">{r.address}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Owner Name</span>
-          <input className={inputCls} value={form.ownerName} onChange={set("ownerName")} placeholder="e.g. Ramesh Shinde" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Phone</span>
-          <input type="tel" className={inputCls} value={form.phone} onChange={set("phone")} placeholder="+919307199040" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Store Hours</span>
-          <input className={inputCls} value={form.status} onChange={set("status")} placeholder="Open until 7:00 PM" />
-        </label>
-
-        {/* Address with Google Places Autocomplete */}
-        <label className={`${labelCls} md:col-span-2`}>
-          <span className="font-medium text-on-surface">
-            Address <span className="text-red-500">*</span>
-            <span className="font-normal text-on-surface-variant text-xs ml-2">(search to auto-fill location)</span>
-          </span>
-          <input ref={addressRef} className={inputCls} value={form.address}
-            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
-            placeholder="Search business name or address on Google Maps…" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Latitude</span>
-          <input type="number" step="any" className={inputCls} value={form.lat} onChange={set("lat")} placeholder="e.g. 18.9602" />
-        </label>
-        <label className={labelCls}>
-          <span className="font-medium text-on-surface">Longitude</span>
-          <input type="number" step="any" className={inputCls} value={form.lng} onChange={set("lng")} placeholder="e.g. 75.1705" />
-        </label>
-      </div>
-      <p className="text-xs text-on-surface-variant">
-        💡 Type in the address field to get Google Places suggestions — selecting one auto-fills the coordinates.
-      </p>
-
-      {/* Stock items */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-on-surface">Products in Stock</p>
-        <div className="flex flex-wrap gap-2">
-          {stock.map((s, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs bg-surface-container text-on-surface border border-outline-variant/30 px-2.5 py-1 rounded-full">
-              {s}
-              <button type="button" onClick={() => setStock((p) => p.filter((_, j) => j !== i))}>
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input className={`${inputCls} flex-1`} value={form.stockInput}
-            onChange={(e) => setForm((p) => ({ ...p, stockInput: e.target.value }))}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addStock(); } }}
-            placeholder="e.g. Power Plus 1L — press Enter" />
-          <button type="button" onClick={addStock}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex gap-3 pt-2">
-        <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {saving ? "Saving…" : initial ? "Update Store" : "Add Store"}
-        </button>
-        <button type="button" onClick={onCancel}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-outline-variant/40 text-on-surface-variant text-sm font-semibold hover:bg-surface-container">
-          <X className="w-4 h-4" /> Cancel
-        </button>
-      </div>
     </div>
   );
 }
 
 // ─── Stores Tab ───────────────────────────────────────────────────────────────
 
-function StoresTab({ companyId, userPhone }: { companyId: string; userPhone: string }) {
-  const [stores, setStores] = useState<CompanyStore[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<CompanyStore | null>(null);
+function StoresTab({ userPhone }: { userPhone: string }) {
+  const [stores, setStores] = useState<RetailerNetworkStore[]>([]);
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
 
-  // Import from network state
-  const [networkStores, setNetworkStores] = useState<RetailerNetworkStore[]>([]);
-  const [networkLoading, setNetworkLoading] = useState(false);
-  const [networkPanel, setNetworkPanel] = useState(false);
-  const [importingStore, setImportingStore] = useState<string | null>(null);
-
-  const load = useCallback(() => {
+  useEffect(() => {
+    if (!userPhone) { setStores([]); return; }
     setLoading(true);
-    fetchCompanyStores(companyId)
+    fetchManufacturerNetworkStores(userPhone)
       .then(setStores)
-      .catch((err) => setStatus({ type: "err", msg: err.message }))
+      .catch(() => setStatus({ type: "err", msg: "Could not load retailer network." }))
       .finally(() => setLoading(false));
-  }, [companyId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadNetwork = useCallback(async () => {
-    if (networkStores.length > 0) { setNetworkPanel(true); return; }
-    setNetworkLoading(true);
-    try {
-      const result = await fetchManufacturerNetworkStores(userPhone);
-      setNetworkStores(result);
-      setNetworkPanel(true);
-    } catch {
-      setStatus({ type: "err", msg: "Could not load retailer network." });
-    } finally {
-      setNetworkLoading(false);
-    }
-  }, [userPhone, networkStores.length]);
-
-  const alreadyImported = new Set(stores.map(s => s.name?.toLowerCase().trim()));
-
-  const handleImportStore = async (retailer: RetailerNetworkStore) => {
-    setImportingStore(retailer.phone);
-    try {
-      await saveCompanyStore({
-        companyId,
-        name: retailer.name,
-        ownerName: retailer.ownerName || undefined,
-        phone: retailer.storePhone,
-        address: retailer.address,
-        lat: retailer.lat,
-        lng: retailer.lng,
-      });
-      setStatus({ type: "ok", msg: `✓ "${retailer.name}" added to your brand page stores.` });
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
-    } finally {
-      setImportingStore(null);
-    }
-  };
-
-  const handleDelete = async (store: CompanyStore) => {
-    if (!store.id) return;
-    if (!confirm(`Remove "${store.name}"?`)) return;
-    try {
-      await deleteCompanyStore(store.id);
-      setStatus({ type: "ok", msg: `"${store.name}" removed.` });
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Delete failed." });
-    }
-  };
-
-  if (adding || editing) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => { setAdding(false); setEditing(null); }}
-            className="text-on-surface-variant hover:text-on-surface">
-            <X className="w-5 h-5" />
-          </button>
-          <h3 className="font-bold text-on-surface">{editing ? "Edit Store" : "Add New Store"}</h3>
-        </div>
-        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
-          <StoreForm
-            companyId={companyId}
-            initial={editing ?? undefined}
-            onDone={() => { setAdding(false); setEditing(null); setStatus({ type: "ok", msg: "Store saved." }); load(); }}
-            onCancel={() => { setAdding(false); setEditing(null); }}
-          />
-        </div>
-      </div>
-    );
-  }
+  }, [userPhone]);
 
   return (
     <div className="space-y-5">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
-
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-on-surface-variant">{stores.length} store{stores.length !== 1 ? "s" : ""} on brand page</p>
-        <div className="flex gap-2">
-          <button type="button" onClick={loadNetwork} disabled={networkLoading}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10 disabled:opacity-60">
-            {networkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Import from Network
-          </button>
-          <button type="button" onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-            <Plus className="w-4 h-4" /> Add New
-          </button>
-        </div>
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-3">
+        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+        <p>Stores are pulled live from your retailer network. To manage your network, go to <strong>Retailer Network</strong> in the main menu.</p>
       </div>
-
-      {/* Import from retailer network panel */}
-      {networkPanel && (
-        <div className="rounded-2xl border border-primary/20 bg-primary/3 p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-bold text-on-surface text-sm">Your Retailer Network</p>
-              <p className="text-xs text-on-surface-variant mt-0.5">Retailers selling your products — add them as "Where to Buy" stores on your brand page.</p>
-            </div>
-            <button type="button" onClick={() => setNetworkPanel(false)}
-              className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          {networkStores.length === 0 ? (
-            <p className="text-sm text-on-surface-variant py-4 text-center">No retailers found in your network yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {networkStores.map((retailer) => {
-                const imported = alreadyImported.has(retailer.name?.toLowerCase().trim());
-                return (
-                  <div key={retailer.phone}
-                    className="flex items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
-                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <Store className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-on-surface text-sm truncate">{retailer.name}</p>
-                      <p className="text-xs text-on-surface-variant truncate">
-                        {retailer.address || retailer.storePhone}
-                      </p>
-                    </div>
-                    {imported ? (
-                      <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">Added</span>
-                    ) : (
-                      <button type="button" onClick={() => handleImportStore(retailer)}
-                        disabled={importingStore === retailer.phone}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-60 shrink-0">
-                        {importingStore === retailer.phone ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                        Add
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading…
@@ -1129,14 +380,14 @@ function StoresTab({ companyId, userPhone }: { companyId: string; userPhone: str
       ) : stores.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Store className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No stores on brand page yet.</p>
-          <p className="text-sm text-on-surface-variant">Click <strong>Import from Network</strong> to add your retailers, or <strong>Add New</strong> to add manually.</p>
+          <p className="font-semibold text-on-surface-variant">No retailers in your network yet.</p>
+          <p className="text-sm text-on-surface-variant">Add retailers from the Retailer Network section — they will appear here automatically.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {stores.map((store) => (
             <div key={store.id}
-              className="flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 hover:border-primary/30 transition-colors">
+              className="flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4">
               <div className="w-10 h-10 rounded-xl bg-primary/8 flex items-center justify-center shrink-0">
                 <Store className="w-5 h-5 text-primary" />
               </div>
@@ -1145,21 +396,11 @@ function StoresTab({ companyId, userPhone }: { companyId: string; userPhone: str
                 <p className="text-xs text-on-surface-variant truncate">
                   <MapPin className="inline w-2.5 h-2.5 mr-0.5" />{store.address}
                 </p>
-                {store.phone && (
+                {store.storePhone && (
                   <p className="text-xs text-on-surface-variant">
-                    <Phone className="inline w-2.5 h-2.5 mr-0.5" />{store.phone}
+                    <Phone className="inline w-2.5 h-2.5 mr-0.5" />{store.storePhone}
                   </p>
                 )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button type="button" onClick={() => setEditing(store)}
-                  className="p-2 rounded-xl hover:bg-surface-container text-on-surface-variant hover:text-primary">
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button type="button" onClick={() => handleDelete(store)}
-                  className="p-2 rounded-xl hover:bg-red-50 text-on-surface-variant hover:text-red-600">
-                  <Trash2 className="w-4 h-4" />
-                </button>
               </div>
             </div>
           ))}
@@ -1431,8 +672,8 @@ export default function CompanyDashboardPage() {
             userProfile={userProfile}
           />
         )}
-        {activeTab === "products" && <ProductsTab companyId={company.id} uid={uid} />}
-        {activeTab === "stores" && <StoresTab companyId={company.id} userPhone={userPhone} />}
+        {activeTab === "products" && <ProductsTab uid={uid} />}
+        {activeTab === "stores" && <StoresTab userPhone={userPhone} />}
         {activeTab === "videos" && (
           <VideosTab
             companyId={company.id}

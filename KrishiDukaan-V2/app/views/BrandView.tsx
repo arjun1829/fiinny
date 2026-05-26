@@ -12,8 +12,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { MarketplaceProduct } from '../../types/product';
 import { MANUFACTURERS, PRODUCTS, STORES } from '../constants';
 import {
-  auth, fetchCompanyPageById, fetchCompanyProducts, fetchCompanyStores, getUserProfile,
-  type CompanyPageDoc, type CompanyProduct, type CompanyStore,
+  auth, fetchCompanyPageById, fetchManufacturerNetworkStores, fetchManufacturerProducts,
+  fetchUserProfileByPhone, getUserProfile,
+  type CompanyPageDoc, type RetailerNetworkStore,
 } from '../firebase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -132,23 +133,30 @@ export default function BrandView({
   onProductClick, onFindNearYou, onStoreClick,
 }: BrandViewProps) {
   const [companyPage, setCompanyPage] = useState<CompanyPageDoc | null>(null);
-  const [companyProducts, setCompanyProducts] = useState<CompanyProduct[]>([]);
-  const [companyStores, setCompanyStores] = useState<CompanyStore[]>([]);
+  const [liveProducts, setLiveProducts] = useState<MarketplaceProduct[]>([]);
+  const [liveStores, setLiveStores] = useState<RetailerNetworkStore[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fetchCompanyPageById(manufacturerId).catch(() => null),
-      fetchCompanyProducts(manufacturerId).catch(() => []),
-      fetchCompanyStores(manufacturerId).catch(() => []),
-    ]).then(([page, cProds, cStores]) => {
+    fetchCompanyPageById(manufacturerId).then(async (page) => {
       setCompanyPage(page);
-      setCompanyProducts(cProds);
-      setCompanyStores(cStores);
+      const ownerPhone = page?.ownerPhone;
+      if (ownerPhone) {
+        const [profile, stores] = await Promise.all([
+          fetchUserProfileByPhone(ownerPhone).catch(() => null),
+          fetchManufacturerNetworkStores(ownerPhone).catch(() => [] as RetailerNetworkStore[]),
+        ]);
+        const uid = profile?.uid;
+        if (uid) {
+          const prods = await fetchManufacturerProducts(uid).catch(() => [] as MarketplaceProduct[]);
+          setLiveProducts(prods);
+        }
+        setLiveStores(stores);
+      }
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [manufacturerId]);
 
   useEffect(() => {
@@ -168,20 +176,19 @@ export default function BrandView({
     return null;
   }, [companyPage, constBrand]);
 
-  // Products: prefer company-specific, fall back to marketplace products filtered by manufacturerId
+  // Products: prefer live manufacturer products, fall back to marketplace products filtered by manufacturerId
   const displayProducts = useMemo(() => {
-    if (companyProducts.length > 0) return companyProducts;
-    // Fall back to marketplace products
+    if (liveProducts.length > 0) return liveProducts;
     const allKnown = [...products, ...PRODUCTS.filter(p => !products.find(x => x.id === p.id))];
     return allKnown.filter((p: any) => p.manufacturerId === manufacturerId);
-  }, [companyProducts, products, manufacturerId]);
+  }, [liveProducts, products, manufacturerId]);
 
-  // Stores: prefer company-specific, fall back to brand storeIds
+  // Stores: prefer live network stores, fall back to brand storeIds from constants
   const displayStores = useMemo(() => {
-    if (companyStores.length > 0) return companyStores;
+    if (liveStores.length > 0) return liveStores;
     const allKnown = [...stores, ...STORES.filter(s => !stores.find((x: any) => x.id === s.id))];
     return allKnown.filter((s: any) => constBrand?.storeIds?.includes(s.id));
-  }, [companyStores, stores, constBrand, manufacturerId]);
+  }, [liveStores, stores, constBrand]);
 
   if (loading) return <BrandSkeleton />;
   if (!brand) return <div className="p-20 text-center text-on-surface-variant">Brand not found.</div>;

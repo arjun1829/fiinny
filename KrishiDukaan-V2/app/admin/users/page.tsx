@@ -5,7 +5,7 @@ import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
   Instagram, Facebook, MessageCircle, Youtube, MapPin,
 } from "lucide-react";
-import { fetchAllUsers, promoteToAdmin, adminUpdateUser } from "../../firebase";
+import { fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile } from "../../firebase";
 
 declare global {
   interface Window { google?: any }
@@ -199,6 +199,40 @@ export default function AdminUsersPage() {
     requestAnimationFrame(() => {
       if (addressInputRef.current) addressInputRef.current.value = u.address || "";
     });
+
+    if (u.role === "retailer" || u.role === "manufacturer") {
+      fetchBusinessProfile(u.id, u.role, u.phone || u.id)
+        .then((profile) => {
+          if (!profile) return;
+          setEditTarget((prev) => {
+            if (!prev || prev.uid !== u.id) return prev;
+            const newAddress = profile.address?.line1 || prev.address || "";
+            if (addressInputRef.current) {
+              addressInputRef.current.value = newAddress;
+            }
+            return {
+              ...prev,
+              shopName: profile.shopName || prev.shopName,
+              businessName: profile.businessName || prev.businessName,
+              address: newAddress,
+              city: profile.address?.city || prev.city,
+              state: profile.address?.state || prev.state,
+              pincode: profile.address?.pincode || prev.pincode,
+              latitude: profile.latitude !== undefined ? profile.latitude : prev.latitude,
+              longitude: profile.longitude !== undefined ? profile.longitude : prev.longitude,
+              social: {
+                instagram: profile.socialLinks?.instagram || prev.social.instagram,
+                facebook: profile.socialLinks?.facebook || prev.social.facebook,
+                whatsapp: profile.socialLinks?.whatsapp || prev.social.whatsapp,
+                youtube: profile.socialLinks?.youtube || prev.social.youtube,
+              },
+            };
+          });
+        })
+        .catch((err) => {
+          console.error("Error loading business profile in openEdit:", err);
+        });
+    }
   };
 
   const handleSaveEdit = async () => {

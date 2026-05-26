@@ -1,24 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
   Building2, Phone, Plus, RefreshCw, Check, X,
-  Pencil, Loader2, Trash2, Package, Store, Video, LinkIcon,
-  Save, Tag, Globe, Mail, Youtube, Image as ImageIcon,
-  Upload, ChevronDown, ChevronUp, MapPin, Users, Sparkles,
+  Loader2, Package, Store, Video, LinkIcon,
+  Save, Tag, Globe, Mail, Youtube,
+  MapPin, Users, Sparkles, Pencil,
 } from "lucide-react";
 import {
-  storage,
   fetchAllCompanyPages, saveCompanyPage, assignCompanyOwner, removeCompanyOwner,
-  fetchCompanyProducts, saveCompanyProduct, deleteCompanyProduct,
-  fetchCompanyStores, saveCompanyStore, deleteCompanyStore,
   fetchAllUsers, adminAutoSeedCompanyPage,
   fetchManufacturerProducts, fetchUserProfileByPhone, fetchManufacturerNetworkStores,
-  fetchRetailerProfiles,
-  type CompanyPageDoc, type CompanyProduct, type CompanyStore, type RetailerNetworkStore, type StoreAutocompleteOption,
+  type CompanyPageDoc, type RetailerNetworkStore,
 } from "../../firebase";
-import { usePlacesInput } from "../../lib/usePlacesInput";
 import { MANUFACTURERS } from "../../constants";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,76 +51,6 @@ function extractYouTubeId(input: string): string | null {
   return m ? m[1] : null;
 }
 
-// ─── Image Slot ───────────────────────────────────────────────────────────────
-
-type ImgSlot = { mode: "url" | "upload"; url: string; uploading: boolean; error: string };
-const newSlot = (): ImgSlot => ({ mode: "url", url: "", uploading: false, error: "" });
-
-function ImgCard({ slot, index, onChange, onClear }: {
-  slot: ImgSlot; index: number;
-  onChange: (p: Partial<ImgSlot>) => void; onClear: () => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
-    onChange({ uploading: true, error: "" });
-    try {
-      const path = `company-products/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), file);
-      onChange({ url: await getDownloadURL(snap.ref), uploading: false });
-    } catch {
-      onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
-    }
-  };
-  return (
-    <div className={`flex flex-col rounded-xl border-2 overflow-hidden transition-colors ${slot.url ? "border-primary/20 bg-surface-container-low" : "border-dashed border-outline-variant/40 bg-surface-container-low/50"}`}>
-      {slot.url ? (
-        <div className="relative">
-          <img src={slot.url} alt="" className="h-24 w-full object-cover"
-            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <button type="button" onClick={onClear}
-            className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500">
-            <X className="h-2.5 w-2.5" />
-          </button>
-          {index === 0 && <span className="absolute bottom-1 left-1 rounded-full bg-primary/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">Main</span>}
-        </div>
-      ) : (
-        <div className="flex h-24 flex-col items-center justify-center gap-1 text-on-surface-variant/40">
-          <ImageIcon className="h-6 w-6" />
-          <span className="text-[9px]">{index === 0 ? "Main image" : `Image ${index + 1}`}</span>
-        </div>
-      )}
-      <div className="flex flex-col gap-1.5 p-2">
-        <div className="flex rounded-lg border border-outline-variant/30 text-[10px] overflow-hidden">
-          {(["url", "upload"] as const).map(m => (
-            <button key={m} type="button" onClick={() => onChange({ mode: m, error: "" })}
-              className={`flex-1 py-1 font-semibold transition-colors ${slot.mode === m ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
-              {m === "url" ? "URL" : "Upload"}
-            </button>
-          ))}
-        </div>
-        {slot.mode === "url" ? (
-          <input type="url" value={slot.url} onChange={e => onChange({ url: e.target.value, error: "" })}
-            placeholder="https://…"
-            className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-[10px] focus:border-primary focus:outline-none" />
-        ) : (
-          <>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={slot.uploading}
-              className="flex items-center justify-center gap-1 rounded-lg border border-outline-variant/30 py-1.5 text-[10px] font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50">
-              {slot.uploading ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" /> Uploading…</>
-                : <><Upload className="h-3 w-3" /> Choose file</>}
-            </button>
-          </>
-        )}
-        {slot.error && <p className="text-[9px] text-red-500">{slot.error}</p>}
-      </div>
-    </div>
-  );
-}
-
-// ─── Brand Tab ────────────────────────────────────────────────────────────────
 
 function BrandTab({ company, ownerPhone, onSaved }: {
   company: CompanyPageDoc; ownerPhone?: string; onSaved: (d: Partial<CompanyPageDoc>) => void;
@@ -207,7 +131,7 @@ function BrandTab({ company, ownerPhone, onSaved }: {
           <div>
             <p className="text-sm font-semibold text-blue-800">Profile data available</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              {syncFields.map(([k]) => k).join(", ")} differ from the owner's profile.
+              {syncFields.map(([k]) => k).join(", ")} differ from the owner&apos;s profile.
             </p>
           </div>
           <button type="button" onClick={handleSyncFromProfile}
@@ -309,324 +233,46 @@ function BrandTab({ company, ownerPhone, onSaved }: {
   );
 }
 
-// ─── Product Form ─────────────────────────────────────────────────────────────
-
-const CATS = ["fertilizers", "pesticides", "seeds", "tools", "general"];
-const STOCK_OPTS = ["In Stock", "Fast Selling", "Trending", "Low Stock", "Out of Stock"];
-
-function ProductForm({ companyId, initial, onDone, onCancel }: {
-  companyId: string; initial?: CompanyProduct; onDone: () => void; onCancel: () => void;
-}) {
-  const [form, setForm] = useState({
-    name: initial?.name ?? "", fullName: initial?.fullName ?? "", price: String(initial?.price ?? ""),
-    oldPrice: String(initial?.oldPrice ?? ""), category: initial?.category ?? "fertilizers",
-    description: initial?.description ?? "", stock: initial?.stock ?? "In Stock",
-    application: initial?.application ?? "", benefitInput: "",
-  });
-  const [benefits, setBenefits] = useState<string[]>(initial?.benefits ?? []);
-  const [images, setImages] = useState<ImgSlot[]>(() => {
-    const urls = initial?.images?.length ? initial.images : (initial?.image ? [initial.image] : []);
-    return urls.length ? urls.map(u => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()];
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const updateSlot = (i: number, patch: Partial<ImgSlot>) => setImages(p => p.map((s, j) => j === i ? { ...s, ...patch } : s));
-  const clearSlot = (i: number) => setImages(p => p.length === 1 ? [newSlot()] : p.filter((_, j) => j !== i));
-
-  const handleSave = async () => {
-    if (!form.name.trim() || !form.price) { setError("Name and price are required."); return; }
-    if (images.some(s => s.uploading)) { setError("Wait for image uploads to finish."); return; }
-    const imageUrls = images.map(s => s.url.trim()).filter(Boolean);
-    if (!imageUrls.length) { setError("At least one image is required."); return; }
-    setSaving(true); setError(null);
-    try {
-      await saveCompanyProduct({
-        companyId, name: form.name.trim(), fullName: form.fullName.trim() || undefined,
-        price: Number(form.price), oldPrice: form.oldPrice ? Number(form.oldPrice) : undefined,
-        category: form.category, description: form.description.trim(),
-        image: imageUrls[0], images: imageUrls,
-        stock: form.stock, application: form.application.trim() || undefined,
-        benefits: benefits.length ? benefits : undefined,
-      }, initial?.id);
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className={labelCls}><span className="font-medium text-on-surface">Name *</span>
-          <input className={inputCls} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Product name" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Full Name</span>
-          <input className={inputCls} value={form.fullName} onChange={e => setForm(p => ({ ...p, fullName: e.target.value }))} placeholder="Extended name" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Price (₹) *</span>
-          <input type="number" className={inputCls} value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="450" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Old Price (₹)</span>
-          <input type="number" className={inputCls} value={form.oldPrice} onChange={e => setForm(p => ({ ...p, oldPrice: e.target.value }))} placeholder="550" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Category</span>
-          <select className={`${inputCls} appearance-none`} value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
-            {CATS.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-          </select></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Stock Status</span>
-          <select className={`${inputCls} appearance-none`} value={form.stock} onChange={e => setForm(p => ({ ...p, stock: e.target.value }))}>
-            {STOCK_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select></label>
-        <label className={`${labelCls} md:col-span-2`}><span className="font-medium text-on-surface">Description</span>
-          <textarea rows={3} className={`${inputCls} resize-none`} value={form.description}
-            onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Product description…" /></label>
-        <label className={`${labelCls} md:col-span-2`}><span className="font-medium text-on-surface">Application / Dosage</span>
-          <textarea rows={2} className={`${inputCls} resize-none`} value={form.application}
-            onChange={e => setForm(p => ({ ...p, application: e.target.value }))} placeholder="How to use…" /></label>
-      </div>
-
-      {/* Benefits */}
-      <div>
-        <p className="text-xs font-semibold text-on-surface mb-2">Benefits</p>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {benefits.map((b, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full">
-              {b} <button type="button" onClick={() => setBenefits(p => p.filter((_, j) => j !== i))}><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input className={`${inputCls} flex-1`} value={form.benefitInput}
-            onChange={e => setForm(p => ({ ...p, benefitInput: e.target.value }))}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = form.benefitInput.trim(); if (v) { setBenefits(p => [...p, v]); setForm(p => ({ ...p, benefitInput: "" })); } } }}
-            placeholder="e.g. Increases yield by 30% — Enter to add" />
-          <button type="button"
-            onClick={() => { const v = form.benefitInput.trim(); if (v) { setBenefits(p => [...p, v]); setForm(p => ({ ...p, benefitInput: "" })); } }}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Images */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-on-surface">Images * (up to 5)</p>
-          {images.length < 5 && (
-            <button type="button" onClick={() => setImages(p => [...p, newSlot()])}
-              className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-              <Plus className="h-3 w-3" /> Add image
-            </button>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {images.map((slot, i) => (
-            <ImgCard key={i} slot={slot} index={i} onChange={patch => updateSlot(i, patch)} onClear={() => clearSlot(i)} />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-3 pt-2">
-        <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {saving ? "Saving…" : initial ? "Update Product" : "Add Product"}
-        </button>
-        <button type="button" onClick={onCancel}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-outline-variant/40 text-on-surface-variant text-sm font-semibold hover:bg-surface-container">
-          <X className="w-4 h-4" /> Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Products Tab ─────────────────────────────────────────────────────────────
 
-function ProductsTab({ companyId, ownerPhone }: { companyId: string; ownerPhone?: string }) {
-  const [products, setProducts] = useState<CompanyProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<CompanyProduct | null>(null);
+function ProductsTab({ ownerPhone }: { ownerPhone?: string }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
 
-  // Import from inventory
-  const [inventoryOpen, setInventoryOpen] = useState(false);
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [inventoryLoading, setInventoryLoading] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [importing, setImporting] = useState(false);
-
-  const load = useCallback(() => {
+  useEffect(() => {
+    if (!ownerPhone) { setProducts([]); return; }
     setLoading(true);
-    fetchCompanyProducts(companyId).then(setProducts).catch(err => setStatus({ type: "err", msg: err.message })).finally(() => setLoading(false));
-  }, [companyId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadInventory = async () => {
-    if (!ownerPhone) return;
-    setInventoryLoading(true);
-    try {
-      const profile = await fetchUserProfileByPhone(ownerPhone);
-      const uid = profile?.uid;
-      const [fromUid, fromPhone] = await Promise.all([
-        uid ? fetchManufacturerProducts(uid).catch(() => []) : Promise.resolve([]),
-        fetchManufacturerProducts(ownerPhone).catch(() => []),
-      ]);
-      const merged = [...fromUid, ...fromPhone.filter((p: any) => !fromUid.find((q: any) => q.id === p.id))];
-      setInventory(merged);
-    } catch (err) {
-      setStatus({ type: "err", msg: "Could not load inventory." });
-    } finally {
-      setInventoryLoading(false);
-    }
-  };
-
-  const toggleInventoryPanel = () => {
-    if (!inventoryOpen && inventory.length === 0) loadInventory();
-    setInventoryOpen(p => !p);
-    setSelected(new Set());
-  };
-
-  const handleImport = async () => {
-    const toImport = inventory.filter((p: any) => selected.has(p.id));
-    if (!toImport.length) return;
-    setImporting(true);
-    try {
-      for (const p of toImport) {
-        await saveCompanyProduct({
-          companyId,
-          name: p.name ?? "",
-          fullName: p.fullName || undefined,
-          price: Number(p.price) || 0,
-          oldPrice: p.oldPrice ? Number(p.oldPrice) : undefined,
-          category: p.category ?? "general",
-          description: p.description ?? "",
-          image: p.image ?? "",
-          images: p.images ?? (p.image ? [p.image] : []),
-          stock: p.stock ?? "In Stock",
-          application: p.applicationDesc || p.application || undefined,
-          benefits: p.benefits?.length ? p.benefits : undefined,
-        });
-      }
-      setStatus({ type: "ok", msg: `Imported ${toImport.length} product(s).` });
-      setInventoryOpen(false);
-      setSelected(new Set());
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const handleDelete = async (p: CompanyProduct) => {
-    if (!p.id || !confirm(`Delete "${p.name}"?`)) return;
-    try {
-      await deleteCompanyProduct(p.id);
-      setStatus({ type: "ok", msg: `"${p.name}" deleted.` });
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Delete failed." });
-    }
-  };
-
-  if (adding || editing) return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={() => { setAdding(false); setEditing(null); }} className="text-on-surface-variant hover:text-on-surface"><X className="w-5 h-5" /></button>
-        <h3 className="font-bold text-on-surface">{editing ? "Edit Product" : "Add New Product"}</h3>
-      </div>
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
-        <ProductForm companyId={companyId} initial={editing ?? undefined}
-          onDone={() => { setAdding(false); setEditing(null); setStatus({ type: "ok", msg: "Product saved." }); load(); }}
-          onCancel={() => { setAdding(false); setEditing(null); }} />
-      </div>
-    </div>
-  );
+    fetchUserProfileByPhone(ownerPhone)
+      .then(async (profile) => {
+        const uid = profile?.uid;
+        if (!uid) { setProducts([]); return; }
+        const prods = await fetchManufacturerProducts(uid).catch(() => []);
+        setProducts(prods);
+      })
+      .catch(() => setStatus({ type: "err", msg: "Could not load products." }))
+      .finally(() => setLoading(false));
+  }, [ownerPhone]);
 
   return (
     <div className="space-y-4">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-sm text-on-surface-variant">{products.length} product{products.length !== 1 ? "s" : ""}</p>
-        <div className="flex gap-2">
-          {ownerPhone && (
-            <button type="button" onClick={toggleInventoryPanel}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10">
-              <ChevronDown className={`w-4 h-4 transition-transform ${inventoryOpen ? "rotate-180" : ""}`} />
-              Import from Inventory
-            </button>
-          )}
-          <button type="button" onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-            <Plus className="w-4 h-4" /> Add Product
-          </button>
-        </div>
+      <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+        <Package className="w-4 h-4 shrink-0 text-blue-600" />
+        <span>Products are fetched live from the manufacturer&apos;s inventory. Always up to date.</span>
       </div>
-
-      {/* Import panel */}
-      {inventoryOpen && ownerPhone && (
-        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-black uppercase tracking-widest text-primary">Manufacturer Inventory</h4>
-            <span className="text-xs text-on-surface-variant">{inventory.length} product(s)</span>
-          </div>
-          {inventoryLoading ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-on-surface-variant">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading inventory…
-            </div>
-          ) : inventory.length === 0 ? (
-            <p className="text-sm text-center text-on-surface-variant py-6">No inventory products found for this manufacturer.</p>
-          ) : (
-            <>
-              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-                {inventory.map((p: any) => (
-                  <label key={p.id} className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer border transition-colors ${selected.has(p.id) ? "border-primary/40 bg-primary/5" : "border-outline-variant/20 hover:bg-surface-container"}`}>
-                    <input type="checkbox" checked={selected.has(p.id)}
-                      onChange={e => setSelected(prev => {
-                        const next = new Set(prev);
-                        e.target.checked ? next.add(p.id) : next.delete(p.id);
-                        return next;
-                      })}
-                      className="rounded border-outline-variant accent-primary" />
-                    {p.image && <img src={p.image} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-on-surface truncate">{p.name}</p>
-                      <p className="text-xs text-on-surface-variant">{p.category} · ₹{p.price}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="flex items-center justify-between pt-1">
-                <button type="button"
-                  onClick={() => setSelected(selected.size === inventory.length ? new Set() : new Set(inventory.map((p: any) => p.id)))}
-                  className="text-xs font-semibold text-primary hover:underline">
-                  {selected.size === inventory.length ? "Deselect all" : "Select all"}
-                </button>
-                <button type="button" onClick={handleImport} disabled={selected.size === 0 || importing}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-50">
-                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />}
-                  {importing ? "Importing…" : `Import ${selected.size > 0 ? selected.size : ""} Selected`}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {loading ? (
+      {!ownerPhone ? (
+        <p className="text-sm text-center text-on-surface-variant py-8">Assign an owner to this company page to see their products.</p>
+      ) : loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>
       ) : products.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-2">
           <Package className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No products yet.</p>
+          <p className="font-semibold text-on-surface-variant">No products found in inventory.</p>
         </div>
       ) : (
         <div className="space-y-2.5">
-          {products.map(p => (
+          {products.map((p: any) => (
             <div key={p.id} className="flex items-center gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3.5">
               <div className="w-12 h-12 rounded-xl overflow-hidden bg-surface-container shrink-0">
                 {p.image ? <img src={p.image} alt={p.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} /> : <div className="w-full h-full flex items-center justify-center"><Package className="w-5 h-5 text-on-surface-variant/30" /></div>}
@@ -635,11 +281,7 @@ function ProductsTab({ companyId, ownerPhone }: { companyId: string; ownerPhone?
                 <p className="font-semibold text-on-surface text-sm truncate">{p.name}</p>
                 <p className="text-xs text-on-surface-variant">{p.category} · ₹{p.price}</p>
               </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${p.stock === "In Stock" ? "bg-green-50 text-green-700" : p.stock === "Low Stock" ? "bg-yellow-50 text-yellow-700" : "bg-gray-100 text-gray-600"}`}>{p.stock}</span>
-              <div className="flex gap-1 shrink-0">
-                <button type="button" onClick={() => setEditing(p)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary"><Pencil className="w-4 h-4" /></button>
-                <button type="button" onClick={() => handleDelete(p)} className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-variant hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${(p.stock ?? "In Stock") === "In Stock" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>{p.stock ?? "In Stock"}</span>
             </div>
           ))}
         </div>
@@ -648,309 +290,38 @@ function ProductsTab({ companyId, ownerPhone }: { companyId: string; ownerPhone?
   );
 }
 
-// ─── Store Form ───────────────────────────────────────────────────────────────
-
-function StoreForm({ companyId, initial, onDone, onCancel }: {
-  companyId: string; initial?: CompanyStore; onDone: () => void; onCancel: () => void;
-}) {
-  const [form, setForm] = useState({
-    name: initial?.name ?? "", ownerName: initial?.ownerName ?? "", phone: initial?.phone ?? "",
-    address: initial?.address ?? "", status: initial?.status ?? "", lat: String(initial?.lat ?? ""),
-    lng: String(initial?.lng ?? ""), stockInput: "",
-  });
-  const [stock, setStock] = useState<string[]>(initial?.stock ?? []);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Retailer search
-  const [retailers, setRetailers] = useState<StoreAutocompleteOption[]>([]);
-  const [nameSearch, setNameSearch] = useState(initial?.name ?? "");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const nameRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetchRetailerProfiles().then(setRetailers).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => { if (nameRef.current && !nameRef.current.contains(e.target as Node)) setDropdownOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const filtered = retailers.filter(r =>
-    nameSearch.length > 0 && r.shopName.toLowerCase().includes(nameSearch.toLowerCase())
-  ).slice(0, 8);
-
-  const fillFromRetailer = (r: StoreAutocompleteOption) => {
-    setForm(p => ({
-      ...p, name: r.shopName, ownerName: r.ownerName,
-      phone: r.phone, address: r.address,
-      lat: r.lat ? String(r.lat) : p.lat,
-      lng: r.lng ? String(r.lng) : p.lng,
-    }));
-    setNameSearch(r.shopName);
-    setDropdownOpen(false);
-  };
-
-  // Google Places autocomplete on address
-  const addressRef = useRef<HTMLInputElement>(null);
-  usePlacesInput(addressRef, ({ name, address, lat, lng }) => {
-    setForm(p => ({
-      ...p, address,
-      lat: String(lat), lng: String(lng),
-      name: p.name || name,
-    }));
-  });
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [k]: e.target.value }));
-
-  const handleSave = async () => {
-    if (!form.name.trim()) { setError("Store name is required."); return; }
-    if (!form.address.trim()) { setError("Address is required."); return; }
-    setSaving(true); setError(null);
-    try {
-      await saveCompanyStore({
-        companyId, name: form.name.trim(), ownerName: form.ownerName.trim() || undefined,
-        phone: form.phone.trim() || undefined, address: form.address.trim(),
-        status: form.status.trim() || undefined, lat: Number(form.lat) || 0, lng: Number(form.lng) || 0,
-        stock: stock.length ? stock : undefined,
-      }, initial?.id);
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {/* Store Name with retailer dropdown */}
-        <div className={`${labelCls} relative`} ref={nameRef}>
-          <span className="font-medium text-on-surface">Store Name *</span>
-          <input className={inputCls} value={nameSearch}
-            onChange={e => { setNameSearch(e.target.value); setForm(p => ({ ...p, name: e.target.value })); setDropdownOpen(true); }}
-            onFocus={() => setDropdownOpen(true)}
-            placeholder="Search KrishiDukan retailers or type name…" />
-          {dropdownOpen && filtered.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-outline-variant/40 bg-white shadow-lg overflow-hidden">
-              {filtered.map(r => (
-                <button key={r.phone} type="button" onMouseDown={() => fillFromRetailer(r)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primary/5 border-b border-outline-variant/10 last:border-0">
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Store className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-on-surface truncate">{r.shopName}</p>
-                    <p className="text-xs text-on-surface-variant truncate">{r.address}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <label className={labelCls}><span className="font-medium text-on-surface">Owner Name</span>
-          <input className={inputCls} value={form.ownerName} onChange={set("ownerName")} placeholder="Ramesh Shinde" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Phone</span>
-          <input type="tel" className={inputCls} value={form.phone} onChange={set("phone")} placeholder="+919307199040" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Store Hours</span>
-          <input className={inputCls} value={form.status} onChange={set("status")} placeholder="Open until 7 PM" /></label>
-
-        {/* Address with Google Places */}
-        <label className={`${labelCls} md:col-span-2`}><span className="font-medium text-on-surface">Address * <span className="font-normal text-on-surface-variant text-xs">(search to auto-fill location)</span></span>
-          <input ref={addressRef} className={inputCls} value={form.address}
-            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
-            placeholder="Search Google Maps address, business name…" /></label>
-
-        <label className={labelCls}><span className="font-medium text-on-surface">Latitude</span>
-          <input type="number" step="any" className={inputCls} value={form.lat} onChange={set("lat")} placeholder="18.9602" /></label>
-        <label className={labelCls}><span className="font-medium text-on-surface">Longitude</span>
-          <input type="number" step="any" className={inputCls} value={form.lng} onChange={set("lng")} placeholder="75.1705" /></label>
-      </div>
-      <p className="text-xs text-on-surface-variant">💡 Select an address from the dropdown to auto-fill lat/lng, or paste coordinates manually.</p>
-
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-on-surface">Products in Stock</p>
-        <div className="flex flex-wrap gap-2">
-          {stock.map((s, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs bg-surface-container text-on-surface border border-outline-variant/30 px-2.5 py-1 rounded-full">
-              {s} <button type="button" onClick={() => setStock(p => p.filter((_, j) => j !== i))}><X className="w-3 h-3" /></button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input className={`${inputCls} flex-1`} value={form.stockInput}
-            onChange={e => setForm(p => ({ ...p, stockInput: e.target.value }))}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const v = form.stockInput.trim(); if (v) { setStock(p => [...p, v]); setForm(p => ({ ...p, stockInput: "" })); } } }}
-            placeholder="e.g. Power Plus 1L — Enter to add" />
-          <button type="button" onClick={() => { const v = form.stockInput.trim(); if (v) { setStock(p => [...p, v]); setForm(p => ({ ...p, stockInput: "" })); } }}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20"><Plus className="w-4 h-4" /></button>
-        </div>
-      </div>
-      <div className="flex gap-3 pt-2">
-        <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-60">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {saving ? "Saving…" : initial ? "Update Store" : "Add Store"}
-        </button>
-        <button type="button" onClick={onCancel} className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-outline-variant/40 text-on-surface-variant text-sm font-semibold hover:bg-surface-container"><X className="w-4 h-4" /> Cancel</button>
-      </div>
-    </div>
-  );
-}
 
 // ─── Stores Tab ───────────────────────────────────────────────────────────────
 
-function StoresTab({ companyId, ownerPhone }: { companyId: string; ownerPhone?: string }) {
-  const [stores, setStores] = useState<CompanyStore[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<CompanyStore | null>(null);
+function StoresTab({ ownerPhone }: { ownerPhone?: string }) {
+  const [stores, setStores] = useState<RetailerNetworkStore[]>([]);
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
 
-  // Import from network
-  const [networkOpen, setNetworkOpen] = useState(false);
-  const [networkStores, setNetworkStores] = useState<RetailerNetworkStore[]>([]);
-  const [networkLoading, setNetworkLoading] = useState(false);
-  const [importingPhone, setImportingPhone] = useState<string | null>(null);
-
-  const load = useCallback(() => {
+  useEffect(() => {
+    if (!ownerPhone) { setStores([]); return; }
     setLoading(true);
-    fetchCompanyStores(companyId).then(setStores).catch(err => setStatus({ type: "err", msg: err.message })).finally(() => setLoading(false));
-  }, [companyId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const loadNetwork = async () => {
-    if (!ownerPhone) return;
-    setNetworkLoading(true);
-    try {
-      const result = await fetchManufacturerNetworkStores(ownerPhone);
-      setNetworkStores(result);
-    } catch {
-      setStatus({ type: "err", msg: "Could not load retailer network." });
-    } finally {
-      setNetworkLoading(false);
-    }
-  };
-
-  const toggleNetwork = () => {
-    if (!networkOpen && networkStores.length === 0) loadNetwork();
-    setNetworkOpen(p => !p);
-  };
-
-  const alreadyImported = new Set(stores.map(s => s.name?.toLowerCase().trim()));
-
-  const handleImportStore = async (retailer: RetailerNetworkStore) => {
-    setImportingPhone(retailer.phone);
-    try {
-      await saveCompanyStore({
-        companyId, name: retailer.name, ownerName: retailer.ownerName || undefined,
-        phone: retailer.storePhone, address: retailer.address,
-        lat: retailer.lat, lng: retailer.lng,
-      });
-      setStatus({ type: "ok", msg: `"${retailer.name}" added.` });
-      load();
-    } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Import failed." });
-    } finally {
-      setImportingPhone(null);
-    }
-  };
-
-  const handleDelete = async (s: CompanyStore) => {
-    if (!s.id || !confirm(`Remove "${s.name}"?`)) return;
-    try { await deleteCompanyStore(s.id); setStatus({ type: "ok", msg: "Store removed." }); load(); }
-    catch (err) { setStatus({ type: "err", msg: err instanceof Error ? err.message : "Delete failed." }); }
-  };
-
-  if (adding || editing) return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button type="button" onClick={() => { setAdding(false); setEditing(null); }} className="text-on-surface-variant hover:text-on-surface"><X className="w-5 h-5" /></button>
-        <h3 className="font-bold text-on-surface">{editing ? "Edit Store" : "Add New Store"}</h3>
-      </div>
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
-        <StoreForm companyId={companyId} initial={editing ?? undefined}
-          onDone={() => { setAdding(false); setEditing(null); setStatus({ type: "ok", msg: "Store saved." }); load(); }}
-          onCancel={() => { setAdding(false); setEditing(null); }} />
-      </div>
-    </div>
-  );
+    fetchManufacturerNetworkStores(ownerPhone)
+      .then(setStores)
+      .catch(() => setStatus({ type: "err", msg: "Could not load retailer network." }))
+      .finally(() => setLoading(false));
+  }, [ownerPhone]);
 
   return (
     <div className="space-y-4">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-sm text-on-surface-variant">{stores.length} store{stores.length !== 1 ? "s" : ""}</p>
-        <div className="flex gap-2">
-          {ownerPhone && (
-            <button type="button" onClick={toggleNetwork}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/10">
-              <ChevronDown className={`w-4 h-4 transition-transform ${networkOpen ? "rotate-180" : ""}`} />
-              Import from Network
-            </button>
-          )}
-          <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90">
-            <Plus className="w-4 h-4" /> Add Store
-          </button>
-        </div>
+      <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+        <Store className="w-4 h-4 shrink-0 text-blue-600" />
+        <span>Stores are fetched live from the manufacturer&apos;s retailer network. No duplication — always up to date.</span>
       </div>
-
-      {/* Network import panel */}
-      {networkOpen && ownerPhone && (
-        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-black uppercase tracking-widest text-primary">Retailer Network</h4>
-            <span className="text-xs text-on-surface-variant">{networkStores.length} retailer(s)</span>
-          </div>
-          {networkLoading ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-on-surface-variant">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading network…
-            </div>
-          ) : networkStores.length === 0 ? (
-            <p className="text-sm text-center text-on-surface-variant py-6">No retailers found in this manufacturer's network.</p>
-          ) : (
-            <div className="space-y-2">
-              {networkStores.map((r) => {
-                const imported = alreadyImported.has(r.name?.toLowerCase().trim());
-                return (
-                  <div key={r.phone} className="flex items-center gap-3 rounded-xl border border-outline-variant/20 bg-white p-3">
-                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <Store className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-on-surface truncate">{r.name}</p>
-                      <p className="text-xs text-on-surface-variant truncate">{r.address || r.storePhone}</p>
-                    </div>
-                    {imported ? (
-                      <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">Added</span>
-                    ) : (
-                      <button type="button" onClick={() => handleImportStore(r)} disabled={importingPhone === r.phone}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-60 shrink-0">
-                        {importingPhone === r.phone ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {loading ? (
+      {!ownerPhone ? (
+        <p className="text-sm text-center text-on-surface-variant py-8">Assign an owner to this company page to see their retailer network.</p>
+      ) : loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>
       ) : stores.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-2">
           <Store className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No stores yet.</p>
-          {ownerPhone && <p className="text-sm text-on-surface-variant">Use <strong>Import from Network</strong> to add retailer stores.</p>}
+          <p className="font-semibold text-on-surface-variant">No retailers found in network.</p>
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -963,10 +334,7 @@ function StoresTab({ companyId, ownerPhone }: { companyId: string; ownerPhone?: 
                 <p className="font-semibold text-on-surface text-sm truncate">{s.name}</p>
                 <p className="text-xs text-on-surface-variant flex items-center gap-1 truncate"><MapPin className="w-2.5 h-2.5 shrink-0" /> {s.address}</p>
               </div>
-              <div className="flex gap-1 shrink-0">
-                <button type="button" onClick={() => setEditing(s)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary"><Pencil className="w-4 h-4" /></button>
-                <button type="button" onClick={() => handleDelete(s)} className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-variant hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-              </div>
+              {s.storePhone && <p className="text-xs text-on-surface-variant shrink-0">{s.storePhone}</p>}
             </div>
           ))}
         </div>
@@ -1191,8 +559,8 @@ function CompanyEditDrawer({ company, onClose, onRefresh }: {
             <BrandTab company={localCompany} ownerPhone={localCompany.ownerPhone}
               onSaved={d => setLocalCompany(p => ({ ...p, ...d }))} />
           )}
-          {tab === "products" && <ProductsTab companyId={localCompany.id} ownerPhone={localCompany.ownerPhone} />}
-          {tab === "stores" && <StoresTab companyId={localCompany.id} ownerPhone={localCompany.ownerPhone} />}
+          {tab === "products" && <ProductsTab ownerPhone={localCompany.ownerPhone} />}
+          {tab === "stores" && <StoresTab ownerPhone={localCompany.ownerPhone} />}
           {tab === "videos" && (
             <VideosTab companyId={localCompany.id} initialVideos={localCompany.videos ?? []}
               onSaved={videos => setLocalCompany(p => ({ ...p, videos }))} />

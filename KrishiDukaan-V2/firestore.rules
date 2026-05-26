@@ -417,23 +417,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── companyProducts ─────────────────────────────────────────────────────
-    // Products belonging to a company page. Public read.
-    match /companyProducts/{productId} {
-      allow read: if true;
-      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-      allow update: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-      allow delete: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-    }
-
-    // ─── companyStores ───────────────────────────────────────────────────────
-    // Stores belonging to a company page. Public read.
-    match /companyStores/{storeId} {
-      allow read: if true;
-      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-      allow update: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-      allow delete: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
-    }
 
   }
 }
