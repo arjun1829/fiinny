@@ -47,6 +47,10 @@ export default function DashboardPage() {
           if (profile) {
             let slug = "";
             let logo = "";
+            let businessName = "";
+            let ownerName = (profile as any).ownerName || profile.name || "";
+            let city = (profile as any).city || "";
+            let state = (profile as any).state || "";
 
             if (profile.role === "manufacturer") {
               try {
@@ -57,18 +61,45 @@ export default function DashboardPage() {
                   fetchManufacturerProfile(phone),
                   fetchBrandPageCustomization(phone),
                 ]);
-                if (mfrDoc) slug = String(mfrDoc.slug ?? "");
+                if (mfrDoc) {
+                  slug = String(mfrDoc.slug ?? "");
+                  businessName = String(mfrDoc.businessName ?? "");
+                  ownerName = String(mfrDoc.ownerName ?? ownerName);
+                  const addr = (mfrDoc.address ?? {}) as Record<string, unknown>;
+                  city = String(addr.city ?? city);
+                  state = String(addr.state ?? state);
+                }
                 if (custom) logo = String(custom.logo ?? "");
               } catch (e) {
                 console.error("Error loading brand details in dashboard:", e);
               }
+            } else if (profile.role === "retailer") {
+              try {
+                const { getDoc, doc } = await import("firebase/firestore");
+                const { db } = await import("../firebase");
+                const phone = (profile as any).phone || "";
+                const retailerDocId = (profile as any).retailerDocId || phone;
+                if (retailerDocId) {
+                  const snap = await getDoc(doc(db, "retailers", retailerDocId));
+                  if (snap.exists()) {
+                    const r = snap.data() as Record<string, unknown>;
+                    businessName = String(r.shopName ?? r.businessName ?? "");
+                    ownerName = String(r.ownerName ?? ownerName);
+                    const addr = (r.address ?? {}) as Record<string, unknown>;
+                    city = String(addr.city ?? city);
+                    state = String(addr.state ?? state);
+                  }
+                }
+              } catch (e) {
+                console.error("Error loading retailer details in dashboard:", e);
+              }
             }
 
             setProfileSummary({
-              businessName: (profile as any).businessName || (profile as any).shopName || profile.name || "",
-              ownerName: (profile as any).ownerName || profile.name || "",
-              city: (profile as any).city || "",
-              state: (profile as any).state || "",
+              businessName,
+              ownerName,
+              city,
+              state,
               role: profile.role || "",
               productCount: (profile as any).productCount || 0,
               slug,

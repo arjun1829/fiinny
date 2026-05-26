@@ -323,7 +323,7 @@ export default function BrandView({
                 </>
               )}
             </div>
-            {brand.about && <p className="text-white/60 text-sm leading-relaxed max-w-lg">{brand.about}</p>}
+            {brand.about && <p className="text-white/75 text-sm leading-relaxed max-w-lg">{brand.about}</p>}
             {(brand.phone || brand.email) && (
               <div className="flex flex-wrap gap-4">
                 {brand.phone && (

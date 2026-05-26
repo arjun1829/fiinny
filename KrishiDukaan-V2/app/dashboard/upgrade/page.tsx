@@ -27,7 +27,7 @@ export default function UpgradePage() {
   }, [router]);
 
   const handleSuccess = () => {
-    router.push('/dashboard/inventory');
+    router.push('/dashboard/profile');
   };
 
   const handleLogout = async () => {

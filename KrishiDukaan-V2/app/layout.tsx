@@ -7,7 +7,7 @@ import { I18nProvider } from "./i18n/I18nContext";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "KrishiDukan - AI Agri-Commerce",
+  title: "KrishiDukan - Agri-Commerce",
   description: "Connecting farmers with retailers and manufacturers",
   icons: {
     icon: "/images/krishidukan icon.webp",
