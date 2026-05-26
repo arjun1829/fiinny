@@ -325,7 +325,7 @@ service cloud.firestore {
     // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
     match /brandPages/{manufacturerPhone} {
       allow read: if true;
-      allow create, update: if isAuthed() && myPhone() == manufacturerPhone;
+      allow create, update: if isAuthed() && (myPhone() == manufacturerPhone || isAdmin());
       allow delete: if isAdmin();
     }
     

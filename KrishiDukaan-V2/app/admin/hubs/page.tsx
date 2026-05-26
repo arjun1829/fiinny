@@ -396,7 +396,7 @@ export default function AdminHubsPage() {
 
       {/* Add/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-on-surface/40 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-start justify-center bg-on-surface/40 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b border-surface-container sticky top-0 bg-white rounded-t-3xl z-10">
               <h2 className="text-lg font-bold text-on-surface">{editId ? "Edit Hub" : "New Hub"}</h2>

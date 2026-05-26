@@ -5,7 +5,7 @@ import {
   Building2, Phone, Plus, RefreshCw, Check, X,
   Loader2, Package, Store, Video, LinkIcon,
   Save, Tag, Globe, Mail, Youtube,
-  MapPin, Users, Sparkles, Pencil,
+  MapPin, Users, Sparkles, Pencil, Search,
 } from "lucide-react";
 import {
   fetchAllCompanyPages, saveCompanyPage, assignCompanyOwner, removeCompanyOwner,
@@ -13,6 +13,9 @@ import {
   fetchManufacturerProducts, fetchUserProfileByPhone, fetchManufacturerNetworkStores,
   type CompanyPageDoc, type RetailerNetworkStore,
 } from "../../firebase";
+import {
+  fetchBrandPageCustomization, saveBrandPageCustomization,
+} from "../../dashboard/_lib/brand-page-firestore";
 import { MANUFACTURERS } from "../../constants";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,10 +71,30 @@ function BrandTab({ company, ownerPhone, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [ownerProfile, setOwnerProfile] = useState<Record<string, any> | null>(null);
+  const [brandPageLoaded, setBrandPageLoaded] = useState(false);
 
   useEffect(() => {
     if (!ownerPhone) return;
     fetchUserProfileByPhone(ownerPhone).then(p => setOwnerProfile(p));
+    fetchBrandPageCustomization(ownerPhone).then(bp => {
+      if (!bp) return;
+      setForm(prev => ({
+        ...prev,
+        tagline: bp.tagline ?? prev.tagline,
+        about: bp.about ?? prev.about,
+        founded: bp.establishedYear ?? prev.founded,
+        website: bp.website ?? prev.website,
+        socialProof: bp.socialProof ?? prev.socialProof,
+        primaryColor: bp.primaryColor ?? prev.primaryColor,
+        accentColor: bp.accentColor ?? prev.accentColor,
+        instagram: bp.socialLinks?.instagram ?? prev.instagram,
+        facebook: bp.socialLinks?.facebook ?? prev.facebook,
+        whatsapp: bp.socialLinks?.whatsapp ?? prev.whatsapp,
+        youtube: bp.socialLinks?.youtube ?? prev.youtube,
+      }));
+      if (bp.certifications) setCerts(bp.certifications);
+      setBrandPageLoaded(true);
+    });
   }, [ownerPhone]);
 
   const profileData = ownerProfile ? {
@@ -99,21 +122,35 @@ function BrandTab({ company, ownerPhone, onSaved }: {
   const handleSave = async () => {
     setSaving(true); setStatus(null);
     try {
-      const data: Partial<CompanyPageDoc> = {
+      const socialLinks = {
+        instagram: form.instagram.trim() || undefined,
+        facebook: form.facebook.trim() || undefined,
+        whatsapp: form.whatsapp.trim() || undefined,
+        youtube: form.youtube.trim() || undefined,
+      };
+      const companyData: Partial<CompanyPageDoc> = {
         name: form.name.trim(), tagline: form.tagline.trim(), about: form.about.trim(),
         location: form.location.trim(), founded: form.founded.trim(), website: form.website.trim(),
         socialProof: form.socialProof.trim(), phone: form.phone.trim(), email: form.email.trim(),
         primaryColor: form.primaryColor, accentColor: form.accentColor, certifications: certs,
-        socialLinks: {
-          instagram: form.instagram.trim() || undefined,
-          facebook: form.facebook.trim() || undefined,
-          whatsapp: form.whatsapp.trim() || undefined,
-          youtube: form.youtube.trim() || undefined,
-        },
+        socialLinks,
       };
-      await saveCompanyPage(company.id, data);
+      if (ownerPhone) {
+        await saveBrandPageCustomization(ownerPhone, {
+          tagline: form.tagline.trim(),
+          about: form.about.trim(),
+          establishedYear: form.founded.trim(),
+          website: form.website.trim(),
+          socialProof: form.socialProof.trim(),
+          certifications: certs,
+          primaryColor: form.primaryColor,
+          accentColor: form.accentColor,
+          socialLinks,
+        });
+      }
+      await saveCompanyPage(company.id, companyData);
       setStatus({ type: "ok", msg: "Brand info saved." });
-      onSaved(data);
+      onSaved(companyData);
     } catch (err) {
       setStatus({ type: "err", msg: err instanceof Error ? err.message : "Save failed." });
     } finally {
@@ -344,15 +381,28 @@ function StoresTab({ ownerPhone }: { ownerPhone?: string }) {
 }
 
 // ─── Videos Tab ───────────────────────────────────────────────────────────────
+// When a manufacturer owner is assigned, videos live in brandPages/{ownerPhone}.
+// Without an owner they fall back to companyPages.videos so legacy pages still work.
 
-function VideosTab({ companyId, initialVideos, onSaved }: {
-  companyId: string; initialVideos: string[]; onSaved: (v: string[]) => void;
+function VideosTab({ companyId, ownerPhone, initialVideos, onSaved }: {
+  companyId: string; ownerPhone?: string; initialVideos: string[]; onSaved: (v: string[]) => void;
 }) {
   const [videos, setVideos] = useState<string[]>(initialVideos);
+  const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
+
+  // If ownerPhone is set, load videos from brandPages (the manufacturer's own source of truth)
+  useEffect(() => {
+    if (!ownerPhone) return;
+    setLoading(true);
+    fetchBrandPageCustomization(ownerPhone)
+      .then(custom => { if (custom?.videos) setVideos(custom.videos); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [ownerPhone]);
 
   const addVideo = () => {
     const id = extractYouTubeId(input);
@@ -363,14 +413,39 @@ function VideosTab({ companyId, initialVideos, onSaved }: {
 
   const handleSave = async () => {
     setSaving(true); setStatus(null);
-    try { await saveCompanyPage(companyId, { videos }); setStatus({ type: "ok", msg: "Videos saved." }); onSaved(videos); }
-    catch (err) { setStatus({ type: "err", msg: err instanceof Error ? err.message : "Save failed." }); }
-    finally { setSaving(false); }
+    try {
+      if (ownerPhone) {
+        // Save to brandPages — same place the manufacturer dashboard writes to
+        await saveBrandPageCustomization(ownerPhone, { videos });
+      } else {
+        // Legacy fallback: no owner assigned, save to companyPages
+        await saveCompanyPage(companyId, { videos });
+      }
+      setStatus({ type: "ok", msg: "Videos saved." });
+      onSaved(videos);
+    } catch (err) {
+      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Save failed." });
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
+        <Loader2 className="w-5 h-5 animate-spin" /> Loading videos…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
+      {ownerPhone && (
+        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+          Videos are synced with the manufacturer&apos;s brand page (<code className="font-mono">brandPages/{ownerPhone}</code>). Changes here update what the manufacturer sees too.
+        </p>
+      )}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-3">
         <h4 className="text-xs font-black uppercase tracking-widest text-primary">Add YouTube Video</h4>
         <p className="text-xs text-on-surface-variant">Paste a YouTube URL or 11-character video ID. Videos show as vertical Shorts cards on the brand page.</p>
@@ -526,10 +601,10 @@ function CompanyEditDrawer({ company, onClose, onRefresh }: {
   return (
     <>
       {/* Overlay */}
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-x-0 bottom-0 top-16 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 z-50 h-full w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
+      <div className="fixed right-0 top-16 z-50 h-[calc(100vh-64px)] w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0"
           style={{ background: localCompany.primaryColor || "#154212" }}>
@@ -562,7 +637,8 @@ function CompanyEditDrawer({ company, onClose, onRefresh }: {
           {tab === "products" && <ProductsTab ownerPhone={localCompany.ownerPhone} />}
           {tab === "stores" && <StoresTab ownerPhone={localCompany.ownerPhone} />}
           {tab === "videos" && (
-            <VideosTab companyId={localCompany.id} initialVideos={localCompany.videos ?? []}
+            <VideosTab companyId={localCompany.id} ownerPhone={localCompany.ownerPhone}
+              initialVideos={localCompany.videos ?? []}
               onSaved={videos => setLocalCompany(p => ({ ...p, videos }))} />
           )}
           {tab === "owner" && <OwnerTab company={localCompany} onRefresh={() => { onRefresh(); }} />}
@@ -597,7 +673,7 @@ function CompanyRow({ company, onRefresh }: { company: CompanyPageDoc; onRefresh
             <span className="px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-semibold shrink-0">No owner</span>
           )}
           <div className="flex items-center gap-2 shrink-0">
-            <a href={`/?view=brand&manufacturer=${encodeURIComponent(company.id)}`} target="_blank" rel="noopener noreferrer"
+            <a href={`/?view=brand&manufacturer=${encodeURIComponent(company.ownerPhone ?? company.id)}`} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
               <LinkIcon className="w-3 h-3" /> Preview
             </a>
@@ -610,9 +686,9 @@ function CompanyRow({ company, onRefresh }: { company: CompanyPageDoc; onRefresh
         {/* Stats bar */}
         <div className="grid grid-cols-4 border-t border-outline-variant/10 divide-x divide-outline-variant/10">
           {[
-            { label: "Products", value: (company as any).productIds?.length ?? "—" },
-            { label: "Stores", value: (company as any).storeIds?.length ?? "—" },
-            { label: "Videos", value: company.videos?.length ?? 0 },
+            { label: "Products", value: company.ownerPhone ? "live" : "—" },
+            { label: "Stores", value: company.ownerPhone ? "live" : "—" },
+            { label: "Videos", value: company.ownerPhone ? "live" : (company.videos?.length ?? 0) },
             { label: "Certs", value: company.certifications?.length ?? 0 },
           ].map(({ label, value }) => (
             <div key={label} className="px-4 py-2 text-center">
@@ -639,10 +715,24 @@ export default function AdminCompaniesPage() {
   const [seedStatus, setSeedStatus] = useState<string | null>(null);
   const [bulkSeeding, setBulkSeeding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<"all" | "name" | "phone">("all");
 
   const allConstantIds = Object.keys(MANUFACTURERS);
   const seededIds = new Set(companies.map(c => c.id));
   const unseededIds = allConstantIds.filter(id => !seededIds.has(id));
+
+  const filteredCompanies = companies.filter(c => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+
+    const nameMatch = c.name?.toLowerCase().includes(q);
+    const phoneMatch = c.phone?.toLowerCase().includes(q) || c.ownerPhone?.toLowerCase().includes(q) || c.id?.toLowerCase().includes(q);
+
+    if (searchType === "name") return nameMatch;
+    if (searchType === "phone") return phoneMatch;
+    return nameMatch || phoneMatch;
+  });
 
   const load = () => {
     setLoading(true); setError(null);
@@ -746,6 +836,45 @@ export default function AdminCompaniesPage() {
 
       {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+      {/* Search & Filter Bar */}
+      {companies.length > 0 && (
+        <div className="flex flex-col md:flex-row gap-3 items-center bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/30 shadow-sm">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant/50" />
+            <input
+              type="text"
+              placeholder={
+                searchType === "all" ? "Search by name, phone, or owner number..." :
+                searchType === "name" ? "Search by company name..." :
+                "Search by phone or owner number..."
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-11 pr-10 py-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-on-surface-variant/40 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/50 hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <div className="w-full md:w-48 shrink-0">
+            <select
+              value={searchType}
+              onChange={(e) => setSearchType(e.target.value as any)}
+              className="w-full px-4 py-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low text-sm text-on-surface font-semibold focus:border-primary focus:outline-none transition-all cursor-pointer"
+            >
+              <option value="all">All Fields</option>
+              <option value="name">Company Name</option>
+              <option value="phone">Phone Number</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex h-40 items-center justify-center gap-2 text-sm text-on-surface-variant">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading company pages…
@@ -756,9 +885,15 @@ export default function AdminCompaniesPage() {
           <p className="font-semibold text-on-surface-variant">No company pages in Firestore yet.</p>
           <p className="text-sm text-on-surface-variant">Click <strong>Seed from Manufacturer Accounts</strong> in the header to auto-create pages for all existing manufacturer users, or use <strong>Seed Constant Pages</strong> for the built-in brands.</p>
         </div>
+      ) : filteredCompanies.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-12 text-center space-y-2">
+          <Search className="w-8 h-8 text-on-surface-variant/30 mx-auto" />
+          <p className="font-semibold text-on-surface-variant">No search results found</p>
+          <p className="text-xs text-on-surface-variant/70">Try adjusting your keywords or switching the search filter type.</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {companies.map(c => <CompanyRow key={c.id} company={c} onRefresh={load} />)}
+          {filteredCompanies.map(c => <CompanyRow key={c.id} company={c} onRefresh={load} />)}
         </div>
       )}
     </div>

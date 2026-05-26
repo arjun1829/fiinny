@@ -14,6 +14,12 @@ export type BrandPageCustomization = {
   accentColor: string;
   logo: string;
   banner: string;
+  socialLinks?: {
+    instagram?: string;
+    facebook?: string;
+    whatsapp?: string;
+    youtube?: string;
+  };
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -38,6 +44,12 @@ export type ManufacturerBrandData = {
   accentColor: string;
   logo: string;
   banner: string;
+  socialLinks?: {
+    instagram?: string;
+    facebook?: string;
+    whatsapp?: string;
+    youtube?: string;
+  };
 };
 
 export type BrandProductSummary = {
@@ -116,6 +128,7 @@ export function assembleBrandData(
     accentColor: String(c.accentColor ?? DEFAULT_CUSTOMIZATION.accentColor),
     logo: String(c.logo ?? DEFAULT_CUSTOMIZATION.logo),
     banner: String(c.banner ?? DEFAULT_CUSTOMIZATION.banner),
+    socialLinks: c.socialLinks,
   };
 }
 

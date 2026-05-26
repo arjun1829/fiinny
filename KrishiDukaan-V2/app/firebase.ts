@@ -796,14 +796,31 @@ export async function fetchAllMarketplaceProducts(): Promise<MarketplaceProduct[
 
 export async function fetchManufacturerProducts(manufacturerId: string): Promise<MarketplaceProduct[]> {
   try {
-    // ownerId == manufacturerId returns only own products — assigned copies now belong to retailer
-    const q = query(
-      collection(db, 'products'),
-      where('ownerId', '==', manufacturerId),
-      where('ownerType', '==', 'manufacturer'),
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketplaceProduct));
+    // Query both field names: legacy schema uses ownerId, newer schema uses manufacturerId.
+    // The public brand page queries manufacturerId; the dashboard uses ownerId.
+    // Both must return the same set so all views stay in sync.
+    const [byOwnerId, byManufacturerId] = await Promise.all([
+      getDocs(query(
+        collection(db, 'products'),
+        where('ownerId', '==', manufacturerId),
+        where('ownerType', '==', 'manufacturer'),
+      )),
+      getDocs(query(
+        collection(db, 'products'),
+        where('manufacturerId', '==', manufacturerId),
+      )),
+    ]);
+    const seen = new Set<string>();
+    const results: MarketplaceProduct[] = [];
+    for (const snap of [byOwnerId, byManufacturerId]) {
+      for (const d of snap.docs) {
+        if (!seen.has(d.id)) {
+          seen.add(d.id);
+          results.push({ id: d.id, ...d.data() } as MarketplaceProduct);
+        }
+      }
+    }
+    return results;
   } catch (error) {
     console.error('Error fetching manufacturer products:', error);
     throw error;
@@ -1728,35 +1745,80 @@ export type RetailerNetworkStore = {
 };
 
 export async function fetchManufacturerNetworkStores(manufacturerPhone: string): Promise<RetailerNetworkStore[]> {
-  const [snap, legacySnap] = await Promise.all([
-    getDocs(query(collection(db, 'manufacturerNetwork'), where('manufacturerPhone', '==', manufacturerPhone))),
-    getDocs(query(collection(db, 'manufacturerRetailers'), where('manufacturerPhone', '==', manufacturerPhone))).catch(() => ({ docs: [] })),
-  ]);
-  const allLinks = [...snap.docs, ...(legacySnap as any).docs].map((d: any) => d.data());
-  const seenPhones = new Set<string>();
-  const phones = allLinks
-    .map((l: any) => l.retailerPhone as string)
-    .filter((p): p is string => !!p && !seenPhones.has(p) && !!seenPhones.add(p));
-  const profiles = await Promise.all(
-    phones.map(async (phone) => {
-      try {
-        const s = await getDoc(doc(db, 'users', phone));
-        if (!s.exists()) return null;
-        const d = s.data();
+  try {
+    const snap = await getDocs(collection(db, 'manufacturers', manufacturerPhone, 'retailers'));
+    const activeMirrors = snap.docs.filter((d) => {
+      const r = d.data();
+      return (
+        String(r.status ?? '') === 'active' &&
+        String(r.onboardingStatus ?? 'active') !== 'pending'
+      );
+    });
+
+    const profiles = await Promise.all(
+      activeMirrors.map(async (d) => {
+        const r = d.data();
+        const mirrorAddr = r.address || {};
+        const mirrorGeo = r.geo || {};
+        const shopName = String(r.shopName ?? r.ownerName ?? '');
+        const ownerName = String(r.ownerName ?? '');
+
+        let addressStr = '';
+        let lat = 0;
+        let lng = 0;
+
+        const retailerDocId = String(r.retailerDocId ?? d.id);
+        try {
+          const rSnap = await getDoc(doc(db, 'retailers', retailerDocId));
+          if (rSnap.exists()) {
+            const rd = rSnap.data();
+            const rdAddr = rd.address || {};
+            const rdGeo = rd.geo || {};
+
+            addressStr = [
+              rdAddr.line1 || mirrorAddr.line1,
+              rdAddr.city || mirrorAddr.city,
+              rdAddr.state || mirrorAddr.state,
+              rdAddr.pincode || mirrorAddr.pincode
+            ].filter(Boolean).join(', ');
+
+            lat = Number(rdGeo.latitude ?? rdGeo.lat ?? mirrorGeo.latitude ?? mirrorGeo.lat ?? 0);
+            lng = Number(rdGeo.longitude ?? rdGeo.lng ?? mirrorGeo.longitude ?? mirrorGeo.lng ?? 0);
+          }
+        } catch {
+          // ignore and fall back to mirror
+        }
+
+        if (!addressStr) {
+          addressStr = [
+            mirrorAddr.line1,
+            mirrorAddr.city,
+            mirrorAddr.state,
+            mirrorAddr.pincode
+          ].filter(Boolean).join(', ');
+        }
+        if (lat === 0 && lng === 0) {
+          lat = Number(mirrorGeo.latitude ?? mirrorGeo.lat ?? 0);
+          lng = Number(mirrorGeo.longitude ?? mirrorGeo.lng ?? 0);
+        }
+
         return {
-          id: s.id || phone,
-          phone,
-          name: d.shopName || d.name || phone,
-          ownerName: d.name || '',
-          address: [d.address, d.city, d.state, d.pincode].filter(Boolean).join(', '),
-          lat: d.latitude ? Number(d.latitude) : 0,
-          lng: d.longitude ? Number(d.longitude) : 0,
-          storePhone: d.phone || phone,
+          id: d.id,
+          phone: d.id,
+          name: shopName || d.id,
+          ownerName,
+          address: addressStr || '—',
+          lat,
+          lng,
+          storePhone: r.retailerPhone || d.id,
         } as RetailerNetworkStore;
-      } catch { return null; }
-    })
-  );
-  return profiles.filter((p): p is RetailerNetworkStore => p !== null);
+      })
+    );
+    return profiles;
+  } catch (error) {
+    console.error("Error in fetchManufacturerNetworkStores:", error);
+    return [];
+  }
 }
 
 export async function deleteCompanyStore(storeId: string): Promise<void> {

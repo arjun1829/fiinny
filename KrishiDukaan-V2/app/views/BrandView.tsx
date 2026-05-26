@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GoogleMap, useJsApiLoader, MarkerF } from '@react-google-maps/api';
 import {
   MapPin, ShoppingBag, ArrowRight, Store,
-  Leaf, ExternalLink, Package, BadgeCheck, Phone, Mail, ChevronRight, Navigation,
+  Leaf, ExternalLink, Package, BadgeCheck, Phone, Mail, ChevronRight, Navigation, Building2,
 } from 'lucide-react';
 import type { ManufacturerBrandData, BrandProductSummary, BrandRetailerSummary } from '../dashboard/_lib/brand-page-types';
 import { haversineDistance, formatDistance } from '../utils/haversine';
@@ -284,12 +284,20 @@ export default function BrandView({
               <BadgeCheck className="w-4 h-4 text-amber-400" />
               <span className="text-white/80 text-xs font-semibold">Verified Manufacturer on KrishiDukan</span>
             </div>
-            {brand.logo && (
-              <img src={brand.logo} alt={brand.businessName} className="h-16 w-auto object-contain" />
-            )}
-            <div>
-              <h1 className="text-4xl md:text-5xl font-extrabold text-white leading-tight">{brand.businessName}</h1>
-              {brand.tagline && <p className="text-white/70 text-lg mt-3 leading-relaxed">{brand.tagline}</p>}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6 mt-2">
+              {brand.logo ? (
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-white p-3 border-4 border-white/20 shadow-2xl shrink-0 flex items-center justify-center overflow-hidden transition-all duration-200 hover:scale-[1.03]">
+                  <img src={brand.logo} alt={brand.businessName} className="w-full h-full object-contain" />
+                </div>
+              ) : (
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-white/10 p-3 border-4 border-white/20 shadow-2xl shrink-0 flex items-center justify-center">
+                  <Building2 className="w-12 h-12 text-white/50" />
+                </div>
+              )}
+              <div className="space-y-2">
+                <h1 className="text-4xl md:text-5xl font-black text-white leading-none tracking-tight">{brand.businessName}</h1>
+                {brand.tagline && <p className="text-white/80 text-base md:text-lg font-medium leading-relaxed max-w-xl">{brand.tagline}</p>}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {locationDisplay && (

@@ -396,7 +396,7 @@ export default function AdminUsersPage() {
 
       {/* ─── Edit User Modal ─────────────────────────────────────────────────────── */}
       {editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">

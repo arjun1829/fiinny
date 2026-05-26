@@ -19,6 +19,7 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
+import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
@@ -47,6 +48,42 @@ type UserProfile = {
 
 const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand'];
 const HOME_PRODUCTS_LIMIT = 12;
+
+// Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
+// Falls back to a "not found" message if the manufacturer has no slug set up yet.
+function BrandPageRedirect({ phone }: { phone: string }) {
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!phone) { setNotFound(true); return; }
+    fetchManufacturerProfile(phone)
+      .then((mfr) => {
+        const slug = mfr?.slug as string | undefined;
+        if (slug) {
+          window.location.replace(`/brand/${slug}`);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => setNotFound(true));
+  }, [phone]);
+
+  if (notFound) {
+    return (
+      <div className="flex flex-col h-60 items-center justify-center gap-3 text-sm text-on-surface-variant px-6 text-center">
+        <p className="font-semibold text-on-surface">Brand page not found</p>
+        <p className="text-xs">This manufacturer hasn&apos;t set up their brand page yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-60 items-center justify-center gap-2 text-sm text-on-surface-variant">
+      <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+      Loading brand page…
+    </div>
+  );
+}
 
 export default function App() {
   const { t } = useI18n();
@@ -904,49 +941,8 @@ export default function App() {
       case 'subscription':
         return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
       case 'brand': {
-        const mfrId = selectedManufacturerId || 'golden-future-life-care';
-        const mfrConst = MANUFACTURERS[mfrId];
-        // Adapt legacy constants to the new BrandView prop shape
-        const adaptedBrand = mfrConst ? {
-          phone: mfrConst.phone || mfrId,
-          uid: null,
-          businessName: mfrConst.name,
-          ownerName: "",
-          address: { city: mfrConst.location.split(',')[0]?.trim() || "", state: mfrConst.location.split(',').pop()?.trim() || "", line1: mfrConst.location },
-          geo: null,
-          email: mfrConst.email || "",
-          slug: mfrConst.id,
-          tagline: mfrConst.tagline,
-          about: mfrConst.about,
-          establishedYear: mfrConst.founded,
-          website: mfrConst.website || "",
-          socialProof: mfrConst.socialProof,
-          certifications: mfrConst.certifications,
-          videos: mfrConst.videos || [],
-          primaryColor: mfrConst.primaryColor,
-          accentColor: mfrConst.accentColor,
-          logo: "",
-          banner: "",
-        } : {
-          phone: "", uid: null, businessName: "Brand not found", ownerName: "", address: { city: "", state: "", line1: "" }, geo: null, email: "", slug: mfrId,
-          tagline: "", about: "", establishedYear: "", website: "", socialProof: "", certifications: [], videos: [], primaryColor: "#154212", accentColor: "#f57c00", logo: "", banner: "",
-        };
-        const adaptedProducts = mergedProducts
-          .filter((p) => p.manufacturerId === mfrId)
-          .map((p) => ({ id: p.id, name: p.name, category: p.category, price: p.price, image: p.image || "" }));
-        return (
-          <BrandView
-            brand={adaptedBrand}
-            products={adaptedProducts}
-            retailers={[]}
-            onProductClick={navigateToProduct}
-            onFindNearYou={() => {
-              setProductSearch('');
-              setSelectedCategory('fertilizers');
-              navigate('market');
-            }}
-          />
-        );
+        const mfrPhone = selectedManufacturerId || '';
+        return <BrandPageRedirect phone={mfrPhone} />;
       }
       case 'about':
         return <AboutView />;
