@@ -19,6 +19,8 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
+import HelpView from './views/HelpView';
+import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
@@ -34,7 +36,7 @@ import Footer from '../components/shared/footer';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'help';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -45,8 +47,44 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
+
+// Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
+// Falls back to a "not found" message if the manufacturer has no slug set up yet.
+function BrandPageRedirect({ phone }: { phone: string }) {
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!phone) { setNotFound(true); return; }
+    fetchManufacturerProfile(phone)
+      .then((mfr) => {
+        const slug = mfr?.slug as string | undefined;
+        if (slug) {
+          window.location.replace(`/brand/${slug}`);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => setNotFound(true));
+  }, [phone]);
+
+  if (notFound) {
+    return (
+      <div className="flex flex-col h-60 items-center justify-center gap-3 text-sm text-on-surface-variant px-6 text-center">
+        <p className="font-semibold text-on-surface">Brand page not found</p>
+        <p className="text-xs">This manufacturer hasn&apos;t set up their brand page yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-60 items-center justify-center gap-2 text-sm text-on-surface-variant">
+      <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+      Loading brand page…
+    </div>
+  );
+}
 
 export default function App() {
   const { t } = useI18n();
@@ -98,7 +136,8 @@ export default function App() {
       view !== 'about' &&
       view !== 'subscription' &&
       view !== 'login' &&
-      view !== 'signup'
+      view !== 'signup' &&
+      view !== 'help'
     ) {
       return 'subscription';
     }
@@ -157,7 +196,7 @@ export default function App() {
       storeId: params.get('store'),
       inviteCode,
       hubId: params.get('hub'),
-      manufacturerId: params.get('manufacturer'),
+      manufacturerId: params.get('manufacturer')?.replace(/^ /, '+') ?? null,
     };
   }, []);
 
@@ -903,23 +942,14 @@ export default function App() {
         );
       case 'subscription':
         return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
-      case 'brand':
-        return (
-          <BrandView
-            manufacturerId={selectedManufacturerId || 'golden-future-life-care'}
-            products={mergedProducts}
-            stores={mergedStores}
-            onProductClick={navigateToProduct}
-            onFindNearYou={(_mfgId) => {
-              setProductSearch('');
-              setSelectedCategory('fertilizers');
-              navigate('market');
-            }}
-            onStoreClick={navigateToMap}
-          />
-        );
+      case 'brand': {
+        const mfrPhone = selectedManufacturerId || '';
+        return <BrandPageRedirect phone={mfrPhone} />;
+      }
       case 'about':
         return <AboutView />;
+      case 'help':
+        return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
         return (
           <HomeView
@@ -993,33 +1023,46 @@ export default function App() {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">
-        {[
+        {([
           { id: 'home', icon: ICONS.Home, label: t('home') },
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
           { id: 'map', icon: ICONS.Location, label: t('stores') },
-          { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
-        ].map((item) => (
-          <button
-            key={item.id}
-            data-tour-nav={item.id}
-            onClick={() => navigate(item.id as View)}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
-            }`}
-          >
-            <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-            {currentView === item.id && (
-              <motion.div 
-                layoutId="activeBubble" 
-                className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
-                initial={false}
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-          </button>
-        ))}
+          // Reuses the existing header Account dropdown — opens the same flow
+          // (login / dashboard / logout / language) by triggering the header button.
+          { id: 'account', icon: ICONS.Account, label: t('account'), action: 'account-menu' },
+        ] as { id: string; icon: typeof ICONS.Home; label: string; action?: 'account-menu' }[]).map((item) => {
+          const isActive = item.id !== 'account' && currentView === item.id;
+          const handleClick = () => {
+            if (item.action === 'account-menu') {
+              const trigger = document.querySelector<HTMLButtonElement>('[data-account-trigger]');
+              trigger?.click();
+              return;
+            }
+            navigate(item.id as View);
+          };
+          return (
+            <button
+              key={item.id}
+              data-tour-nav={item.id}
+              onClick={handleClick}
+              className={`flex flex-col items-center gap-1 transition-colors ${
+                isActive ? 'text-primary' : 'text-on-surface-variant'
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${isActive ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+              {isActive && (
+                <motion.div
+                  layoutId="activeBubble"
+                  className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
+                  initial={false}
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

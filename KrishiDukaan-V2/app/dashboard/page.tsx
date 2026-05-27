@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { auth, getUserProfile, fetchRetailerProducts, fetchManufacturerProducts } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { MapPin, Pencil } from "lucide-react";
+import { MapPin, Pencil, ExternalLink } from "lucide-react";
 import { PageHeader } from "./_components/page-header";
 import { StatCard } from "./_components/stat-card";
 import { QuickActions } from "./_components/quick-actions";
@@ -21,6 +21,8 @@ type ProfileSummary = {
   state: string;
   role: string;
   productCount: number;
+  slug?: string;
+  logo?: string;
 };
 
 function initials(name: string): string {
@@ -43,6 +45,25 @@ export default function DashboardPage() {
 
           // Profile summary card
           if (profile) {
+            let slug = "";
+            let logo = "";
+
+            if (profile.role === "manufacturer") {
+              try {
+                const { resolveManufacturerDocId } = await import("./_lib/profile-persistence");
+                const { fetchManufacturerProfile, fetchBrandPageCustomization } = await import("./_lib/brand-page-firestore");
+                const phone = await resolveManufacturerDocId(user.uid);
+                const [mfrDoc, custom] = await Promise.all([
+                  fetchManufacturerProfile(phone),
+                  fetchBrandPageCustomization(phone),
+                ]);
+                if (mfrDoc) slug = String(mfrDoc.slug ?? "");
+                if (custom) logo = String(custom.logo ?? "");
+              } catch (e) {
+                console.error("Error loading brand details in dashboard:", e);
+              }
+            }
+
             setProfileSummary({
               businessName: (profile as any).businessName || (profile as any).shopName || profile.name || "",
               ownerName: (profile as any).ownerName || profile.name || "",
@@ -50,6 +71,8 @@ export default function DashboardPage() {
               state: (profile as any).state || "",
               role: profile.role || "",
               productCount: (profile as any).productCount || 0,
+              slug,
+              logo,
             });
           }
           if (profile) {
@@ -119,20 +142,37 @@ export default function DashboardPage() {
       {/* Profile summary card */}
       {profileSummary && (
         <div className="mb-6 flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4 shadow-ambient">
-          <div className="h-14 w-14 shrink-0 rounded-full bg-primary flex items-center justify-center shadow">
-            <span className="text-lg font-bold text-white">
-              {initials(profileSummary.businessName || profileSummary.ownerName || "?")}
-            </span>
+          <div className="h-14 w-14 shrink-0 rounded-full bg-white border border-outline-variant/30 flex items-center justify-center shadow overflow-hidden">
+            {profileSummary.logo ? (
+              <img src={profileSummary.logo} alt="Logo" className="w-full h-full object-contain p-1" />
+            ) : (
+              <div className="w-full h-full bg-primary flex items-center justify-center">
+                <span className="text-lg font-bold text-white">
+                  {initials(profileSummary.businessName || profileSummary.ownerName || "?")}
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-base font-bold text-on-surface truncate">{profileSummary.businessName || "—"}</p>
             {profileSummary.ownerName && <p className="text-sm text-on-surface-variant">{profileSummary.ownerName}</p>}
-            {(profileSummary.city || profileSummary.state) && (
-              <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-on-surface-variant">
-                <MapPin className="h-3 w-3" />
-                {[profileSummary.city, profileSummary.state].filter(Boolean).join(", ")}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+              {(profileSummary.city || profileSummary.state) && (
+                <div className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                  <MapPin className="h-3 w-3" />
+                  {[profileSummary.city, profileSummary.state].filter(Boolean).join(", ")}
+                </div>
+              )}
+              {profileSummary.role === "manufacturer" && profileSummary.slug && (
+                <>
+                  <span className="text-on-surface-variant/30 text-xs hidden sm:inline">·</span>
+                  <a href={`/brand/${profileSummary.slug}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                    <ExternalLink className="h-3 w-3" /> View Brand Page
+                  </a>
+                </>
+              )}
+            </div>
           </div>
           <Link href="/dashboard/profile"
             className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">

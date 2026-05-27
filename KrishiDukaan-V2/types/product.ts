@@ -47,4 +47,12 @@ export type MarketplaceProduct = {
   composition?: { name: string; value: string; color: string }[];
   benefits?: string[];
   application?: string;
+
+  /** Optional Product Insights fields */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 };

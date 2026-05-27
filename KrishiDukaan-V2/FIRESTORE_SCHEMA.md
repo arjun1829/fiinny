@@ -92,6 +92,14 @@ images         string[]
 tags           string[]
 unit           string   // default unit of measurement
 
+// Optional Product Insights (Composition, Application, Crop suitability)
+nitrogen       string | null
+phosphorus     string | null
+potassium      string | null
+applicationDesc string | null
+dosage         string | null
+bestForCrops   string[] | null
+
 // Creator info (denormalized for product page display)
 createdByPhone string
 createdByType  "retailer" | "manufacturer"

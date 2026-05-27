@@ -75,14 +75,12 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const { t } = useI18n();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
-  const [ownerCompanyId, setOwnerCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole(null);
         setOnlineDelivery(false);
-        setOwnerCompanyId(null);
         return;
       }
       try {
@@ -90,11 +88,9 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         const r = profile?.role;
         setRole(r === "manufacturer" || r === "retailer" ? r : null);
         setOnlineDelivery(!!(profile as any)?.onlineDelivery);
-        setOwnerCompanyId((profile as any)?.ownerCompanyId ?? null);
       } catch {
         setRole(null);
         setOnlineDelivery(false);
-        setOwnerCompanyId(null);
       }
     });
     return () => unsub();
@@ -102,7 +98,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
 
   type NavItem = { href: string; labelKey: string; icon: React.ElementType };
 
-  const companyPageNavItem: NavItem | null = ownerCompanyId
+  const companyPageNavItem: NavItem | null = role === "manufacturer"
     ? { href: "/dashboard/company", labelKey: "sideCompanyPage", icon: Building2 }
     : null;
 

@@ -1,9 +1,10 @@
 import { MarketplaceProduct } from "../../types/product";
-import { ICONS, PRODUCTS, STORES, MANUFACTURERS } from '../constants';
+import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
-import { trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
+import { db, trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -162,6 +163,152 @@ function RetailerProfileSection({
   );
 }
 
+// ─── Manufacturer Brand Section (Firestore-backed) ────────────────────────────
+
+type MfrProduct = { id: string; name: string; category: string; price: number; image: string };
+type MfrInfo = { name: string; slug: string; location: string; founded: string } | null;
+
+function ManufacturerBrandSection({
+  manufacturerId,
+  currentProductId,
+  onProductClick,
+  onViewBrand,
+}: {
+  manufacturerId: string;
+  currentProductId: string;
+  onProductClick?: (id: string) => void;
+  onViewBrand?: (manufacturerId: string) => void;
+}) {
+  const [mfrInfo, setMfrInfo] = useState<MfrInfo>(null);
+  const [mfrProducts, setMfrProducts] = useState<MfrProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!manufacturerId) return;
+    setLoading(true);
+
+    async function fetchAll() {
+      // Resolve manufacturer profile doc (keyed by phone, uid stored as field)
+      const mfrSnap = await getDocs(
+        query(collection(db, "manufacturers"), where("uid", "==", manufacturerId), limit(1)),
+      );
+      if (!mfrSnap.empty) {
+        const d = mfrSnap.docs[0].data() as Record<string, unknown>;
+        const addr = (d.address ?? {}) as Record<string, unknown>;
+        setMfrInfo({
+          name: String(d.businessName ?? d.ownerName ?? ""),
+          slug: String(d.slug ?? ""),
+          location: [addr.city, addr.state].filter(Boolean).join(", "),
+          founded: String(d.establishedYear ?? ""),
+        });
+      }
+
+      // Fetch manufacturer-owned catalog products (exclude assigned retailer copies)
+      const prodsSnap = await getDocs(
+        query(
+          collection(db, "products"),
+          where("manufacturerId", "==", manufacturerId),
+          where("isActive", "==", true),
+          limit(20),
+        ),
+      );
+      const others = prodsSnap.docs
+        .filter((d) => {
+          const r = d.data() as Record<string, unknown>;
+          return d.id !== currentProductId && r.source !== "manufacturer_assigned";
+        })
+        .slice(0, 6)
+        .map((d) => {
+          const r = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            name: String(r.name ?? ""),
+            category: String(r.category ?? ""),
+            price: Number(r.price ?? 0),
+            image: String(r.image ?? ""),
+          };
+        });
+      setMfrProducts(others);
+    }
+
+    fetchAll().finally(() => setLoading(false));
+  }, [manufacturerId, currentProductId]);
+
+  // Nothing to show while loading or if we got no data at all
+  if (loading) {
+    return (
+      <div className="rounded-3xl border border-surface-container bg-white p-6 animate-pulse">
+        <div className="h-4 w-48 rounded-full bg-surface-container-highest mb-3" />
+        <div className="h-3 w-32 rounded-full bg-surface-container-highest" />
+      </div>
+    );
+  }
+
+  if (!mfrInfo && mfrProducts.length === 0) return null;
+
+  const brandName = mfrInfo?.name || "This Manufacturer";
+  const hasBrandPage = !!mfrInfo?.slug;
+
+  return (
+    <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
+      {/* Brand header */}
+      <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
+          <h2 className="text-xl font-bold text-white leading-tight truncate">{brandName}</h2>
+          {(mfrInfo?.location || mfrInfo?.founded) && (
+            <p className="text-white/60 text-xs mt-0.5">
+              {[mfrInfo.location, mfrInfo.founded ? `Est. ${mfrInfo.founded}` : ""].filter(Boolean).join(" · ")}
+            </p>
+          )}
+        </div>
+        {hasBrandPage && mfrInfo?.slug && (
+          <a
+            href={`/brand/${mfrInfo.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+          >
+            Visit Brand Store <ICONS.ChevronRight className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+
+      {/* More from this manufacturer */}
+      {mfrProducts.length > 0 && (
+        <div className="p-6 bg-white flex flex-col gap-4">
+          <p className="text-sm font-semibold text-on-surface">More from {brandName}</p>
+          <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
+            {mfrProducts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onProductClick?.(p.id)}
+                className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
+              >
+                <div className="aspect-square overflow-hidden bg-surface-container">
+                  {p.image ? (
+                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-on-surface-variant/30">
+                      <ICONS.Market className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-2.5 flex flex-col gap-0.5">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-primary">{p.category}</span>
+                  <p className="text-sm font-bold text-on-surface truncate leading-tight">{p.name}</p>
+                  <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export default function ProductDetailView({
@@ -200,11 +347,6 @@ export default function ProductDetailView({
     if (product.retailerId && p.retailerId) return p.retailerId === product.retailerId;
     return product.store !== 'Local Store' && p.store === product.store;
   }).slice(0, 6);
-
-  const manufacturerProducts = product.manufacturerId
-    ? products.filter(p => p.id !== product.id && p.manufacturerId === product.manufacturerId).slice(0, 4)
-    : [];
-  const brandInfo = product.manufacturerId ? MANUFACTURERS[product.manufacturerId] : null;
 
   // Use storesWithDistance for computed distances, fallback to STORES constant
   const availableStores = useMemo(() => {
@@ -506,88 +648,113 @@ export default function ProductDetailView({
       </div>
 
       {/* Product Insights */}
-      <section>
-        <div className="flex items-center gap-2 mb-5">
-          <h2 className="text-xl md:text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
-          <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
-        </div>
+      {(() => {
+        const hasComposition = !!(product.nitrogen || product.phosphorus || product.potassium);
+        const hasApplication = !!(product.applicationDesc || product.dosage);
+        const hasCrops = !!(product.bestForCrops && product.bestForCrops.length > 0);
+        const hasInsights = hasComposition || hasApplication || hasCrops;
+        
+        if (!hasInsights) return null;
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        const cardCount = [hasComposition, hasApplication, hasCrops].filter(Boolean).length;
+        const gridColsClass = cardCount === 3
+          ? "md:grid-cols-3"
+          : cardCount === 2
+            ? "md:grid-cols-2 max-w-4xl"
+            : "md:grid-cols-1 max-w-md";
 
-          {/* Composition */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-amber-50 border-b border-amber-100 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center">
-                <ICONS.Science className="w-4 h-4 text-amber-600" />
-              </div>
-              <h3 className="font-bold text-amber-800 text-xs uppercase tracking-widest">{t('composition')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productComposition" ariaLabel="Composition help" />
+        return (
+          <section>
+            <div className="flex items-center gap-2 mb-6">
+              <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
+              <HelperIcon
+                size="sm"
+                variant="ghost"
+                side="right"
+                textKey="productInsights"
+                ariaLabel="Product insights help"
+              />
             </div>
-            <div className="bg-white px-5 py-4 flex flex-col gap-1">
-              {[
-                { label: t('nitrogenN'), val: '19%', pct: 19, color: 'bg-blue-400' },
-                { label: t('phosphorusP'), val: '19%', pct: 19, color: 'bg-amber-400' },
-                { label: t('potassiumK'), val: '19%', pct: 19, color: 'bg-green-400' },
-              ].map((row) => (
-                <div key={row.label} className="py-2.5 border-b border-surface-container last:border-0">
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-on-surface-variant text-xs font-semibold">{row.label}</span>
-                    <span className="text-on-surface font-black text-sm">{row.val}</span>
+            <div className={`grid grid-cols-1 ${gridColsClass} gap-6`}>
+              {hasComposition && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-secondary">
+                    <ICONS.Science className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('composition')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productComposition"
+                      ariaLabel="Composition help"
+                    />
                   </div>
-                  <div className="h-1.5 bg-surface-container rounded-full overflow-hidden">
-                    <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
+                  {[
+                    { label: t('nitrogenN'), val: product.nitrogen },
+                    { label: t('phosphorusP'), val: product.phosphorus },
+                    { label: t('potassiumK'), val: product.potassium }
+                  ].filter(row => !!row.val).map((row, i) => (
+                    <div key={i} className="flex justify-between items-center py-2 border-b border-surface-container-low last:border-0">
+                      <span className="text-on-surface text-sm opacity-60 font-semibold">{row.label}</span>
+                      <span className="text-on-surface font-black">{row.val}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hasApplication && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-primary">
+                    <ICONS.Water className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('application')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productApplication"
+                      ariaLabel="Application help"
+                    />
+                  </div>
+                  {product.applicationDesc && (
+                    <p className="text-on-surface-variant font-medium text-sm">{product.applicationDesc}</p>
+                  )}
+                  {product.dosage && (
+                    <HelperTooltip side="top" textKey="productDosage">
+                      <div className="mt-auto bg-primary/5 rounded-2xl p-4 border border-primary/10 cursor-help">
+                        <span className="block text-[10px] font-black uppercase tracking-widest text-primary mb-1">{t('recommendedDosage')}</span>
+                        <span className="text-2xl font-bold text-on-surface">{product.dosage}</span>
+                      </div>
+                    </HelperTooltip>
+                  )}
+                </div>
+              )}
+
+              {hasCrops && (
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
+                  <div className="flex items-center gap-3 text-secondary">
+                    <ICONS.Sprout className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('bestForCrops')}</h3>
+                    <HelperIcon
+                      size="xs"
+                      variant="ghost"
+                      side="right"
+                      textKey="productCropSupport"
+                      ariaLabel="Best for crops help"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {product.bestForCrops?.map((crop, i) => (
+                      <span key={i} className="bg-surface-container px-4 py-2 rounded-full text-xs font-bold text-on-surface-variant border border-surface-container-highest">
+                        {crop}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* Application */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-primary/5 border-b border-primary/10 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-                <ICONS.Water className="w-4 h-4 text-primary" />
-              </div>
-              <h3 className="font-bold text-primary text-xs uppercase tracking-widest">{t('application')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productApplication" ariaLabel="Application help" />
-            </div>
-            <div className="bg-white px-5 py-4 flex flex-col gap-4">
-              <p className="text-on-surface-variant text-sm leading-relaxed">{t('applicationDesc')}</p>
-              <HelperTooltip side="top" textKey="productDosage">
-                <div className="bg-primary rounded-xl p-4 cursor-help">
-                  <span className="block text-white/70 text-[10px] font-black uppercase tracking-widest mb-0.5">{t('recommendedDosage')}</span>
-                  <span className="text-2xl font-extrabold text-white">{t('dosageValue')}</span>
-                </div>
-              </HelperTooltip>
-            </div>
-          </div>
-
-          {/* Best for Crops */}
-          <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm">
-            <div className="bg-green-50 border-b border-green-100 px-5 py-3 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-green-500/15 flex items-center justify-center">
-                <ICONS.Sprout className="w-4 h-4 text-green-600" />
-              </div>
-              <h3 className="font-bold text-green-800 text-xs uppercase tracking-widest">{t('bestForCrops')}</h3>
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="productCropSupport" ariaLabel="Best for crops help" />
-            </div>
-            <div className="bg-white px-5 py-4">
-              <div className="flex flex-wrap gap-2">
-                {[t('cropTomatoes'), t('cropWheat'), t('cropSugarcane'), t('cropGrapes')].map((crop, i) => (
-                  <span key={i} className="flex items-center gap-1.5 bg-green-50 border border-green-100 text-green-800 px-3 py-1.5 rounded-full text-xs font-bold">
-                    🌱 {crop}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-4 p-3 bg-surface-container-low rounded-xl border border-surface-container">
-                <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">Works best for</p>
-                <p className="text-xs text-on-surface font-semibold leading-relaxed">All soil types · Kharif & Rabi seasons · Drip & flood irrigation</p>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </section>
+          </section>
+        );
+      })()}
 
       {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
       {sellerProducts.length > 0 && !product.retailerPhone && (
@@ -627,52 +794,14 @@ export default function ProductDetailView({
         </section>
       )}
 
-      {/* Manufacturer brand section */}
-      {brandInfo && manufacturerProducts.length > 0 && (
-        <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
-          {/* Brand header */}
-          <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
-              <h2 className="text-xl font-bold text-white leading-tight">{brandInfo.name}</h2>
-              <p className="text-white/60 text-xs mt-0.5">{brandInfo.location} · Est. {brandInfo.founded}</p>
-            </div>
-            {onViewBrand && (
-              <button
-                onClick={() => onViewBrand(product.manufacturerId!)}
-                className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
-              >
-                View Brand <ICONS.ChevronRight className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          {/* Other products from this manufacturer */}
-          <div className="p-6 bg-white flex flex-col gap-4">
-            <p className="text-sm font-semibold text-on-surface">
-              More products from {brandInfo.name.split(' ').slice(0, 2).join(' ')}
-            </p>
-            <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
-              {manufacturerProducts.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onProductClick?.(p.id)}
-                  className="shrink-0 w-40 text-left rounded-2xl border border-surface-container bg-surface-container-low hover:border-primary/40 hover:shadow-md hover:scale-[1.02] transition-all overflow-hidden"
-                >
-                  <div className="aspect-square overflow-hidden bg-surface-container">
-                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
-                  </div>
-                  <div className="p-2.5 flex flex-col gap-0.5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-primary">{p.category}</span>
-                    <p className="text-sm font-bold text-on-surface truncate leading-tight">{p.name}</p>
-                    <span className="text-sm font-extrabold text-secondary">₹{p.price}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
+      {/* Manufacturer brand section — Firestore-backed, replaces legacy MANUFACTURERS constant */}
+      {product.manufacturerId && (
+        <ManufacturerBrandSection
+          manufacturerId={product.manufacturerId}
+          currentProductId={product.id}
+          onProductClick={onProductClick}
+          onViewBrand={onViewBrand}
+        />
       )}
 
       {/* Retailer Profile Section — phone-keyed, efficient subcollection fetch */}
