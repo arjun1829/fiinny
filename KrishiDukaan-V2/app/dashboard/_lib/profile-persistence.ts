@@ -13,6 +13,9 @@ export type ProfileFormValues = {
   city: string;
   state: string;
   pincode: string;
+  website: string;
+  logoUrl: string;
+  bannerUrl: string;
 };
 
 export type RetailerProfileExtras = {
@@ -140,6 +143,7 @@ export async function loadProfileState(
     phone: prefillPhone,
     email: authEmail || "",
     line1: "", city: "", state: "", pincode: "",
+    website: "", logoUrl: "", bannerUrl: "",
   };
 
   if (!snap.exists()) {
@@ -165,6 +169,9 @@ export async function loadProfileState(
         city:  addr.city,
         state: addr.state,
         pincode: addr.pincode,
+        website:   String(data.website ?? ""),
+        logoUrl:   String(data.logo ?? ""),
+        bannerUrl: String(data.banner ?? ""),
       },
       geo: parseGeo(data),
       retailerExtras: null,
@@ -182,6 +189,9 @@ export async function loadProfileState(
       city:  addr.city,
       state: addr.state,
       pincode: addr.pincode,
+      website:   String(data.website ?? ""),
+      logoUrl:   String(data.logo ?? ""),
+      bannerUrl: String(data.banner ?? ""),
     },
     geo: parseGeo(data),
     retailerExtras: {
@@ -213,7 +223,6 @@ export async function saveManufacturerProfile(
 ): Promise<void> {
   const trimmedEmail = form.email.trim();
   const phone = await phoneFromUid(uid);
-  // Phone is the canonical doc ID so profile and subcollections share the same parent doc
   const manufacturerDocId = phone || uid;
 
   // Read existing doc to check for slug (only generate once — slugs must be stable)
@@ -230,6 +239,9 @@ export async function saveManufacturerProfile(
       ownerName:    form.ownerName.trim(),
       phone:        form.phone.trim() || phone || "",
       email:        trimmedEmail,
+      website:      form.website.trim(),
+      logo:         form.logoUrl.trim(),
+      banner:       form.bannerUrl.trim(),
       geo,
       address: {
         line1:   form.line1.trim(),
@@ -244,11 +256,17 @@ export async function saveManufacturerProfile(
     { merge: true },
   );
 
-  // Sync email + profileComplete flag to users/{phone}
+  // Sync fields needed for profile-completeness check to users/{phone}.
+  // Layout reads users/{phone} and checks businessName + phone + city.
   const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
   await setDoc(
     userTarget,
-    { profileComplete: true, ...(trimmedEmail ? { email: trimmedEmail } : {}), updatedAt: serverTimestamp() },
+    {
+      businessName: form.businessName.trim(),
+      city: form.city.trim(),
+      ...(trimmedEmail ? { email: trimmedEmail } : {}),
+      updatedAt: serverTimestamp(),
+    },
     { merge: true },
   );
 }
@@ -273,6 +291,9 @@ export async function saveRetailerProfile(
       ownerName: form.ownerName.trim(),
       email:     trimmedEmail,
       phone:     form.phone.trim(),
+      website:   form.website.trim(),
+      logo:      form.logoUrl.trim(),
+      banner:    form.bannerUrl.trim(),
       address: {
         line1:   form.line1.trim(),
         city:    form.city.trim(),
@@ -290,12 +311,17 @@ export async function saveRetailerProfile(
     { merge: true },
   );
 
-  // Sync email + profileComplete flag to users/{phone}
+  // Sync fields needed for profile-completeness check to users/{phone}.
   const rPhone = await phoneFromUid(uid);
   const rTarget = rPhone ? doc(db, "users", rPhone) : doc(db, "users", uid);
   await setDoc(
     rTarget,
-    { profileComplete: true, ...(trimmedEmail ? { email: trimmedEmail } : {}), updatedAt: serverTimestamp() },
+    {
+      businessName: form.businessName.trim(),
+      city: form.city.trim(),
+      ...(trimmedEmail ? { email: trimmedEmail } : {}),
+      updatedAt: serverTimestamp(),
+    },
     { merge: true },
   );
 }

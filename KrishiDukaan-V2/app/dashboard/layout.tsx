@@ -22,7 +22,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
-  const [profileComplete, setProfileComplete] = useState(true);
+  const [profileIncomplete, setProfileIncomplete] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -33,8 +33,12 @@ export default function DashboardLayout({
         const role = profile?.role;
         const isPaid = profile?.isPaid;
 
-        // Track whether the user has ever saved their business profile
-        setProfileComplete(profile?.profileComplete === true);
+        // Profile is considered complete if business name + phone + city are all set.
+        // These are written to users/{phone} by saveManufacturerProfile / saveRetailerProfile.
+        const hasBusinessName = !!String(profile?.businessName ?? "").trim();
+        const hasPhone = !!String(profile?.phone ?? "").trim();
+        const hasCity = !!String(profile?.city ?? "").trim();
+        setProfileIncomplete(!hasBusinessName || !hasPhone || !hasCity);
 
         if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
           setLoading(false);
@@ -77,13 +81,13 @@ export default function DashboardLayout({
 
   const isOnProfilePage = pathname === '/dashboard/profile';
 
-  const profileBanner = !profileComplete && !isOnProfilePage ? (
+  const profileBanner = profileIncomplete && !isOnProfilePage ? (
     <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="text-amber-500 text-lg shrink-0">⚠</span>
         <p className="text-sm font-semibold text-amber-800 leading-snug">
-          Your business profile is incomplete.{' '}
-          <span className="font-normal text-amber-700">Add your business name, location, and contact details to activate your store.</span>
+          Profile incomplete.{' '}
+          <span className="font-normal text-amber-700">Add your business name, contact number, and location to complete your profile and generate your brand page.</span>
         </p>
       </div>
       <Link

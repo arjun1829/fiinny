@@ -1,4 +1,5 @@
 import {
+  arrayRemove,
   collection,
   doc,
   getDoc,
@@ -238,6 +239,8 @@ export async function fetchManufacturerRetailers(
       if (!seen.has(d.id)) {
         seen.add(d.id);
         const docData = mapDoc(d.id, d.data() as Record<string, unknown>);
+        // Fully removed retailers must not appear anywhere in the dashboard.
+        if (docData.status === "revoked" || docData.onboardingStatus === "removed") return;
         rows.push({ ...docData, addedAtLabel: timestampLabel(docData.addedAt) });
       }
     });
@@ -406,26 +409,40 @@ export async function createNetworkRetailer(
 }
 
 /**
- * Soft-removes a retailer from the manufacturer's network.
- * - Revokes the invite row (status: "revoked").
- * - Releases the seat listing (status: "released") — immediately frees the seat.
- * - Marks the pre-created retailers doc as inactive.
- */
-/**
- * Soft-removes a retailer from the manufacturer's network.
- * Revokes the invite row and marks the retailers doc as inactive.
- * Product assignment seats are released separately via removeProductAssignment.
+ * Fully removes a retailer from the manufacturer's network.
+ * Atomically:
+ *   1. Revokes the invite link doc.
+ *   2. Releases all active assigned seat listings → frees seats immediately.
+ *   3. Deactivates the retailer's product copies so they vanish from the marketplace.
+ * Then, fire-and-forget:
+ *   4. Strips the retailer's store entry from every affected manufacturer product's
+ *      availability array — cleaning up market visibility completely.
+ *
+ * The global `retailers` / `users` docs are NOT modified so the retailer account
+ * remains intact and can join another network or be re-invited.
  */
 export async function removeNetworkRetailer(
   inviteDocId: string,
   retailerDocId: string,
+  manufacturerId: string,
 ): Promise<void> {
   const now = serverTimestamp();
 
-  // ONLY update the link document.
-  // We do NOT modify the global "retailers" or "users" document so the retailer
-  // remains intact and can be invited again or interact with other manufacturers.
-  await updateDoc(doc(db, COLLECTION, inviteDocId), {
+  // 1. Fetch all active assigned seat listings for this retailer
+  const listingsSnap = await getDocs(
+    query(
+      collection(db, "retailerSeatListings"),
+      where("ownerId",      "==", manufacturerId),
+      where("retailerDocId","==", retailerDocId),
+      where("listingType",  "==", "assigned"),
+      where("status",       "==", "active"),
+    ),
+  );
+
+  const batch = writeBatch(db);
+
+  // 2. Revoke the invite link
+  batch.update(doc(db, COLLECTION, inviteDocId), {
     status: "revoked",
     claimable: false,
     assignedSeat: false,
@@ -433,7 +450,35 @@ export async function removeNetworkRetailer(
     removedAt: now,
   });
 
-  // Sync mirror
+  // 3. Release seat listings + deactivate product copies
+  const mfrProductIds: string[] = [];
+  listingsSnap.docs.forEach((listingDoc) => {
+    batch.update(listingDoc.ref, { status: "released", releasedAt: now });
+    const productId    = String(listingDoc.data().productId           ?? "");
+    const mfrProductId = String(listingDoc.data().manufacturerProductId ?? "");
+    if (productId)    batch.update(doc(db, "products", productId), { isActive: false, updatedAt: now });
+    if (mfrProductId) mfrProductIds.push(mfrProductId);
+  });
+
+  await batch.commit();
+
+  // 4. Strip availability entries fire-and-forget — reads are needed so can't batch
+  if (mfrProductIds.length > 0) {
+    (async () => {
+      for (const mfrProductId of mfrProductIds) {
+        try {
+          const snap = await getDoc(doc(db, "products", mfrProductId));
+          if (!snap.exists()) continue;
+          const avArr = (snap.data() as Record<string, unknown>).availability;
+          if (!Array.isArray(avArr)) continue;
+          const entry = avArr.find((e: Record<string, unknown>) => e.storeId === retailerDocId);
+          if (entry) await updateDoc(doc(db, "products", mfrProductId), { availability: arrayRemove(entry) });
+        } catch { /* non-critical */ }
+      }
+    })();
+  }
+
+  // 5. Sync mirror
   const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
   if (manufacturerPhone && retailerPhone) {
     await syncRetailerMirror(manufacturerPhone, retailerPhone, {
@@ -850,4 +895,161 @@ export async function createManufacturerRetailerInvite(
   });
 
   return { docId: ref.id, inviteCode };
+}
+
+// ─── Bulk Operations ───────────────────────────────────────────────────────────
+
+const BULK_BATCH_SIZE = 400; // well below Firestore's 500-write limit
+
+/**
+ * Atomically deactivates multiple retailers in the manufacturer's network.
+ * For each retailer: releases active seat listings, deactivates product copies,
+ * and marks the invite link as inactive. Mirrors are synced fire-and-forget.
+ */
+export async function bulkDeactivateNetworkRetailers(
+  items: { inviteDocId: string; retailerDocId: string }[],
+  manufacturerId: string,
+): Promise<void> {
+  if (items.length === 0) return;
+  const now = serverTimestamp();
+
+  // Fetch active seat listings for all retailers in parallel
+  const listingsPerRetailer = await Promise.all(
+    items.map(({ retailerDocId }) =>
+      getDocs(
+        query(
+          collection(db, "retailerSeatListings"),
+          where("ownerId",      "==", manufacturerId),
+          where("retailerDocId","==", retailerDocId),
+          where("listingType",  "==", "assigned"),
+          where("status",       "==", "active"),
+        ),
+      ),
+    ),
+  );
+
+  // Collect all write operations
+  type Op = { ref: ReturnType<typeof doc>; data: Record<string, unknown> };
+  const ops: Op[] = [];
+
+  items.forEach(({ inviteDocId }, i) => {
+    ops.push({
+      ref: doc(db, COLLECTION, inviteDocId),
+      data: { onboardingStatus: "inactive", assignedSeat: false, manuallyDeactivated: true, deactivatedAt: now },
+    });
+    listingsPerRetailer[i].docs.forEach((listingDoc) => {
+      ops.push({ ref: listingDoc.ref, data: { status: "released", releasedAt: now } });
+      const productId = String(listingDoc.data().productId ?? "");
+      if (productId) {
+        ops.push({ ref: doc(db, "products", productId), data: { isActive: false, updatedAt: now } });
+      }
+    });
+  });
+
+  // Execute in batches
+  for (let i = 0; i < ops.length; i += BULK_BATCH_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BULK_BATCH_SIZE).forEach(({ ref, data }) => batch.update(ref, data));
+    await batch.commit();
+  }
+
+  // Fire-and-forget mirror syncs
+  items.forEach(async ({ inviteDocId }) => {
+    try {
+      const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
+      if (manufacturerPhone && retailerPhone) {
+        await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+          onboardingStatus: "inactive",
+          assignedSeat: false,
+          manuallyDeactivated: true,
+        });
+      }
+    } catch { /* non-critical */ }
+  });
+}
+
+/**
+ * Fully removes multiple retailers from the manufacturer's network in bulk.
+ * Applies the same cleanup as removeNetworkRetailer for every selected retailer:
+ * revokes invite links, releases seat listings, deactivates product copies,
+ * and strips availability array entries fire-and-forget.
+ */
+export async function bulkRemoveNetworkRetailers(
+  items: { inviteDocId: string; retailerDocId: string }[],
+  manufacturerId: string,
+): Promise<void> {
+  if (items.length === 0) return;
+  const now = serverTimestamp();
+
+  // 1. Fetch active seat listings for all retailers in parallel
+  const listingsPerRetailer = await Promise.all(
+    items.map(({ retailerDocId }) =>
+      getDocs(
+        query(
+          collection(db, "retailerSeatListings"),
+          where("ownerId",      "==", manufacturerId),
+          where("retailerDocId","==", retailerDocId),
+          where("listingType",  "==", "assigned"),
+          where("status",       "==", "active"),
+        ),
+      ),
+    ),
+  );
+
+  // 2. Collect all write ops
+  type Op = { ref: ReturnType<typeof doc>; data: Record<string, unknown> };
+  const ops: Op[] = [];
+  const mfrProductIdsByRetailer: { retailerDocId: string; mfrProductIds: string[] }[] = [];
+
+  items.forEach(({ inviteDocId, retailerDocId }, i) => {
+    ops.push({
+      ref: doc(db, COLLECTION, inviteDocId),
+      data: { status: "revoked", claimable: false, assignedSeat: false, onboardingStatus: "removed", removedAt: now },
+    });
+    const mfrProductIds: string[] = [];
+    listingsPerRetailer[i].docs.forEach((listingDoc) => {
+      ops.push({ ref: listingDoc.ref, data: { status: "released", releasedAt: now } });
+      const productId    = String(listingDoc.data().productId           ?? "");
+      const mfrProductId = String(listingDoc.data().manufacturerProductId ?? "");
+      if (productId)    ops.push({ ref: doc(db, "products", productId), data: { isActive: false, updatedAt: now } });
+      if (mfrProductId) mfrProductIds.push(mfrProductId);
+    });
+    mfrProductIdsByRetailer.push({ retailerDocId, mfrProductIds });
+  });
+
+  // 3. Commit in batches
+  for (let i = 0; i < ops.length; i += BULK_BATCH_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BULK_BATCH_SIZE).forEach(({ ref, data }) => batch.update(ref, data));
+    await batch.commit();
+  }
+
+  // 4. Strip availability arrays + sync mirrors, fire-and-forget
+  (async () => {
+    for (const { retailerDocId, mfrProductIds } of mfrProductIdsByRetailer) {
+      for (const mfrProductId of mfrProductIds) {
+        try {
+          const snap = await getDoc(doc(db, "products", mfrProductId));
+          if (!snap.exists()) continue;
+          const avArr = (snap.data() as Record<string, unknown>).availability;
+          if (!Array.isArray(avArr)) continue;
+          const entry = avArr.find((e: Record<string, unknown>) => e.storeId === retailerDocId);
+          if (entry) await updateDoc(doc(db, "products", mfrProductId), { availability: arrayRemove(entry) });
+        } catch { /* non-critical */ }
+      }
+    }
+  })();
+
+  items.forEach(async ({ inviteDocId }) => {
+    try {
+      const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
+      if (manufacturerPhone && retailerPhone) {
+        await syncRetailerMirror(manufacturerPhone, retailerPhone, {
+          status: "revoked",
+          onboardingStatus: "removed",
+          assignedSeat: false,
+        });
+      }
+    } catch { /* non-critical */ }
+  });
 }
