@@ -15,36 +15,47 @@ type EditorPost = Omit<BlogPost, "id" | "createdAt" | "updatedAt" | "publishedAt
 
 const SEED_POSTS: Omit<BlogPost, "id">[] = [
   {
-    title: "How to Choose the Right Fertilizer for Your Crops",
-    slug: "how-to-choose-right-fertilizer-for-crops",
-    excerpt: "Understand NPK ratios, soil testing, and how to match fertilizer type to your specific crop and soil conditions.",
-    content: `<h2>Why Fertilizer Choice Matters</h2><p>Choosing the wrong fertilizer wastes money and can damage your soil. In India, where smallholder farmers manage thin margins, getting this right is critical.</p><h2>Understanding NPK</h2><p>Every fertilizer bag lists three numbers — Nitrogen (N), Phosphorus (P), and Potassium (K). For example, <strong>10-26-26</strong> means 10% N, 26% P, and 26% K.</p><ul><li><strong>Nitrogen (N)</strong> — drives leafy, vegetative growth. Good for wheat, paddy, and leafy vegetables.</li><li><strong>Phosphorus (P)</strong> — supports root development and flowering. Critical at the seedling stage.</li><li><strong>Potassium (K)</strong> — improves drought resistance and fruit quality. Essential for tomatoes, grapes, and sugarcane.</li></ul><h2>Soil Testing First</h2><p>Before buying anything, get your soil tested at a nearby <strong>Krishi Vigyan Kendra (KVK)</strong> or through state agriculture department labs. A proper soil health card costs very little and can save thousands.</p><h2>Organic vs Chemical Fertilizers</h2><p>Organic fertilizers (compost, vermicompost, farmyard manure) improve soil structure over time. Chemical fertilizers give quick results but need careful dosing. A balanced approach — starting organic, topping up with chemical where needed — usually works best.</p><blockquote>Always follow the recommended dose. Over-fertilizing is one of the most common and costly mistakes Indian farmers make.</blockquote><h2>Where to Buy</h2><p>Verified fertilizer retailers near you are listed on KrishiDukaan. Always check that the retailer is licensed (fertilizer sale requires a state licence under the Fertilizer Control Order).</p>`,
-    tags: ["fertilizer", "soil", "farming tips"],
+    title: "Why KrishiDukaan? India's First Hyperlocal Agri-Marketplace Explained",
+    slug: "why-krishidukan-indias-first-hyperlocal-agri-marketplace",
+    excerpt: "Millions of Indian farmers still travel hours to buy seeds and fertilizers. KrishiDukaan is changing that — connecting farmers with verified local retailers, real-time stock, and online delivery, all in one app.",
+    content: `<h2>The Problem Every Indian Farmer Knows</h2><p>Picture this: a farmer in rural Maharashtra wakes up at 4 AM, rides his two-wheeler 40 km to the nearest agri-input shop, only to find that the fertilizer he needs is out of stock. He returns empty-handed, losing a day of work and money on fuel. This happens to <strong>millions of Indian farmers every season</strong>.</p><p>India has 146 million farming households. Yet most of them still rely on word-of-mouth to find where to buy seeds, fertilizers, or pesticides. There's no reliable way to know which shop has what in stock, at what price, and how far it is.</p><h2>What KrishiDukaan Does Differently</h2><p>KrishiDukaan is built around one idea: <strong>every farmer deserves access to verified agri-inputs, at fair prices, from a trusted local source — without wasting a day traveling.</strong></p><ul><li><strong>Hyperlocal store listing</strong> — See agri-retail shops sorted by distance from your location. Know exactly who is 2 km away vs 20 km away before you leave home.</li><li><strong>Verified retailers and manufacturers</strong> — Every seller on the platform goes through a registration and verification process. No anonymous vendors, no fake products.</li><li><strong>Real product listings with stock data</strong> — Each product shows which nearby stores carry it, at what price, and whether it's in stock today.</li><li><strong>Online ordering from local stores</strong> — When a retailer enables online delivery, farmers can place orders directly from the app and get delivery to their doorstep.</li><li><strong>Multi-language support</strong> — KrishiDukaan works in English, Marathi, and Hindi — because farmers shouldn't need to speak English to use technology.</li></ul><h2>For Retailers and Manufacturers</h2><p>KrishiDukaan isn't just for buyers. For agri-retailers and manufacturers, it's a digital storefront without the cost of building one.</p><ul><li>Create a free business profile and get discovered by farmers within 10–50 km</li><li>List your products and update stock levels from your phone</li><li>Accept online orders and manage delivery from your dashboard</li><li>Connect directly with manufacturers to expand your product range</li></ul><blockquote>We built KrishiDukaan because we believe Indian agriculture deserves the same technology that transformed urban retail. The farmer who grows our food shouldn't be the last one to benefit from the digital economy.</blockquote><h2>Who Should Use KrishiDukaan?</h2><p>If you are a <strong>farmer</strong> — use KrishiDukaan to find local suppliers, compare prices, and order online without traveling.</p><p>If you are an <strong>agri-retailer</strong> — use it to get a digital presence, attract new customers, and manage your inventory online.</p><p>If you are an <strong>agri-input manufacturer</strong> — use it to build your brand page, connect with retailers, and reach end farmers directly.</p><h2>Getting Started</h2><p>Visit <strong>krishidukan.com</strong>, allow location access, and instantly see agri stores and products near you. No login required to browse. Registration takes under 2 minutes.</p>`,
+    tags: ["krishidukan", "about us", "agri marketplace", "farmers"],
     author: "KrishiDukaan Team",
     status: "published",
-    coverImage: "",
-    readTime: 5,
-  },
-  {
-    title: "Kharif vs Rabi: Seasonal Crop Planning Guide for Indian Farmers",
-    slug: "kharif-vs-rabi-seasonal-crop-planning-guide",
-    excerpt: "A practical guide to planning your crop calendar around India's two main farming seasons — with crop suggestions by region.",
-    content: `<h2>India's Two Main Farming Seasons</h2><p>Indian agriculture runs on two major seasons — <strong>Kharif</strong> (monsoon) and <strong>Rabi</strong> (winter). Understanding the difference is the foundation of good crop planning.</p><h2>Kharif Season (June – November)</h2><p>Kharif crops are sown at the start of the southwest monsoon and harvested in autumn.</p><ul><li>Rice (Paddy)</li><li>Maize (Corn)</li><li>Cotton</li><li>Soybean</li><li>Groundnut</li><li>Jowar and Bajra</li></ul><p>These crops need warm weather and heavy rainfall. States like Maharashtra, Andhra Pradesh, and Punjab rely heavily on kharif for their income.</p><h2>Rabi Season (November – April)</h2><p>Rabi crops are sown after the monsoon retreats and harvested in spring. They depend on residual moisture and irrigation.</p><ul><li>Wheat</li><li>Mustard</li><li>Chickpea (Chana)</li><li>Peas</li><li>Barley</li></ul><h2>Zaid (Summer Crops)</h2><p>A short season between March and June, suitable for watermelons, cucumbers, bitter gourd, and other vegetables where irrigation is available.</p><h2>How to Plan Your Crop Calendar</h2><p>1. Know your local last frost date and average rainfall pattern.<br>2. Check the Minimum Support Price (MSP) announced by the government for the upcoming season.<br>3. Diversify — don't plant the same crop on every plot. Rotate to maintain soil health.<br>4. Talk to your local agricultural officer or use the crop advisory services on KrishiDukaan.</p><blockquote>Diversification is your best protection against price crashes and weather shocks.</blockquote>`,
-    tags: ["crop planning", "kharif", "rabi", "seasons"],
-    author: "KrishiDukaan Team",
-    status: "published",
-    coverImage: "",
+    coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1200&q=80",
     readTime: 6,
   },
   {
-    title: "5 Signs Your Crop Has a Pest Problem — and What to Do",
-    slug: "5-signs-crop-pest-problem-and-what-to-do",
-    excerpt: "Early pest detection saves yields. Learn to spot the most common warning signs before damage becomes irreversible.",
-    content: `<h2>Why Early Detection Matters</h2><p>Pest damage can wipe out 20–40% of a crop if not caught early. The challenge is that most farmers only notice a problem once it's already spread. Here are five early warning signs every farmer should know.</p><h2>1. Irregular Leaf Holes or Chewing Marks</h2><p>Caterpillars (like armyworm or bollworm) chew irregular holes in leaves. If you see ragged edges or large sections eaten out, check the undersides of leaves for eggs or larvae. Act within 2–3 days.</p><h2>2. Yellowing Leaves (Chlorosis)</h2><p>Not all yellowing is a pest sign — it can also indicate nitrogen deficiency. But if yellowing appears in patches and is accompanied by sticky residue (honeydew), it's likely <strong>aphids or whiteflies</strong>. Check with a hand lens.</p><h2>3. Wilting Despite Adequate Water</h2><p>If plants wilt even when the soil is moist, suspect <strong>root-feeding grubs</strong> or a stem borer. Pull out a wilting plant gently — if the root system is damaged or there are grub tunnels in the stem, you have a soil pest.</p><h2>4. Gummy or Sticky Deposits on Stems</h2><p>Mealy bugs and scale insects excrete a sugary substance that attracts ants and black sooty mold. If you see black patches on stems or a sticky feel, inspect closely for tiny white or brown insects.</p><h2>5. Deformed or Curled Leaves</h2><p>Mites and thrips cause leaf curling and silvery streaking. They're tiny but very damaging. Hot, dry conditions favor mite outbreaks.</p><h2>What to Do</h2><ol><li>Identify the pest correctly before spraying anything — wrong pesticide wastes money and increases resistance.</li><li>Use <strong>Integrated Pest Management (IPM)</strong>: start with sticky traps, neem oil, or biocontrol agents before chemical pesticides.</li><li>Consult a verified agri-input retailer on KrishiDukaan for the right product recommendation.</li><li>Always follow the label dose and pre-harvest interval.</li></ol><blockquote>When in doubt, take a photo and share it with your KVK or a trusted agronomist before spending on pesticides.</blockquote>`,
-    tags: ["pest control", "crop health", "farming tips"],
+    title: "How to Buy Fertilizers Online Safely: A Guide for Indian Farmers",
+    slug: "how-to-buy-fertilizers-online-safely-indian-farmers",
+    excerpt: "Online agri-input buying is growing fast in India — but so are fake products. Here's how to buy fertilizers, pesticides, and seeds online safely and get genuine products every time.",
+    content: `<h2>Online Agri-Shopping Is Growing Fast — But So Are the Risks</h2><p>India's agricultural input market is worth over ₹2 lakh crore annually. As digital penetration grows in rural areas, more farmers are trying to buy fertilizers, seeds, and pesticides online. The convenience is real — but so are the risks of counterfeit products and unreliable suppliers.</p><h2>Why Counterfeit Agri-Inputs Are a Serious Problem</h2><p>The All India Crop Protection Association estimates that <strong>30–40% of pesticides sold in India may be substandard or fake</strong>. Counterfeit fertilizers deliver no nutrition to the soil; fake pesticides harm crops or fail to control pests.</p><p>Signs your agri-input may be counterfeit:</p><ul><li>Price is significantly lower than the MRP on the package</li><li>No valid batch number or manufacturing date</li><li>Label is blurry, spelling errors, or missing regulatory information</li><li>Seller is unregistered or has no physical address</li><li>Product has no company helpline number</li></ul><h2>5 Rules for Safe Online Agri-Input Buying</h2><h3>1. Only Buy from Verified, Registered Sellers</h3><p>In India, fertilizer dealers require a licence under the <strong>Fertilizer Control Order (FCO)</strong>. Pesticide dealers require a licence under the <strong>Insecticides Act</strong>. On KrishiDukaan, all listed retailers are registered and verified before they can list products.</p><h3>2. Check for a Physical Address and Phone Number</h3><p>Any legitimate agri-input seller has a physical shop. If a seller only has an email or WhatsApp number, that's a red flag.</p><h3>3. Compare Prices — But Be Suspicious of Deep Discounts</h3><p>Fertilizer prices are regulated by the government. A product sold at 40–50% below MRP is almost certainly adulterated or fake. A 5–15% discount from a licensed retailer is normal.</p><h3>4. Always Read the Product Label</h3><p>Every legitimate agri-input must carry: manufacturer name and address, registration/licence number, batch number, manufacturing and expiry date, chemical composition, and first aid instructions. If any of these are missing on delivery, reject the product.</p><h3>5. Keep Your Invoice</h3><p>A registered seller will always provide a bill. This is your proof of purchase if you need to complain to the state agriculture department about a substandard product.</p><h2>How KrishiDukaan Makes This Easier</h2><p>On KrishiDukaan, every seller is verified, has a physical address on record, and can be reached by phone directly from the product listing. You can see real-time stock levels and order directly from the retailer with online delivery — with end-to-end order tracking.</p><blockquote>The safest online agri-purchase is one made from a local, registered retailer whose shop you can actually visit. KrishiDukaan brings you exactly that — the convenience of online with the trust of local.</blockquote><h2>What to Do If You Receive a Fake Product</h2><ol><li>Don't use the product. Keep it sealed for evidence.</li><li>Report to the retailer immediately and ask for a replacement or refund.</li><li>If unresolved, report to your state's Agriculture Department or the nearest Krishi Vigyan Kendra (KVK).</li><li>You can also file a complaint with the company whose product was faked — most major brands have dedicated helplines.</li></ol>`,
+    tags: ["fertilizers", "online shopping", "farmer safety", "agri inputs"],
     author: "KrishiDukaan Team",
     status: "published",
-    coverImage: "",
+    coverImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=1200&q=80",
+    readTime: 7,
+  },
+  {
+    title: "KaranArjun Power Plus: The Biostimulant Trusted by 75,000+ Farmers",
+    slug: "karanarjun-power-plus-biostimulant-trusted-farmers",
+    excerpt: "What makes Power Plus the go-to seaweed biostimulant for Maharashtra and AP farmers? We break down how it works, which crops benefit most, and how to get maximum yield.",
+    content: `<h2>What Is a Biostimulant — and Why Do Farmers Need One?</h2><p>A biostimulant is a substance that, when applied to plants, stimulates natural processes to improve nutrient uptake, stress tolerance, and overall crop quality — without being a fertilizer or pesticide. Think of it as a "performance enhancer" for your crop.</p><h2>What Is Power Plus?</h2><p>Power Plus is a <strong>liquid seaweed extract biostimulant</strong> manufactured by KaranArjun. It is derived from <em>Ascophyllum nodosum</em> and other marine algae, cold-processed to preserve bioactive compounds.</p><p>Key active components:</p><ul><li><strong>Cytokinins</strong> — promote cell division, delay leaf senescence, improve fruit set</li><li><strong>Auxins</strong> — stimulate root initiation and elongation</li><li><strong>Gibberellins</strong> — improve germination, elongation, and flowering</li><li><strong>Betaines and mannitol</strong> — protect plants against drought and salinity stress</li><li><strong>Alginic acid</strong> — improves soil structure and microbial activity</li></ul><h2>What Results Do Farmers Report?</h2><ul><li><strong>Improved root development</strong> — visible within 7–10 days of application</li><li><strong>Better fruit colour and weight</strong> — particularly in grapes, pomegranate, tomato, and mango</li><li><strong>Improved fruit retention</strong> — reduced flower and fruit drop</li><li><strong>Stress recovery</strong> — faster recovery after drought, waterlogging, or cold spell</li><li><strong>Enhanced fertilizer efficiency</strong> — crops need 10–15% less NPK when biostimulants are applied</li></ul><blockquote>75,800+ farmers have used Power Plus across India. We don't just sell it — we recommend it because it consistently delivers results across diverse crops and soil types.</blockquote><h2>Which Crops Benefit Most?</h2><ul><li>Grapes (berry sizing and colour development)</li><li>Pomegranate (fruit retention and splitting reduction)</li><li>Tomato, Chilli, Capsicum (flower set and fruit sizing)</li><li>Paddy and Wheat (tillering and grain filling)</li><li>Sugarcane (stalk elongation and juice quality)</li><li>Cotton (boll development and retention)</li></ul><h2>How to Use Power Plus</h2><p><strong>Foliar spray:</strong> Mix 2–3 ml per litre of water. Spray at transplanting/establishment, vegetative growth, pre-flowering, and fruit development stages.</p><p><strong>Drip/fertigation:</strong> Mix 1–1.5 litres per acre in irrigation water during active growth periods.</p><p><strong>Seed treatment:</strong> Soak seeds in 5 ml/litre solution for 6–8 hours before sowing to improve germination rate.</p><p>2–3 applications per crop cycle spaced 15–20 days apart give the best results.</p><h2>Where to Buy</h2><p>Power Plus is available from <strong>verified agri-retailers on KrishiDukaan</strong>. Search for "Power Plus" on the platform to see which nearby stores have it in stock and order online for home delivery.</p>`,
+    tags: ["power plus", "biostimulant", "seaweed extract", "crop yield", "karanarjun"],
+    author: "KrishiDukaan Team",
+    status: "published",
+    coverImage: "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1200&q=80",
+    readTime: 8,
+  },
+  {
+    title: "How to Register Your Agri-Retail Shop on KrishiDukaan and Reach More Farmers",
+    slug: "how-to-register-agri-retail-shop-on-krishidukan",
+    excerpt: "A step-by-step guide for agri-retailers and manufacturers to get listed on KrishiDukaan, set up their product catalog, and start receiving orders from farmers in their area.",
+    content: `<h2>Why Every Agri-Retailer Needs a Digital Presence</h2><p>India has over 2.5 lakh agri-input retailers. Most rely entirely on word-of-mouth to run their business. Farmers increasingly use smartphones to research products before visiting a shop. If your shop doesn't appear online, you're invisible to a growing segment of your potential customers. <strong>KrishiDukaan gives you a free digital presence</strong> — without the cost or complexity of building your own website.</p><h2>What You Get as a KrishiDukaan Retailer</h2><ul><li><strong>Business profile</strong> — shop name, owner name, address, contact number, and a short bio visible to all farmers nearby</li><li><strong>Product listings</strong> — list any products from the KrishiDukaan catalog and set your own selling price</li><li><strong>Location listing</strong> — appear in the store map for farmers searching within 5, 10, or 25 km of your shop</li><li><strong>Online ordering</strong> — optionally enable online delivery so farmers can order directly from their phone</li><li><strong>Manufacturer connections</strong> — connect with manufacturers to get products assigned to your store</li></ul><h2>Step-by-Step: How to Register</h2><h3>Step 1 — Sign Up</h3><p>Visit <strong>krishidukan.com</strong>, click "Account," and sign up with your phone number. An OTP will be sent to verify your number.</p><h3>Step 2 — Select Your Role</h3><p>During registration, select <strong>"Retailer."</strong> This unlocks the retailer dashboard with product listing and order management features.</p><h3>Step 3 — Complete Your Business Profile</h3><p>Fill in your shop name, owner name, address, and contact number. Set your location on the map so farmers searching nearby can find you.</p><h3>Step 4 — Subscribe</h3><p>A small one-time subscription activates your seller features. Think of it as replacing the cost of printing 500 business cards — but with 10× the reach.</p><h3>Step 5 — List Your Products</h3><p>Browse the KrishiDukaan product catalog and add the products you stock. Set your selling price for each. Farmers searching for that product will now see your shop as a nearby source.</p><h3>Step 6 — Enable Online Delivery (Optional)</h3><p>Go to Settings in your dashboard and toggle "Online Delivery" on. Once enabled, farmers can place orders directly to you through the app — you manage delivery your way.</p><h2>Tips for Getting More Customers</h2><ul><li>Keep your stock status up to date — farmers trust "In Stock" labels</li><li>Add a tagline and bio to your profile — "Serving Nashik farmers since 2010" builds trust instantly</li><li>Enable online delivery even if you only deliver within 5 km — it dramatically increases orders</li><li>Respond to orders quickly — a fast acceptance time builds your reputation on the platform</li></ul><blockquote>50+ retailers have already joined the KrishiDukaan network. Be part of the platform that's connecting Indian agriculture's last mile.</blockquote><h2>Register Today</h2><p>Visit krishidukan.com, click "Account," and sign up as a retailer. The whole process takes under 10 minutes.</p>`,
+    tags: ["retailers", "register", "agri business", "sell online", "dealer"],
+    author: "KrishiDukaan Team",
+    status: "published",
+    coverImage: "https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1200&q=80",
     readTime: 7,
   },
 ];
@@ -73,11 +84,19 @@ export default function AdminBlogPage() {
   const handleSeedPosts = async () => {
     setSeeding(true);
     try {
-      await Promise.all(SEED_POSTS.map(p => createBlogPost(p)));
-      showToast("3 sample posts created!");
+      let created = 0;
+      for (const p of SEED_POSTS) {
+        await createBlogPost(p);
+        created++;
+      }
+      showToast(`${created} posts published successfully!`);
       await load();
     } catch (e: any) {
-      showToast(e?.message ?? "Seed failed", "error");
+      const msg = e?.code === "permission-denied"
+        ? "Permission denied — make sure you're logged in as admin"
+        : (e?.message ?? "Seed failed");
+      showToast(msg, "error");
+      console.error("Seed error:", e);
     } finally {
       setSeeding(false);
     }
@@ -150,19 +169,31 @@ export default function AdminBlogPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-black text-on-surface">Blog Posts</h1>
           <p className="text-sm text-on-surface-variant mt-0.5">{posts.length} total · {posts.filter(p => p.status === "published").length} published</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditing("new")}
-          className="inline-flex items-center gap-2 bg-primary text-white text-sm font-black px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-4 h-4" />
-          New Post
-        </button>
+        <div className="flex items-center gap-3">
+          {posts.length === 0 && (
+            <button
+              type="button"
+              onClick={handleSeedPosts}
+              disabled={seeding}
+              className="inline-flex items-center gap-2 border border-primary text-primary text-sm font-black px-4 py-2.5 rounded-xl hover:bg-primary/5 transition-colors disabled:opacity-50"
+            >
+              {seeding ? "Publishing…" : "✦ Publish 4 Sample Posts"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setEditing("new")}
+            className="inline-flex items-center gap-2 bg-primary text-white text-sm font-black px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-4 h-4" />
+            New Post
+          </button>
+        </div>
       </div>
 
       {/* Posts list */}
