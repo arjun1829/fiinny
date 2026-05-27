@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { auth, saveUserProfile } from "../firebase";
 import { useI18n } from "../i18n/I18nContext";
+import { HelperIcon, HelperTooltip } from "../../components/helpers";
 import { acceptManufacturerInvite } from "../lib/invite/invite-acceptance-service";
 import {
   fetchInviteDetailsForSignup,
@@ -201,35 +202,45 @@ export default function SignupView({
 
   const rolePicker = (
     <div className="mb-2">
-      <p className="mb-3 ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">I am a…</p>
+      <div className="mb-3 ml-1 flex items-center gap-1.5">
+        <p className="text-xs font-black uppercase tracking-widest text-on-surface-variant">I am a…</p>
+        <HelperIcon
+          size="xs"
+          variant="ghost"
+          side="right"
+          textKey="signupRole"
+          ariaLabel="Role selection help"
+        />
+      </div>
       <div className="grid grid-cols-3 gap-3">
         {([
-          { value: "customer" as const, icon: Tractor, label: "Farmer", sub: "Buy products online", activeBg: "bg-green-600" },
-          { value: "retailer" as const, icon: Store, label: "Retailer", sub: "Run an agri shop", activeBg: "bg-blue-600" },
-          { value: "manufacturer" as const, icon: Factory, label: "Manufacturer", sub: "Supply & distribute", activeBg: "bg-orange-600" },
-        ]).map(({ value, icon: Icon, label, sub, activeBg }) => {
+          { value: "customer" as const, icon: Tractor, label: "Farmer", sub: "Buy products online", activeBg: "bg-green-600", helperKey: "signupRoleFarmer" as const },
+          { value: "retailer" as const, icon: Store, label: "Retailer", sub: "Run an agri shop", activeBg: "bg-blue-600", helperKey: "signupRoleRetailer" as const },
+          { value: "manufacturer" as const, icon: Factory, label: "Manufacturer", sub: "Supply & distribute", activeBg: "bg-orange-600", helperKey: "signupRoleManufacturer" as const },
+        ]).map(({ value, icon: Icon, label, sub, activeBg, helperKey }) => {
           const active = role === value;
           return (
-            <button
-              key={value}
-              type="button"
-              disabled={loading}
-              onClick={() => setRole(value)}
-              className={`relative flex flex-col items-center gap-2 rounded-2xl border-2 px-2 py-4 text-center transition-all disabled:opacity-50 ${
-                active
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-outline-variant/40 bg-surface-container-low hover:border-outline-variant hover:bg-surface-container"
-              }`}
-            >
-              {active && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5 text-primary" />}
-              <span className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${active ? `${activeBg} text-white` : "bg-surface-container text-on-surface-variant"}`}>
-                <Icon className="h-5 w-5" />
-              </span>
-              <span className="flex flex-col gap-0.5">
-                <span className={`text-xs font-black leading-tight ${active ? "text-primary" : "text-on-surface"}`}>{label}</span>
-                <span className="text-[10px] leading-tight text-on-surface-variant">{sub}</span>
-              </span>
-            </button>
+            <HelperTooltip key={value} side="bottom" textKey={helperKey}>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setRole(value)}
+                className={`relative flex flex-col items-center gap-2 rounded-2xl border-2 px-2 py-4 text-center transition-all disabled:opacity-50 ${
+                  active
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-outline-variant/40 bg-surface-container-low hover:border-outline-variant hover:bg-surface-container"
+                }`}
+              >
+                {active && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5 text-primary" />}
+                <span className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${active ? `${activeBg} text-white` : "bg-surface-container text-on-surface-variant"}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="flex flex-col gap-0.5">
+                  <span className={`text-xs font-black leading-tight ${active ? "text-primary" : "text-on-surface"}`}>{label}</span>
+                  <span className="text-[10px] leading-tight text-on-surface-variant">{sub}</span>
+                </span>
+              </button>
+            </HelperTooltip>
           );
         })}
       </div>
@@ -317,7 +328,16 @@ export default function SignupView({
             </div>
 
             <div className="space-y-2">
-              <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">Mobile Number</label>
+              <div className="ml-1 flex items-center gap-1.5">
+                <label className="text-xs font-black uppercase tracking-widest text-on-surface-variant">Mobile Number</label>
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="signupMobile"
+                  ariaLabel="Mobile number help"
+                />
+              </div>
               <div className="flex items-center gap-2 rounded-2xl border border-outline-variant bg-surface-container-low px-5 py-4">
                 <span className="text-sm font-bold text-on-surface-variant">+91</span>
                 <input
@@ -343,7 +363,16 @@ export default function SignupView({
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-5">
             <div className="space-y-2">
-              <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">Enter OTP</label>
+              <div className="ml-1 flex items-center gap-1.5">
+                <label className="text-xs font-black uppercase tracking-widest text-on-surface-variant">Enter OTP</label>
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="signupOtp"
+                  ariaLabel="OTP help"
+                />
+              </div>
               <input
                 type="text"
                 inputMode="numeric"
@@ -377,15 +406,24 @@ export default function SignupView({
         )}
 
         <div className="mt-8 text-center">
-          <p className="text-sm font-medium text-on-surface-variant">
-            {t("alreadyHaveAccount")}
-            <button
-              type="button"
-              onClick={onNavigateToLogin}
-              className="ml-1 font-bold text-primary hover:underline"
-            >
-              {t("signIn")}
-            </button>
+          <p className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-on-surface-variant">
+            <span>
+              {t("alreadyHaveAccount")}
+              <button
+                type="button"
+                onClick={onNavigateToLogin}
+                className="ml-1 font-bold text-primary hover:underline"
+              >
+                {t("signIn")}
+              </button>
+            </span>
+            <HelperIcon
+              size="xs"
+              variant="ghost"
+              side="top"
+              textKey="signupExistingUser"
+              ariaLabel="New vs existing user help"
+            />
           </p>
         </div>
       </motion.div>
