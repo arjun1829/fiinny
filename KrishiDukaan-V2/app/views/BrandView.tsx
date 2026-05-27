@@ -301,9 +301,15 @@ export default function BrandView({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {locationDisplay && (
-                <span className="flex items-center gap-1.5 text-white/70 text-xs">
+                <a
+                  href={brand.geo
+                    ? `https://www.google.com/maps?q=${brand.geo.latitude},${brand.geo.longitude}`
+                    : `https://www.google.com/maps/search/${encodeURIComponent(locationDisplay)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-white/70 text-xs hover:text-white transition-colors"
+                >
                   <MapPin className="w-3.5 h-3.5 text-amber-400" /> {locationDisplay}
-                </span>
+                </a>
               )}
               {brand.establishedYear && (
                 <>
