@@ -129,7 +129,7 @@ export type RetailerProfile = {
 };
 
 import { MarketplaceProduct } from '../types/product';
-import type { CartItem, OrderDoc, OrderStatus, SellerType } from '../types/order';
+import type { CartItem, OrderDoc, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -454,7 +454,8 @@ export async function fetchStores(): Promise<Store[]> {
         userId: data.userId,
         name: data.shopName || data.ownerName || 'Retailer',
         ownerName: data.ownerName,
-        phone: data.phone,
+        // Fall back to doc.id: for phone-keyed docs the doc ID is the phone number itself
+        phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
         address: data.address,
         city: data.city,
         state: data.state,
@@ -508,7 +509,7 @@ export async function fetchStores(): Promise<Store[]> {
           id: doc.id,
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
-          phone: data.phone,
+          phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
           address: data.address,
           city: data.address?.city || data.city,
           state: data.address?.state || data.state,
@@ -1009,6 +1010,7 @@ export async function createOrdersFromCart(params: {
       subtotal,
       deliveryMode: "delivery",
       status: "placed",
+      statusHistory: [{ status: "placed", at: new Date().toISOString() }] as StatusHistoryEntry[],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1040,8 +1042,34 @@ export async function fetchIncomingOrdersForSeller(
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   await updateDoc(doc(db, "orders", orderId), {
     status,
+    statusHistory: arrayUnion({ status, at: new Date().toISOString() } as StatusHistoryEntry),
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function fetchOrdersForCustomer(customerId: string): Promise<OrderDoc[]> {
+  const q = query(
+    collection(db, "orders"),
+    where("customerId", "==", customerId),
+  );
+  const snapshot = await getDocs(q);
+  const docs = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, "id">) }));
+  return docs.sort((a, b) => {
+    const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+    const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
+}
+
+export async function fetchStoreOnlineDelivery(phone: string): Promise<boolean> {
+  if (!phone) return false;
+  try {
+    const retailerSnap = await getDoc(doc(db, "retailers", phone));
+    if (retailerSnap.exists()) return !!(retailerSnap.data() as any).onlineDelivery;
+    const mfrSnap = await getDoc(doc(db, "manufacturers", phone));
+    if (mfrSnap.exists()) return !!(mfrSnap.data() as any).onlineDelivery;
+  } catch { /* silent fail */ }
+  return false;
 }
 
 export async function addDealerToContacts(manufacturerId: string, dealerId: string) {
@@ -1971,4 +1999,61 @@ export async function fetchBusinessProfile(uid: string, role: string, phone?: st
     console.error('Error fetching business profile:', error);
   }
   return null;
+}
+
+// ─── Blog Posts ───────────────────────────────────────────────────────────────
+
+export type BlogPost = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string;
+  tags: string[];
+  author: string;
+  status: 'draft' | 'published';
+  readTime?: number;
+  publishedAt?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export async function fetchBlogPosts(status: 'published' | 'all' = 'published'): Promise<BlogPost[]> {
+  let q;
+  if (status === 'published') {
+    q = query(collection(db, 'blogPosts'), where('status', '==', 'published'), orderBy('publishedAt', 'desc'));
+  } else {
+    q = query(collection(db, 'blogPosts'), orderBy('createdAt', 'desc'));
+  }
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<BlogPost, 'id'>) }));
+}
+
+export async function fetchBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+  const q = query(collection(db, 'blogPosts'), where('slug', '==', slug));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...(d.data() as Omit<BlogPost, 'id'>) };
+}
+
+export async function createBlogPost(data: Omit<BlogPost, 'id'>): Promise<string> {
+  const ref = await addDoc(collection(db, 'blogPosts'), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    publishedAt: data.status === 'published' ? serverTimestamp() : null,
+  });
+  return ref.id;
+}
+
+export async function updateBlogPost(id: string, data: Partial<Omit<BlogPost, 'id'>>): Promise<void> {
+  const updates: Record<string, unknown> = { ...data, updatedAt: serverTimestamp() };
+  if (data.status === 'published') updates.publishedAt = serverTimestamp();
+  await updateDoc(doc(db, 'blogPosts', id), updates);
+}
+
+export async function deleteBlogPost(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'blogPosts', id));
 }

@@ -328,6 +328,12 @@ export function Navbar({
               )}
             </button>
           ))}
+          <a
+            href="/blog"
+            className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors whitespace-nowrap"
+          >
+            Blog
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">

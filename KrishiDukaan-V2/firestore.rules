@@ -440,6 +440,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ─── blogPosts ───────────────────────────────────────────────────────────
+    // Public read (published posts visible to all for SEO).
+    // Only admins can create, update or delete posts.
+    match /blogPosts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
     // ─── siteVisits ──────────────────────────────────────────────────────────
     // Daily traffic analytics — admin read, public write (create/update to log visits).
     match /siteVisits/{date} {

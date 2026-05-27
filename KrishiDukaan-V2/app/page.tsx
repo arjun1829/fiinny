@@ -34,6 +34,7 @@ import type { CartItem } from '../types/order';
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
 import { StatusToast } from './components/shared/status-toast';
+import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
@@ -116,6 +117,7 @@ export default function App() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+  const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState({
     customerName: "",
     customerPhone: "",
@@ -684,39 +686,9 @@ export default function App() {
     navigate('product', { productId: id });
   };
 
+  // Opens the store picker modal — used from Home, Market, and ProductDetailView (non-store button)
   const addToCart = (product: MarketplaceProduct) => {
-    if (!product.isOnline) {
-      setCheckoutMessage("This product is offline store-only.");
-      return;
-    }
-    const sellerId = product.retailerId || product.manufacturerId || "";
-    if (!sellerId) {
-      setCheckoutMessage("This product is missing seller info and cannot be ordered online.");
-      return;
-    }
-    const sellerType = product.retailerId ? "retailer" : "manufacturer";
-    setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id);
-      if (found) {
-        return prev.map((i) =>
-          i.productId === product.id ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          sellerId,
-          sellerType,
-          name: product.name,
-          image: product.image,
-          price: product.price,
-          qty: 1,
-          sellMode: "online_delivery",
-        },
-      ];
-    });
-    setCheckoutMessage("Added to cart.");
+    setStorePickerProduct(product);
   };
 
   const placeOrders = async () => {
@@ -752,6 +724,46 @@ export default function App() {
       setCheckoutLoading(false);
     }
   };
+
+  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
+    const sellerId: string =
+      (store as any).retailerId ||
+      (store as any).userId ||
+      store.id ||
+      "";
+    if (!sellerId) {
+      setCheckoutMessage("This store is missing seller info and cannot be ordered from online.");
+      return;
+    }
+    const sellerType: "retailer" | "manufacturer" =
+      (store as any).retailerId ? "retailer" : "manufacturer";
+
+    setCartItems((prev) => {
+      const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
+      if (found) {
+        return prev.map((i) =>
+          i.productId === product.id && i.sellerId === sellerId
+            ? { ...i, qty: i.qty + 1 }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          sellerId,
+          sellerType,
+          name: product.name,
+          image: product.image,
+          price: product.price,
+          qty: 1,
+          sellMode: "online_delivery",
+        },
+      ];
+    });
+    setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
+    setToastType("success");
+  }, []);
 
   const navigateToMap = (storeId?: string, fromProductId?: string | null) => {
     setMapFilterProductId(fromProductId !== undefined ? fromProductId : null);
@@ -806,6 +818,7 @@ export default function App() {
               setSelectedCategory(cat);
               navigate('market');
             }}
+            onAddToCart={addToCart}
           />
         );
       case 'market':
@@ -813,6 +826,7 @@ export default function App() {
           <MarketView
             products={marketProducts}
             onProductClick={navigateToProduct}
+            onAddToCart={addToCart}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             storesWithDistance={storesWithDistance}
@@ -851,6 +865,7 @@ export default function App() {
             navigate('brand', { manufacturerId });
           }}
           onAddToCart={addToCart}
+          onAddToCartFromStore={handleAddToCartFromStore}
         />;
       case 'cart':
         return (
@@ -1023,6 +1038,7 @@ export default function App() {
               setSelectedCategory(cat);
               navigate('market');
             }}
+            onAddToCart={addToCart}
           />
         );
     }
@@ -1101,6 +1117,16 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Store Picker Modal — opened when consumer clicks Add to Cart from Home/Market */}
+      {storePickerProduct && (
+        <StorePickerModal
+          product={storePickerProduct}
+          storesWithDistance={storesWithDistance}
+          onConfirm={handleAddToCartFromStore}
+          onClose={() => setStorePickerProduct(null)}
+        />
       )}
 
       {/* Onboarding Tour — only runs on first visit, only on home view */}
