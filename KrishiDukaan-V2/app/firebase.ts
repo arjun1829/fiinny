@@ -198,19 +198,25 @@ export async function saveRetailerProduct(
   product: CreateRetailProductInput
 ) {
   const userProfileDocId = await resolveUserProfileDocId(retailerId);
+  const retailerPhone = userProfileDocId && userProfileDocId !== retailerId ? userProfileDocId : null;
+  const storeDocId = await resolveRetailerStoreDocId(retailerId);
 
   const sellMode = product.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
-  // 1. Create the product
+  const storeName = product.store.trim();
+  const stockLevel = product.stock.trim() || 'In Stock';
+  const price = Number(product.price);
+
   await addDoc(collection(db, 'products'), {
     retailerId,
+    ...(retailerPhone ? { retailerPhone } : {}),
     name: product.name.trim(),
     fullName: product.name.trim(),
-    price: Number(product.price),
+    price,
     category: product.category.trim() || 'general',
     description: product.description.trim(),
     image: product.image.trim(),
-    stock: product.stock.trim() || 'In Stock',
-    store: product.store.trim(),
+    stock: stockLevel,
+    store: storeName,
     distance: product.distance.trim() || 'Nearby',
     sellMode,
     isOnline: sellMode === "online_delivery",
@@ -222,6 +228,13 @@ export async function saveRetailerProduct(
     applicationDesc: product.applicationDesc?.trim() || null,
     dosage: product.dosage?.trim() || null,
     bestForCrops: product.bestForCrops || null,
+    availability: [{
+      storeId: storeDocId,
+      ...(retailerPhone ? { storePhone: retailerPhone } : {}),
+      storeName,
+      stockLevel,
+      sellingPrice: price,
+    }],
   });
 
   // 2. Increment productCount in user profile
@@ -230,6 +243,38 @@ export async function saveRetailerProduct(
     await setDoc(userRef, {
       productCount: increment(1),
       updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  // 3. Ensure a retailers doc exists so this store appears on product pages.
+  // If the retailer never saved their full profile, fetchStores() won't find them.
+  // Only creates if missing — a full profile save later will merge & overwrite.
+  const retailersRef = doc(db, 'retailers', storeDocId);
+  const retailersSnap = await getDoc(retailersRef);
+  if (!retailersSnap.exists()) {
+    const userPhone = retailerPhone ?? storeDocId;
+    let shopName = storeName;
+    let ownerName = '';
+    if (userProfileDocId) {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', userProfileDocId));
+        if (uSnap.exists()) {
+          const ud = uSnap.data() as Record<string, unknown>;
+          shopName = String(ud.businessName ?? ud.shopName ?? ud.name ?? storeName);
+          ownerName = String(ud.ownerName ?? ud.name ?? '');
+        }
+      } catch { /* non-critical */ }
+    }
+    await setDoc(retailersRef, {
+      userId: retailerId,
+      retailerId,
+      role: 'retailer',
+      shopName,
+      ownerName,
+      phone: userPhone,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     }, { merge: true });
   }
 }

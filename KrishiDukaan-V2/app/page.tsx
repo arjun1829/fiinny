@@ -19,9 +19,10 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
+import RetailerJoinView from './views/RetailerJoinView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView } from './firebase';
+import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MarketplaceProduct } from '../types/product';
@@ -32,10 +33,11 @@ import type { CartItem } from '../types/order';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
+import { StatusToast } from './components/shared/status-toast';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -46,7 +48,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
@@ -88,6 +90,8 @@ function BrandPageRedirect({ phone }: { phone: string }) {
 export default function App() {
   const { t } = useI18n();
   const [currentView, setCurrentView] = useState<View>('home');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string | null>(null);
@@ -119,6 +123,8 @@ export default function App() {
   });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mfgUpgradeModal, setMfgUpgradeModal] = useState(false);
+  const [mfgUpgradeLoading, setMfgUpgradeLoading] = useState(false);
   /** Preserved `inviteCode` query param for manufacturer → retailer signup links (legacy `invite` also read). */
   const [signupInviteCode, setSignupInviteCode] = useState<string | null>(null);
   /** Result of auto-accepting an invite for an already-logged-in user. */
@@ -138,6 +144,9 @@ export default function App() {
       view !== 'signup'
     ) {
       return 'subscription';
+    }
+    if (userRole === 'retailer' && view === 'become-retailer') {
+      return 'home';
     }
     return view;
   }, [userRole, userProfile.isPaid]);
@@ -210,6 +219,11 @@ export default function App() {
         clearInvite?: boolean;
       },
     ) => {
+      if (view === 'become-retailer' && userRole === 'retailer') {
+        setToastMsg(t('footerAlreadyRetailerMsg'));
+        setToastType('success');
+        return;
+      }
       const nextView = resolveViewForAccess(view);
       const nextProductId = options?.productId ?? (nextView === 'product' ? selectedProductId : null);
       const nextStoreId = options?.storeId ?? (nextView === 'map' ? selectedStoreId : null);
@@ -239,7 +253,7 @@ export default function App() {
         window.scrollTo({ top: 0, behavior: 'instant' });
       }
     },
-    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId, selectedManufacturerId],
+    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId, selectedManufacturerId, userRole, t],
   );
 
   useEffect(() => {
@@ -286,6 +300,14 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
   }, [cartItems]);
+
+  useEffect(() => {
+    if (currentView === 'become-retailer' && userRole === 'retailer') {
+      navigate('home', { replace: true });
+      setToastMsg(t('footerAlreadyRetailerMsg'));
+      setToastType('success');
+    }
+  }, [currentView, userRole, navigate, t]);
 
   // Auto-accept invite for already-logged-in users who click an invite link.
   // Fires whenever both user and signupInviteCode become non-null.
@@ -478,6 +500,41 @@ export default function App() {
       navigate('home', { replace: true, clearInvite: true });
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  };
+
+  const handleUpgradeRole = () => {
+    if (userRole === 'manufacturer') {
+      setToastMsg(t('footerAlreadyManufacturerMsg'));
+      setToastType('success');
+      return;
+    }
+    if (userRole === 'retailer') {
+      if (!userProfile.isPaid) {
+        navigate('subscription');
+        return;
+      }
+      setMfgUpgradeModal(true);
+      return;
+    }
+    navigate('become-retailer');
+  };
+
+  const handleConfirmMfgUpgrade = async () => {
+    if (!user) return;
+    setMfgUpgradeLoading(true);
+    try {
+      await requestRoleUpgrade(user.uid, 'manufacturer', {});
+      setMfgUpgradeModal(false);
+      setToastMsg(t('footerMfgUpgradeSuccess'));
+      setToastType('success');
+      setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+    } catch {
+      setMfgUpgradeModal(false);
+      setToastMsg(t('footerMfgUpgradeFail'));
+      setToastType('error');
+    } finally {
+      setMfgUpgradeLoading(false);
     }
   };
 
@@ -944,6 +1001,12 @@ export default function App() {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
       }
+      case 'become-retailer':
+        return (
+          <RetailerJoinView
+            onBack={() => navigate('home')}
+          />
+        );
       case 'about':
         return <AboutView />;
       default:
@@ -1010,12 +1073,46 @@ export default function App() {
       <Footer
         onNavigate={(view) => navigate(view as View)}
         onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
+        userRole={userRole}
+        onUpgradeRole={handleUpgradeRole}
       />
+
+      {/* Manufacturer upgrade confirmation modal */}
+      {mfgUpgradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-7 shadow-2xl">
+            <h2 className="text-lg font-black text-on-surface mb-2">{t('footerMfgUpgradeTitle')}</h2>
+            <p className="text-sm text-on-surface-variant mb-6">{t('footerMfgUpgradeDesc')}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setMfgUpgradeModal(false)}
+                disabled={mfgUpgradeLoading}
+                className="flex-1 rounded-2xl border border-surface-container py-3 text-sm font-bold text-on-surface-variant hover:bg-surface-container transition-colors"
+              >
+                {t('footerMfgUpgradeCancel')}
+              </button>
+              <button
+                onClick={handleConfirmMfgUpgrade}
+                disabled={mfgUpgradeLoading}
+                className="flex-1 rounded-2xl bg-primary py-3 text-sm font-bold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {mfgUpgradeLoading ? '…' : t('footerMfgUpgradeConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Onboarding Tour — only runs on first visit, only on home view */}
       {currentView === 'home' && !loading && !errorMsg ? (
         <GuidedTour steps={tourSteps} />
       ) : null}
+
+      <StatusToast
+        message={toastMsg}
+        type={toastType}
+        onDismiss={() => setToastMsg(null)}
+      />
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">

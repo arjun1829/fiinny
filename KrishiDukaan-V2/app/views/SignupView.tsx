@@ -47,6 +47,21 @@ export default function SignupView({
   const confirmationRef = useRef<ConfirmationResult | null>(null);
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
+  useEffect(() => {
+    let div = document.getElementById('recaptcha-container-signup-global');
+    if (!div) {
+      div = document.createElement('div');
+      div.id = 'recaptcha-container-signup-global';
+      document.body.appendChild(div);
+    }
+    const verifier = new RecaptchaVerifier(auth, div, { size: 'invisible' });
+    recaptchaRef.current = verifier;
+    return () => {
+      try { verifier.clear(); } catch { /* ignore */ }
+      recaptchaRef.current = null;
+    };
+  }, []);
+
   const trimmedInvite = inviteCode?.trim() || "";
 
   useLayoutEffect(() => {
@@ -127,17 +142,10 @@ export default function SignupView({
     if (normalizedPhone.length < 10) { setError("Please enter a valid 10-digit mobile number."); return; }
     setLoading(true);
     try {
-      try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
-      // Always pass a fresh div — avoids "already rendered" error on retries
-      const freshDiv = document.createElement("div");
-      document.body.appendChild(freshDiv);
-      const verifier = new RecaptchaVerifier(auth, freshDiv, {
-        size: "invisible",
-        callback: () => { /* OTP send proceeds silently */ },
-        "expired-callback": () => { /* token expired — next send will recreate verifier */ },
-      });
-      recaptchaRef.current = verifier;
-      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), verifier);
+      if (!recaptchaRef.current) {
+        throw new Error("reCAPTCHA not ready. Please refresh and try again.");
+      }
+      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), recaptchaRef.current);
       confirmationRef.current = result;
       setStep("otp");
     } catch (err: unknown) {
@@ -296,7 +304,6 @@ export default function SignupView({
           </div>
         )}
 
-        <div id="recaptcha-container-signup" />
 
         {/* ── Phone OTP flow ── */}
         {step === "details" ? (

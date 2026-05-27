@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
-import { db, trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
+import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -352,24 +352,33 @@ export default function ProductDetailView({
   const availableStores = useMemo(() => {
     const sourceStores = storesWithDistance.length > 0 ? storesWithDistance : stores;
     const filtered = sourceStores.filter(store => {
-      // 1. Check if assigned via availability array (match by UID or phone)
       const storePhone = (store as any).phone as string | undefined;
+      const storeUserId = (store as any).userId as string | undefined;
+      const storeRetailerId = (store as any).retailerId as string | undefined;
+
+      // 1. Check if assigned via availability array
       const inAvailability = product.availability?.some(
         (a) =>
           a.storeId === store.id ||
           (a.storePhone && storePhone && a.storePhone === storePhone) ||
-          (a.storePhone && a.storePhone === store.id),
+          (a.storePhone && a.storePhone === store.id) ||
+          (a.storeId && storePhone && a.storeId === storePhone) ||
+          (a.storeId && storeUserId && a.storeId === storeUserId) ||
+          (a.storeId && storeRetailerId && a.storeId === storeRetailerId),
       );
       if (inAvailability) return true;
-      
-      // 2. Check if this is the primary owner's store
-      const isOwnerStore = 
-        store.id === product.retailerId || 
-        store.id === product.manufacturerId || 
+
+      // 2. Check if this is the primary owner's store (match by UID, phone, or name)
+      const rid = product.retailerId;
+      const rPhone = product.retailerPhone;
+      const isOwnerStore =
+        (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
+        (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
+        store.id === product.manufacturerId ||
         store.name === product.store ||
         (store as any).shopName === product.store ||
         (store as any).ownerName === product.store;
-        
+
       return isOwnerStore;
     });
 
@@ -379,6 +388,57 @@ export default function ProductDetailView({
     }
     return filtered;
   }, [product, storesWithDistance, stores]);
+
+  // Fallback: if no store matched from pre-loaded list, fetch the retailer's profile
+  // directly. This handles retailers who listed a product before saving their profile
+  // (no retailers doc yet) or before retailerPhone was stored on the product.
+  const [fallbackStore, setFallbackStore] = useState<any | null>(null);
+  useEffect(() => {
+    if (availableStores.length > 0) { setFallbackStore(null); return; }
+    const phone = product.retailerPhone;
+    const uid = product.retailerId;
+    if (!phone && !uid) return;
+
+    const resolve = async () => {
+      let profile: Record<string, unknown> | null = null;
+      let resolvedPhone = phone ?? '';
+
+      if (phone) {
+        profile = await fetchUserProfileByPhone(phone).catch(() => null);
+      } else if (uid) {
+        // Resolve UID → phone via uidIndex, then fetch user profile
+        const { getDoc, doc } = await import('firebase/firestore');
+        const { db: firestoreDb } = await import('../firebase');
+        const idxSnap = await getDoc(doc(firestoreDb, 'uidIndex', uid)).catch(() => null);
+        if (idxSnap?.exists()) {
+          resolvedPhone = String(idxSnap.data().phone ?? '');
+          if (resolvedPhone) {
+            profile = await fetchUserProfileByPhone(resolvedPhone).catch(() => null);
+          }
+        }
+      }
+
+      if (!profile) return;
+      setFallbackStore({
+        id: resolvedPhone || uid || 'retailer',
+        name: String(profile.businessName ?? profile.shopName ?? profile.name ?? 'Retailer'),
+        ownerName: String(profile.ownerName ?? profile.name ?? ''),
+        phone: resolvedPhone,
+        distance: 'Nearby',
+        status: 'Active',
+        stock: [],
+        location: { lat: 0, lng: 0 },
+        userId: String(profile.uid ?? uid ?? ''),
+        retailerId: String(profile.uid ?? uid ?? ''),
+      });
+    };
+
+    resolve();
+  }, [availableStores.length, product.retailerPhone, product.retailerId]);
+
+  const displayStores = availableStores.length > 0
+    ? availableStores
+    : fallbackStore ? [fallbackStore] : [];
 
   return (
     <div className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 flex flex-col gap-10">
@@ -442,7 +502,7 @@ export default function ProductDetailView({
             />
           </div>
 
-          {availableStores.length > 0 ? availableStores.map(store => {
+          {displayStores.length > 0 ? displayStores.map(store => {
             const storePhone = (store as any).phone as string | undefined;
             const availability = product.availability?.find(
               (a) =>
