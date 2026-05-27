@@ -1097,6 +1097,126 @@ export const HELPER_TEXTS = {
       hi: 'नए हैं? ऊपर खाता बनाएँ। पहले से है? इसके बजाय अपने मोबाइल नंबर से साइन इन करें।',
     },
   },
+
+  // --- Bulk product upload (CSV) ---
+  csvProductSection: {
+    title: { en: 'Bulk product upload', mr: 'मोठ्या प्रमाणात उत्पादन अपलोड', hi: 'थोक उत्पाद अपलोड' },
+    body: {
+      en: 'Add many products at once from a CSV file. Download the template, fill in your products, then upload. Each valid row uses one listing seat.',
+      mr: 'CSV फाइलमधून एकाच वेळी अनेक उत्पादने जोडा. टेम्पलेट डाउनलोड करा, तुमची उत्पादने भरा, मग अपलोड करा. प्रत्येक वैध पंक्ती एक लिस्टिंग सीट वापरते.',
+      hi: 'CSV फ़ाइल से एक साथ कई उत्पाद जोड़ें। टेम्पलेट डाउनलोड करें, अपने उत्पाद भरें, फिर अपलोड करें। हर वैध पंक्ति एक लिस्टिंग सीट का उपयोग करती है।',
+    },
+  },
+  csvProductTemplate: {
+    title: { en: 'CSV template', mr: 'CSV टेम्पलेट', hi: 'CSV टेम्पलेट' },
+    body: {
+      en: 'Download a ready-made CSV with the correct column headers. Keep column names exactly as shown — name, category, unit, price, description.',
+      mr: 'योग्य स्तंभ शीर्षकांसह तयार CSV डाउनलोड करा. स्तंभांची नावे दाखवल्याप्रमाणेच ठेवा — name, category, unit, price, description.',
+      hi: 'सही कॉलम हेडर वाली तैयार CSV डाउनलोड करें। कॉलम नाम बिल्कुल वैसे ही रखें — name, category, unit, price, description.',
+    },
+  },
+  csvProductUploadZone: {
+    title: { en: 'Upload & preview', mr: 'अपलोड आणि पूर्वावलोकन', hi: 'अपलोड और पूर्वावलोकन' },
+    body: {
+      en: 'Pick your CSV to preview every row before saving. Invalid rows and duplicates are flagged and skipped — only valid products are published to your catalogue.',
+      mr: 'जतन करण्यापूर्वी प्रत्येक पंक्तीचे पूर्वावलोकन करण्यासाठी तुमची CSV निवडा. अवैध पंक्ती आणि डुप्लिकेट चिन्हांकित करून वगळल्या जातात — फक्त वैध उत्पादने तुमच्या कॅटलॉगमध्ये प्रकाशित होतात.',
+      hi: 'सेव करने से पहले हर पंक्ति का पूर्वावलोकन करने के लिए अपनी CSV चुनें। अमान्य पंक्तियाँ और डुप्लिकेट चिह्नित कर छोड़ी जाती हैं — केवल वैध उत्पाद आपके कैटलॉग में प्रकाशित होते हैं।',
+    },
+  },
+
+  // --- Bulk retailer upload (CSV) ---
+  csvRetailerSection: {
+    title: { en: 'Bulk add retailers', mr: 'मोठ्या प्रमाणात विक्रेते जोडा', hi: 'थोक रिटेलर जोड़ें' },
+    body: {
+      en: 'Onboard many retailers at once from a CSV. Each new retailer is pre-created and linked to your network. Retailers already in your network are detected and skipped. Each new retailer uses one seat.',
+      mr: 'CSV मधून एकाच वेळी अनेक विक्रेते जोडा. प्रत्येक नवीन विक्रेता आधीच तयार करून तुमच्या नेटवर्कशी जोडला जातो. आधीच तुमच्या नेटवर्कमधील विक्रेते ओळखून वगळले जातात. प्रत्येक नवीन विक्रेता एक सीट वापरतो.',
+      hi: 'CSV से एक साथ कई रिटेलर जोड़ें। हर नया रिटेलर पहले से बनाकर आपके नेटवर्क से जोड़ा जाता है। पहले से नेटवर्क में मौजूद रिटेलर पहचानकर छोड़ दिए जाते हैं। हर नया रिटेलर एक सीट का उपयोग करता है।',
+    },
+  },
+  csvRetailerTemplate: {
+    title: { en: 'CSV template', mr: 'CSV टेम्पलेट', hi: 'CSV टेम्पलेट' },
+    body: {
+      en: 'Download the template with the required columns. Shop name, owner name, phone, city and state are required; email and pincode are optional.',
+      mr: 'आवश्यक स्तंभांसह टेम्पलेट डाउनलोड करा. दुकानाचे नाव, मालकाचे नाव, फोन, शहर आणि राज्य आवश्यक आहेत; ईमेल आणि पिनकोड पर्यायी आहेत.',
+      hi: 'आवश्यक कॉलम वाला टेम्पलेट डाउनलोड करें। दुकान का नाम, मालिक का नाम, फ़ोन, शहर और राज्य आवश्यक हैं; ईमेल और पिनकोड वैकल्पिक हैं।',
+    },
+  },
+  csvRetailerUploadZone: {
+    title: { en: 'Upload & preview', mr: 'अपलोड आणि पूर्वावलोकन', hi: 'अपलोड और पूर्वावलोकन' },
+    body: {
+      en: 'Pick your CSV to preview each retailer before adding. Invalid rows, duplicate phone numbers, and retailers already in your network are flagged and skipped.',
+      mr: 'जोडण्यापूर्वी प्रत्येक विक्रेत्याचे पूर्वावलोकन करण्यासाठी तुमची CSV निवडा. अवैध पंक्ती, डुप्लिकेट फोन नंबर आणि आधीच तुमच्या नेटवर्कमधील विक्रेते चिन्हांकित करून वगळले जातात.',
+      hi: 'जोड़ने से पहले हर रिटेलर का पूर्वावलोकन करने के लिए अपनी CSV चुनें। अमान्य पंक्तियाँ, डुप्लिकेट फ़ोन नंबर और पहले से नेटवर्क में मौजूद रिटेलर चिह्नित कर छोड़ दिए जाते हैं।',
+    },
+  },
+
+  // --- Bulk upload: shared seat badge ---
+  csvSeatBadge: {
+    title: { en: 'Available seats', mr: 'उपलब्ध सीट्स', hi: 'उपलब्ध सीट्स' },
+    body: {
+      en: 'Seats left in your subscription. The bulk upload stops once seats run out, so buy more if you have a large file.',
+      mr: 'तुमच्या सबस्क्रिप्शनमधील शिल्लक सीट्स. सीट्स संपल्यावर मोठ्या प्रमाणात अपलोड थांबते, त्यामुळे मोठी फाइल असल्यास अधिक खरेदी करा.',
+      hi: 'आपके सब्सक्रिप्शन में बची सीट्स। सीट्स खत्म होने पर थोक अपलोड रुक जाता है, इसलिए बड़ी फ़ाइल हो तो और खरीदें।',
+    },
+  },
+
+  // --- Company / Brand Page ---
+  cpHeader: {
+    title: { en: 'Your brand page', mr: 'तुमचे ब्रँड पेज', hi: 'आपका ब्रांड पेज' },
+    body: {
+      en: 'This is your public page that farmers see. Use "View Brand Page" to open it exactly as customers will.',
+      mr: 'शेतकऱ्यांना दिसणारे हे तुमचे सार्वजनिक पेज आहे. ग्राहकांना दिसते तसेच उघडण्यासाठी "ब्रँड पेज पाहा" वापरा.',
+      hi: 'यह आपका सार्वजनिक पेज है जो किसान देखते हैं। ग्राहकों की तरह इसे खोलने के लिए "ब्रांड पेज देखें" का उपयोग करें।',
+    },
+  },
+  cpTabs: {
+    title: { en: 'Brand page tabs', mr: 'ब्रँड पेज टॅब', hi: 'ब्रांड पेज टैब' },
+    body: {
+      en: 'Brand Info is what you edit here. Products and Stores are pulled live from your inventory and retailer network — no editing needed.',
+      mr: 'ब्रँड माहिती तुम्ही इथे संपादित करता. उत्पादने आणि दुकाने तुमच्या इन्व्हेंटरी आणि विक्रेता नेटवर्कमधून थेट घेतली जातात — संपादन गरजेचे नाही.',
+      hi: 'ब्रांड जानकारी आप यहाँ संपादित करते हैं। उत्पाद और दुकानें आपकी इन्वेंट्री और रिटेलर नेटवर्क से लाइव ली जाती हैं — संपादन की ज़रूरत नहीं।',
+    },
+  },
+  cpBrandStorySection: {
+    title: { en: 'Brand story', mr: 'ब्रँड स्टोरी', hi: 'ब्रांड स्टोरी' },
+    body: {
+      en: 'Tell your story so farmers trust you. Add a short tagline, an about paragraph, your founding year, website, and a social-proof line (e.g. how many farmers trust you).',
+      mr: 'शेतकरी तुमच्यावर विश्वास ठेवतील अशी तुमची कथा सांगा. छोटी टॅगलाइन, विषयी परिच्छेद, स्थापना वर्ष, वेबसाइट आणि सामाजिक-पुरावा ओळ (उदा. किती शेतकरी विश्वास ठेवतात) जोडा.',
+      hi: 'किसान आप पर भरोसा करें ऐसी अपनी कहानी बताएं। छोटी टैगलाइन, परिचय अनुच्छेद, स्थापना वर्ष, वेबसाइट और सामाजिक-प्रमाण पंक्ति (जैसे कितने किसान भरोसा करते हैं) जोड़ें।',
+    },
+  },
+  cpBrandImagesSection: {
+    title: { en: 'Brand images', mr: 'ब्रँड प्रतिमा', hi: 'ब्रांड छवियाँ' },
+    body: {
+      en: 'Add a square logo and a wide banner via image URLs. Clear, high-resolution images make your brand page look professional.',
+      mr: 'प्रतिमा URL द्वारे चौरस लोगो आणि रुंद बॅनर जोडा. स्पष्ट, उच्च-रिझोल्यूशन प्रतिमा तुमचे ब्रँड पेज व्यावसायिक दिसवतात.',
+      hi: 'इमेज URL द्वारा चौकोर लोगो और चौड़ा बैनर जोड़ें। स्पष्ट, उच्च-रिज़ॉल्यूशन छवियाँ आपके ब्रांड पेज को पेशेवर बनाती हैं।',
+    },
+  },
+  cpCertificationsSection: {
+    title: { en: 'Certifications & badges', mr: 'प्रमाणपत्रे आणि बॅज', hi: 'प्रमाणपत्र और बैज' },
+    body: {
+      en: 'List quality certifications (e.g. ISO, organic) to build trust. Type one and press Enter or Add to include it as a badge on your brand page.',
+      mr: 'विश्वास निर्माण करण्यासाठी गुणवत्ता प्रमाणपत्रे (उदा. ISO, सेंद्रिय) नोंदवा. एक टाइप करा आणि Enter दाबा किंवा Add करा — ते तुमच्या ब्रँड पेजवर बॅज म्हणून दिसेल.',
+      hi: 'भरोसा बनाने के लिए गुणवत्ता प्रमाणपत्र (जैसे ISO, ऑर्गेनिक) सूचीबद्ध करें। एक टाइप करें और Enter दबाएँ या Add करें — यह आपके ब्रांड पेज पर बैज के रूप में दिखेगा।',
+    },
+  },
+  cpBrandColorsSection: {
+    title: { en: 'Brand colors', mr: 'ब्रँड रंग', hi: 'ब्रांड रंग' },
+    body: {
+      en: 'Pick the primary and accent colors used to theme your public brand page. Choose shades that match your logo and packaging.',
+      mr: 'तुमच्या सार्वजनिक ब्रँड पेजला थीम देण्यासाठी वापरले जाणारे प्राथमिक आणि अॅक्सेंट रंग निवडा. तुमच्या लोगो आणि पॅकेजिंगशी जुळणाऱ्या छटा निवडा.',
+      hi: 'अपने सार्वजनिक ब्रांड पेज को थीम देने के लिए प्राथमिक और एक्सेंट रंग चुनें। अपने लोगो और पैकेजिंग से मेल खाते शेड चुनें।',
+    },
+  },
+  cpYoutubeSection: {
+    title: { en: 'YouTube videos', mr: 'YouTube व्हिडिओ', hi: 'YouTube वीडियो' },
+    body: {
+      en: 'Showcase product demos or farm success stories. Paste a full YouTube link or the 11-character video ID and press Add.',
+      mr: 'उत्पादन डेमो किंवा शेती यशोगाथा दाखवा. पूर्ण YouTube लिंक किंवा 11-अक्षरी व्हिडिओ ID पेस्ट करा आणि Add दाबा.',
+      hi: 'उत्पाद डेमो या खेती की सफलता की कहानियाँ दिखाएँ। पूरा YouTube लिंक या 11-वर्ण वीडियो ID पेस्ट करें और Add दबाएँ।',
+    },
+  },
 } as const;
 
 export type HelperTextKey = keyof typeof HELPER_TEXTS;

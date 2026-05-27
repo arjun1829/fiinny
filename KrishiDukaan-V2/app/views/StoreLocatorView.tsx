@@ -386,19 +386,19 @@ export default function StoreLocatorView({
               {addressLine && (
                 <p className="px-3.5 pb-2 text-[11px] text-on-surface-variant font-medium -mt-1">{addressLine}</p>
               )}
-              {/* Action buttons */}
+              {/* Action buttons — mirror desktop: primary "Get Directions" + secondary "Details" (opens shared details modal) */}
               <div className="flex gap-2 px-3.5 pb-3">
                 <button
                   onClick={(e) => { e.stopPropagation(); handleGetDirections(store); }}
                   className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-white py-2 rounded-xl text-[11px] font-bold"
                 >
-                  <ICONS.Directions className="w-3 h-3" /> Directions
+                  <ICONS.Directions className="w-3 h-3" /> {t('getDirections')}
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleStoreClick(store.id, true); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 border border-primary text-primary py-2 rounded-xl text-[11px] font-bold"
+                  onClick={(e) => { e.stopPropagation(); setDetailStore(store); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-outline-variant text-on-surface py-2 rounded-xl text-[11px] font-bold"
                 >
-                  <ICONS.Location className="w-3 h-3" /> View on Map
+                  {t('detailsLabel')}
                 </button>
               </div>
             </div>
@@ -753,7 +753,7 @@ export default function StoreLocatorView({
     <AnimatePresence>
       {detailStore && (
         <div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-20 md:pb-4"
           onClick={() => setDetailStore(null)}
         >
           <motion.div
@@ -762,7 +762,7 @@ export default function StoreLocatorView({
             exit={{ y: 60, opacity: 0 }}
             transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[calc(100vh-7rem)] md:max-h-[85vh] overflow-y-auto overscroll-contain"
           >
             <div className="p-6">
               <div className="flex items-start justify-between mb-5">
