@@ -455,6 +455,10 @@ service cloud.firestore {
       allow create, update: if true;
     }
 
+    match /appVersion/{vId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
   }
 }

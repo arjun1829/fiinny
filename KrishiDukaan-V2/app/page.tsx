@@ -117,6 +117,7 @@ export default function App() {
   const [hubs, setHubs] = useState<any[]>([]);
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartLoaded, setCartLoaded] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
@@ -290,21 +291,20 @@ export default function App() {
   }, [buildUrl, readRouteFromUrl, resolveViewForAccess]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem("krishidukan_cart_v1");
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as CartItem[];
-      if (Array.isArray(parsed)) setCartItems(parsed);
-    } catch {
-      // ignore malformed local cart
-    }
-  }, []);
+    if (!cartLoaded) return;
+    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
+  }, [cartItems, cartLoaded]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
-  }, [cartItems]);
+    try {
+      const raw = window.localStorage.getItem("krishidukan_cart_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) setCartItems(parsed);
+      }
+    } catch {}
+    setCartLoaded(true);
+  }, []);
 
   useEffect(() => {
     if (currentView === 'become-retailer' && userRole === 'retailer') {
@@ -346,44 +346,36 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
-  const loadData = async () => {
+  const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       trackPageView('home');
 
-      console.log('Fetching products, stores and hubs...');
       let products = await fetchMarketplaceProducts();
       let stores = await fetchStores();
       let fetchedHubs = await fetchHubs();
 
       if (products.length === 0 || stores.length === 0 || fetchedHubs.length === 0) {
-        console.log('Firebase data incomplete, attempting sync...', { 
-          productsCount: products.length, 
-          storesCount: stores.length,
-          hubsCount: fetchedHubs.length
-        });
         await syncInitialData(PRODUCTS, STORES, INVENTORY);
-        // Fetch again after sync
         products = await fetchMarketplaceProducts();
         stores = await fetchStores();
         fetchedHubs = await fetchHubs();
       }
 
-      console.log('Data loaded successfully:', { 
-        products: products.length, 
-        stores: stores.length,
-        hubs: fetchedHubs.length
-      });
       setAllProducts(products);
       setAllStores(stores);
       setHubs(fetchedHubs);
-      
+
       if (products.length === 0) {
         setErrorMsg('No products found in database even after sync. Please check your Firestore rules.');
       }
     } catch (error: any) {
       console.error('Failed to load data from Firebase:', error);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        return loadData(attempt + 1);
+      }
       setErrorMsg(`Firebase Connection Error: ${error.message || 'Unknown error'}. Check your browser console for details.`);
     } finally {
       setLoading(false);
@@ -831,7 +823,7 @@ export default function App() {
           <h3 className="text-xl font-bold mb-2">{t('dataLoadingIssue')}</h3>
           <p className="mb-4">{errorMsg}</p>
           <button
-            onClick={loadData}
+            onClick={() => void loadData()}
             className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-700 transition-colors"
           >
             {t('retryConnection')}
@@ -938,7 +930,7 @@ export default function App() {
             loading={checkoutLoading}
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}
-            allProducts={allProducts}
+            allProducts={mergedProducts}
           />
         );
       case 'map':

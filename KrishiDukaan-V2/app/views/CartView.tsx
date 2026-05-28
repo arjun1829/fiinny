@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
@@ -293,6 +293,103 @@ function StorePickerInline({
   );
 }
 
+function CartItemCard({
+  item,
+  product,
+  stores,
+  onQtyChange,
+  onRemove,
+  onAssignStore,
+  isPending,
+  t,
+}: {
+  item: CartItem;
+  product: MarketplaceProduct | undefined;
+  stores: StoreWithDistance[];
+  onQtyChange: (productId: string, qty: number) => void;
+  onRemove: (productId: string) => void;
+  onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
+  isPending: boolean;
+  t: (key: string) => string;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (showPicker && pickerRef.current) {
+      pickerRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [showPicker]);
+
+  return (
+    <div className={`rounded-2xl border bg-white p-4 mb-2 ${isPending ? "border-amber-200" : "border-green-200"}`}>
+      <div className="flex gap-4">
+        <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-surface-container shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-on-surface truncate">{item.name}</p>
+
+          {!isPending && (
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                <ICONS.Delivery className="w-3 h-3" />
+                {item.sellerName || "Store selected"}
+              </span>
+              <span className="text-sm font-bold text-secondary">₹{item.price.toLocaleString("en-IN")}</span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowPicker(!showPicker); }}
+                className="text-[11px] font-bold text-primary hover:underline"
+              >
+                {showPicker ? "Hide" : "Change store"}
+              </button>
+            </div>
+          )}
+
+          {isPending && (
+            <p className="text-xs text-on-surface-variant mt-0.5">₹{item.price.toFixed(2)}</p>
+          )}
+
+          <div className={`flex items-center gap-2 flex-wrap ${isPending ? "mt-2" : "mt-2.5"}`}>
+            {isPending && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowPicker(!showPicker); }}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/5 transition-colors"
+              >
+                <ICONS.Delivery className="w-3.5 h-3.5" />
+                {showPicker ? "Hide Stores" : "Select Store"}
+              </button>
+            )}
+            <div className="flex items-center gap-1">
+              <button onClick={() => onQtyChange(item.productId, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
+              <span className={`${isPending ? "w-6" : "w-8"} text-center font-bold text-sm`}>{item.qty}</span>
+              <button onClick={() => onQtyChange(item.productId, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
+            </div>
+            <button onClick={() => onRemove(item.productId)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
+          </div>
+        </div>
+        <div className="font-black text-on-surface text-right shrink-0">
+          ₹{(item.price * item.qty).toLocaleString("en-IN")}
+        </div>
+      </div>
+
+      {showPicker && product && (
+        <div ref={pickerRef}>
+          <StorePickerInline
+            product={product}
+            stores={stores}
+            currentSellerId={isPending ? undefined : item.sellerId}
+            onSelect={(sellerId, sellerType, sellerName, storePrice) => {
+              onAssignStore(item.productId, sellerId, sellerType, sellerName, storePrice);
+              setShowPicker(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CartView({
   items,
   isLoggedIn,
@@ -312,7 +409,6 @@ export default function CartView({
   allProducts,
 }: CartViewProps) {
   const { t } = useI18n();
-  const [expandedPicker, setExpandedPicker] = useState<string | null>(null);
 
   const readyItems = items.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
@@ -339,59 +435,19 @@ export default function CartView({
               <p className="text-[10px] font-black uppercase tracking-widest text-green-700 mb-2 px-1">
                 Ready to Order ({readyItems.length})
               </p>
-              {readyItems.map((item) => {
-                const isExpanded = expandedPicker === `ready-${item.productId}`;
-                const product = allProducts.find((p) => p.id === item.productId);
-
-                return (
-                  <div key={item.productId} className="rounded-2xl border border-green-200 bg-white p-4 mb-2">
-                    <div className="flex gap-4">
-                      <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-surface-container" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-on-surface truncate">{item.name}</p>
-
-                        {/* Store info */}
-                        <div className="mt-1 flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                            <ICONS.Delivery className="w-3 h-3" />
-                            {item.sellerName || "Store selected"}
-                          </span>
-                          <span className="text-sm font-bold text-secondary">₹{item.price.toLocaleString("en-IN")}</span>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedPicker(isExpanded ? null : `ready-${item.productId}`)}
-                            className="text-[11px] font-bold text-primary hover:underline"
-                          >
-                            {isExpanded ? "Hide" : "Change store"}
-                          </button>
-                        </div>
-
-                        <div className="mt-2.5 flex items-center gap-2">
-                          <button onClick={() => onQtyChange(item.productId, Math.max(1, item.qty - 1))} className="w-8 h-8 rounded-lg border border-outline-variant/40">-</button>
-                          <span className="w-8 text-center font-bold text-sm">{item.qty}</span>
-                          <button onClick={() => onQtyChange(item.productId, item.qty + 1)} className="w-8 h-8 rounded-lg border border-outline-variant/40">+</button>
-                          <button onClick={() => onRemove(item.productId)} className="ml-3 text-xs font-bold text-primary">{t('removeBtn')}</button>
-                        </div>
-                      </div>
-                      <div className="font-black text-on-surface text-right shrink-0">
-                        ₹{(item.price * item.qty).toLocaleString("en-IN")}
-                      </div>
-                    </div>
-
-                    {isExpanded && product && (
-                      <StorePickerInline
-                        product={product}
-                        stores={storesWithDistance}
-                        currentSellerId={item.sellerId}
-                        onSelect={(sellerId, sellerType, sellerName, storePrice) => {
-                          onAssignStore(item.productId, sellerId, sellerType, sellerName, storePrice);
-                          setExpandedPicker(null);
-                        }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              {readyItems.map((item) => (
+                <CartItemCard
+                  key={item.productId}
+                  item={item}
+                  product={allProducts.find((p) => p.id === item.productId)}
+                  stores={storesWithDistance}
+                  onQtyChange={onQtyChange}
+                  onRemove={onRemove}
+                  onAssignStore={onAssignStore}
+                  isPending={false}
+                  t={t}
+                />
+              ))}
             </div>
           )}
 
@@ -401,49 +457,19 @@ export default function CartView({
               <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2 px-1">
                 Select Store ({pendingItems.length})
               </p>
-              {pendingItems.map((item) => {
-                const isExpanded = expandedPicker === `pending-${item.productId}`;
-                const product = allProducts.find((p) => p.id === item.productId);
-
-                return (
-                  <div key={item.productId} className="rounded-2xl border border-amber-200 bg-white p-4 mb-2">
-                    <div className="flex gap-4">
-                      <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-surface-container" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-on-surface truncate">{item.name}</p>
-                        <p className="text-xs text-on-surface-variant mt-0.5">₹{item.price.toFixed(2)}</p>
-                        <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          <button
-                            onClick={() => setExpandedPicker(isExpanded ? null : `pending-${item.productId}`)}
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/5 transition-colors"
-                          >
-                            <ICONS.Delivery className="w-3.5 h-3.5" />
-                            {isExpanded ? "Hide Stores" : "Select Store"}
-                          </button>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => onQtyChange(item.productId, Math.max(1, item.qty - 1))} className="w-7 h-7 rounded-lg border border-outline-variant/40 text-sm">-</button>
-                            <span className="w-6 text-center font-bold text-sm">{item.qty}</span>
-                            <button onClick={() => onQtyChange(item.productId, item.qty + 1)} className="w-7 h-7 rounded-lg border border-outline-variant/40 text-sm">+</button>
-                          </div>
-                          <button onClick={() => onRemove(item.productId)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
-                        </div>
-                      </div>
-                      <div className="font-black text-on-surface">₹{(item.price * item.qty).toFixed(2)}</div>
-                    </div>
-
-                    {isExpanded && product && (
-                      <StorePickerInline
-                        product={product}
-                        stores={storesWithDistance}
-                        onSelect={(sellerId, sellerType, sellerName, storePrice) => {
-                          onAssignStore(item.productId, sellerId, sellerType, sellerName, storePrice);
-                          setExpandedPicker(null);
-                        }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              {pendingItems.map((item) => (
+                <CartItemCard
+                  key={item.productId}
+                  item={item}
+                  product={allProducts.find((p) => p.id === item.productId)}
+                  stores={storesWithDistance}
+                  onQtyChange={onQtyChange}
+                  onRemove={onRemove}
+                  onAssignStore={onAssignStore}
+                  isPending={true}
+                  t={t}
+                />
+              ))}
             </div>
           )}
         </div>
