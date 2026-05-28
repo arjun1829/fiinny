@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { storage } from "../../firebase";
 import type { BlogPost } from "../../firebase";
 
 type EditorPost = Omit<BlogPost, "id" | "createdAt" | "updatedAt" | "publishedAt">;
@@ -50,6 +52,54 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
   const [showLinkInput, setShowLinkInput] = useState(false);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const savedRange = useRef<Range | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
+
+  const uploadToStorage = (file: File, path: string, onProgress: (p: number) => void): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const storageRef = ref(storage, path);
+      const task = uploadBytesResumable(storageRef, file);
+      task.on("state_changed",
+        snap => onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+        reject,
+        async () => resolve(await getDownloadURL(task.snapshot.ref))
+      );
+    });
+  };
+
+  const handleImageInsert = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    setImageUploadProgress(0);
+    try {
+      const path = `blog-images/${Date.now()}-${file.name}`;
+      const url = await uploadToStorage(file, path, setImageUploadProgress);
+      editorRef.current?.focus();
+      document.execCommand("insertHTML", false, `<img src="${url}" alt="${file.name}" />`);
+    } finally {
+      setUploadingImage(false);
+      setImageUploadProgress(0);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCover(true);
+    try {
+      const path = `blog-covers/${Date.now()}-${file.name}`;
+      const url = await uploadToStorage(file, path, () => {});
+      setCoverImage(url);
+    } finally {
+      setUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = "";
+    }
+  };
 
   useEffect(() => {
     if (editorRef.current && initial?.content) {
@@ -92,9 +142,11 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     savedRange.current = null;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (overrideStatus?: "draft" | "published") => {
     const content = editorRef.current?.innerHTML ?? "";
     const tagArr = tags.split(",").map(t => t.trim()).filter(Boolean);
+    const finalStatus = overrideStatus ?? status;
+    if (overrideStatus) setStatus(overrideStatus);
     await onSave({
       ...(initial?.id ? { id: initial.id } : {}),
       title,
@@ -105,7 +157,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
       tags: tagArr,
       coverImage,
       readTime,
-      status,
+      status: finalStatus,
     } as EditorPost & { id?: string });
   };
 
@@ -126,22 +178,22 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
             {initial ? "Edit Post" : "New Blog Post"}
           </h2>
         </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={status}
-            onChange={e => setStatus(e.target.value as "draft" | "published")}
-            className="text-xs font-bold border border-outline-variant rounded-xl px-3 py-1.5 bg-white text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave("draft")}
             disabled={saving || !title || !slug}
-            className="text-xs font-black bg-primary text-white px-5 py-2 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="text-xs font-semibold border border-outline-variant text-on-surface-variant px-4 py-1.5 rounded-lg hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {saving ? "Saving…" : status === "published" ? "Publish" : "Save Draft"}
+            {saving && status === "draft" ? "Saving…" : "Save Draft"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave("published")}
+            disabled={saving || !title || !slug}
+            className="text-xs font-bold bg-primary text-white px-5 py-1.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving && status === "published" ? "Publishing…" : "Publish"}
           </button>
         </div>
       </div>
@@ -193,6 +245,16 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
             >
               🔗
             </button>
+            <button
+              type="button"
+              title="Insert Image"
+              disabled={uploadingImage}
+              onMouseDown={e => { e.preventDefault(); imageInputRef.current?.click(); }}
+              className="min-w-[32px] h-8 px-2 text-xs font-bold text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-lg transition-colors disabled:opacity-50"
+            >
+              {uploadingImage ? `${imageUploadProgress}%` : "🖼"}
+            </button>
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageInsert} />
             {showLinkInput && (
               <div className="flex items-center gap-1 ml-1">
                 <input
@@ -268,12 +330,21 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant block mb-1.5">Cover Image URL</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant block mb-1.5">Cover Image</label>
+            <button
+              type="button"
+              disabled={uploadingCover}
+              onClick={() => coverInputRef.current?.click()}
+              className="w-full text-xs font-bold border border-primary text-primary px-3 py-2 rounded-xl hover:bg-primary/5 transition-colors disabled:opacity-50 mb-2"
+            >
+              {uploadingCover ? "Uploading…" : "⬆ Upload Cover Image"}
+            </button>
+            <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
             <input
               type="url"
               value={coverImage}
               onChange={e => setCoverImage(e.target.value)}
-              placeholder="https://…"
+              placeholder="or paste image URL…"
               className="w-full text-xs border border-outline-variant rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
             />
             {coverImage && (
@@ -293,6 +364,41 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
             />
           </div>
         </aside>
+      </div>
+
+      {/* Bottom action bar */}
+      <div className="shrink-0 bg-white border-t border-outline-variant/40 px-6 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${
+            status === "published"
+              ? "bg-green-50 text-green-700 border-green-200"
+              : "bg-amber-50 text-amber-700 border-amber-200"
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${status === "published" ? "bg-green-500" : "bg-amber-500"}`} />
+            {status === "published" ? "Published" : "Draft"}
+          </span>
+          {!title && (
+            <span className="text-xs text-on-surface-variant">— Enter a title to enable saving</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleSave("draft")}
+            disabled={saving || !title || !slug}
+            className="text-sm font-semibold border border-outline-variant text-on-surface-variant px-4 py-2 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving && status === "draft" ? "Saving…" : "Save Draft"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave("published")}
+            disabled={saving || !title || !slug}
+            className="text-sm font-bold bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving && status === "published" ? "Publishing…" : "Publish"}
+          </button>
+        </div>
       </div>
 
       <style>{`
