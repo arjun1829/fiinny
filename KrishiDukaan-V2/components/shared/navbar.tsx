@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 
 interface NavbarProps {
   currentView?: View;
@@ -436,8 +436,25 @@ export function Navbar({
             {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
           </button>
 
+          {/* Help / Documentation */}
+          <button
+            data-tour-nav="help"
+            onClick={() => navigate('help')}
+            className={`inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
+              currentView === 'help'
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+            }`}
+            aria-label={t('help')}
+            title={t('help')}
+          >
+            <ICONS.Help className="w-4 h-4 shrink-0" />
+            <span className="hidden md:inline whitespace-nowrap">{t('help')}</span>
+          </button>
+
           <div className="relative" ref={accountMenuRef}>
             <button
+              data-account-trigger
               className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-surface-container-highest transition-all"
               aria-label="Open account menu"
               aria-haspopup="menu"

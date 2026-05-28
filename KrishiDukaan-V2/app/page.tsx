@@ -21,6 +21,7 @@ import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
 import RetailerJoinView from './views/RetailerJoinView';
+import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
@@ -39,7 +40,7 @@ import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -50,7 +51,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
@@ -144,7 +145,8 @@ export default function App() {
       view !== 'about' &&
       view !== 'subscription' &&
       view !== 'login' &&
-      view !== 'signup'
+      view !== 'signup' &&
+      view !== 'help'
     ) {
       return 'subscription';
     }
@@ -1042,6 +1044,8 @@ export default function App() {
         );
       case 'about':
         return <AboutView />;
+      case 'help':
+        return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
         return (
           <HomeView
@@ -1160,7 +1164,7 @@ export default function App() {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">
-        {[
+        {([
           { id: 'home', icon: ICONS.Home, label: t('home') },
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
@@ -1180,15 +1184,15 @@ export default function App() {
             <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
             <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
             {currentView === item.id && (
-              <motion.div 
-                layoutId="activeBubble" 
+              <motion.div
+                layoutId="activeBubble"
                 className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
                 initial={false}
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
               />
             )}
           </button>
-        ))}
+        )))}
       </nav>
     </div>
   );

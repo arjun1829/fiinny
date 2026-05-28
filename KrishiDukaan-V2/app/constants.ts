@@ -24,7 +24,22 @@ import {
   MessageSquare,
   LocateFixed,
   Navigation,
-  X
+  X,
+  LifeBuoy,
+  BookOpen,
+  Compass,
+  LayoutDashboard,
+  Package,
+  Users,
+  CreditCard,
+  ListChecks,
+  MessageCircle,
+  Settings,
+  Network,
+  KeyRound,
+  Share2,
+  ClipboardList,
+  CircleUser
 } from 'lucide-react';
 import { MarketplaceProduct } from '../types/product';
 
@@ -54,7 +69,22 @@ export const ICONS = {
   Chat: MessageSquare,
   MyPosition: LocateFixed,
   Directions: Navigation,
-  X
+  X,
+  Help: LifeBuoy,
+  Docs: BookOpen,
+  Compass,
+  Dashboard: LayoutDashboard,
+  Package,
+  Users,
+  Payment: CreditCard,
+  ListChecks,
+  Review: MessageCircle,
+  Settings,
+  Network,
+  Auth: KeyRound,
+  Share: Share2,
+  Clipboard: ClipboardList,
+  Account: CircleUser
 };
 
 export const COLORS = {
