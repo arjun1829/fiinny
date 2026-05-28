@@ -66,6 +66,7 @@ export type BrandRetailerSummary = {
   ownerName: string;
   address: { city: string; state: string; line1: string };
   geo: { latitude: number; longitude: number } | null;
+  logo?: string;
 };
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────

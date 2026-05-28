@@ -431,13 +431,16 @@ function ProfilePageInner() {
     setSettingsSaving(true);
     setStatus(null);
     try {
-      const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
-      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : uid!;
-      await setDoc(doc(db, col, profileDocId), { tagline, updatedAt: serverTimestamp() }, { merge: true });
-
-      // Write onlineDelivery to users/{phone} (new schema) via uidIndex
+      // Resolve phone first so we can key public docs by phone (publicly readable)
       const idxSnap = await getDoc(doc(db, "uidIndex", uid));
       const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
+
+      const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
+      // Manufacturers: use phone-based mfrDocId; Retailers: use phone (publicly readable, matches fetchStoreOnlineDelivery)
+      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : (phone || uid!);
+      await setDoc(doc(db, col, profileDocId), { tagline, onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
+
+      // Also write to users/{phone} (private schema)
       const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
       await setDoc(userTarget, { onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
 

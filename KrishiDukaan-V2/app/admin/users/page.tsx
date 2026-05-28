@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
-  Instagram, Facebook, MessageCircle, Youtube, MapPin,
+  Instagram, Facebook, MessageCircle, Youtube, MapPin, Package,
+  ChevronRight, ExternalLink,
 } from "lucide-react";
-import { fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile } from "../../firebase";
+import {
+  fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile,
+  fetchRetailerProducts, fetchManufacturerProducts,
+} from "../../firebase";
 
 declare global {
   interface Window { google?: any }
@@ -80,6 +84,11 @@ export default function AdminUsersPage() {
   const [confirmEmail, setConfirmEmail] = useState("");
   const [promoting, setPromoting] = useState(false);
   const [promoteSearch, setPromoteSearch] = useState("");
+
+  // Products panel
+  const [productsUser, setProductsUser] = useState<any | null>(null);
+  const [userProducts, setUserProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // Google Maps autocomplete refs
   const addressInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +176,22 @@ export default function AdminUsersPage() {
     manufacturer: users.filter(u => u.role === "manufacturer").length,
     admin: users.filter(u => u.role === "admin").length,
     customer: users.filter(u => !u.role || u.role === "customer").length,
+  };
+
+  const openProducts = async (u: any) => {
+    setProductsUser(u);
+    setUserProducts([]);
+    setProductsLoading(true);
+    // u.id is the phone (Firestore doc ID); u.uid is the Firebase Auth UID stored as a field.
+    // Products are indexed by uid (retailerId / manufacturerId / ownerId).
+    const uid = u.uid || u.id;
+    try {
+      const products = u.role === "manufacturer"
+        ? await fetchManufacturerProducts(uid)
+        : await fetchRetailerProducts(uid);
+      setUserProducts(products);
+    } catch { /* show empty */ }
+    finally { setProductsLoading(false); }
   };
 
   const openEdit = (u: any) => {
@@ -375,7 +400,18 @@ export default function AdminUsersPage() {
                         {u.isPaid ? "Active" : "Free"}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-sm text-on-surface">{u.productCount ?? "—"}</td>
+                    <td className="px-5 py-3">
+                      {(u.productCount ?? 0) > 0 ? (
+                        <button type="button" onClick={() => openProducts(u)}
+                          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+                          <Package className="h-3.5 w-3.5" />
+                          {u.productCount}
+                          <ChevronRight className="h-3 w-3" />
+                        </button>
+                      ) : (
+                        <span className="text-sm text-on-surface-variant">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-sm text-on-surface">{u.totalSeats ?? "—"}</td>
                     <td className="px-5 py-3 text-right">
                       <button type="button" onClick={() => openEdit(u)}
@@ -396,8 +432,8 @@ export default function AdminUsersPage() {
 
       {/* ─── Edit User Modal ─────────────────────────────────────────────────────── */}
       {editTarget && (
-        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 pt-20">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-full">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div>
@@ -542,6 +578,73 @@ export default function AdminUsersPage() {
                   <><Check className="h-4 w-4" /> Save changes</>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Products Panel ──────────────────────────────────────────────── */}
+      {productsUser && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/40 backdrop-blur-sm pt-16">
+          <div className="w-full max-w-md h-full bg-white flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
+              <div>
+                <h2 className="text-base font-semibold text-on-surface">
+                  Products — {productsUser.name || productsUser.email || "User"}
+                </h2>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  {productsUser.role} · {userProducts.length} product{userProducts.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+              <button type="button" onClick={() => setProductsUser(null)}
+                className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {productsLoading ? (
+                <div className="flex h-40 items-center justify-center">
+                  <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : userProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-2 text-on-surface-variant">
+                  <Package className="h-8 w-8 opacity-30" />
+                  <p className="text-sm">No products found for this user.</p>
+                </div>
+              ) : userProducts.map(p => (
+                <div key={p.id}
+                  className="flex items-start gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
+                  {p.image ? (
+                    <img src={p.image} alt={p.name} className="h-12 w-12 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-surface-container shrink-0 flex items-center justify-center">
+                      <Package className="h-5 w-5 text-on-surface-variant opacity-40" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-on-surface truncate">{p.name || "—"}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-on-surface-variant">{p.category || "—"}</span>
+                      {p.price > 0 && (
+                        <span className="text-xs font-bold text-secondary">₹{p.price.toLocaleString("en-IN")}</span>
+                      )}
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
+                        p.stock === "In Stock" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                      }`}>{p.stock || "—"}</span>
+                      {p.source && (
+                        <span className="text-[10px] text-on-surface-variant font-mono">{p.source}</span>
+                      )}
+                    </div>
+                  </div>
+                  <a href={`/?view=product&product=${p.id}`} target="_blank" rel="noopener noreferrer"
+                    className="shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              ))}
             </div>
           </div>
         </div>

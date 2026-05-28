@@ -12,12 +12,21 @@ service cloud.firestore {
     // Resolve the caller's normalized phone from uidIndex.
     // Costs 1 cached read per rule evaluation — only call this for
     // collections that truly need phone-based identity.
-    function myPhone() {
-      return get(/databases/$(database)/documents/uidIndex/$(request.auth.uid)).data.phone;
+    function hasPhone() {
+      return exists(/databases/$(database)/documents/uidIndex/$(request.auth.uid));
     }
 
+    function myPhone() {
+      return hasPhone() ? get(/databases/$(database)/documents/uidIndex/$(request.auth.uid)).data.phone : '';
+    }
+
+    function hasUserDoc() {
+      return myPhone() != '' && exists(/databases/$(database)/documents/users/$(myPhone()));
+    }
+
+    // Returns caller's role, or '' if missing or not resolved.
     function myRole() {
-      return get(/databases/$(database)/documents/users/$(myPhone())).data.role;
+      return hasUserDoc() ? get(/databases/$(database)/documents/users/$(myPhone())).data.role : '';
     }
 
     // Direct admin check for email-based admin accounts that have no uidIndex entry.
@@ -59,8 +68,9 @@ service cloud.firestore {
     // Document ID = normalized phone e.g. "+919876543210"
     match /users/{phone} {
       allow read: if isAuthed() && (
+        isAdmin() ||
         request.auth.uid == phone ||
-        myPhone() == phone || isAdmin() || myRole() in ['retailer', 'manufacturer']
+        myPhone() == phone || myRole() in ['retailer', 'manufacturer']
       );
       allow create: if isAuthed()
                        && myPhone() == phone
@@ -430,6 +440,25 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ─── blogPosts ───────────────────────────────────────────────────────────
+    // Public read (published posts visible to all for SEO).
+    // Only admins can create, update or delete posts.
+    match /blogPosts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── siteVisits ──────────────────────────────────────────────────────────
+    // Daily traffic analytics — admin read, public write (create/update to log visits).
+    match /siteVisits/{date} {
+      allow read: if isAdmin();
+      allow create, update: if true;
+    }
+
+    match /appVersion/{vId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
   }
 }

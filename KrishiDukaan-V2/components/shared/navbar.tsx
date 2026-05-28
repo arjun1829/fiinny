@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 
 interface NavbarProps {
   currentView?: View;
@@ -295,7 +295,7 @@ export function Navbar({
   );
 
   return (
-    <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
+    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
       <div className="flex justify-between items-center gap-4">
         <div
           className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
@@ -328,6 +328,12 @@ export function Navbar({
               )}
             </button>
           ))}
+          <a
+            href="/blog"
+            className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors whitespace-nowrap"
+          >
+            Blog
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -430,8 +436,25 @@ export function Navbar({
             {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
           </button>
 
+          {/* Help / Documentation */}
+          <button
+            data-tour-nav="help"
+            onClick={() => navigate('help')}
+            className={`inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
+              currentView === 'help'
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+            }`}
+            aria-label={t('help')}
+            title={t('help')}
+          >
+            <ICONS.Help className="w-4 h-4 shrink-0" />
+            <span className="hidden md:inline whitespace-nowrap">{t('help')}</span>
+          </button>
+
           <div className="relative" ref={accountMenuRef}>
             <button
+              data-account-trigger
               className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-surface-container-highest transition-all"
               aria-label="Open account menu"
               aria-haspopup="menu"
@@ -480,6 +503,28 @@ export function Navbar({
                     >
                       {t('dashboard')}
                     </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('profile');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('orders');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Orders
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => {

@@ -13,15 +13,18 @@ import HubView from './views/HubView';
 import ProductDetailView from './views/ProductDetailView';
 import StoreLocatorView from './views/StoreLocatorView';
 import ProfileView from './views/ProfileView';
+import MyOrdersView from './views/MyOrdersView';
 import AboutView from './views/AboutView';
 import LoginView from './views/LoginView';
 import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
+import RetailerJoinView from './views/RetailerJoinView';
+import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView } from './firebase';
+import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MarketplaceProduct } from '../types/product';
@@ -32,10 +35,12 @@ import type { CartItem } from '../types/order';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
+import { StatusToast } from './components/shared/status-toast';
+import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -46,7 +51,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
@@ -88,6 +93,8 @@ function BrandPageRedirect({ phone }: { phone: string }) {
 export default function App() {
   const { t } = useI18n();
   const [currentView, setCurrentView] = useState<View>('home');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string | null>(null);
@@ -110,8 +117,10 @@ export default function App() {
   const [hubs, setHubs] = useState<any[]>([]);
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartLoaded, setCartLoaded] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+  const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState({
     customerName: "",
     customerPhone: "",
@@ -119,6 +128,8 @@ export default function App() {
   });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mfgUpgradeModal, setMfgUpgradeModal] = useState(false);
+  const [mfgUpgradeLoading, setMfgUpgradeLoading] = useState(false);
   /** Preserved `inviteCode` query param for manufacturer → retailer signup links (legacy `invite` also read). */
   const [signupInviteCode, setSignupInviteCode] = useState<string | null>(null);
   /** Result of auto-accepting an invite for an already-logged-in user. */
@@ -135,9 +146,13 @@ export default function App() {
       view !== 'about' &&
       view !== 'subscription' &&
       view !== 'login' &&
-      view !== 'signup'
+      view !== 'signup' &&
+      view !== 'help'
     ) {
       return 'subscription';
+    }
+    if (userRole === 'retailer' && view === 'become-retailer') {
+      return 'home';
     }
     return view;
   }, [userRole, userProfile.isPaid]);
@@ -210,6 +225,11 @@ export default function App() {
         clearInvite?: boolean;
       },
     ) => {
+      if (view === 'become-retailer' && userRole === 'retailer') {
+        setToastMsg(t('footerAlreadyRetailerMsg'));
+        setToastType('success');
+        return;
+      }
       const nextView = resolveViewForAccess(view);
       const nextProductId = options?.productId ?? (nextView === 'product' ? selectedProductId : null);
       const nextStoreId = options?.storeId ?? (nextView === 'map' ? selectedStoreId : null);
@@ -239,7 +259,7 @@ export default function App() {
         window.scrollTo({ top: 0, behavior: 'instant' });
       }
     },
-    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId, selectedManufacturerId],
+    [buildUrl, resolveViewForAccess, selectedProductId, selectedStoreId, selectedHubId, selectedManufacturerId, userRole, t],
   );
 
   useEffect(() => {
@@ -271,21 +291,28 @@ export default function App() {
   }, [buildUrl, readRouteFromUrl, resolveViewForAccess]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem("krishidukan_cart_v1");
-    if (!raw) return;
+    if (!cartLoaded) return;
+    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
+  }, [cartItems, cartLoaded]);
+
+  useEffect(() => {
     try {
-      const parsed = JSON.parse(raw) as CartItem[];
-      if (Array.isArray(parsed)) setCartItems(parsed);
-    } catch {
-      // ignore malformed local cart
-    }
+      const raw = window.localStorage.getItem("krishidukan_cart_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) setCartItems(parsed);
+      }
+    } catch {}
+    setCartLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
-  }, [cartItems]);
+    if (currentView === 'become-retailer' && userRole === 'retailer') {
+      navigate('home', { replace: true });
+      setToastMsg(t('footerAlreadyRetailerMsg'));
+      setToastType('success');
+    }
+  }, [currentView, userRole, navigate, t]);
 
   // Auto-accept invite for already-logged-in users who click an invite link.
   // Fires whenever both user and signupInviteCode become non-null.
@@ -319,44 +346,36 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
-  const loadData = async () => {
+  const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       trackPageView('home');
 
-      console.log('Fetching products, stores and hubs...');
       let products = await fetchMarketplaceProducts();
       let stores = await fetchStores();
       let fetchedHubs = await fetchHubs();
 
       if (products.length === 0 || stores.length === 0 || fetchedHubs.length === 0) {
-        console.log('Firebase data incomplete, attempting sync...', { 
-          productsCount: products.length, 
-          storesCount: stores.length,
-          hubsCount: fetchedHubs.length
-        });
         await syncInitialData(PRODUCTS, STORES, INVENTORY);
-        // Fetch again after sync
         products = await fetchMarketplaceProducts();
         stores = await fetchStores();
         fetchedHubs = await fetchHubs();
       }
 
-      console.log('Data loaded successfully:', { 
-        products: products.length, 
-        stores: stores.length,
-        hubs: fetchedHubs.length
-      });
       setAllProducts(products);
       setAllStores(stores);
       setHubs(fetchedHubs);
-      
+
       if (products.length === 0) {
         setErrorMsg('No products found in database even after sync. Please check your Firestore rules.');
       }
     } catch (error: any) {
       console.error('Failed to load data from Firebase:', error);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        return loadData(attempt + 1);
+      }
       setErrorMsg(`Firebase Connection Error: ${error.message || 'Unknown error'}. Check your browser console for details.`);
     } finally {
       setLoading(false);
@@ -478,6 +497,41 @@ export default function App() {
       navigate('home', { replace: true, clearInvite: true });
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  };
+
+  const handleUpgradeRole = () => {
+    if (userRole === 'manufacturer') {
+      setToastMsg(t('footerAlreadyManufacturerMsg'));
+      setToastType('success');
+      return;
+    }
+    if (userRole === 'retailer') {
+      if (!userProfile.isPaid) {
+        navigate('subscription');
+        return;
+      }
+      setMfgUpgradeModal(true);
+      return;
+    }
+    navigate('become-retailer');
+  };
+
+  const handleConfirmMfgUpgrade = async () => {
+    if (!user) return;
+    setMfgUpgradeLoading(true);
+    try {
+      await requestRoleUpgrade(user.uid, 'manufacturer', {});
+      setMfgUpgradeModal(false);
+      setToastMsg(t('footerMfgUpgradeSuccess'));
+      setToastType('success');
+      setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
+    } catch {
+      setMfgUpgradeModal(false);
+      setToastMsg(t('footerMfgUpgradeFail'));
+      setToastType('error');
+    } finally {
+      setMfgUpgradeLoading(false);
     }
   };
 
@@ -628,38 +682,31 @@ export default function App() {
   };
 
   const addToCart = (product: MarketplaceProduct) => {
-    if (!product.isOnline) {
-      setCheckoutMessage("This product is offline store-only.");
-      return;
-    }
-    const sellerId = product.retailerId || product.manufacturerId || "";
-    if (!sellerId) {
-      setCheckoutMessage("This product is missing seller info and cannot be ordered online.");
-      return;
-    }
-    const sellerType = product.retailerId ? "retailer" : "manufacturer";
     setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id);
+      const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
       if (found) {
         return prev.map((i) =>
-          i.productId === product.id ? { ...i, qty: i.qty + 1 } : i
+          i.productId === product.id && i.sellMode === "pending"
+            ? { ...i, qty: i.qty + 1 }
+            : i
         );
       }
       return [
         ...prev,
         {
           productId: product.id,
-          sellerId,
-          sellerType,
+          sellerId: "",
+          sellerType: "retailer" as const,
           name: product.name,
           image: product.image,
           price: product.price,
           qty: 1,
-          sellMode: "online_delivery",
+          sellMode: "pending" as const,
         },
       ];
     });
-    setCheckoutMessage("Added to cart.");
+    setToastMsg(`${product.name} added to cart.`);
+    setToastType("success");
   };
 
   const placeOrders = async () => {
@@ -676,6 +723,13 @@ export default function App() {
       return;
     }
 
+    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
+    if (!readyItems.length) {
+      setCheckoutMessage("No items are ready for ordering. Please select a store for your items first.");
+      return;
+    }
+
     setCheckoutLoading(true);
     setCheckoutMessage(null);
     try {
@@ -684,10 +738,13 @@ export default function App() {
         customerName: checkoutInfo.customerName,
         customerPhone: checkoutInfo.customerPhone,
         customerAddress: checkoutInfo.customerAddress,
-        items: cartItems,
+        items: readyItems,
       });
-      setCartItems([]);
-      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).`);
+      setCartItems(pendingItems);
+      const pendingMsg = pendingItems.length > 0
+        ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
+        : "";
+      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).${pendingMsg}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to place order.";
       setCheckoutMessage(msg);
@@ -695,6 +752,47 @@ export default function App() {
       setCheckoutLoading(false);
     }
   };
+
+  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
+    const sellerId: string =
+      (store as any).retailerId ||
+      (store as any).userId ||
+      store.id ||
+      "";
+    if (!sellerId) {
+      setCheckoutMessage("This store is missing seller info and cannot be ordered from online.");
+      return;
+    }
+    const sellerType: "retailer" | "manufacturer" =
+      (store as any).retailerId ? "retailer" : "manufacturer";
+
+    setCartItems((prev) => {
+      const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
+      if (found) {
+        return prev.map((i) =>
+          i.productId === product.id && i.sellerId === sellerId
+            ? { ...i, qty: i.qty + 1 }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          sellerId,
+          sellerType,
+          sellerName: store.name || undefined,
+          name: product.name,
+          image: product.image,
+          price: product.price,
+          qty: 1,
+          sellMode: "online_delivery" as const,
+        },
+      ];
+    });
+    setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
+    setToastType("success");
+  }, []);
 
   const navigateToMap = (storeId?: string, fromProductId?: string | null) => {
     setMapFilterProductId(fromProductId !== undefined ? fromProductId : null);
@@ -725,7 +823,7 @@ export default function App() {
           <h3 className="text-xl font-bold mb-2">{t('dataLoadingIssue')}</h3>
           <p className="mb-4">{errorMsg}</p>
           <button
-            onClick={loadData}
+            onClick={() => void loadData()}
             className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-700 transition-colors"
           >
             {t('retryConnection')}
@@ -749,6 +847,7 @@ export default function App() {
               setSelectedCategory(cat);
               navigate('market');
             }}
+            onAddToCart={addToCart}
           />
         );
       case 'market':
@@ -756,6 +855,7 @@ export default function App() {
           <MarketView
             products={marketProducts}
             onProductClick={navigateToProduct}
+            onAddToCart={addToCart}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             storesWithDistance={storesWithDistance}
@@ -794,6 +894,7 @@ export default function App() {
             navigate('brand', { manufacturerId });
           }}
           onAddToCart={addToCart}
+          onAddToCartFromStore={handleAddToCartFromStore}
         />;
       case 'cart':
         return (
@@ -815,10 +916,21 @@ export default function App() {
             onRemove={(productId) =>
               setCartItems((prev) => prev.filter((item) => item.productId !== productId))
             }
+            onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
+              setCartItems((prev) =>
+                prev.map((item) =>
+                  item.productId === productId && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                    ? { ...item, sellerId, sellerType, sellerName, sellMode: "online_delivery" as const, ...(storePrice ? { price: storePrice } : {}) }
+                    : item
+                )
+              )
+            }
             onCheckout={placeOrders}
             onGoLogin={() => navigate("login")}
             loading={checkoutLoading}
             message={checkoutMessage}
+            storesWithDistance={storesWithDistance}
+            allProducts={mergedProducts}
           />
         );
       case 'map':
@@ -853,6 +965,23 @@ export default function App() {
             onRetailerProductSaved={loadData}
             onNavigate={navigate}
           />
+        );
+      case 'orders':
+        return (
+          <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button onClick={() => navigate('profile')} className="p-2 rounded-xl hover:bg-surface-container transition-colors">
+                  <svg className="w-5 h-5 text-on-surface-variant" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div>
+                  <h1 className="text-2xl font-black text-on-surface">My Orders</h1>
+                  <p className="text-sm text-on-surface-variant">Track all your orders and their delivery status</p>
+                </div>
+              </div>
+            </div>
+            <MyOrdersView customerId={user?.uid || ''} />
+          </div>
         );
       case 'login':
         return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
@@ -944,8 +1073,16 @@ export default function App() {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
       }
+      case 'become-retailer':
+        return (
+          <RetailerJoinView
+            onBack={() => navigate('home')}
+          />
+        );
       case 'about':
         return <AboutView />;
+      case 'help':
+        return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
         return (
           <HomeView
@@ -960,6 +1097,7 @@ export default function App() {
               setSelectedCategory(cat);
               navigate('market');
             }}
+            onAddToCart={addToCart}
           />
         );
     }
@@ -1010,21 +1148,67 @@ export default function App() {
       <Footer
         onNavigate={(view) => navigate(view as View)}
         onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
+        userRole={userRole}
+        onUpgradeRole={handleUpgradeRole}
       />
+
+      {/* Manufacturer upgrade confirmation modal */}
+      {mfgUpgradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-7 shadow-2xl">
+            <h2 className="text-lg font-black text-on-surface mb-2">{t('footerMfgUpgradeTitle')}</h2>
+            <p className="text-sm text-on-surface-variant mb-6">{t('footerMfgUpgradeDesc')}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setMfgUpgradeModal(false)}
+                disabled={mfgUpgradeLoading}
+                className="flex-1 rounded-2xl border border-surface-container py-3 text-sm font-bold text-on-surface-variant hover:bg-surface-container transition-colors"
+              >
+                {t('footerMfgUpgradeCancel')}
+              </button>
+              <button
+                onClick={handleConfirmMfgUpgrade}
+                disabled={mfgUpgradeLoading}
+                className="flex-1 rounded-2xl bg-primary py-3 text-sm font-bold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {mfgUpgradeLoading ? '…' : t('footerMfgUpgradeConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Store Picker Modal — opened when consumer clicks Add to Cart from Home/Market */}
+      {storePickerProduct && (
+        <StorePickerModal
+          product={storePickerProduct}
+          storesWithDistance={storesWithDistance}
+          onConfirm={handleAddToCartFromStore}
+          onClose={() => setStorePickerProduct(null)}
+        />
+      )}
 
       {/* Onboarding Tour — only runs on first visit, only on home view */}
       {currentView === 'home' && !loading && !errorMsg ? (
         <GuidedTour steps={tourSteps} />
       ) : null}
 
+      <StatusToast
+        message={toastMsg}
+        type={toastType}
+        onDismiss={() => setToastMsg(null)}
+      />
+
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">
-        {[
+        {([
           { id: 'home', icon: ICONS.Home, label: t('home') },
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
           { id: 'map', icon: ICONS.Location, label: t('stores') },
-          { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
+          user && userRole === 'customer'
+            ? { id: 'orders', icon: ICONS.Orders, label: 'Orders' }
+            : { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
         ].map((item) => (
           <button
             key={item.id}
@@ -1037,15 +1221,15 @@ export default function App() {
             <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
             <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
             {currentView === item.id && (
-              <motion.div 
-                layoutId="activeBubble" 
+              <motion.div
+                layoutId="activeBubble"
                 className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
                 initial={false}
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
               />
             )}
           </button>
-        ))}
+        )))}
       </nav>
     </div>
   );

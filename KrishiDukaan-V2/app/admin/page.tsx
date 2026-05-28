@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, Box, Layers, CreditCard, ShieldCheck, TrendingUp, Store } from "lucide-react";
+import { Users, Box, Layers, CreditCard, ShieldCheck, TrendingUp, Store, AlertTriangle } from "lucide-react";
 import { fetchAllUsers, fetchMarketplaceProducts, fetchHubs } from "../firebase";
 
 function StatCard({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: any; color: string }) {
@@ -81,6 +81,16 @@ export default function AdminPage() {
         </div>
         <p className="text-sm text-on-surface-variant ml-9">Full platform snapshot — all data, live from Firestore.</p>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-2xl text-sm flex items-start gap-3 shadow-sm">
+          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="whitespace-pre-line">
+            <p className="font-bold">Database load warning/error:</p>
+            <p className="text-xs text-red-700/90 mt-0.5">{error}</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
         <StatCard label="Total Users" value={stats.total} icon={Users} color="bg-primary/10 text-primary" />

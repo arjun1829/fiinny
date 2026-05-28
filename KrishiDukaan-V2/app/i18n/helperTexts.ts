@@ -1039,6 +1039,64 @@ export const HELPER_TEXTS = {
       hi: 'स्पष्ट उत्पाद छवि URL और संक्षिप्त विवरण (उपयोग, पैक आकार, फसल उपयुक्तता) जोड़ें ताकि ग्राहक जान सकें कि वे क्या खरीद रहे हैं।',
     },
   },
+
+  // --- Signup / Create account ---
+  signupRole: {
+    title: { en: 'Choose your role', mr: 'तुमची भूमिका निवडा', hi: 'अपनी भूमिका चुनें' },
+    body: {
+      en: 'Pick how you’ll use Krishidukan. This sets up the right tools for your account.',
+      mr: 'तुम्ही कृषीदुकान कसे वापराल ते निवडा. यामुळे तुमच्या खात्यासाठी योग्य साधने सेट होतात.',
+      hi: 'चुनें कि आप कृषीदुकान का उपयोग कैसे करेंगे। इससे आपके खाते के लिए सही टूल सेट होते हैं।',
+    },
+  },
+  signupRoleFarmer: {
+    title: { en: 'Farmer', mr: 'शेतकरी', hi: 'किसान' },
+    body: {
+      en: 'Browse and buy seeds, fertilizers, and tools from nearby stores online.',
+      mr: 'जवळील दुकानांमधून बियाणे, खते आणि साधने ऑनलाइन पाहा आणि खरेदी करा.',
+      hi: 'नज़दीकी दुकानों से बीज, उर्वरक और उपकरण ऑनलाइन देखें और खरीदें।',
+    },
+  },
+  signupRoleRetailer: {
+    title: { en: 'Retailer', mr: 'विक्रेता', hi: 'विक्रेता' },
+    body: {
+      en: 'Run your agri shop online — list products, manage stock, and reach nearby farmers.',
+      mr: 'तुमचे कृषी दुकान ऑनलाइन चालवा — उत्पादने सूचीबद्ध करा, साठा व्यवस्थापित करा आणि जवळील शेतकऱ्यांपर्यंत पोहोचा.',
+      hi: 'अपनी कृषि दुकान ऑनलाइन चलाएँ — उत्पाद सूचीबद्ध करें, स्टॉक प्रबंधित करें और नज़दीकी किसानों तक पहुँचें।',
+    },
+  },
+  signupRoleManufacturer: {
+    title: { en: 'Manufacturer', mr: 'उत्पादक', hi: 'निर्माता' },
+    body: {
+      en: 'Supply and distribute your products — build a retailer network and assign inventory.',
+      mr: 'तुमची उत्पादने पुरवा आणि वितरित करा — विक्रेता नेटवर्क तयार करा आणि साठा नेमून द्या.',
+      hi: 'अपने उत्पादों की आपूर्ति और वितरण करें — विक्रेता नेटवर्क बनाएँ और इन्वेंट्री असाइन करें।',
+    },
+  },
+  signupMobile: {
+    title: { en: 'Mobile number', mr: 'मोबाइल नंबर', hi: 'मोबाइल नंबर' },
+    body: {
+      en: 'We send a one-time OTP to this number to verify it. It also becomes your login.',
+      mr: 'पडताळणीसाठी आम्ही या नंबरवर एक OTP पाठवतो. हाच तुमचा लॉगिन बनतो.',
+      hi: 'सत्यापन के लिए हम इस नंबर पर एक OTP भेजते हैं। यही आपका लॉगिन बन जाता है।',
+    },
+  },
+  signupOtp: {
+    title: { en: 'OTP verification', mr: 'OTP पडताळणी', hi: 'OTP सत्यापन' },
+    body: {
+      en: 'Enter the 6-digit code sent to your phone. No password needed — OTP keeps your account secure.',
+      mr: 'तुमच्या फोनवर पाठवलेला ६-अंकी कोड टाका. पासवर्ड नको — OTP तुमचे खाते सुरक्षित ठेवते.',
+      hi: 'अपने फ़ोन पर भेजा गया 6-अंकीय कोड दर्ज करें। पासवर्ड की ज़रूरत नहीं — OTP आपका खाता सुरक्षित रखता है।',
+    },
+  },
+  signupExistingUser: {
+    title: { en: 'Already registered?', mr: 'आधीच नोंदणीकृत?', hi: 'पहले से पंजीकृत?' },
+    body: {
+      en: 'New here? Create an account above. Already have one? Sign in with your mobile number instead.',
+      mr: 'नवीन आहात? वर खाते तयार करा. आधीच आहे? त्याऐवजी तुमच्या मोबाइल नंबरने साइन इन करा.',
+      hi: 'नए हैं? ऊपर खाता बनाएँ। पहले से है? इसके बजाय अपने मोबाइल नंबर से साइन इन करें।',
+    },
+  },
 } as const;
 
 export type HelperTextKey = keyof typeof HELPER_TEXTS;
