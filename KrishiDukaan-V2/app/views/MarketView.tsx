@@ -15,6 +15,7 @@ interface MarketViewProps {
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   storesWithDistance?: StoreWithDistance[];
+  onAddToCart?: (product: MarketplaceProduct) => void;
 }
 
 type SortKey = 'default' | 'price-asc' | 'price-desc' | 'name-asc';
@@ -37,6 +38,7 @@ export default function MarketView({
   selectedCategory,
   onCategoryChange,
   storesWithDistance = [],
+  onAddToCart,
 }: MarketViewProps) {
   const { t } = useI18n();
   const DISTANCE_OPTIONS = useMemo(() => [
@@ -424,7 +426,7 @@ export default function MarketView({
                   <div onClick={(e) => e.stopPropagation()} className="mt-2">
                     <HelperTooltip side="top" textKey="marketAddToCart">
                       <button
-                        onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
+                        onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
                         className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
                       >
                         {t('addToCart')}

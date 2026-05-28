@@ -8,6 +8,7 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon } from '../../components/helpers';
 import { ChevronDown, Layers } from 'lucide-react';
+import MyOrdersView from './MyOrdersView';
 
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 
@@ -244,6 +245,17 @@ export default function ProfileView({
           </button>
         </form>
       </div>
+
+      {/* My Orders — customers only */}
+      {role === 'customer' && uid && (
+        <div className="bg-white rounded-3xl border border-surface-container p-6 md:p-8 shadow-ambient">
+          <div className="flex items-center gap-2 mb-5">
+            <ICONS.Delivery className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-bold text-on-surface">My Orders</h2>
+          </div>
+          <MyOrdersView customerId={uid} />
+        </div>
+      )}
 
       {isBusinessRole && (
         <div className="bg-white rounded-3xl border border-surface-container p-6 md:p-8 shadow-ambient">

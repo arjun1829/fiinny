@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, orderBy, query, limit, where } from "firebase/firestore";
 import { db } from "../../firebase";
-import { Users, Eye, MousePointer, Navigation, TrendingUp, Store, Package, BarChart3 } from "lucide-react";
+import { Users, Eye, MousePointer, Navigation, TrendingUp, Store, Package, BarChart3, AlertTriangle } from "lucide-react";
 
 type DayVisit = { date: string; total: number };
 type PlatformStats = {
@@ -55,54 +55,79 @@ export default function AnalyticsPage() {
   const [visits, setVisits] = useState<DayVisit[]>([]);
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
+        setLoading(true);
+        setError(null);
+
         // Fetch last 14 days of site visits
-        const visitsSnap = await getDocs(
-          query(collection(db, "siteVisits"), orderBy("date", "desc"), limit(14))
-        );
-        const visitDays: DayVisit[] = visitsSnap.docs
-          .map((d) => ({ date: d.data().date as string, total: Number(d.data().total || 0) }))
-          .reverse();
+        let visitDays: DayVisit[] = [];
+        try {
+          const visitsSnap = await getDocs(
+            query(collection(db, "siteVisits"), orderBy("date", "desc"), limit(14))
+          );
+          visitDays = visitsSnap.docs
+            .map((d) => ({ date: d.data().date as string, total: Number(d.data().total || 0) }))
+            .reverse();
+          setVisits(visitDays);
+        } catch (err: any) {
+          console.error("Failed to load siteVisits:", err);
+          setError((prev) => (prev ? prev + "\n" : "") + `Site Visits: ${err.message || err}`);
+        }
 
         // Aggregate product-level events across ALL products
-        const productsSnap = await getDocs(collection(db, "products"));
         let totalImpressions = 0, totalClicks = 0, totalDirections = 0, totalProducts = 0;
-        productsSnap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.source === "retailer_inventory_copy" || data.source === "manufacturer_assigned") return;
-          totalImpressions += Number(data.impressions || 0);
-          totalClicks += Number(data.clicks || 0);
-          totalDirections += Number(data.directionRequests || 0);
-          totalProducts++;
-        });
+        try {
+          const productsSnap = await getDocs(collection(db, "products"));
+          productsSnap.docs.forEach((d) => {
+            const data = d.data();
+            if (data.source === "retailer_inventory_copy" || data.source === "manufacturer_assigned") return;
+            totalImpressions += Number(data.impressions || 0);
+            totalClicks += Number(data.clicks || 0);
+            totalDirections += Number(data.directionRequests || 0);
+            totalProducts++;
+          });
+        } catch (err: any) {
+          console.error("Failed to load products stats:", err);
+          setError((prev) => (prev ? prev + "\n" : "") + `Product Catalog: ${err.message || err}`);
+        }
 
         // Count users, retailers, manufacturers
-        const [usersSnap, retailersSnap, mfrSnap] = await Promise.all([
-          getDocs(collection(db, "users")),
-          getDocs(query(collection(db, "users"), where("role", "==", "retailer"))),
-          getDocs(query(collection(db, "users"), where("role", "==", "manufacturer"))),
-        ]);
+        let totalUsers = 0, totalRetailers = 0, totalManufacturers = 0;
+        try {
+          const [usersSnap, retailersSnap, mfrSnap] = await Promise.all([
+            getDocs(collection(db, "users")),
+            getDocs(query(collection(db, "users"), where("role", "==", "retailer"))),
+            getDocs(query(collection(db, "users"), where("role", "==", "manufacturer"))),
+          ]);
+          totalUsers = usersSnap.size;
+          totalRetailers = retailersSnap.size;
+          totalManufacturers = mfrSnap.size;
+        } catch (err: any) {
+          console.error("Failed to load user stats:", err);
+          setError((prev) => (prev ? prev + "\n" : "") + `Platform Users: ${err.message || err}`);
+        }
 
         const totalVisits = visitDays.reduce((s, d) => s + d.total, 0);
         const last7 = visitDays.slice(-7).reduce((s, d) => s + d.total, 0);
 
-        setVisits(visitDays);
         setStats({
           totalVisits,
           visitsLast7: last7,
           totalImpressions,
           totalClicks,
           totalDirections,
-          totalRetailers: retailersSnap.size,
-          totalManufacturers: mfrSnap.size,
+          totalRetailers,
+          totalManufacturers,
           totalProducts,
-          totalUsers: usersSnap.size,
+          totalUsers,
         });
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
+        setError((prev) => (prev ? prev + "\n" : "") + `General: ${e.message || e}`);
       } finally {
         setLoading(false);
       }
@@ -127,6 +152,16 @@ export default function AnalyticsPage() {
         <h1 className="text-2xl font-black text-on-surface">Site Analytics</h1>
         <p className="text-sm text-on-surface-variant mt-1">Platform-wide traffic and engagement overview</p>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-2xl text-sm flex items-start gap-3 shadow-sm">
+          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="whitespace-pre-line">
+            <p className="font-bold">Database load warning/error:</p>
+            <p className="text-xs text-red-700/90 mt-0.5">{error}</p>
+          </div>
+        </div>
+      )}
 
       {/* Top stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

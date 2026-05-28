@@ -39,7 +39,13 @@ export default function LoginView({ onBack, onNavigateToSignup, onSuccess }: Log
   };
 
   useEffect(() => {
-    const verifier = new RecaptchaVerifier(auth, 'recaptcha-container-login', { size: 'invisible' });
+    let div = document.getElementById('recaptcha-container-login');
+    if (!div) {
+      div = document.createElement('div');
+      div.id = 'recaptcha-container-login';
+      document.body.appendChild(div);
+    }
+    const verifier = new RecaptchaVerifier(auth, div, { size: 'invisible' });
     recaptchaRef.current = verifier;
     return () => {
       try { verifier.clear(); } catch { /* ignore */ }
@@ -111,7 +117,6 @@ export default function LoginView({ onBack, onNavigateToSignup, onSuccess }: Log
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4">
-      <div id="recaptcha-container-login" />
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}

@@ -14,6 +14,7 @@ interface HomeViewProps {
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
+  onAddToCart?: (product: MarketplaceProduct) => void;
 }
 
 type Slide = {
@@ -34,6 +35,7 @@ export default function HomeView({
   onProductClick,
   onHubClick,
   onCategoryClick,
+  onAddToCart,
 }: HomeViewProps) {
   const { t } = useI18n();
 
@@ -342,7 +344,7 @@ export default function HomeView({
                 <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                   <HelperTooltip side="top" textKey="marketAddToCart">
                     <button
-                      onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
+                      onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
                       className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
                     >
                       {t('addToCart')}

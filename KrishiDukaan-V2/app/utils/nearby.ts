@@ -26,23 +26,25 @@ export function computeStoreDistances(
   stores: Store[],
   userLocation: LatLng
 ): StoreWithDistance[] {
-  return stores.map((store) => {
-    const storeLoc = store.location;
-    if (storeLoc && storeLoc.lat && storeLoc.lng) {
-      const distanceKm = haversineDistance(userLocation, storeLoc);
+  return stores
+    .map((store) => {
+      const storeLoc = store.location;
+      if (storeLoc && storeLoc.lat && storeLoc.lng) {
+        const distanceKm = haversineDistance(userLocation, storeLoc);
+        return {
+          ...store,
+          distanceKm,
+          distanceLabel: formatDistance(distanceKm),
+        };
+      }
+      // No valid coordinates — keep original distance string
       return {
         ...store,
-        distanceKm,
-        distanceLabel: formatDistance(distanceKm),
+        distanceKm: Infinity,
+        distanceLabel: store.distance || 'Unknown',
       };
-    }
-    // No valid coordinates — keep original distance string
-    return {
-      ...store,
-      distanceKm: Infinity,
-      distanceLabel: store.distance || 'Unknown',
-    };
-  });
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 }
 
 /**

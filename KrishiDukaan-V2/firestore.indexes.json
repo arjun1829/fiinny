@@ -130,18 +130,19 @@
       ]
     },
     {
-      "collectionGroup": "manufacturers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "slug", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "products",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "manufacturerId", "order": "ASCENDING" },
         { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "blogPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
       ]
     }
   ],

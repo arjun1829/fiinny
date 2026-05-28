@@ -4,12 +4,19 @@ import { ICONS } from '../../app/constants';
 import { useI18n } from '../../app/i18n/I18nContext';
 
 type FooterProps = {
-  onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about') => void;
+  onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer') => void;
   onCategoryClick?: (categoryId: string) => void;
+  userRole?: 'customer' | 'retailer' | 'manufacturer';
+  onUpgradeRole?: () => void;
 };
 
-export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
+export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgradeRole }: FooterProps) {
   const { t } = useI18n();
+
+  const upgradeLabel = userRole === 'retailer' || userRole === 'manufacturer'
+    ? t('footerBecomeManufacturer')
+    : t('footerBecomeRetailer');
+
   const shopLinks = [
     { label: t('catPesticides'), cat: 'pesticides' },
     { label: t('catFertilizers'), cat: 'fertilizers' },
@@ -18,11 +25,10 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
     { label: t('catSeeds'), cat: 'seeds' },
     { label: t('footerViewAllProducts'), cat: 'all' },
   ];
-  const companyLinks: { label: string; view: 'home' | 'market' | 'hub' | 'map' | 'about' }[] = [
+  const companyLinks: { label: string; view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer' }[] = [
     { label: t('footerAbout'), view: 'about' },
     { label: t('footerStores'), view: 'map' },
     { label: t('footerCropHubs'), view: 'hub' },
-    { label: t('footerBecomeRetailer'), view: 'hub' },
     { label: t('footerContact'), view: 'about' },
     { label: t('footerFAQs'), view: 'about' },
   ];
@@ -86,6 +92,20 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
                   </button>
                 </li>
               ))}
+              <li>
+                <button
+                  onClick={() => {
+                    if (userRole === 'retailer' || userRole === 'manufacturer') {
+                      onUpgradeRole?.();
+                    } else {
+                      onNavigate?.('become-retailer');
+                    }
+                  }}
+                  className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                >
+                  {upgradeLabel}
+                </button>
+              </li>
             </ul>
           </div>
 

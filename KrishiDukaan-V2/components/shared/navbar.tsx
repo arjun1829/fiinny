@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'help'| 'become-retailer';
 
 interface NavbarProps {
   currentView?: View;
@@ -295,7 +295,7 @@ export function Navbar({
   );
 
   return (
-    <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
+    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
       <div className="flex justify-between items-center gap-4">
         <div
           className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
@@ -328,6 +328,12 @@ export function Navbar({
               )}
             </button>
           ))}
+          <a
+            href="/blog"
+            className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors whitespace-nowrap"
+          >
+            Blog
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
