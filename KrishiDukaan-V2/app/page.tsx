@@ -13,6 +13,7 @@ import HubView from './views/HubView';
 import ProductDetailView from './views/ProductDetailView';
 import StoreLocatorView from './views/StoreLocatorView';
 import ProfileView from './views/ProfileView';
+import MyOrdersView from './views/MyOrdersView';
 import AboutView from './views/AboutView';
 import LoginView from './views/LoginView';
 import SignupView from './views/SignupView';
@@ -38,7 +39,7 @@ import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -49,7 +50,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
@@ -926,6 +927,23 @@ export default function App() {
             onNavigate={navigate}
           />
         );
+      case 'orders':
+        return (
+          <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button onClick={() => navigate('profile')} className="p-2 rounded-xl hover:bg-surface-container transition-colors">
+                  <svg className="w-5 h-5 text-on-surface-variant" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div>
+                  <h1 className="text-2xl font-black text-on-surface">My Orders</h1>
+                  <p className="text-sm text-on-surface-variant">Track all your orders and their delivery status</p>
+                </div>
+              </div>
+            </div>
+            <MyOrdersView customerId={user?.uid || ''} />
+          </div>
+        );
       case 'login':
         return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
       case 'signup':
@@ -1147,7 +1165,9 @@ export default function App() {
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
           { id: 'map', icon: ICONS.Location, label: t('stores') },
-          { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
+          user && userRole === 'customer'
+            ? { id: 'orders', icon: ICONS.Orders, label: 'Orders' }
+            : { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
         ].map((item) => (
           <button
             key={item.id}

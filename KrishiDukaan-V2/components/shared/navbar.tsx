@@ -11,7 +11,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer';
 
 interface NavbarProps {
   currentView?: View;
@@ -486,6 +486,28 @@ export function Navbar({
                     >
                       {t('dashboard')}
                     </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('profile');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('orders');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Orders
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => {
