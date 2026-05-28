@@ -689,9 +689,32 @@ export default function App() {
     navigate('product', { productId: id });
   };
 
-  // Opens the store picker modal — used from Home, Market, and ProductDetailView (non-store button)
   const addToCart = (product: MarketplaceProduct) => {
-    setStorePickerProduct(product);
+    setCartItems((prev) => {
+      const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
+      if (found) {
+        return prev.map((i) =>
+          i.productId === product.id && i.sellMode === "pending"
+            ? { ...i, qty: i.qty + 1 }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          sellerId: "",
+          sellerType: "retailer" as const,
+          name: product.name,
+          image: product.image,
+          price: product.price,
+          qty: 1,
+          sellMode: "pending" as const,
+        },
+      ];
+    });
+    setToastMsg(`${product.name} added to cart.`);
+    setToastType("success");
   };
 
   const placeOrders = async () => {
@@ -708,6 +731,13 @@ export default function App() {
       return;
     }
 
+    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
+    if (!readyItems.length) {
+      setCheckoutMessage("No items are ready for ordering. Please select a store for your items first.");
+      return;
+    }
+
     setCheckoutLoading(true);
     setCheckoutMessage(null);
     try {
@@ -716,10 +746,13 @@ export default function App() {
         customerName: checkoutInfo.customerName,
         customerPhone: checkoutInfo.customerPhone,
         customerAddress: checkoutInfo.customerAddress,
-        items: cartItems,
+        items: readyItems,
       });
-      setCartItems([]);
-      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).`);
+      setCartItems(pendingItems);
+      const pendingMsg = pendingItems.length > 0
+        ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
+        : "";
+      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).${pendingMsg}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to place order.";
       setCheckoutMessage(msg);
@@ -756,11 +789,12 @@ export default function App() {
           productId: product.id,
           sellerId,
           sellerType,
+          sellerName: store.name || undefined,
           name: product.name,
           image: product.image,
           price: product.price,
           qty: 1,
-          sellMode: "online_delivery",
+          sellMode: "online_delivery" as const,
         },
       ];
     });
@@ -890,10 +924,21 @@ export default function App() {
             onRemove={(productId) =>
               setCartItems((prev) => prev.filter((item) => item.productId !== productId))
             }
+            onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
+              setCartItems((prev) =>
+                prev.map((item) =>
+                  item.productId === productId && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                    ? { ...item, sellerId, sellerType, sellerName, sellMode: "online_delivery" as const, ...(storePrice ? { price: storePrice } : {}) }
+                    : item
+                )
+              )
+            }
             onCheckout={placeOrders}
             onGoLogin={() => navigate("login")}
             loading={checkoutLoading}
             message={checkoutMessage}
+            storesWithDistance={storesWithDistance}
+            allProducts={allProducts}
           />
         );
       case 'map':

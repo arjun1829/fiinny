@@ -116,10 +116,75 @@ export function StorePickerModal({ product, storesWithDistance, onConfirm, onClo
             </div>
           ) : availableStores.length === 0 ? (
             <div className="text-center py-10 text-on-surface-variant">
-              <div className="text-4xl mb-3">🏪</div>
-              <p className="font-bold">No stores found for this product</p>
-              <p className="text-sm mt-1">Try viewing the product detail page for more info.</p>
+              <ICONS.Location className="w-10 h-10 mx-auto mb-3 text-outline-variant" />
+              <p className="font-bold text-on-surface">No stores found for this product</p>
+              <p className="text-sm mt-1">This product is not available at any nearby store right now.</p>
             </div>
+          ) : onlineStores.length === 0 ? (
+            <>
+              <div className="text-center py-6">
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+                  <ICONS.Delivery className="w-6 h-6 text-amber-600" />
+                </div>
+                <p className="font-bold text-on-surface">Online delivery not available</p>
+                <p className="text-sm text-on-surface-variant mt-1 max-w-xs mx-auto">
+                  None of the stores carrying this product currently offer online delivery. You can visit or call these stores directly.
+                </p>
+              </div>
+
+              {/* Show offline stores so user can call/visit */}
+              {offlineStores.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2 px-1">
+                    Available at ({offlineStores.length} {offlineStores.length === 1 ? 'store' : 'stores'})
+                  </p>
+                  {offlineStores.map((store) => {
+                    const phone = (store as any).phone as string | undefined;
+                    const availability = product.availability?.find(
+                      (a) => a.storeId === store.id || (phone && (a.storePhone === phone || a.storeId === phone))
+                    );
+                    return (
+                      <div
+                        key={store.id}
+                        className="rounded-2xl border border-surface-container bg-white p-4 mb-2"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-black text-on-surface text-sm block mb-1">{store.name}</span>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant font-semibold">
+                              <span className="flex items-center gap-1">
+                                <ICONS.Location className="w-3 h-3" />
+                                {(store as any).distanceLabel || formatDistance((store as any).distanceKm)}
+                              </span>
+                              {availability?.sellingPrice && availability.sellingPrice > 0 && (
+                                <span className="font-black text-secondary">₹{availability.sellingPrice.toLocaleString("en-IN")}</span>
+                              )}
+                              {availability?.stockLevel && (
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                  availability.stockLevel === "In Stock"
+                                    ? "bg-green-100 text-green-700"
+                                    : "bg-orange-100 text-orange-700"
+                                }`}>
+                                  {availability.stockLevel}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {phone && (
+                            <a
+                              href={`tel:${phone}`}
+                              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-primary border border-primary/30 hover:bg-primary/5 transition-colors"
+                            >
+                              <ICONS.Phone className="w-3.5 h-3.5" /> Call
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           ) : (
             <>
               {/* Online delivery stores */}
