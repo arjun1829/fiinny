@@ -376,11 +376,16 @@ export default function ProductDetailView({
       const rid = product.retailerId;
       const rPhone = product.retailerPhone;
       const storeMfrId = (store as any).userId as string | undefined;
+      const mfrPhone = product.manufacturerPhone;
       const isOwnerStore =
         (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
         (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
-        store.id === product.manufacturerId ||
+        // Match manufacturer by UID (primary) — store.userId = data.uid from manufacturers doc
         (product.manufacturerId && storeMfrId && storeMfrId === product.manufacturerId) ||
+        // Match manufacturer by phone (belt-and-suspenders for phone-keyed schema)
+        (mfrPhone && (store.id === mfrPhone || storePhone === mfrPhone)) ||
+        // Legacy: store.id is the phone doc ID, product.manufacturerId was incorrectly set to phone
+        store.id === product.manufacturerId ||
         store.name === product.store ||
         (store as any).shopName === product.store ||
         (store as any).ownerName === product.store;
@@ -388,11 +393,29 @@ export default function ProductDetailView({
       return isOwnerStore;
     });
 
+    // Deduplicate: same store can match via both availability array and owner-store check,
+    // or exist in multiple Firestore collections (stores + retailers). Key by phone, then name.
+    const seen = new Map<string, typeof filtered[number]>();
+    for (const store of filtered) {
+      const phone = (store as any).phone as string | undefined;
+      const key = phone || store.name?.toLowerCase().trim() || store.id;
+      if (!seen.has(key)) {
+        seen.set(key, store);
+      } else {
+        // Keep the entry with the smaller distance
+        const existing = seen.get(key)!;
+        if (((store as any).distanceKm ?? Infinity) < ((existing as any).distanceKm ?? Infinity)) {
+          seen.set(key, store);
+        }
+      }
+    }
+    const deduped = Array.from(seen.values());
+
     // Sort by distance if we have computed distances
     if (storesWithDistance.length > 0) {
-      return [...filtered].sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+      return deduped.sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     }
-    return filtered;
+    return deduped;
   }, [product, storesWithDistance, stores]);
 
   // Fallback: if no store matched from pre-loaded list, fetch the retailer's profile

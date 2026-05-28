@@ -60,11 +60,16 @@ function useStoreAvailability(product: MarketplaceProduct | undefined, stores: S
     const rid = product.retailerId;
     const rPhone = product.retailerPhone;
     const storeMfrId = (store as any).userId as string | undefined;
+    const mfrPhone = product.manufacturerPhone;
     return (
       (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
       (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
-      store.id === product.manufacturerId ||
+      // Match manufacturer by UID (primary)
       (product.manufacturerId && storeMfrId && storeMfrId === product.manufacturerId) ||
+      // Match manufacturer by phone (phone-keyed schema)
+      (mfrPhone && (store.id === mfrPhone || storePhone === mfrPhone)) ||
+      // Legacy: store.id is phone, product.manufacturerId was set to phone
+      store.id === product.manufacturerId ||
       store.name === product.store ||
       (store as any).shopName === product.store
     );

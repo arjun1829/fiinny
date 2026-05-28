@@ -528,7 +528,27 @@ export async function fetchStores(): Promise<Store[]> {
         } as Store & { userId?: string };
       });
 
-    return [...stores, ...dedupedRetailers, ...manufacturers];
+    // Final cross-collection deduplication: retailers/ and manufacturers/ entries take priority
+    // over legacy stores/ entries (which may have stale names/coordinates).
+    // Key by phone; prefer entries with valid coordinates and richer metadata.
+    type AnyStore = Store & { retailerId?: string; userId?: string; phone?: string };
+    const scoreEntry = (s: AnyStore) =>
+      (s.retailerId || (s as any).userId ? 4 : 0) +
+      (s.name && s.name !== 'Retailer' && s.name !== 'Manufacturer' ? 2 : 0) +
+      ((s.location?.lat || s.location?.lng) ? 1 : 0);
+
+    const globalMap = new Map<string, AnyStore>();
+    for (const entry of [...stores, ...dedupedRetailers, ...manufacturers] as AnyStore[]) {
+      const phone = entry.phone || (/^\+?\d{10,13}$/.test(entry.id) ? entry.id : undefined);
+      // Key by phone if available, otherwise fall back to id (non-phone doc IDs won't collide)
+      const key = phone || entry.id;
+      const existing = globalMap.get(key);
+      if (!existing || scoreEntry(entry) > scoreEntry(existing)) {
+        globalMap.set(key, entry);
+      }
+    }
+
+    return Array.from(globalMap.values());
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
@@ -891,18 +911,23 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
 }
 
 export async function saveManufacturerProduct(manufacturerId: string, product: any) {
+  // resolveUserProfileDocId returns the phone (from uidIndex) — use it as manufacturerPhone
   const userProfileDocId = await resolveUserProfileDocId(manufacturerId);
+  const manufacturerPhone = userProfileDocId && /^\+?\d{10,13}$/.test(userProfileDocId)
+    ? userProfileDocId
+    : undefined;
 
   // 1. Create the product — strip any stale ownership fields from the input
   const { retailerId: _r, ownerType: _ot, ownerId: _oi, store: _s, distance: _d, stock: _st, ...rest } = product;
   const sellMode = product?.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
-  
+
   await addDoc(collection(db, 'products'), {
     ...rest,
     ownerId: manufacturerId,
     ownerType: 'manufacturer',
     createdBy: manufacturerId,
     manufacturerId,
+    ...(manufacturerPhone ? { manufacturerPhone } : {}),
     source: 'manufacturer_inventory',
     sellMode,
     isOnline: sellMode === "online_delivery",
