@@ -775,6 +775,13 @@ export default function App() {
             : i
         );
       }
+      const storePhone: string | undefined = store.phone;
+      const availability = product.availability?.find(
+        (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
+      );
+      const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
+        ? availability.sellingPrice
+        : product.price;
       return [
         ...prev,
         {
@@ -784,7 +791,7 @@ export default function App() {
           sellerName: store.name || undefined,
           name: product.name,
           image: product.image,
-          price: product.price,
+          price: storePrice,
           qty: 1,
           sellMode: "online_delivery" as const,
         },
@@ -927,6 +934,7 @@ export default function App() {
             }
             onCheckout={placeOrders}
             onGoLogin={() => navigate("login")}
+            onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}

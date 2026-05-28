@@ -497,6 +497,7 @@ export async function fetchStores(): Promise<Store[]> {
     );
 
     // Manufacturers appear as stores — matched by store.id === product.manufacturerId
+    // or by store.userId === product.manufacturerId (uid-keyed products)
     const manufacturers = manufacturersSnapshot.docs
       .filter((doc) => {
         const data = doc.data();
@@ -507,6 +508,8 @@ export async function fetchStores(): Promise<Store[]> {
         const data = doc.data();
         return {
           id: doc.id,
+          // Expose the Firebase Auth UID so product filters can match on manufacturerId
+          userId: data.uid || undefined,
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
           phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
@@ -522,7 +525,7 @@ export async function fetchStores(): Promise<Store[]> {
             lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
             lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
           },
-        } as Store;
+        } as Store & { userId?: string };
       });
 
     return [...stores, ...dedupedRetailers, ...manufacturers];

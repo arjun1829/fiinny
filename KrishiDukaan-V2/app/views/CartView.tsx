@@ -22,6 +22,7 @@ type CartViewProps = {
   onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
   onCheckout: () => Promise<void>;
   onGoLogin: () => void;
+  onGoOrders?: () => void;
   loading: boolean;
   message: string | null;
   storesWithDistance: StoreWithDistance[];
@@ -58,10 +59,12 @@ function useStoreAvailability(product: MarketplaceProduct | undefined, stores: S
 
     const rid = product.retailerId;
     const rPhone = product.retailerPhone;
+    const storeMfrId = (store as any).userId as string | undefined;
     return (
       (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
       (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
       store.id === product.manufacturerId ||
+      (product.manufacturerId && storeMfrId && storeMfrId === product.manufacturerId) ||
       store.name === product.store ||
       (store as any).shopName === product.store
     );
@@ -247,11 +250,12 @@ function StorePickerInline({
           );
           const storePrice = availability?.sellingPrice && availability.sellingPrice > 0 ? availability.sellingPrice : undefined;
 
+          const displayPrice = storePrice ?? product.price;
           return (
             <button
               key={store.id}
               type="button"
-              onClick={() => !isCurrent && onSelect(sellerId, sellerType, store.name || "Store", storePrice)}
+              onClick={() => !isCurrent && onSelect(sellerId, sellerType, store.name || "Store", displayPrice)}
               disabled={isCurrent}
               className={`w-full text-left rounded-xl border px-3 py-2.5 transition-all ${
                 isCurrent
@@ -267,9 +271,7 @@ function StorePickerInline({
                       <ICONS.Location className="w-3 h-3" />
                       {(store as any).distanceLabel || formatDistance((store as any).distanceKm)}
                     </span>
-                    {storePrice && (
-                      <span className="font-bold text-secondary">₹{storePrice.toLocaleString("en-IN")}</span>
-                    )}
+                    <span className="font-bold text-secondary">₹{displayPrice.toLocaleString("en-IN")}</span>
                     <span className="inline-flex items-center gap-0.5 text-green-700">
                       <ICONS.Delivery className="w-3 h-3" /> Online
                     </span>
@@ -403,6 +405,7 @@ export default function CartView({
   onAssignStore,
   onCheckout,
   onGoLogin,
+  onGoOrders,
   loading,
   message,
   storesWithDistance,
@@ -417,7 +420,19 @@ export default function CartView({
 
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
-      <h1 className="text-3xl font-bold text-on-surface mb-2">{t('cartTitle')}</h1>
+      <div className="flex items-center justify-between gap-4 mb-2">
+        <h1 className="text-3xl font-bold text-on-surface">{t('cartTitle')}</h1>
+        {onGoOrders && (
+          <button
+            type="button"
+            onClick={onGoOrders}
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-outline-variant/40 bg-white text-sm font-bold text-on-surface hover:bg-surface-container transition-colors"
+          >
+            <ICONS.Delivery className="w-4 h-4 text-primary" />
+            My Orders
+          </button>
+        )}
+      </div>
       <p className="text-sm text-on-surface-variant mb-6 inline-flex items-center gap-1.5">
         {t('cartSubtitle')}
         <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSellerGrouping" ariaLabel={`${t('cartTitle')} help`} />
