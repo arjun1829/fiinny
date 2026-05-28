@@ -15,12 +15,19 @@ interface BlogEditorProps {
 }
 
 function slugify(str: string) {
-  return str
+  let decoded = str;
+  try {
+    decoded = decodeURIComponent(str);
+  } catch {}
+
+  return decoded
+    .normalize("NFC")
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/[^a-z0-9\u0900-\u097F\s-]/gi, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .trim();
+    .replace(/^-+|-+$/g, "");
 }
 
 const TOOLBAR_ACTIONS: { label: string; cmd: string; arg?: string; title: string }[] = [
@@ -57,6 +64,8 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
+  const cleanSlug = slugify(slug || title);
+  const canSave = !!title.trim() && !!cleanSlug;
 
   const uploadToStorage = (file: File, path: string, onProgress: (p: number) => void): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -150,7 +159,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     await onSave({
       ...(initial?.id ? { id: initial.id } : {}),
       title,
-      slug,
+      slug: cleanSlug,
       excerpt,
       author,
       content,
@@ -182,7 +191,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
           <button
             type="button"
             onClick={() => handleSave("draft")}
-            disabled={saving || !title || !slug}
+            disabled={saving || !canSave}
             className="text-xs font-semibold border border-outline-variant text-on-surface-variant px-4 py-1.5 rounded-lg hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving && status === "draft" ? "Saving…" : "Save Draft"}
@@ -190,7 +199,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
           <button
             type="button"
             onClick={() => handleSave("published")}
-            disabled={saving || !title || !slug}
+            disabled={saving || !canSave}
             className="text-xs font-bold bg-primary text-white px-5 py-1.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving && status === "published" ? "Publishing…" : "Publish"}
@@ -302,10 +311,11 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
               type="text"
               value={slug}
               onChange={e => { setSlug(e.target.value); setSlugManual(true); }}
+              onBlur={() => setSlug(cleanSlug)}
               className="w-full text-xs border border-outline-variant rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary font-mono"
               placeholder="post-url-slug"
             />
-            <p className="text-[10px] text-on-surface-variant mt-1">/blog/{slug || "…"}</p>
+            <p className="text-[10px] text-on-surface-variant mt-1">/blog/{cleanSlug || "…"}</p>
           </div>
 
           <div>
@@ -385,7 +395,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
           <button
             type="button"
             onClick={() => handleSave("draft")}
-            disabled={saving || !title || !slug}
+            disabled={saving || !canSave}
             className="text-sm font-semibold border border-outline-variant text-on-surface-variant px-4 py-2 rounded-lg hover:bg-surface-container hover:text-on-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving && status === "draft" ? "Saving…" : "Save Draft"}
@@ -393,7 +403,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
           <button
             type="button"
             onClick={() => handleSave("published")}
-            disabled={saving || !title || !slug}
+            disabled={saving || !canSave}
             className="text-sm font-bold bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving && status === "published" ? "Publishing…" : "Publish"}

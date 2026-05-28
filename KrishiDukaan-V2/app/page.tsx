@@ -20,8 +20,8 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
-import HelpView from './views/HelpView';
 import RetailerJoinView from './views/RetailerJoinView';
+import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
@@ -40,7 +40,7 @@ import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'help' |'become-retailer';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 type UserProfile = {
   name: string;
@@ -51,7 +51,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'help', 'become-retailer'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
@@ -689,9 +689,32 @@ export default function App() {
     navigate('product', { productId: id });
   };
 
-  // Opens the store picker modal — used from Home, Market, and ProductDetailView (non-store button)
   const addToCart = (product: MarketplaceProduct) => {
-    setStorePickerProduct(product);
+    setCartItems((prev) => {
+      const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
+      if (found) {
+        return prev.map((i) =>
+          i.productId === product.id && i.sellMode === "pending"
+            ? { ...i, qty: i.qty + 1 }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          sellerId: "",
+          sellerType: "retailer" as const,
+          name: product.name,
+          image: product.image,
+          price: product.price,
+          qty: 1,
+          sellMode: "pending" as const,
+        },
+      ];
+    });
+    setToastMsg(`${product.name} added to cart.`);
+    setToastType("success");
   };
 
   const placeOrders = async () => {
@@ -708,6 +731,13 @@ export default function App() {
       return;
     }
 
+    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
+    if (!readyItems.length) {
+      setCheckoutMessage("No items are ready for ordering. Please select a store for your items first.");
+      return;
+    }
+
     setCheckoutLoading(true);
     setCheckoutMessage(null);
     try {
@@ -716,10 +746,13 @@ export default function App() {
         customerName: checkoutInfo.customerName,
         customerPhone: checkoutInfo.customerPhone,
         customerAddress: checkoutInfo.customerAddress,
-        items: cartItems,
+        items: readyItems,
       });
-      setCartItems([]);
-      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).`);
+      setCartItems(pendingItems);
+      const pendingMsg = pendingItems.length > 0
+        ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
+        : "";
+      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).${pendingMsg}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to place order.";
       setCheckoutMessage(msg);
@@ -756,11 +789,12 @@ export default function App() {
           productId: product.id,
           sellerId,
           sellerType,
+          sellerName: store.name || undefined,
           name: product.name,
           image: product.image,
           price: product.price,
           qty: 1,
-          sellMode: "online_delivery",
+          sellMode: "online_delivery" as const,
         },
       ];
     });
@@ -890,10 +924,21 @@ export default function App() {
             onRemove={(productId) =>
               setCartItems((prev) => prev.filter((item) => item.productId !== productId))
             }
+            onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
+              setCartItems((prev) =>
+                prev.map((item) =>
+                  item.productId === productId && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                    ? { ...item, sellerId, sellerType, sellerName, sellMode: "online_delivery" as const, ...(storePrice ? { price: storePrice } : {}) }
+                    : item
+                )
+              )
+            }
             onCheckout={placeOrders}
             onGoLogin={() => navigate("login")}
             loading={checkoutLoading}
             message={checkoutMessage}
+            storesWithDistance={storesWithDistance}
+            allProducts={allProducts}
           />
         );
       case 'map':
@@ -1169,41 +1214,30 @@ export default function App() {
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
           { id: 'map', icon: ICONS.Location, label: t('stores') },
-          // Reuses the existing header Account dropdown — opens the same flow
-          // (login / dashboard / logout / language) by triggering the header button.
-          { id: 'account', icon: ICONS.Account, label: t('account'), action: 'account-menu' },
-        ] as { id: string; icon: typeof ICONS.Home; label: string; action?: 'account-menu' }[]).map((item) => {
-          const isActive = item.id !== 'account' && currentView === item.id;
-          const handleClick = () => {
-            if (item.action === 'account-menu') {
-              const trigger = document.querySelector<HTMLButtonElement>('[data-account-trigger]');
-              trigger?.click();
-              return;
-            }
-            navigate(item.id as View);
-          };
-          return (
-            <button
-              key={item.id}
-              data-tour-nav={item.id}
-              onClick={handleClick}
-              className={`flex flex-col items-center gap-1 transition-colors ${
-                isActive ? 'text-primary' : 'text-on-surface-variant'
-              }`}
-            >
-              <item.icon className={`w-5 h-5 ${isActive ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-              {isActive && (
-                <motion.div
-                  layoutId="activeBubble"
-                  className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
-                  initial={false}
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                />
-              )}
-            </button>
-          );
-        })}
+          user && userRole === 'customer'
+            ? { id: 'orders', icon: ICONS.Orders, label: 'Orders' }
+            : { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
+        ].map((item) => (
+          <button
+            key={item.id}
+            data-tour-nav={item.id}
+            onClick={() => navigate(item.id as View)}
+            className={`flex flex-col items-center gap-1 transition-colors ${
+              currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+            {currentView === item.id && (
+              <motion.div
+                layoutId="activeBubble"
+                className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
+                initial={false}
+                transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+              />
+            )}
+          </button>
+        )))}
       </nav>
     </div>
   );

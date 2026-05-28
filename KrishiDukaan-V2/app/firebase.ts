@@ -977,7 +977,7 @@ export async function createOrdersFromCart(params: {
 
   const groups = new Map<string, CartItem[]>();
   items.forEach((item) => {
-    if (item.sellMode !== "online_delivery") return;
+    if (item.sellMode !== "online_delivery" || !item.sellerId) return;
     const key = `${item.sellerType}:${item.sellerId}`;
     const list = groups.get(key) ?? [];
     list.push(item);
@@ -2019,6 +2019,25 @@ export type BlogPost = {
   updatedAt?: unknown;
 };
 
+function decodeSlug(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeBlogSlug(value: string): string {
+  return decodeSlug(value)
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\u0900-\u097F\s-]/gi, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export async function fetchBlogPosts(status: 'published' | 'all' = 'published'): Promise<BlogPost[]> {
   let q;
   if (status === 'published') {
@@ -2031,11 +2050,24 @@ export async function fetchBlogPosts(status: 'published' | 'all' = 'published'):
 }
 
 export async function fetchBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  const q = query(collection(db, 'blogPosts'), where('slug', '==', slug));
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, ...(d.data() as Omit<BlogPost, 'id'>) };
+  const decodedSlug = decodeSlug(slug);
+  const candidates = Array.from(new Set([
+    slug,
+    decodedSlug,
+    normalizeBlogSlug(slug),
+    encodeURIComponent(decodedSlug),
+  ].filter(Boolean)));
+
+  for (const candidate of candidates) {
+    const q = query(collection(db, 'blogPosts'), where('slug', '==', candidate));
+    const snap = await getDocs(q);
+    const docSnap = snap.docs.find((d) => (d.data() as BlogPost).status === 'published');
+    if (docSnap) return { id: docSnap.id, ...(docSnap.data() as Omit<BlogPost, 'id'>) };
+  }
+
+  const allPublished = await fetchBlogPosts('published');
+  const normalizedSlug = normalizeBlogSlug(slug);
+  return allPublished.find((post) => normalizeBlogSlug(post.slug || post.title) === normalizedSlug) ?? null;
 }
 
 export async function createBlogPost(data: Omit<BlogPost, 'id'>): Promise<string> {
