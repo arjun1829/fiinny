@@ -426,7 +426,7 @@ export default function InventoryPage() {
 
   return (
     <>
-      {/* Page header + seat card side-by-side */}
+      {/* Page header + seat card side-by-side (seat card hidden on mobile) */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <PageHeader
           title={t('inventoryTitle')}
@@ -437,7 +437,9 @@ export default function InventoryPage() {
           }
           helperKey="dashInventory"
         />
-        <SeatInfoCard stats={seatStats} />
+        <div className="hidden sm:block">
+          <SeatInfoCard stats={seatStats} />
+        </div>
       </div>
 
       {magicStatus && (
@@ -543,9 +545,9 @@ export default function InventoryPage() {
         />
       </section>
 
-      {/* Retailer: show upgrade CTA if no seats and no subscription */}
+      {/* Retailer: show upgrade CTA if no seats and no subscription (desktop only) */}
       {!isManufacturer && seatStats.available === 0 && seatStats.totalPurchased === 0 && (
-        <section className="mt-8">
+        <section className="mt-8 hidden sm:block">
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
             <p className="text-sm font-semibold text-on-surface mb-1">
               {t('noActiveSubMsg')}

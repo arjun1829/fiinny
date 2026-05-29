@@ -22,9 +22,9 @@ export function StatCard({ metric, helperKey }: StatCardProps) {
         : Minus;
 
   return (
-    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient md:p-5">
-      <div className="flex items-center gap-1.5">
-        <p className="text-sm font-medium text-on-surface-variant">{metric.label}</p>
+    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 shadow-ambient sm:p-4 md:p-5">
+      <div className="flex items-center gap-1">
+        <p className="text-xs font-medium text-on-surface-variant sm:text-sm">{metric.label}</p>
         {helperKey ? (
           <HelperIcon
             size="xs"
@@ -35,7 +35,7 @@ export function StatCard({ metric, helperKey }: StatCardProps) {
           />
         ) : null}
       </div>
-      <p className="mt-2 text-2xl font-bold tabular-nums text-on-surface md:text-3xl">
+      <p className="mt-1.5 text-xl font-bold tabular-nums text-on-surface sm:mt-2 sm:text-2xl md:text-3xl">
         {metric.value}
       </p>
       {metric.change ? (
