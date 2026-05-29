@@ -570,8 +570,12 @@ export default function ProductDetailView({
                     onClick={() => setExpandedStoreId(isExpanded ? null : store.id)}
                     className="flex-1 min-w-0 flex items-center gap-4 text-left"
                   >
-                    <div className={`p-2.5 rounded-xl transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'}`}>
-                      <ICONS.Market className="w-5 h-5" />
+                    <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
+                      {store.logo ? (
+                        <img src={store.logo} alt={store.name} className="w-10 h-10 object-cover" />
+                      ) : (
+                        <ICONS.Market className="w-5 h-5" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="block font-bold text-on-surface truncate">{store.name}</span>
@@ -616,21 +620,23 @@ export default function ProductDetailView({
                       {t('mapShort')}
                     </button>
                   </HelperTooltip>
-                  {onAddToCartFromStore && storeOnlineMap[(store as any).phone] && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedOrderStoreId(selectedOrderStoreId === store.id ? null : store.id);
-                      }}
-                      className={`shrink-0 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                        selectedOrderStoreId === store.id
-                          ? 'bg-green-600 text-white border-green-600 scale-[1.02]'
-                          : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
-                      }`}
-                    >
-                      <ICONS.AddToCart className="w-3.5 h-3.5" />
-                      {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
-                    </button>
+                  {onAddToCartFromStore && (
+                    storeOnlineMap[(store as any).phone] ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOrderStoreId(selectedOrderStoreId === store.id ? null : store.id);
+                        }}
+                        className={`shrink-0 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                          selectedOrderStoreId === store.id
+                            ? 'bg-green-600 text-white border-green-600 scale-[1.02]'
+                            : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
+                        }`}
+                      >
+                        <ICONS.AddToCart className="w-3.5 h-3.5" />
+                        {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
+                      </button>
+                    ) : null
                   )}
                 </div>
 
@@ -690,19 +696,6 @@ export default function ProductDetailView({
               {t('onlyHomeDelivery')}
             </div>
           )}
-
-          {/* Delivery option */}
-          <HelperTooltip side="top" textKey="productDeliveryInfo">
-            <div className="flex items-center gap-4 p-4 rounded-2xl border-2 border-surface-container hover:border-primary transition-all bg-surface-container-low group cursor-pointer">
-              <div className="p-2.5 rounded-xl bg-white shadow-sm text-on-surface-variant group-hover:bg-primary group-hover:text-white transition-colors">
-                <ICONS.Delivery className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="block font-bold text-on-surface">{t('deliverToFarm')}</span>
-                <span className="text-[10px] uppercase font-black tracking-widest text-on-surface-variant">{t('arrivalTomorrow')}</span>
-              </div>
-            </div>
-          </HelperTooltip>
 
           {/* Sticky Add-to-Cart bar — shown when consumer selects an online-delivery store */}
           {selectedOrderStoreId && (() => {

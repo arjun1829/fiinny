@@ -430,6 +430,7 @@ export type Store = {
   status: string;
   stock: string[];
   isHot?: boolean;
+  logo?: string;
   location: { lat: number; lng: number };
 };
 
@@ -456,6 +457,7 @@ export async function fetchStores(): Promise<Store[]> {
         ownerName: data.ownerName,
         // Fall back to doc.id: for phone-keyed docs the doc ID is the phone number itself
         phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+        logo: data.logo || undefined,
         address: data.address,
         city: data.city,
         state: data.state,
@@ -513,6 +515,7 @@ export async function fetchStores(): Promise<Store[]> {
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
           phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+          logo: data.logo || undefined,
           address: data.address,
           city: data.address?.city || data.city,
           state: data.address?.state || data.state,

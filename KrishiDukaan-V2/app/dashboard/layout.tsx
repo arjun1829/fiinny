@@ -9,9 +9,10 @@ import {
   grantAccessIfHasActiveSeat,
 } from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Navbar } from '../../components/shared/navbar';
+import Link from 'next/link';
 
 export default function DashboardLayout({
   children,
@@ -19,7 +20,9 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>) {
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
+  const [profileIncomplete, setProfileIncomplete] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -29,6 +32,13 @@ export default function DashboardLayout({
         const profile = await getUserProfile(user.uid);
         const role = profile?.role;
         const isPaid = profile?.isPaid;
+
+        // Profile is considered complete if business name + phone + city are all set.
+        // These are written to users/{phone} by saveManufacturerProfile / saveRetailerProfile.
+        const hasBusinessName = !!String(profile?.businessName ?? "").trim();
+        const hasPhone = !!String(profile?.phone ?? "").trim();
+        const hasCity = !!String(profile?.city ?? "").trim();
+        setProfileIncomplete(!hasBusinessName || !hasPhone || !hasCity);
 
         if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
           setLoading(false);
@@ -69,11 +79,31 @@ export default function DashboardLayout({
     </div>
   );
 
+  const isOnProfilePage = pathname === '/dashboard/profile';
+
+  const profileBanner = profileIncomplete && !isOnProfilePage ? (
+    <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="text-amber-500 text-lg shrink-0">⚠</span>
+        <p className="text-sm font-semibold text-amber-800 leading-snug">
+          Profile incomplete.{' '}
+          <span className="font-normal text-amber-700">Add your business name, contact number, and location to complete your profile and generate your brand page.</span>
+        </p>
+      </div>
+      <Link
+        href="/dashboard/profile"
+        className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-colors whitespace-nowrap"
+      >
+        Complete Profile →
+      </Link>
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-screen flex flex-col" data-tour="dash-shell">
       <Navbar isDashboard={true} />
       <div className="flex-1 flex overflow-hidden">
-        <DashboardShell>{children}</DashboardShell>
+        <DashboardShell banner={profileBanner}>{children}</DashboardShell>
       </div>
       <DashboardTour />
     </div>

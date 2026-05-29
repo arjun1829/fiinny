@@ -6,7 +6,7 @@ import {
   Loader2, Building2, Package, Store,
   Plus, Save, X, Check,
   Phone, Mail, Youtube, MapPin,
-  Image as ImageIcon, ExternalLink,
+  ExternalLink,
   Tag, Info,
 } from "lucide-react";
 import {
@@ -76,12 +76,9 @@ function CustomizationForm({
     tagline: initial.tagline ?? "",
     about: initial.about ?? "",
     establishedYear: initial.establishedYear ?? "",
-    website: initial.website ?? "",
     socialProof: initial.socialProof ?? "",
     primaryColor: initial.primaryColor ?? "#154212",
     accentColor: initial.accentColor ?? "#f57c00",
-    logo: initial.logo ?? "",
-    banner: initial.banner ?? "",
     certInput: "",
     videoInput: "",
   });
@@ -119,12 +116,9 @@ function CustomizationForm({
         tagline: form.tagline.trim(),
         about: form.about.trim(),
         establishedYear: form.establishedYear.trim(),
-        website: form.website.trim(),
         socialProof: form.socialProof.trim(),
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        logo: form.logo.trim(),
-        banner: form.banner.trim(),
         certifications,
         videos,
       };
@@ -178,35 +172,10 @@ function CustomizationForm({
             <span className="font-medium text-on-surface">Founded Year</span>
             <input className={inputCls} value={form.establishedYear} onChange={set("establishedYear")} maxLength={4} placeholder="e.g. 2019" />
           </label>
-          <label className={labelCls}>
-            <span className="font-medium text-on-surface">Website</span>
-            <input type="url" className={inputCls} value={form.website} onChange={set("website")} placeholder="https://yoursite.com" />
-          </label>
           <label className={`${labelCls} md:col-span-2`}>
             <span className="font-medium text-on-surface">Social Proof / Achievement</span>
             <input className={inputCls} value={form.socialProof} onChange={set("socialProof")} maxLength={120}
               placeholder="e.g. 75,800+ farmers trust Power Plus" />
-          </label>
-        </div>
-      </div>
-
-      {/* Images */}
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-widest text-primary">Brand Images</h3>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className={labelCls}>
-            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Logo URL</span>
-            <input className={inputCls} value={form.logo} onChange={set("logo")} placeholder="https://... or /images/logo.png" />
-            {form.logo && (
-              <img src={form.logo} alt="Logo preview" className="mt-1 h-12 w-auto object-contain rounded-lg border border-outline-variant/20" />
-            )}
-          </label>
-          <label className={labelCls}>
-            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Banner URL</span>
-            <input className={inputCls} value={form.banner} onChange={set("banner")} placeholder="https://... or /images/banner.jpg" />
-            {form.banner && (
-              <img src={form.banner} alt="Banner preview" className="mt-1 h-12 w-auto object-cover rounded-lg border border-outline-variant/20" />
-            )}
           </label>
         </div>
       </div>

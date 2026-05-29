@@ -5,7 +5,7 @@ import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firesto
 import { onAuthStateChanged } from "firebase/auth";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X, TrendingUp, ExternalLink, Building2 } from "lucide-react";
+import { Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save, Pencil, Settings, Truck, X, TrendingUp, ExternalLink, Building2, Globe, Image as ImageIcon } from "lucide-react";
 import { auth, db, requestRoleUpgrade } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { HelperIcon } from "../../../components/helpers";
@@ -29,6 +29,7 @@ declare global { interface Window { google?: any; } }
 const initialForm: ProfileFormValues = {
   businessName: "", ownerName: "", phone: "", secondaryPhone: "", email: "",
   line1: "", city: "", state: "", pincode: "",
+  website: "", logoUrl: "", bannerUrl: "",
 };
 
 type SocialLinks = {
@@ -133,6 +134,10 @@ function ProfilePageInner() {
   const [editMode,  setEditMode]  = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [mapLinkInput,     setMapLinkInput]     = useState("");
+  const [resolvingMapLink, setResolvingMapLink] = useState(false);
+  const [mapLinkError,     setMapLinkError]     = useState<string | null>(null);
+  const [locationMethod,   setLocationMethod]   = useState<"search" | "link">("search");
   const [upgradeBusinessName, setUpgradeBusinessName] = useState("");
   const [upgrading, setUpgrading] = useState(false);
 
@@ -250,11 +255,7 @@ function ProfilePageInner() {
         // Set the uncontrolled input value imperatively so the user sees the selection
         if (addressInputRef.current && addressFields.line1)
           addressInputRef.current.value = addressFields.line1;
-        setForm((p) => ({
-          ...p,
-          ...(place.name ? { businessName: place.name } : {}),
-          ...addressFields,
-        }));
+        setForm((p) => ({ ...p, ...addressFields }));
         applyPlaceGeometry(place);
       });
       autocompleteListenerRef.current = listener;
@@ -303,6 +304,39 @@ function ProfilePageInner() {
     );
   };
 
+  const handleResolveMapLink = async () => {
+    const url = mapLinkInput.trim();
+    if (!url) return;
+    setResolvingMapLink(true);
+    setMapLinkError(null);
+    try {
+      const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (data.lat && data.lng) {
+        const resolved = new GeoPoint(data.lat, data.lng);
+        setGeo(resolved);
+        // Reverse-geocode to fill city/state/pincode if available
+        if (window.google?.maps?.Geocoder) {
+          new window.google.maps.Geocoder().geocode(
+            { location: { lat: data.lat, lng: data.lng } },
+            (results: any, status: string) => {
+              if (status === "OK" && results?.[0]) {
+                setForm((p) => ({ ...p, ...extractAddressFields(results[0]) }));
+              }
+            },
+          );
+        }
+        setMapLinkInput("");
+      } else {
+        setMapLinkError("Couldn't extract coordinates from that link. Try a direct Google Maps link.");
+      }
+    } catch {
+      setMapLinkError("Failed to resolve the Maps link. Please check the URL.");
+    } finally {
+      setResolvingMapLink(false);
+    }
+  };
+
   const mapUrl = useMemo(() => {
     if (!geo) return "";
     return `https://maps.google.com/maps?q=${geo.latitude},${geo.longitude}&z=15&output=embed`;
@@ -314,38 +348,22 @@ function ProfilePageInner() {
     // Capture the uncontrolled address input's current DOM value before saving
     const currentLine1 = addressInputRef.current?.value?.trim() || form.line1;
     const formToSave = { ...form, line1: currentLine1 };
-    if (!geo && !formToSave.city && !formToSave.state) {
-      setStatus({ type: "error", message: "Please select an address from autocomplete or use current location." });
-      return;
-    }
+    // Allow saving with just city/state typed manually — geo is resolved later if available
     setSaving(true); setStatus(null);
     let resolvedGeo = geo;
-    if (!resolvedGeo) {
-      // 1. Try to resolve coordinates from a pasted Google Maps URL
-      if (currentLine1.includes('maps.app.goo.gl') || currentLine1.includes('maps.google.com')) {
-        try {
-          const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(currentLine1)}`);
-          const data = await res.json();
-          if (data.lat && data.lng) {
-            resolvedGeo = new GeoPoint(data.lat, data.lng);
-            setGeo(resolvedGeo);
-          }
-        } catch { /* fall through to city/state geocode */ }
-      }
-      // 2. Fall back to geocoding from city + state
-      if (!resolvedGeo && (formToSave.city || formToSave.state)) {
-        try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-          const q = encodeURIComponent([formToSave.city, formToSave.state, formToSave.pincode].filter(Boolean).join(', '));
-          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${q}&key=${apiKey}`);
-          const data = await res.json();
-          if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
-            const { lat, lng } = data.results[0].geometry.location;
-            resolvedGeo = new GeoPoint(lat, lng);
-            setGeo(resolvedGeo);
-          }
-        } catch { /* non-critical — save without geo */ }
-      }
+    if (!resolvedGeo && (formToSave.city || formToSave.state)) {
+      // Geocode from city + state if no geo has been set yet
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+        const q = encodeURIComponent([formToSave.city, formToSave.state, formToSave.pincode].filter(Boolean).join(', '));
+        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${q}&key=${apiKey}`);
+        const data = await res.json();
+        if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+          const { lat, lng } = data.results[0].geometry.location;
+          resolvedGeo = new GeoPoint(lat, lng);
+          setGeo(resolvedGeo);
+        }
+      } catch { /* non-critical — save without geo */ }
     }
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
@@ -568,15 +586,23 @@ function ProfilePageInner() {
         {/* Profile header card */}
         <div className="mb-6 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
           {/* Cover band */}
-          <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/5" />
+          <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/5 overflow-hidden relative">
+            {form.bannerUrl && (
+              <img src={form.bannerUrl} alt="Banner" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            )}
+          </div>
 
           <div className="px-5 pb-5">
             {/* Avatar + edit button row */}
-            <div className="flex items-end justify-between -mt-10 mb-4">
-              <div className="h-20 w-20 rounded-full border-4 border-white bg-primary flex items-center justify-center shadow-lg">
-                <span className="text-xl font-bold text-white">
-                  {initials(form.businessName || form.ownerName || "?")}
-                </span>
+            <div className="relative z-10 flex items-end justify-between -mt-10 mb-4">
+              <div className="h-20 w-20 rounded-full border-4 border-white bg-primary flex items-center justify-center shadow-lg overflow-hidden">
+                {form.logoUrl ? (
+                  <img src={form.logoUrl} alt="Logo" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                ) : (
+                  <span className="text-xl font-bold text-white">
+                    {initials(form.businessName || form.ownerName || "?")}
+                  </span>
+                )}
               </div>
               <button type="button" onClick={() => setEditMode(true)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
@@ -589,10 +615,16 @@ function ProfilePageInner() {
               <h1 className="text-lg font-bold text-on-surface">{form.businessName || "—"}</h1>
               {form.ownerName && <p className="text-sm text-on-surface-variant">{form.ownerName}</p>}
               {(form.city || form.state) && (
-                <div className="mt-1 inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                <a
+                  href={geo
+                    ? `https://www.google.com/maps?q=${geo.latitude},${geo.longitude}`
+                    : `https://www.google.com/maps/search/${encodeURIComponent([form.city, form.state].filter(Boolean).join(", "))}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors"
+                >
                   <MapPin className="h-3 w-3" />
                   {[form.city, form.state].filter(Boolean).join(", ")}
-                </div>
+                </a>
               )}
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-on-surface-variant">
                 {form.phone && <span>{form.phone}</span>}
@@ -615,6 +647,10 @@ function ProfilePageInner() {
 
             {/* Social links */}
             <div className="flex flex-wrap gap-2">
+              {form.website && (
+                <SocialBadge href={form.website} icon={Globe} label="Website"
+                  colorClass="bg-surface-container text-on-surface-variant border border-outline-variant/40" />
+              )}
               <SocialBadge href={social.instagram} icon={Instagram} label="Instagram"
                 colorClass="bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-pink-600 border border-pink-200" />
               <SocialBadge href={social.facebook} icon={Facebook} label="Facebook"
@@ -623,7 +659,7 @@ function ProfilePageInner() {
                 colorClass="bg-green-50 text-green-600 border border-green-200" />
               <SocialBadge href={social.youtube} icon={Youtube} label="YouTube"
                 colorClass="bg-red-50 text-red-600 border border-red-200" />
-              {!social.instagram && !social.facebook && !social.whatsapp && !social.youtube && (
+              {!form.website && !social.instagram && !social.facebook && !social.whatsapp && !social.youtube && (
                 <button type="button" onClick={() => setEditMode(true)}
                   className="text-xs text-on-surface-variant underline underline-offset-2 hover:text-primary">
                   {t('addSocialLinksBtn')}
@@ -722,7 +758,8 @@ function ProfilePageInner() {
 
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient md:p-6">
         <form className="flex flex-col gap-6" onSubmit={handleSave}>
-          {/* Basic info */}
+
+          {/* ── Basic info ─────────────────────────────────────────────────── */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('basicInfoHeading')}</h3>
             <div className="grid gap-4 md:grid-cols-2">
@@ -760,15 +797,187 @@ function ProfilePageInner() {
             </div>
           </section>
 
-          {/* Social links */}
+          {/* ── Location (primary identity field) ──────────────────────────── */}
+          <section className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-4 md:p-5">
+            {/* Header */}
+            <div className="flex items-center gap-2 mb-1">
+              <MapPin className="h-4 w-4 text-primary shrink-0" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-primary">{t('locationHeading')}</h3>
+              <span className="ml-auto shrink-0 text-[10px] font-semibold text-primary/70 bg-primary/10 px-2 py-0.5 rounded-full">Required</span>
+            </div>
+            <p className="mb-4 text-xs text-on-surface-variant leading-relaxed">
+              Your physical business location — used to pin your store on the map and connect you with nearby customers.
+            </p>
+
+            {/* Method toggle */}
+            <div className="flex rounded-xl border border-primary/20 bg-white p-1 gap-1 mb-5">
+              <button
+                type="button"
+                onClick={() => { setLocationMethod("search"); setMapLinkError(null); }}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  locationMethod === "search"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                Search Place
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLocationMethod("link"); setMapsError(null); }}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  locationMethod === "link"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                Paste Maps Link
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {/* Option A — Google Places Autocomplete */}
+              {locationMethod === "search" && (
+                <div className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">
+                    Search your business or place
+                    <span className="ml-1.5 font-normal text-on-surface-variant text-xs">— auto-fills city, state, pincode &amp; sets pin</span>
+                  </span>
+                  {/* Uncontrolled: Google Maps Autocomplete writes to the DOM directly.
+                      A React-controlled input fights Maps for ownership and breaks dropdown selection. */}
+                  <input
+                    ref={addressInputRef}
+                    autoComplete="off"
+                    defaultValue={form.line1}
+                    className={`${inputCls} bg-white`}
+                    placeholder="e.g. Sharma Agro Centre, Nagpur…"
+                  />
+                  {mapsError && <p className="text-xs text-red-500 mt-0.5">{mapsError}</p>}
+                </div>
+              )}
+
+              {/* Option B — Paste Google Maps link */}
+              {locationMethod === "link" && (
+                <div className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">
+                    Paste a Google Maps link
+                    <span className="ml-1.5 font-normal text-on-surface-variant text-xs">— extracts coordinates &amp; sets pin</span>
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={mapLinkInput}
+                      onChange={(e) => { setMapLinkInput(e.target.value); setMapLinkError(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleResolveMapLink(); } }}
+                      className={`${inputCls} bg-white flex-1`}
+                      placeholder="https://maps.app.goo.gl/…  or  https://maps.google.com/…"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleResolveMapLink}
+                      disabled={resolvingMapLink || !mapLinkInput.trim()}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                    >
+                      {resolvingMapLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+                      Set Pin
+                    </button>
+                  </div>
+                  {mapLinkError && <p className="text-xs text-red-500 mt-0.5">{mapLinkError}</p>}
+                </div>
+              )}
+
+              {/* Use Current Location — always available */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-primary/10">
+                <button type="button" onClick={handleUseCurrentLocation} disabled={locating}
+                  className="inline-flex items-center gap-2 rounded-xl border border-primary/25 bg-white px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-60 transition-colors">
+                  {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
+                  {t('useCurrentLocation')}
+                </button>
+                {geo && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary">
+                    <MapPin className="h-3 w-3" /> Location pinned
+                  </span>
+                )}
+              </div>
+
+              {/* City / State / Pincode — always editable, auto-filled after selection */}
+              <div className="grid gap-3 grid-cols-3">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">{t('cityLabel')}</span>
+                  <input value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
+                    className={`${inputCls} bg-white`} placeholder={t('cityPlaceholder')} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">{t('stateLabel')}</span>
+                  <input value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))}
+                    className={`${inputCls} bg-white`} placeholder={t('statePlaceholder')} />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-on-surface">{t('pincodeLabel')}</span>
+                  <input value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))}
+                    className={`${inputCls} bg-white`} placeholder={t('pincodePlaceholder')} />
+                </label>
+              </div>
+
+              {/* Map preview */}
+              {geo && (
+                <div className="overflow-hidden rounded-xl border border-primary/20">
+                  <iframe title="Location preview" src={mapUrl} className="h-44 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ── Website ────────────────────────────────────────────────────── */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Website</h3>
+            <label className="flex flex-col gap-1.5 text-sm max-w-sm">
+              <span className="font-medium text-on-surface flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" /> Website URL
+                <span className="font-normal text-on-surface-variant text-xs">(optional)</span>
+              </span>
+              <input type="url" value={form.website} onChange={(e) => setForm((p) => ({ ...p, website: e.target.value }))}
+                className={inputCls} placeholder="https://yoursite.com" />
+            </label>
+          </section>
+
+          {/* ── Logo & Banner ──────────────────────────────────────────────── */}
+          <section>
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Logo &amp; Banner</h3>
+            <p className="mb-3 text-xs text-on-surface-variant">These appear on your profile and brand page. Paste a public image URL.</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Logo URL</span>
+                <input type="url" value={form.logoUrl} onChange={(e) => setForm((p) => ({ ...p, logoUrl: e.target.value }))}
+                  className={inputCls} placeholder="https://... or /images/logo.png" />
+                {form.logoUrl && (
+                  <img src={form.logoUrl} alt="Logo preview" className="mt-1 h-12 w-auto object-contain rounded-lg border border-outline-variant/20"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                )}
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Banner URL</span>
+                <input type="url" value={form.bannerUrl} onChange={(e) => setForm((p) => ({ ...p, bannerUrl: e.target.value }))}
+                  className={inputCls} placeholder="https://... or /images/banner.jpg" />
+                {form.bannerUrl && (
+                  <img src={form.bannerUrl} alt="Banner preview" className="mt-1 h-16 w-full object-cover rounded-lg border border-outline-variant/20"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                )}
+              </label>
+            </div>
+          </section>
+
+          {/* ── Social links ───────────────────────────────────────────────── */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('socialLinksHeading')}</h3>
             <div className="grid gap-4 md:grid-cols-2">
               {([
-                { key: "instagram", icon: Instagram, label: "Instagram", placeholder: "instagram.com/yourpage" },
-                { key: "facebook",  icon: Facebook,  label: "Facebook",  placeholder: "facebook.com/yourpage" },
-                { key: "whatsapp",  icon: MessageCircle, label: "WhatsApp", placeholder: "+91 98765 43210" },
-                { key: "youtube",   icon: Youtube,   label: "YouTube",   placeholder: "youtube.com/@channel" },
+                { key: "instagram", icon: Instagram,     label: "Instagram", placeholder: "instagram.com/yourpage" },
+                { key: "facebook",  icon: Facebook,      label: "Facebook",  placeholder: "facebook.com/yourpage" },
+                { key: "whatsapp",  icon: MessageCircle, label: "WhatsApp",  placeholder: "+91 98765 43210" },
+                { key: "youtube",   icon: Youtube,       label: "YouTube",   placeholder: "youtube.com/@channel" },
               ] as const).map(({ key, icon: Icon, label, placeholder }) => (
                 <label key={key} className="flex flex-col gap-1.5 text-sm">
                   <span className="font-medium text-on-surface flex items-center gap-1.5">
@@ -779,57 +988,6 @@ function ProfilePageInner() {
                     className={inputCls} placeholder={placeholder} />
                 </label>
               ))}
-            </div>
-          </section>
-
-          {/* Location */}
-          <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">{t('locationHeading')}</h3>
-            <div className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">
-                  {t('searchGoogleMaps')}
-                  <span className="ml-1 font-normal text-on-surface-variant">{t('autoFillsAddress')}</span>
-                </span>
-                {/* Uncontrolled input — Google Maps Autocomplete sets value directly via DOM.
-                    A controlled input (value+onChange) causes React to fight Maps over ownership
-                    of the input value, breaking the dropdown selection. */}
-                <input ref={addressInputRef} required autoComplete="off"
-                  defaultValue={form.line1}
-                  className={inputCls} placeholder={t('addressPlaceholder')} />
-              </label>
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">{t('cityLabel')}</span>
-                  <input required value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} className={inputCls} placeholder={t('cityPlaceholder')} />
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">{t('stateLabel')}</span>
-                  <input required value={form.state} onChange={(e) => setForm((p) => ({ ...p, state: e.target.value }))} className={inputCls} placeholder={t('statePlaceholder')} />
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface">{t('pincodeLabel')}</span>
-                  <input required value={form.pincode} onChange={(e) => setForm((p) => ({ ...p, pincode: e.target.value }))} className={inputCls} placeholder={t('pincodePlaceholder')} />
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={handleUseCurrentLocation} disabled={locating}
-                  className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-70">
-                  {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-                  {t('useCurrentLocation')}
-                </button>
-                {mapsError ? <p className="text-xs text-harvest">{mapsError}</p> : null}
-              </div>
-              {geo && (
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                    <MapPin className="h-3.5 w-3.5" /> {t('locationSelected')}
-                  </div>
-                  <div className="overflow-hidden rounded-xl border border-outline-variant/30">
-                    <iframe title="Location preview" src={mapUrl} className="h-48 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 

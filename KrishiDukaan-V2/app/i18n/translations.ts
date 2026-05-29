@@ -254,7 +254,7 @@ export const translations = {
     footerCookies: 'Cookies',
 
     // Loading/Errors
-    connectingFirebase: 'Connecting to Firebase...',
+    connectingFirebase: 'Loading...',
     dataLoadingIssue: 'Data Loading Issue',
     retryConnection: 'Retry Connection',
 
