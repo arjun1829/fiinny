@@ -36,7 +36,7 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
 
       <aside
         className={cn(
-          "fixed left-0 top-16 z-50 flex h-[calc(100vh-64px)] w-64 flex-col border-r border-outline-variant/30 bg-surface-container-lowest shadow-ambient transition-transform duration-200 md:translate-x-0",
+          "fixed left-0 top-16 z-50 flex h-[calc(100dvh-64px)] w-[82vw] max-w-64 flex-col border-r border-outline-variant/30 bg-surface-container-lowest shadow-ambient transition-transform duration-200 md:w-64 md:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
@@ -68,7 +68,7 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
           </button>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
             return (
@@ -90,7 +90,7 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
           })}
         </nav>
 
-        <div className="border-t border-outline-variant/30 p-4">
+        <div className="border-t border-outline-variant/30 p-4 pb-5">
           <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-primary">Admin Access</p>
             <p className="mt-0.5 text-xs text-on-surface-variant">Full platform control</p>

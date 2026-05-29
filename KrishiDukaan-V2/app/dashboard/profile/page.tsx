@@ -27,7 +27,7 @@ import type { ManufacturerProductRow } from "../_types/inventory";
 declare global { interface Window { google?: any; } }
 
 const initialForm: ProfileFormValues = {
-  businessName: "", ownerName: "", phone: "", email: "",
+  businessName: "", ownerName: "", phone: "", secondaryPhone: "", email: "",
   line1: "", city: "", state: "", pincode: "",
 };
 
@@ -596,6 +596,7 @@ function ProfilePageInner() {
               )}
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-on-surface-variant">
                 {form.phone && <span>{form.phone}</span>}
+                {form.secondaryPhone && <span>· {form.secondaryPhone}</span>}
                 {form.email && <span>{form.email}</span>}
               </div>
             </div>
@@ -739,6 +740,14 @@ function ProfilePageInner() {
                 <span className="font-medium text-on-surface">{t('phoneLabelDash')}</span>
                 <input required type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
                   className={inputCls} placeholder={t('phonePlaceholder')} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">
+                  Secondary Mobile
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional)</span>
+                </span>
+                <input type="tel" value={form.secondaryPhone} onChange={(e) => setForm((p) => ({ ...p, secondaryPhone: e.target.value }))}
+                  className={inputCls} placeholder="+91 98765 43210" />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">

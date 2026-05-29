@@ -375,9 +375,16 @@ export default function ProductDetailView({
       // 2. Check if this is the primary owner's store (match by UID, phone, or name)
       const rid = product.retailerId;
       const rPhone = product.retailerPhone;
+      const storeMfrId = (store as any).userId as string | undefined;
+      const mfrPhone = product.manufacturerPhone;
       const isOwnerStore =
         (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
         (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
+        // Match manufacturer by UID (primary) — store.userId = data.uid from manufacturers doc
+        (product.manufacturerId && storeMfrId && storeMfrId === product.manufacturerId) ||
+        // Match manufacturer by phone (belt-and-suspenders for phone-keyed schema)
+        (mfrPhone && (store.id === mfrPhone || storePhone === mfrPhone)) ||
+        // Legacy: store.id is the phone doc ID, product.manufacturerId was incorrectly set to phone
         store.id === product.manufacturerId ||
         store.name === product.store ||
         (store as any).shopName === product.store ||
@@ -386,11 +393,29 @@ export default function ProductDetailView({
       return isOwnerStore;
     });
 
+    // Deduplicate: same store can match via both availability array and owner-store check,
+    // or exist in multiple Firestore collections (stores + retailers). Key by phone, then name.
+    const seen = new Map<string, typeof filtered[number]>();
+    for (const store of filtered) {
+      const phone = (store as any).phone as string | undefined;
+      const key = phone || store.name?.toLowerCase().trim() || store.id;
+      if (!seen.has(key)) {
+        seen.set(key, store);
+      } else {
+        // Keep the entry with the smaller distance
+        const existing = seen.get(key)!;
+        if (((store as any).distanceKm ?? Infinity) < ((existing as any).distanceKm ?? Infinity)) {
+          seen.set(key, store);
+        }
+      }
+    }
+    const deduped = Array.from(seen.values());
+
     // Sort by distance if we have computed distances
     if (storesWithDistance.length > 0) {
-      return [...filtered].sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+      return deduped.sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     }
-    return filtered;
+    return deduped;
   }, [product, storesWithDistance, stores]);
 
   // Fallback: if no store matched from pre-loaded list, fetch the retailer's profile
@@ -604,27 +629,21 @@ export default function ProductDetailView({
                       {t('mapShort')}
                     </button>
                   </HelperTooltip>
-                  {onAddToCartFromStore && (
-                    storeOnlineMap[(store as any).phone] ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedOrderStoreId(selectedOrderStoreId === store.id ? null : store.id);
-                        }}
-                        className={`shrink-0 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                          selectedOrderStoreId === store.id
-                            ? 'bg-green-600 text-white border-green-600 scale-[1.02]'
-                            : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
-                        }`}
-                      >
-                        <ICONS.AddToCart className="w-3.5 h-3.5" />
-                        {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
-                      </button>
-                    ) : (
-                      <span className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-bold text-on-surface-variant bg-surface-container border border-outline-variant/30">
-                        Visit Store
-                      </span>
-                    )
+                  {onAddToCartFromStore && storeOnlineMap[(store as any).phone] && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOrderStoreId(selectedOrderStoreId === store.id ? null : store.id);
+                      }}
+                      className={`shrink-0 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                        selectedOrderStoreId === store.id
+                          ? 'bg-green-600 text-white border-green-600 scale-[1.02]'
+                          : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
+                      }`}
+                    >
+                      <ICONS.AddToCart className="w-3.5 h-3.5" />
+                      {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
+                    </button>
                   )}
                 </div>
 
@@ -703,12 +722,19 @@ export default function ProductDetailView({
           {selectedOrderStoreId && (() => {
             const selectedStore = displayStores.find(s => s.id === selectedOrderStoreId);
             if (!selectedStore) return null;
+            const selectedStorePhone = (selectedStore as any).phone as string | undefined;
+            const selectedAvailability = product.availability?.find(
+              (a) => a.storeId === selectedStore.id || (selectedStorePhone && (a.storePhone === selectedStorePhone || a.storeId === selectedStorePhone))
+            );
+            const displayPrice = selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
+              ? selectedAvailability.sellingPrice
+              : product.price;
             return (
               <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-widest text-green-700 mb-0.5">Order from</p>
                   <p className="text-sm font-bold text-on-surface truncate">{selectedStore.name}</p>
-                  <p className="text-xs text-on-surface-variant">₹{product.price.toLocaleString('en-IN')} · Online Delivery</p>
+                  <p className="text-xs text-on-surface-variant">₹{displayPrice.toLocaleString('en-IN')} · Online Delivery</p>
                 </div>
                 <button
                   onClick={() => {

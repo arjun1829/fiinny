@@ -178,7 +178,15 @@ export default function AboutView() {
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-widest text-white/60 mb-0.5">{t('aboutContactPhoneLabel')}</div>
-                    <div className="font-bold">+91 98765 43210</div>
+                    <a href="tel:+918658032751" className="font-bold hover:underline">
+                      +91 86580 32751
+                    </a>
+                    <a
+                      href="tel:+918658032751"
+                      className="mt-1 inline-flex text-xs font-black uppercase tracking-widest text-white/80 hover:text-white"
+                    >
+                      {t('aboutContactCallLabel')}
+                    </a>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-white">

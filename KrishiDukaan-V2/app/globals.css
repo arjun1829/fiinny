@@ -4,8 +4,13 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-surface text-on-surface font-sans antialiased;
+    overflow-x: clip;
   }
 }
 

@@ -257,8 +257,8 @@ export default function ProfileView({
               <ICONS.Delivery className="w-5 h-5 text-primary" />
             </div>
             <div className="text-left">
-              <p className="font-bold text-on-surface">My Orders</p>
-              <p className="text-xs text-on-surface-variant">View & track all your orders</p>
+              <p className="font-bold text-on-surface">{t('profileMyOrders')}</p>
+              <p className="text-xs text-on-surface-variant">{t('profileViewTrackOrders')}</p>
             </div>
           </div>
           <svg className="w-5 h-5 text-on-surface-variant group-hover:text-primary transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>

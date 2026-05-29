@@ -185,7 +185,16 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
                     className="flex-1 border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Phone className="w-3.5 h-3.5" /> Call Store
+                    <Phone className="w-3.5 h-3.5" /> Call
+                  </a>
+                ) : null}
+                {retailer.secondaryPhone ? (
+                  <a
+                    href={`tel:${retailer.secondaryPhone}`}
+                    className="flex-1 border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Phone className="w-3.5 h-3.5" /> Call 2
                   </a>
                 ) : null}
               </div>
@@ -324,11 +333,16 @@ export default function BrandView({
               )}
             </div>
             {brand.about && <p className="text-white/60 text-sm leading-relaxed max-w-lg">{brand.about}</p>}
-            {(brand.phone || brand.email) && (
+            {(brand.phone || brand.secondaryPhone || brand.email) && (
               <div className="flex flex-wrap gap-4">
                 {brand.phone && (
                   <a href={`tel:${brand.phone}`} className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition-colors">
                     <Phone className="w-3.5 h-3.5 text-amber-400" /> {brand.phone}
+                  </a>
+                )}
+                {brand.secondaryPhone && (
+                  <a href={`tel:${brand.secondaryPhone}`} className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition-colors">
+                    <Phone className="w-3.5 h-3.5 text-amber-400" /> {brand.secondaryPhone}
                   </a>
                 )}
                 {brand.email && (

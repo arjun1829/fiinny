@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { LayoutGrid } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { ICONS } from '../../app/constants';
 import { auth, getUserProfile } from '../../app/firebase';
@@ -63,8 +64,10 @@ export function Navbar({
   const { language, setLanguage, t } = useI18n();
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMoreRef = useRef<HTMLDivElement>(null);
   const desktopSearchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +141,9 @@ export function Navbar({
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
         setIsAccountMenuOpen(false);
       }
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(event.target as Node)) {
+        setIsMobileMoreOpen(false);
+      }
       // Close search results if clicking outside both search bars
       const inDesktop = desktopSearchRef.current?.contains(event.target as Node);
       const inMobile = mobileSearchRef.current?.contains(event.target as Node);
@@ -149,6 +155,7 @@ export function Navbar({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsAccountMenuOpen(false);
+        setIsMobileMoreOpen(false);
         setShowResults(false);
       }
     };
@@ -227,8 +234,14 @@ export function Navbar({
     { id: 'hub', label: t('hub') },
     { id: 'map', label: t('stores') }
   ];
+  const mobilePrimaryNavItems = navItems.slice(0, 3);
   const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
+  const cycleLanguage = () => {
+    const langs = ['en', 'mr', 'hi'] as const;
+    const idx = langs.indexOf(language as any);
+    setLanguage(langs[(idx + 1) % langs.length]!);
+  };
 
   const SearchDropdown = () => (
     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-ambient border border-surface-container z-[100] overflow-hidden max-h-[70vh] overflow-y-auto">
@@ -430,11 +443,12 @@ export function Navbar({
             <ICONS.Location className="w-5 h-5" />
           </button>
 
+          {/* Language toggle — always visible on mobile */}
           {/* Help / Documentation */}
           <button
             data-tour-nav="help"
             onClick={() => navigate('help')}
-            className={`inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
+            className={`hidden md:inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
               currentView === 'help'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
@@ -446,7 +460,7 @@ export function Navbar({
             <span className="hidden md:inline whitespace-nowrap">{t('help')}</span>
           </button>
 
-          <div className="relative" ref={accountMenuRef}>
+          <div className="relative hidden md:block" ref={accountMenuRef}>
             <button
               data-account-trigger
               className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl hover:bg-surface-container-highest transition-all whitespace-nowrap"
@@ -484,7 +498,7 @@ export function Navbar({
                       }}
                       className="w-full text-left px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg transition-colors"
                     >
-                      Admin Panel
+                      {t('adminPanel')}
                     </button>
                   )}
                   {canAccessDashboard && (
@@ -507,7 +521,7 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
                       >
-                        My Profile
+                        {t('myProfile')}
                       </button>
                       <button
                         onClick={() => {
@@ -516,7 +530,7 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
                       >
-                        My Orders
+                        {t('myOrders')}
                       </button>
                     </>
                   )}
@@ -543,6 +557,7 @@ export function Navbar({
               )}
             </div>
           </div>
+
         </div>
       </div>
 
@@ -583,6 +598,130 @@ export function Navbar({
           {shouldShowDropdown && <SearchDropdown />}
         </div>
       )}
+
+      <div className="relative mt-2 md:hidden" ref={mobileMoreRef}>
+        <div className="grid grid-cols-4 gap-2">
+          {mobilePrimaryNavItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => navigate(item.id as View)}
+              className={`rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${currentView === item.id ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setIsMobileMoreOpen((prev) => !prev)}
+            className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${currentView === 'map' || currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+            aria-label="Open more menu"
+            aria-expanded={isMobileMoreOpen}
+          >
+            <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+            {t('more')}
+          </button>
+        </div>
+
+        <div className={`absolute right-0 top-full mt-2 w-full rounded-2xl border border-surface-container bg-white p-2 shadow-ambient ${isMobileMoreOpen ? 'block' : 'hidden'}`}>
+          <div className="grid grid-cols-2 gap-2 p-1">
+            <button
+              type="button"
+              onClick={() => { setIsMobileMoreOpen(false); navigate('map'); }}
+              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'map' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+            >
+              {t('stores')}
+            </button>
+            <a
+              href="/blog"
+              onClick={() => setIsMobileMoreOpen(false)}
+              className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+            >
+              {t('blog')}
+            </a>
+            <button
+              type="button"
+              onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
+              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+            >
+              {t('about')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsMobileMoreOpen(false); navigate('help'); }}
+              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+            >
+              {t('help')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
+              className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+            >
+              {t('language')}: {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
+            </button>
+          </div>
+
+          <div className="my-2 border-t border-surface-container" />
+
+          {user ? (
+            <div className="space-y-1">
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    setIsMobileMoreOpen(false);
+                    router.push('/admin');
+                  }}
+                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                >
+                  {t('adminPanel')}
+                </button>
+              )}
+              {userRole === 'customer' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setIsMobileMoreOpen(false);
+                      navigate('profile');
+                    }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                  >
+                    {t('myProfile')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsMobileMoreOpen(false);
+                      navigate('orders');
+                    }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                  >
+                    {t('myOrders')}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  handleLogout();
+                }}
+                className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+              >
+                {t('logout')}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setIsMobileMoreOpen(false);
+                navigate('login');
+              }}
+              className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+            >
+              {t('login')}
+            </button>
+          )}
+        </div>
+      </div>
     </header>
   );
 }

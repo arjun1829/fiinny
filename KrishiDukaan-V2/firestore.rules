@@ -195,6 +195,17 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ─── failedPayments ──────────────────────────────────────────────────────
+    match /failedPayments/{paymentId} {
+      allow read: if isAdmin();
+      allow create: if isAuthed() && (
+        (request.resource.data.userPhone is string && request.resource.data.userPhone == myPhone()) ||
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
     // ─── orders ──────────────────────────────────────────────────────────────
     // Accepts both new (customerPhone/sellerPhone) and legacy (customerId/sellerId) fields.
     match /orders/{orderId} {
@@ -455,6 +466,10 @@ service cloud.firestore {
       allow create, update: if true;
     }
 
+    match /appVersion/{vId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
   }
 }

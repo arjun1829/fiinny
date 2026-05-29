@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ICONS } from '../constants';
-import { getUserProfile, updateSubscriptionStatus } from '../firebase';
+import { getUserProfile, updateSubscriptionStatus, logFailedPayment } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -202,7 +202,12 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', () => { setLoading(false); setError('Payment was not completed. Please try again.'); });
+      rzp.on('payment.failed', (response: any) => {
+        setLoading(false);
+        const reason = response.error?.reason || response.error?.description || 'Unknown error';
+        setError(`Payment failed: ${reason}. Please try again.`);
+        logFailedPayment(user.uid, response.error).catch(console.error);
+      });
       rzp.open();
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.');

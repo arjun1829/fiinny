@@ -160,7 +160,7 @@ export default function AdminBlogPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="mx-auto max-w-5xl px-3 py-4 sm:px-4 md:px-6 md:py-6">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-2xl text-white text-sm font-bold shadow-lg ${toast.type === "success" ? "bg-green-600" : "bg-red-600"}`}>
@@ -169,18 +169,18 @@ export default function AdminBlogPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black text-on-surface">Blog Posts</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">{posts.length} total · {posts.filter(p => p.status === "published").length} published</p>
+          <h1 className="text-lg font-black text-on-surface sm:text-2xl">Blog Posts</h1>
+          <p className="mt-0.5 text-xs text-on-surface-variant sm:text-sm">{posts.length} total · {posts.filter(p => p.status === "published").length} published</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-3">
           {posts.length === 0 && (
             <button
               type="button"
               onClick={handleSeedPosts}
               disabled={seeding}
-              className="inline-flex items-center gap-2 border border-primary text-primary text-sm font-black px-4 py-2.5 rounded-xl hover:bg-primary/5 transition-colors disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary px-4 py-2.5 text-sm font-black text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
             >
               {seeding ? "Publishing…" : "✦ Publish 4 Sample Posts"}
             </button>
@@ -188,7 +188,7 @@ export default function AdminBlogPage() {
           <button
             type="button"
             onClick={() => setEditing("new")}
-            className="inline-flex items-center gap-2 bg-primary text-white text-sm font-black px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white transition-opacity hover:opacity-90"
           >
             <Plus className="w-4 h-4" />
             New Post
@@ -230,69 +230,74 @@ export default function AdminBlogPage() {
           {posts.map(post => (
             <div
               key={post.id}
-              className="flex items-start gap-4 bg-white rounded-2xl border border-surface-container p-4 hover:shadow-sm transition-shadow"
+              className="rounded-2xl border border-surface-container bg-white p-4 transition-shadow hover:shadow-sm"
             >
-              {post.coverImage ? (
-                <img
-                  src={post.coverImage}
-                  alt={post.title}
-                  className="w-20 h-14 object-cover rounded-xl shrink-0"
-                />
-              ) : (
-                <div className="w-20 h-14 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                  <span className="text-2xl">🌿</span>
-                </div>
-              )}
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${post.status === "published" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
-                    {post.status === "published" ? "Published" : "Draft"}
-                  </span>
-                  {(post.tags || []).slice(0, 2).map(t => (
-                    <span key={t} className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-                <h3 className="font-black text-on-surface text-base leading-snug mb-0.5 line-clamp-1">{post.title}</h3>
-                <p className="text-sm text-on-surface-variant line-clamp-1">{post.excerpt}</p>
-                <div className="flex items-center gap-3 mt-1 text-[10px] text-on-surface-variant font-semibold uppercase tracking-wide">
-                  <span>By {post.author}</span>
-                  <span>·</span>
-                  <span>{formatDate(post.status === "published" ? post.publishedAt : post.createdAt)}</span>
-                  {post.readTime && <><span>·</span><span>{post.readTime} min read</span></>}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {post.status === "published" && (
-                  <a
-                    href={`/blog/${post.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors"
-                    title="View post"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </a>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                {post.coverImage ? (
+                  <img
+                    src={post.coverImage}
+                    alt={post.title}
+                    className="h-36 w-full rounded-xl object-cover sm:h-14 sm:w-20 sm:shrink-0"
+                  />
+                ) : (
+                  <div className="flex h-36 w-full items-center justify-center rounded-xl bg-primary/10 sm:h-14 sm:w-20 sm:shrink-0">
+                    <span className="text-2xl">🌿</span>
+                  </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setEditing(post)}
-                  className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors"
-                  title="Edit post"
-                >
-                  <PenLine className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(post.id)}
-                  className="p-2 rounded-xl text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
-                  title="Delete post"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${post.status === "published" ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                      {post.status === "published" ? "Published" : "Draft"}
+                    </span>
+                    {(post.tags || []).slice(0, 2).map(t => (
+                      <span key={t} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                  <h3 className="mb-0.5 line-clamp-2 text-base font-black leading-snug text-on-surface sm:line-clamp-1">{post.title}</h3>
+                  <p className="line-clamp-2 text-sm text-on-surface-variant sm:line-clamp-1">{post.excerpt}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">
+                    <span className="max-w-full truncate">By {post.author}</span>
+                    <span className="hidden sm:inline">·</span>
+                    <span>{formatDate(post.status === "published" ? post.publishedAt : post.createdAt)}</span>
+                    {post.readTime && <><span className="hidden sm:inline">·</span><span>{post.readTime} min read</span></>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2 sm:shrink-0">
+                  {post.status === "published" && (
+                    <a
+                      href={`/blog/${post.slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-2 text-[11px] font-bold text-on-surface hover:bg-surface-container hover:text-primary transition-colors sm:h-10 sm:w-10 sm:border-0 sm:px-0 sm:py-0"
+                      title="View post"
+                    >
+                      <Eye className="h-4 w-4 shrink-0" />
+                      <span className="sm:hidden">View</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditing(post)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-2 text-[11px] font-bold text-on-surface hover:bg-surface-container hover:text-primary transition-colors sm:h-10 sm:w-10 sm:border-0 sm:px-0 sm:py-0"
+                    title="Edit post"
+                  >
+                    <PenLine className="h-4 w-4 shrink-0" />
+                    <span className="sm:hidden">Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirm(post.id)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-[11px] font-bold text-red-600 hover:bg-red-50 transition-colors sm:h-10 sm:w-10 sm:border-0 sm:px-0 sm:py-0 sm:text-on-surface-variant sm:hover:text-red-600"
+                    title="Delete post"
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    <span className="sm:hidden">Delete</span>
+                  </button>
+                </div>
               </div>
             </div>
           ))}

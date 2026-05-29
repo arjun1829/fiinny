@@ -122,6 +122,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
       if (mirrorGeo && mirrorAddr.city) {
         return {
           phone: d.id,
+          secondaryPhone: String(r.secondaryPhone ?? ""),
           shopName,
           ownerName,
           address: {
@@ -142,6 +143,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
           const rdAddr = (rd.address ?? {}) as Record<string, unknown>;
           return {
             phone: d.id,
+            secondaryPhone: String(rd.secondaryPhone ?? r.secondaryPhone ?? ""),
             shopName: shopName || String(rd.shopName ?? rd.ownerName ?? ""),
             ownerName: ownerName || String(rd.ownerName ?? ""),
             address: {
@@ -158,6 +160,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
 
       return {
         phone: d.id,
+        secondaryPhone: String(r.secondaryPhone ?? ""),
         shopName,
         ownerName,
         address: {

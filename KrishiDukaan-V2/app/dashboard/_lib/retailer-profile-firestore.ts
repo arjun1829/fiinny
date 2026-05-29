@@ -20,6 +20,7 @@ function isGenericName(name: string) {
 
 export type RetailerPublicProfile = {
   phone: string;
+  secondaryPhone?: string;
   shopName: string;
   ownerName?: string;
   address?: string;
@@ -62,6 +63,7 @@ export async function fetchRetailerPublicProfile(
     if (profileData && !isGenericName(profileShopName)) {
       return {
         phone: String(profileData.phone ?? phone),
+        secondaryPhone: profileData.secondaryPhone ? String(profileData.secondaryPhone) : undefined,
         shopName: profileShopName,
         ownerName: profileData.ownerName ? String(profileData.ownerName) : undefined,
         address: profileData.address ? String(profileData.address) : undefined,
@@ -102,6 +104,7 @@ export async function fetchRetailerPublicProfile(
     if (profileData) {
       return {
         phone: String(profileData.phone ?? phone),
+        secondaryPhone: profileData.secondaryPhone ? String(profileData.secondaryPhone) : undefined,
         shopName: profileShopName || "Retailer",
         ownerName: profileData.ownerName ? String(profileData.ownerName) : undefined,
         address: profileData.address ? String(profileData.address) : undefined,

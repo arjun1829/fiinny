@@ -41,7 +41,7 @@ import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
 type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
-type UserRole = 'customer' | 'retailer' | 'manufacturer';
+type UserRole = 'customer' | 'retailer' | 'manufacturer' | 'admin';
 type UserProfile = {
   name: string;
   phone: string;
@@ -111,12 +111,19 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
+  const hasDashboardShortcut = !!user && (userRole === 'admin' || userRole === 'retailer' || userRole === 'manufacturer');
+  const dashboardHref = userRole === 'admin' ? '/admin' : '/dashboard';
+  // Views below (ProfileView, SubscriptionView, Footer) only accept the
+  // consumer-facing roles; map 'admin' to 'customer' for them.
+  const consumerRole: 'customer' | 'retailer' | 'manufacturer' =
+    userRole === 'admin' ? 'customer' : userRole;
   
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
   const [allStores, setAllStores] = useState<any[]>([]);
   const [hubs, setHubs] = useState<any[]>([]);
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartLoaded, setCartLoaded] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
@@ -290,21 +297,20 @@ export default function App() {
   }, [buildUrl, readRouteFromUrl, resolveViewForAccess]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem("krishidukan_cart_v1");
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as CartItem[];
-      if (Array.isArray(parsed)) setCartItems(parsed);
-    } catch {
-      // ignore malformed local cart
-    }
-  }, []);
+    if (!cartLoaded) return;
+    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
+  }, [cartItems, cartLoaded]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
-  }, [cartItems]);
+    try {
+      const raw = window.localStorage.getItem("krishidukan_cart_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) setCartItems(parsed);
+      }
+    } catch {}
+    setCartLoaded(true);
+  }, []);
 
   useEffect(() => {
     if (currentView === 'become-retailer' && userRole === 'retailer') {
@@ -346,44 +352,36 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
-  const loadData = async () => {
+  const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       trackPageView('home');
 
-      console.log('Fetching products, stores and hubs...');
       let products = await fetchMarketplaceProducts();
       let stores = await fetchStores();
       let fetchedHubs = await fetchHubs();
 
       if (products.length === 0 || stores.length === 0 || fetchedHubs.length === 0) {
-        console.log('Firebase data incomplete, attempting sync...', { 
-          productsCount: products.length, 
-          storesCount: stores.length,
-          hubsCount: fetchedHubs.length
-        });
         await syncInitialData(PRODUCTS, STORES, INVENTORY);
-        // Fetch again after sync
         products = await fetchMarketplaceProducts();
         stores = await fetchStores();
         fetchedHubs = await fetchHubs();
       }
 
-      console.log('Data loaded successfully:', { 
-        products: products.length, 
-        stores: stores.length,
-        hubs: fetchedHubs.length
-      });
       setAllProducts(products);
       setAllStores(stores);
       setHubs(fetchedHubs);
-      
+
       if (products.length === 0) {
         setErrorMsg('No products found in database even after sync. Please check your Firestore rules.');
       }
     } catch (error: any) {
       console.error('Failed to load data from Firebase:', error);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        return loadData(attempt + 1);
+      }
       setErrorMsg(`Firebase Connection Error: ${error.message || 'Unknown error'}. Check your browser console for details.`);
     } finally {
       setLoading(false);
@@ -608,7 +606,7 @@ export default function App() {
         distanceKm: minDistance
       };
     });
-  }, [allProducts, storesWithDistance]);
+  }, [mergedProducts, storesWithDistance]);
 
   const searchedProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
@@ -783,6 +781,13 @@ export default function App() {
             : i
         );
       }
+      const storePhone: string | undefined = store.phone;
+      const availability = product.availability?.find(
+        (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
+      );
+      const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
+        ? availability.sellingPrice
+        : product.price;
       return [
         ...prev,
         {
@@ -792,7 +797,7 @@ export default function App() {
           sellerName: store.name || undefined,
           name: product.name,
           image: product.image,
-          price: product.price,
+          price: storePrice,
           qty: 1,
           sellMode: "online_delivery" as const,
         },
@@ -831,7 +836,7 @@ export default function App() {
           <h3 className="text-xl font-bold mb-2">{t('dataLoadingIssue')}</h3>
           <p className="mb-4">{errorMsg}</p>
           <button
-            onClick={loadData}
+            onClick={() => void loadData()}
             className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-700 transition-colors"
           >
             {t('retryConnection')}
@@ -856,6 +861,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
+            onRegisterClick={() => navigate('signup')}
           />
         );
       case 'market':
@@ -935,10 +941,11 @@ export default function App() {
             }
             onCheckout={placeOrders}
             onGoLogin={() => navigate("login")}
+            onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}
-            allProducts={allProducts}
+            allProducts={mergedProducts}
           />
         );
       case 'map':
@@ -967,7 +974,7 @@ export default function App() {
         return (
           <ProfileView
             uid={user?.uid}
-            role={userRole}
+            role={consumerRole}
             profile={userProfile}
             onProfileSave={handleProfileSave}
             onRetailerProductSaved={loadData}
@@ -983,8 +990,8 @@ export default function App() {
                   <svg className="w-5 h-5 text-on-surface-variant" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
                 </button>
                 <div>
-                  <h1 className="text-2xl font-black text-on-surface">My Orders</h1>
-                  <p className="text-sm text-on-surface-variant">Track all your orders and their delivery status</p>
+                  <h1 className="text-2xl font-black text-on-surface">{t('myOrders')}</h1>
+                  <p className="text-sm text-on-surface-variant">{t('ordersPageSubtitle')}</p>
                 </div>
               </div>
             </div>
@@ -1076,7 +1083,7 @@ export default function App() {
           />
         );
       case 'subscription':
-        return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
+        return <SubscriptionView user={user} role={consumerRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
       case 'brand': {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
@@ -1106,13 +1113,14 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
+            onRegisterClick={() => navigate('signup')}
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface overflow-x-clip md:overflow-x-visible">
+    <div className="min-h-screen flex flex-col bg-surface">
       <Navbar
         currentView={currentView}
         onNavigate={(view) => {
@@ -1156,7 +1164,7 @@ export default function App() {
       <Footer
         onNavigate={(view) => navigate(view as View)}
         onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
-        userRole={userRole}
+        userRole={consumerRole}
         onUpgradeRole={handleUpgradeRole}
       />
 
@@ -1208,53 +1216,60 @@ export default function App() {
       />
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-2 z-50">
-        {([
-          { id: 'home', icon: ICONS.Home, label: t('home') },
-          { id: 'market', icon: ICONS.Market, label: t('market') },
-          { id: 'hub', icon: ICONS.Hub, label: t('hub') },
-          { id: 'map', icon: ICONS.Location, label: t('stores') },
-          // Blog lives at /blog (separate route) — navigates via window.location to leave the home App.
-          { id: 'blog', icon: ICONS.Docs, label: t('blog'), action: 'goto-blog' },
-          // Reuses the existing header Account dropdown — opens the same flow
-          // (login / dashboard / logout / language) by triggering the header button.
-          { id: 'account', icon: ICONS.Account, label: t('account'), action: 'account-menu' },
-        ] as { id: string; icon: typeof ICONS.Home; label: string; action?: 'account-menu' | 'goto-blog' }[]).map((item) => {
-          const isActive = item.id !== 'account' && item.id !== 'blog' && currentView === item.id;
-          const handleClick = () => {
-            if (item.action === 'account-menu') {
-              const trigger = document.querySelector<HTMLButtonElement>('[data-account-trigger]');
-              trigger?.click();
-              return;
-            }
-            if (item.action === 'goto-blog') {
-              if (typeof window !== 'undefined') window.location.href = '/blog';
-              return;
-            }
-            navigate(item.id as View);
-          };
-          return (
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-container bg-white/95 px-3 py-2 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] backdrop-blur md:hidden">
+        <div className="grid grid-cols-5 gap-2">
+          {[
+            { key: 'home', icon: ICONS.Home, label: t('home'), active: currentView === 'home', onClick: () => navigate('home') },
+            { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
+            { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
+            { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
+            hasDashboardShortcut
+              ? {
+                  key: 'dashboard',
+                  icon: ICONS.Dashboard,
+                  label: t('dashboard'),
+                  active: false,
+                  onClick: () => { window.location.href = dashboardHref; },
+                }
+              : user && userRole === 'customer'
+                ? {
+                    key: 'orders',
+                    icon: ICONS.Orders,
+                    label: t('orders'),
+                    active: currentView === 'orders',
+                    onClick: () => navigate('orders'),
+                  }
+                : {
+                    key: 'help',
+                    icon: ICONS.Help,
+                    label: t('help'),
+                    active: currentView === 'help',
+                    onClick: () => navigate('help'),
+                  }
+          ].map((item) => (
             <button
-              key={item.id}
-              data-tour-nav={item.id}
-              onClick={handleClick}
-              className={`flex flex-col items-center gap-1 transition-colors ${
-                isActive ? 'text-primary' : 'text-on-surface-variant'
+              key={item.key}
+              data-tour-nav={item.key}
+              onClick={item.onClick}
+              className={`relative flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 transition-all ${
+                item.active
+                  ? 'bg-primary/10 text-primary shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
               }`}
             >
-              <item.icon className={`w-5 h-5 ${isActive ? 'fill-primary/20' : ''}`} />
-              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-              {isActive && (
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="truncate text-[9px] font-bold uppercase tracking-wide">{item.label}</span>
+              {item.active && (
                 <motion.div
-                  layoutId="activeBubble"
-                  className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
+                  layoutId="activeBottomNav"
+                  className="absolute inset-0 -z-10 rounded-2xl border border-primary/15 bg-primary/10"
                   initial={false}
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  transition={{ type: 'spring', bounce: 0.18, duration: 0.45 }}
                 />
               )}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </nav>
     </div>
   );

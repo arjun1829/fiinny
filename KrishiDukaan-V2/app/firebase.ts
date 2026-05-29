@@ -497,6 +497,7 @@ export async function fetchStores(): Promise<Store[]> {
     );
 
     // Manufacturers appear as stores — matched by store.id === product.manufacturerId
+    // or by store.userId === product.manufacturerId (uid-keyed products)
     const manufacturers = manufacturersSnapshot.docs
       .filter((doc) => {
         const data = doc.data();
@@ -507,6 +508,8 @@ export async function fetchStores(): Promise<Store[]> {
         const data = doc.data();
         return {
           id: doc.id,
+          // Expose the Firebase Auth UID so product filters can match on manufacturerId
+          userId: data.uid || undefined,
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
           phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
@@ -522,10 +525,30 @@ export async function fetchStores(): Promise<Store[]> {
             lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
             lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
           },
-        } as Store;
+        } as Store & { userId?: string };
       });
 
-    return [...stores, ...dedupedRetailers, ...manufacturers];
+    // Final cross-collection deduplication: retailers/ and manufacturers/ entries take priority
+    // over legacy stores/ entries (which may have stale names/coordinates).
+    // Key by phone; prefer entries with valid coordinates and richer metadata.
+    type AnyStore = Store & { retailerId?: string; userId?: string; phone?: string };
+    const scoreEntry = (s: AnyStore) =>
+      (s.retailerId || (s as any).userId ? 4 : 0) +
+      (s.name && s.name !== 'Retailer' && s.name !== 'Manufacturer' ? 2 : 0) +
+      ((s.location?.lat || s.location?.lng) ? 1 : 0);
+
+    const globalMap = new Map<string, AnyStore>();
+    for (const entry of [...stores, ...dedupedRetailers, ...manufacturers] as AnyStore[]) {
+      const phone = entry.phone || (/^\+?\d{10,13}$/.test(entry.id) ? entry.id : undefined);
+      // Key by phone if available, otherwise fall back to id (non-phone doc IDs won't collide)
+      const key = phone || entry.id;
+      const existing = globalMap.get(key);
+      if (!existing || scoreEntry(entry) > scoreEntry(existing)) {
+        globalMap.set(key, entry);
+      }
+    }
+
+    return Array.from(globalMap.values());
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
@@ -888,18 +911,23 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
 }
 
 export async function saveManufacturerProduct(manufacturerId: string, product: any) {
+  // resolveUserProfileDocId returns the phone (from uidIndex) — use it as manufacturerPhone
   const userProfileDocId = await resolveUserProfileDocId(manufacturerId);
+  const manufacturerPhone = userProfileDocId && /^\+?\d{10,13}$/.test(userProfileDocId)
+    ? userProfileDocId
+    : undefined;
 
   // 1. Create the product — strip any stale ownership fields from the input
   const { retailerId: _r, ownerType: _ot, ownerId: _oi, store: _s, distance: _d, stock: _st, ...rest } = product;
   const sellMode = product?.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
-  
+
   await addDoc(collection(db, 'products'), {
     ...rest,
     ownerId: manufacturerId,
     ownerType: 'manufacturer',
     createdBy: manufacturerId,
     manufacturerId,
+    ...(manufacturerPhone ? { manufacturerPhone } : {}),
     source: 'manufacturer_inventory',
     sellMode,
     isOnline: sellMode === "online_delivery",
@@ -1341,7 +1369,6 @@ export async function adminUpdateUser(uid: string, updates: {
   phone?: string;
   role?: string;
   isPaid?: boolean;
-  totalSeats?: number;
   productCount?: number;
   subscriptionStatus?: string;
   shopName?: string;
@@ -1363,7 +1390,6 @@ export async function adminUpdateUser(uid: string, updates: {
     if (updates.role === 'admin') payload.isPaid = true;
   }
   if (updates.isPaid !== undefined) payload.isPaid = updates.isPaid;
-  if (updates.totalSeats !== undefined) payload.totalSeats = Number(updates.totalSeats);
   if (updates.productCount !== undefined) payload.productCount = Number(updates.productCount);
   if (updates.subscriptionStatus !== undefined) payload.subscriptionStatus = updates.subscriptionStatus;
   if (updates.shopName !== undefined) payload.shopName = updates.shopName.trim();
@@ -1475,11 +1501,28 @@ export async function adminUpdateUser(uid: string, updates: {
       }
     }
   }
+
 }
 
 export async function fetchAllSubscriptions(): Promise<any[]> {
   const snapshot = await getDocs(collection(db, 'subscriptions'));
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function adminUpdateSubscriptionSeats(subId: string, userDocId: string, newSeats: number): Promise<void> {
+  if (newSeats < 0) throw new Error('Seats cannot be negative.');
+  const subRef = doc(db, 'subscriptions', subId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) throw new Error('Subscription not found.');
+  await updateDoc(subRef, {
+    seatsPurchased: newSeats,
+    updatedAt: serverTimestamp(),
+  });
+  // Keep users.totalSeats in sync
+  await setDoc(doc(db, 'users', userDocId), {
+    totalSeats: newSeats,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 export async function adminRevokeSubscription(userDocId: string): Promise<void> {
@@ -1551,8 +1594,9 @@ export async function adminManualActivate(
   });
 
   const role = userData.role === 'manufacturer' ? 'manufacturer' : 'retailer';
+  const authUid = (userData as any).uid || '';
   await addDoc(collection(db, 'subscriptions'), {
-    ownerId: userDocId,
+    ownerId: authUid || userDocId,
     ownerPhone: userDocId,
     ownerType: role,
     planName: 'Standard',
@@ -2088,4 +2132,43 @@ export async function updateBlogPost(id: string, data: Partial<Omit<BlogPost, 'i
 
 export async function deleteBlogPost(id: string): Promise<void> {
   await deleteDoc(doc(db, 'blogPosts', id));
+}
+
+// --- Failed Payments ---
+
+export async function logFailedPayment(
+  uid: string,
+  errorResponse: any
+): Promise<void> {
+  try {
+    const timestamp = serverTimestamp();
+    let phone: string | null = null;
+    try {
+      const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+      if (idxSnap.exists()) {
+        phone = String(idxSnap.data().phone ?? '');
+      }
+    } catch { /* ignore */ }
+
+    await addDoc(collection(db, 'failedPayments'), {
+      userId: uid,
+      userPhone: phone ?? uid,
+      error: errorResponse,
+      timestamp,
+      status: 'failed',
+    });
+  } catch (err) {
+    console.error('Error logging failed payment:', err);
+  }
+}
+
+export async function fetchFailedPayments(): Promise<any[]> {
+  try {
+    const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching failed payments:', error);
+    return [];
+  }
 }

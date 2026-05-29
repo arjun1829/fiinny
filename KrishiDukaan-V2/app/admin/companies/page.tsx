@@ -539,7 +539,7 @@ function OwnerTab({ company, onRefresh }: { company: CompanyPageDoc; onRefresh: 
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
         <h4 className="text-xs font-black uppercase tracking-widest text-primary">Assign Owner by Phone</h4>
         <p className="text-xs text-on-surface-variant">Enter the mobile number matching their KrishiDukan account. This links the company page to their dashboard.</p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-on-surface-variant" />
             <input type="tel" value={phoneInput} onChange={e => setPhoneInput(e.target.value)}
@@ -554,7 +554,7 @@ function OwnerTab({ company, onRefresh }: { company: CompanyPageDoc; onRefresh: 
         </div>
       </div>
 
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
+        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
         <h4 className="text-xs font-black uppercase tracking-widest text-primary">Seed Company Page from User</h4>
         <p className="text-xs text-on-surface-variant">Pick a manufacturer/retailer user and auto-create their company page with basic info from their profile.</p>
         <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)}
@@ -604,7 +604,7 @@ function CompanyEditDrawer({ company, onClose, onRefresh }: {
       <div className="fixed inset-x-0 bottom-0 top-16 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-16 z-50 h-[calc(100vh-64px)] w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
+      <div className="fixed right-0 top-16 z-50 flex h-[calc(100dvh-64px)] w-full flex-col overflow-hidden bg-white shadow-2xl sm:max-w-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0"
           style={{ background: localCompany.primaryColor || "#154212" }}>
@@ -629,7 +629,7 @@ function CompanyEditDrawer({ company, onClose, onRefresh }: {
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {tab === "brand" && (
             <BrandTab company={localCompany} ownerPhone={localCompany.ownerPhone}
               onSaved={d => setLocalCompany(p => ({ ...p, ...d }))} />
@@ -656,44 +656,48 @@ function CompanyRow({ company, onRefresh }: { company: CompanyPageDoc; onRefresh
   return (
     <>
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
-        <div className="flex items-center gap-4 px-5 py-4">
-          <div className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center"
-            style={{ background: company.primaryColor || "#154212" }}>
-            <Building2 className="w-5 h-5 text-white" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shrink-0 flex items-center justify-center"
+              style={{ background: company.primaryColor || "#154212" }}>
+              <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-on-surface text-sm truncate">{company.name}</p>
+              <p className="text-[11px] sm:text-xs text-on-surface-variant truncate">{company.location || "—"}</p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-on-surface text-sm">{company.name}</p>
-            <p className="text-xs text-on-surface-variant truncate">{company.location || "—"}</p>
-          </div>
-          {company.ownerPhone ? (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-700 text-[11px] font-bold shrink-0">
-              <Phone className="w-3 h-3" /> {company.ownerPhone}
-            </span>
-          ) : (
-            <span className="px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-semibold shrink-0">No owner</span>
-          )}
-          <div className="flex items-center gap-2 shrink-0">
-            <a href={`/?view=brand&manufacturer=${encodeURIComponent(company.ownerPhone ?? company.id)}`} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
-              <LinkIcon className="w-3 h-3" /> Preview
-            </a>
-            <button type="button" onClick={() => setEditOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 transition-colors">
-              <Pencil className="w-3 h-3" /> Edit
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {company.ownerPhone ? (
+              <span className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] sm:text-[11px] font-bold shrink-0">
+                <Phone className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> {company.ownerPhone}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[10px] sm:text-[11px] font-semibold shrink-0">No owner</span>
+            )}
+            <div className="flex items-center gap-2 shrink-0">
+              <a href={`/?view=brand&manufacturer=${encodeURIComponent(company.ownerPhone ?? company.id)}`} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 px-2.5 py-1 sm:py-1.5 rounded-xl border border-outline-variant/40 text-[11px] sm:text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
+                <LinkIcon className="w-3 h-3" /> <span className="hidden sm:inline">Preview</span>
+              </a>
+              <button type="button" onClick={() => setEditOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 sm:py-1.5 rounded-xl bg-primary text-white text-[11px] sm:text-xs font-bold hover:opacity-90 transition-colors">
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+            </div>
           </div>
         </div>
         {/* Stats bar */}
-        <div className="grid grid-cols-4 border-t border-outline-variant/10 divide-x divide-outline-variant/10">
+        <div className="grid grid-cols-2 border-t border-outline-variant/10 divide-x divide-y divide-outline-variant/10 sm:grid-cols-4 sm:divide-y-0">
           {[
             { label: "Products", value: company.ownerPhone ? "live" : "—" },
             { label: "Stores", value: company.ownerPhone ? "live" : "—" },
             { label: "Videos", value: company.ownerPhone ? "live" : (company.videos?.length ?? 0) },
             { label: "Certs", value: company.certifications?.length ?? 0 },
           ].map(({ label, value }) => (
-            <div key={label} className="px-4 py-2 text-center">
-              <p className="text-sm font-bold text-on-surface">{value}</p>
-              <p className="text-[10px] text-on-surface-variant">{label}</p>
+            <div key={label} className="px-2 sm:px-4 py-1.5 sm:py-2 text-center">
+              <p className="text-xs sm:text-sm font-bold text-on-surface">{value}</p>
+              <p className="text-[9px] sm:text-[10px] text-on-surface-variant">{label}</p>
             </div>
           ))}
         </div>
@@ -785,46 +789,46 @@ export default function AdminCompaniesPage() {
         <div className="pointer-events-none absolute -bottom-10 left-1/4 h-40 w-40 rounded-full opacity-10"
           style={{ background: "radial-gradient(circle, #86efac, transparent 70%)" }} />
 
-        <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/20 shadow-inner"
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-5">
+          <div className="flex h-10 w-10 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl border border-white/20 shadow-inner"
             style={{ background: "rgba(255,255,255,0.12)" }}>
-            <Building2 className="h-7 w-7 text-white" />
+            <Building2 className="h-5 w-5 sm:h-7 sm:w-7 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-300/80 mb-0.5">Admin Panel</p>
-            <h1 className="text-2xl font-black tracking-tight">Company Pages</h1>
-            <p className="mt-0.5 text-sm text-white/60">Edit brand content, products, stores, videos, and owner assignment.</p>
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-green-300/80 mb-0.5">Admin Panel</p>
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight">Company Pages</h1>
+            <p className="mt-0.5 text-xs sm:text-sm text-white/60 hidden sm:block">Edit brand content, products, stores, videos, and owner assignment.</p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="rounded-xl border border-white/15 px-4 py-2.5 text-center min-w-[64px]"
+          <div className="grid grid-cols-2 gap-2 shrink-0 sm:flex sm:items-center sm:gap-3">
+            <div className="rounded-xl border border-white/15 px-3 sm:px-4 py-2 sm:py-2.5 text-center min-w-[50px] sm:min-w-[64px]"
               style={{ background: "rgba(255,255,255,0.08)" }}>
-              <p className="text-2xl font-black leading-none">{companies.length}</p>
-              <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest mt-1">Pages</p>
+              <p className="text-lg sm:text-2xl font-black leading-none">{companies.length}</p>
+              <p className="text-[8px] sm:text-[9px] font-bold text-white/50 uppercase tracking-widest mt-1">Pages</p>
             </div>
-            <div className="rounded-xl border border-white/15 px-4 py-2.5 text-center min-w-[64px]"
+            <div className="rounded-xl border border-white/15 px-3 sm:px-4 py-2 sm:py-2.5 text-center min-w-[50px] sm:min-w-[64px]"
               style={{ background: "rgba(255,255,255,0.08)" }}>
-              <p className="text-2xl font-black leading-none">{unseededIds.length}</p>
-              <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest mt-1">Unseeded</p>
+              <p className="text-lg sm:text-2xl font-black leading-none">{unseededIds.length}</p>
+              <p className="text-[8px] sm:text-[9px] font-bold text-white/50 uppercase tracking-widest mt-1">Unseeded</p>
             </div>
           </div>
         </div>
 
         {/* Action row */}
-        <div className="relative mt-5 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+        <div className="relative mt-4 grid grid-cols-1 gap-2 border-t border-white/10 pt-3 sm:mt-5 sm:flex sm:flex-wrap sm:pt-4">
           <button type="button" onClick={load} disabled={loading}
-            className="flex items-center gap-1.5 rounded-xl border border-white/20 px-4 py-2 text-xs font-bold text-white/80 hover:bg-white/10 transition-colors">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+            className="flex items-center gap-1.5 rounded-xl border border-white/20 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-white/80 hover:bg-white/10 transition-colors">
+            <RefreshCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </button>
           <button type="button" onClick={handleBulkSeedFromUsers} disabled={bulkSeeding || loading}
-            className="flex items-center gap-1.5 rounded-xl border border-green-400/40 bg-green-500/20 px-4 py-2 text-xs font-bold text-green-200 hover:bg-green-500/30 transition-colors disabled:opacity-50">
-            {bulkSeeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-            {bulkSeeding ? "Creating…" : "Seed from Manufacturer Accounts"}
+            className="flex items-center gap-1.5 rounded-xl border border-green-400/40 bg-green-500/20 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-green-200 hover:bg-green-500/30 transition-colors disabled:opacity-50">
+            {bulkSeeding ? <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" /> : <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
+            {bulkSeeding ? "Creating…" : "Seed from Accounts"}
           </button>
           {unseededIds.length > 0 && (
             <button type="button" onClick={handleSeedAll} disabled={seeding}
-              className="flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/30 transition-colors disabled:opacity-50">
-              {seeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              {seeding ? "Seeding…" : `Seed ${unseededIds.length} Constant Page${unseededIds.length > 1 ? "s" : ""}`}
+              className="flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-500/20 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-amber-200 hover:bg-amber-500/30 transition-colors disabled:opacity-50">
+              {seeding ? <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" /> : <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
+              {seeding ? "Seeding…" : `Seed ${unseededIds.length}`}
             </button>
           )}
         </div>
