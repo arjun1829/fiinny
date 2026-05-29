@@ -26,6 +26,7 @@ export type BrandPageCustomization = {
 
 export type ManufacturerBrandData = {
   phone: string;
+  secondaryPhone: string;
   uid: string | null;
   businessName: string;
   ownerName: string;
@@ -62,6 +63,7 @@ export type BrandProductSummary = {
 
 export type BrandRetailerSummary = {
   phone: string;
+  secondaryPhone: string;
   shopName: string;
   ownerName: string;
   address: { city: string; state: string; line1: string };
@@ -97,6 +99,7 @@ export function assembleBrandData(
 
   return {
     phone: manufacturerPhone,
+    secondaryPhone: String(manufacturerDoc.secondaryPhone ?? ""),
     uid: manufacturerDoc.uid
       ? String(manufacturerDoc.uid)
       : manufacturerDoc.manufacturerId

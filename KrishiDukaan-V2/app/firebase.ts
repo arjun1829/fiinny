@@ -1369,7 +1369,6 @@ export async function adminUpdateUser(uid: string, updates: {
   phone?: string;
   role?: string;
   isPaid?: boolean;
-  totalSeats?: number;
   productCount?: number;
   subscriptionStatus?: string;
   shopName?: string;
@@ -1391,7 +1390,6 @@ export async function adminUpdateUser(uid: string, updates: {
     if (updates.role === 'admin') payload.isPaid = true;
   }
   if (updates.isPaid !== undefined) payload.isPaid = updates.isPaid;
-  if (updates.totalSeats !== undefined) payload.totalSeats = Number(updates.totalSeats);
   if (updates.productCount !== undefined) payload.productCount = Number(updates.productCount);
   if (updates.subscriptionStatus !== undefined) payload.subscriptionStatus = updates.subscriptionStatus;
   if (updates.shopName !== undefined) payload.shopName = updates.shopName.trim();
@@ -1503,11 +1501,28 @@ export async function adminUpdateUser(uid: string, updates: {
       }
     }
   }
+
 }
 
 export async function fetchAllSubscriptions(): Promise<any[]> {
   const snapshot = await getDocs(collection(db, 'subscriptions'));
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function adminUpdateSubscriptionSeats(subId: string, userDocId: string, newSeats: number): Promise<void> {
+  if (newSeats < 0) throw new Error('Seats cannot be negative.');
+  const subRef = doc(db, 'subscriptions', subId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) throw new Error('Subscription not found.');
+  await updateDoc(subRef, {
+    seatsPurchased: newSeats,
+    updatedAt: serverTimestamp(),
+  });
+  // Keep users.totalSeats in sync
+  await setDoc(doc(db, 'users', userDocId), {
+    totalSeats: newSeats,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 export async function adminRevokeSubscription(userDocId: string): Promise<void> {
@@ -1579,8 +1594,9 @@ export async function adminManualActivate(
   });
 
   const role = userData.role === 'manufacturer' ? 'manufacturer' : 'retailer';
+  const authUid = (userData as any).uid || '';
   await addDoc(collection(db, 'subscriptions'), {
-    ownerId: userDocId,
+    ownerId: authUid || userDocId,
     ownerPhone: userDocId,
     ownerType: role,
     planName: 'Standard',
@@ -2116,4 +2132,43 @@ export async function updateBlogPost(id: string, data: Partial<Omit<BlogPost, 'i
 
 export async function deleteBlogPost(id: string): Promise<void> {
   await deleteDoc(doc(db, 'blogPosts', id));
+}
+
+// --- Failed Payments ---
+
+export async function logFailedPayment(
+  uid: string,
+  errorResponse: any
+): Promise<void> {
+  try {
+    const timestamp = serverTimestamp();
+    let phone: string | null = null;
+    try {
+      const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+      if (idxSnap.exists()) {
+        phone = String(idxSnap.data().phone ?? '');
+      }
+    } catch { /* ignore */ }
+
+    await addDoc(collection(db, 'failedPayments'), {
+      userId: uid,
+      userPhone: phone ?? uid,
+      error: errorResponse,
+      timestamp,
+      status: 'failed',
+    });
+  } catch (err) {
+    console.error('Error logging failed payment:', err);
+  }
+}
+
+export async function fetchFailedPayments(): Promise<any[]> {
+  try {
+    const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching failed payments:', error);
+    return [];
+  }
 }

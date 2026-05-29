@@ -41,7 +41,7 @@ import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
 type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
-type UserRole = 'customer' | 'retailer' | 'manufacturer';
+type UserRole = 'customer' | 'retailer' | 'manufacturer' | 'admin';
 type UserProfile = {
   name: string;
   phone: string;
@@ -111,6 +111,8 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
+  const hasDashboardShortcut = !!user && (userRole === 'admin' || userRole === 'retailer' || userRole === 'manufacturer');
+  const dashboardHref = userRole === 'admin' ? '/admin' : '/dashboard';
   
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
   const [allStores, setAllStores] = useState<any[]>([]);
@@ -1208,36 +1210,60 @@ export default function App() {
       />
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">
-        {([
-          { id: 'home', icon: ICONS.Home, label: t('home') },
-          { id: 'market', icon: ICONS.Market, label: t('market') },
-          { id: 'hub', icon: ICONS.Hub, label: t('hub') },
-          { id: 'map', icon: ICONS.Location, label: t('stores') },
-          user && userRole === 'customer'
-            ? { id: 'orders', icon: ICONS.Orders, label: 'Orders' }
-            : { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
-        ].map((item) => (
-          <button
-            key={item.id}
-            data-tour-nav={item.id}
-            onClick={() => navigate(item.id as View)}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
-            }`}
-          >
-            <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-            {currentView === item.id && (
-              <motion.div
-                layoutId="activeBubble"
-                className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
-                initial={false}
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-          </button>
-        )))}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-container bg-white/95 px-3 py-2 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] backdrop-blur md:hidden">
+        <div className="grid grid-cols-5 gap-2">
+          {[
+            { key: 'home', icon: ICONS.Home, label: t('home'), active: currentView === 'home', onClick: () => navigate('home') },
+            { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
+            { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
+            { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
+            hasDashboardShortcut
+              ? {
+                  key: 'dashboard',
+                  icon: ICONS.Dashboard,
+                  label: t('dashboard'),
+                  active: false,
+                  onClick: () => { window.location.href = dashboardHref; },
+                }
+              : user && userRole === 'customer'
+                ? {
+                    key: 'orders',
+                    icon: ICONS.Orders,
+                    label: 'Orders',
+                    active: currentView === 'orders',
+                    onClick: () => navigate('orders'),
+                  }
+                : {
+                    key: 'help',
+                    icon: ICONS.Help,
+                    label: t('help'),
+                    active: currentView === 'help',
+                    onClick: () => navigate('help'),
+                  }
+          ].map((item) => (
+            <button
+              key={item.key}
+              data-tour-nav={item.key}
+              onClick={item.onClick}
+              className={`relative flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 transition-all ${
+                item.active
+                  ? 'bg-primary/10 text-primary shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="truncate text-[9px] font-bold uppercase tracking-wide">{item.label}</span>
+              {item.active && (
+                <motion.div
+                  layoutId="activeBottomNav"
+                  className="absolute inset-0 -z-10 rounded-2xl border border-primary/15 bg-primary/10"
+                  initial={false}
+                  transition={{ type: 'spring', bounce: 0.18, duration: 0.45 }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
       </nav>
     </div>
   );

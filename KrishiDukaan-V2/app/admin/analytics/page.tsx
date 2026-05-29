@@ -38,12 +38,12 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
   icon: any; label: string; value: string | number; sub?: string; color: string;
 }) {
   return (
-    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-ambient flex items-start gap-4">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-        <Icon className="w-5 h-5" />
+    <div className="flex items-start gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient sm:gap-4 sm:p-5">
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${color}`}>
+        <Icon className="h-5 w-5" />
       </div>
-      <div>
-        <p className="text-2xl font-black text-on-surface">{value}</p>
+      <div className="min-w-0">
+        <p className="text-xl font-black text-on-surface sm:text-2xl">{value}</p>
         <p className="text-xs font-semibold text-on-surface-variant">{label}</p>
         {sub && <p className="text-[10px] text-outline mt-0.5">{sub}</p>}
       </div>
@@ -149,8 +149,8 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-black text-on-surface">Site Analytics</h1>
-        <p className="text-sm text-on-surface-variant mt-1">Platform-wide traffic and engagement overview</p>
+        <h1 className="text-xl font-black text-on-surface sm:text-2xl">Site Analytics</h1>
+        <p className="mt-1 text-xs text-on-surface-variant sm:text-sm">Platform-wide traffic and engagement overview</p>
       </div>
 
       {error && (
@@ -164,7 +164,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* Top stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 sm:gap-4">
         <StatCard icon={Eye} label="Total Page Visits" value={stats?.totalVisits ?? 0}
           sub="All time tracked" color="bg-blue-50 text-blue-600" />
         <StatCard icon={TrendingUp} label="Visits (Last 7 days)" value={stats?.visitsLast7 ?? 0}
@@ -176,8 +176,8 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Visit chart */}
-      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-ambient">
-        <div className="flex items-center gap-2 mb-6">
+      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-ambient sm:p-6">
+        <div className="mb-4 flex items-center gap-2 sm:mb-6">
           <BarChart3 className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-bold text-on-surface">Daily Site Visits</h2>
           <span className="ml-auto text-[10px] text-on-surface-variant font-medium">Last {visits.length} days</span>
@@ -189,14 +189,16 @@ export default function AnalyticsPage() {
             <p className="text-xs mt-1">Visits will appear here after users open the site</p>
           </div>
         ) : (
-          <div className="flex items-end gap-2 h-32">
-            {visits.map((v) => {
-              const shortDate = v.date.slice(5); // MM-DD
-              return (
-                <Bar key={v.date} value={v.total} max={maxVisits}
-                  label={shortDate} color="bg-primary" />
-              );
-            })}
+          <div className="overflow-x-auto pb-1">
+            <div className="flex h-32 min-w-[520px] items-end gap-2">
+              {visits.map((v) => {
+                const shortDate = v.date.slice(5); // MM-DD
+                return (
+                  <Bar key={v.date} value={v.total} max={maxVisits}
+                    label={shortDate} color="bg-primary" />
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -204,7 +206,7 @@ export default function AnalyticsPage() {
       {/* Platform metrics */}
       <div>
         <h2 className="text-sm font-black uppercase tracking-widest text-on-surface-variant mb-4">Platform Metrics</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 sm:gap-4">
           <StatCard icon={Users} label="Total Users" value={stats?.totalUsers ?? 0}
             sub="Registered accounts" color="bg-primary/10 text-primary" />
           <StatCard icon={Store} label="Retailers" value={stats?.totalRetailers ?? 0}

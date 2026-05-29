@@ -8,10 +8,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex-1 bg-surface relative overflow-y-auto h-[calc(100vh-64px)]">
+    <div className="relative flex-1 overflow-x-hidden bg-surface min-h-[calc(100dvh-64px)]">
       <AdminSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
-      <div className="md:pl-64">
+      <div className="min-h-[calc(100dvh-64px)] md:pl-64">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-outline-variant/30 bg-surface-container-lowest/90 px-4 backdrop-blur md:hidden">
           <button
             type="button"
@@ -27,7 +27,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl p-4 pb-24 md:p-8 md:pb-8">{children}</main>
+        <main className="mx-auto w-full max-w-7xl px-3 py-4 pb-24 sm:px-4 md:px-8 md:py-8 md:pb-10">{children}</main>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ export type ProfileFormValues = {
   businessName: string;
   ownerName: string;
   phone: string;
+  secondaryPhone: string;
   email: string;
   line1: string;
   city: string;
@@ -138,6 +139,7 @@ export async function loadProfileState(
     businessName: "",
     ownerName: prefillName,
     phone: prefillPhone,
+    secondaryPhone: "",
     email: authEmail || "",
     line1: "", city: "", state: "", pincode: "",
   };
@@ -160,6 +162,7 @@ export async function loadProfileState(
         businessName: String(data.businessName ?? data.shopName ?? ""),
         ownerName:    String(data.ownerName ?? prefillName ?? ""),
         phone:        String(data.phone ?? prefillPhone ?? ""),
+        secondaryPhone: String(data.secondaryPhone ?? ""),
         email:        String(data.email ?? authEmail ?? ""),
         line1: addr.line1,
         city:  addr.city,
@@ -177,6 +180,7 @@ export async function loadProfileState(
       businessName: String(data.shopName ?? data.businessName ?? ""),
       ownerName:    String(data.ownerName ?? prefillName ?? ""),
       phone:        String(data.phone ?? prefillPhone ?? ""),
+      secondaryPhone: String(data.secondaryPhone ?? ""),
       email:        String(data.email ?? authEmail ?? ""),
       line1: addr.line1,
       city:  addr.city,
@@ -229,6 +233,7 @@ export async function saveManufacturerProfile(
       businessName: form.businessName.trim(),
       ownerName:    form.ownerName.trim(),
       phone:        form.phone.trim() || phone || "",
+      secondaryPhone: form.secondaryPhone.trim(),
       email:        trimmedEmail,
       geo,
       address: {
@@ -271,6 +276,7 @@ export async function saveRetailerProfile(
       ownerName: form.ownerName.trim(),
       email:     trimmedEmail,
       phone:     form.phone.trim(),
+      secondaryPhone: form.secondaryPhone.trim(),
       address: {
         line1:   form.line1.trim(),
         city:    form.city.trim(),
