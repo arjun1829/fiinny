@@ -234,7 +234,6 @@ export function Navbar({
     { id: 'hub', label: t('hub') },
     { id: 'map', label: t('stores') }
   ];
-  const mobilePrimaryNavItems = navItems.slice(0, 3);
   const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
   const cycleLanguage = () => {
@@ -443,6 +442,104 @@ export function Navbar({
             <ICONS.Location className="w-5 h-5" />
           </button>
 
+          {/* More menu — mobile only */}
+          <div className="relative md:hidden" ref={mobileMoreRef}>
+            <button
+              type="button"
+              onClick={() => setIsMobileMoreOpen(prev => !prev)}
+              className={`p-1.5 rounded-xl transition-colors ${isMobileMoreOpen ? 'bg-primary text-white' : 'hover:bg-surface-container text-on-surface-variant'}`}
+              aria-label="More"
+              aria-expanded={isMobileMoreOpen}
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+
+            <div className={`absolute right-0 top-full mt-2 w-52 rounded-2xl border border-surface-container bg-white p-2 shadow-ambient z-[90] ${isMobileMoreOpen ? 'block' : 'hidden'}`}>
+              <div className="grid grid-cols-2 gap-2 p-1">
+                <a
+                  href="/blog"
+                  onClick={() => setIsMobileMoreOpen(false)}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  Blog
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  About
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('help'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  {t('help')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  {language === 'en' ? 'Lang: EN' : language === 'mr' ? 'Lang: मर' : 'Lang: हि'}
+                </button>
+              </div>
+
+              <div className="my-2 border-t border-surface-container" />
+
+              {user ? (
+                <div className="space-y-1">
+                  {isAdmin && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/admin'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      Admin Panel
+                    </button>
+                  )}
+                  {canAccessDashboard && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('dashboard')}
+                    </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('profile'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('orders'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        My Orders
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setIsMobileMoreOpen(false); handleLogout(); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                  >
+                    {t('logout')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('login'); }}
+                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                >
+                  {t('login')}
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Help / Documentation */}
           <button
             data-tour-nav="help"
@@ -598,129 +695,6 @@ export function Navbar({
         </div>
       )}
 
-      <div className="relative mt-2 md:hidden" ref={mobileMoreRef}>
-        <div className="grid grid-cols-4 gap-2">
-          {mobilePrimaryNavItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => navigate(item.id as View)}
-              className={`rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${currentView === item.id ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setIsMobileMoreOpen((prev) => !prev)}
-            className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-bold transition-colors ${currentView === 'map' || currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
-            aria-label="Open more menu"
-            aria-expanded={isMobileMoreOpen}
-          >
-            <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
-            More
-          </button>
-        </div>
-
-        <div className={`absolute right-0 top-full mt-2 w-full rounded-2xl border border-surface-container bg-white p-2 shadow-ambient ${isMobileMoreOpen ? 'block' : 'hidden'}`}>
-          <div className="grid grid-cols-2 gap-2 p-1">
-            <button
-              type="button"
-              onClick={() => { setIsMobileMoreOpen(false); navigate('map'); }}
-              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'map' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
-            >
-              {t('stores')}
-            </button>
-            <a
-              href="/blog"
-              onClick={() => setIsMobileMoreOpen(false)}
-              className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
-            >
-              Blog
-            </a>
-            <button
-              type="button"
-              onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
-              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
-            >
-              About
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsMobileMoreOpen(false); navigate('help'); }}
-              className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
-            >
-              {t('help')}
-            </button>
-            <button
-              type="button"
-              onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
-              className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
-            >
-              {language === 'en' ? 'Language: EN' : language === 'mr' ? 'Language: मर' : 'Language: हि'}
-            </button>
-          </div>
-
-          <div className="my-2 border-t border-surface-container" />
-
-          {user ? (
-            <div className="space-y-1">
-              {isAdmin && (
-                <button
-                  onClick={() => {
-                    setIsMobileMoreOpen(false);
-                    router.push('/admin');
-                  }}
-                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
-                >
-                  Admin Panel
-                </button>
-              )}
-              {userRole === 'customer' && (
-                <>
-                  <button
-                    onClick={() => {
-                      setIsMobileMoreOpen(false);
-                      navigate('profile');
-                    }}
-                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
-                  >
-                    My Profile
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsMobileMoreOpen(false);
-                      navigate('orders');
-                    }}
-                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
-                  >
-                    My Orders
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => {
-                  setIsMobileMoreOpen(false);
-                  handleLogout();
-                }}
-                className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
-              >
-                {t('logout')}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                setIsMobileMoreOpen(false);
-                navigate('login');
-              }}
-              className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
-            >
-              {t('login')}
-            </button>
-          )}
-        </div>
-      </div>
     </header>
   );
 }

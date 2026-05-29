@@ -2141,7 +2141,8 @@ export async function deleteBlogPost(id: string): Promise<void> {
 
 export async function logFailedPayment(
   uid: string,
-  errorResponse: any
+  errorResponse: any,
+  context?: { orderId?: string; amount?: number; seatCount?: number; durationMonths?: number }
 ): Promise<void> {
   try {
     const timestamp = serverTimestamp();
@@ -2157,6 +2158,10 @@ export async function logFailedPayment(
       userId: uid,
       userPhone: phone ?? uid,
       error: errorResponse,
+      orderId: context?.orderId ?? errorResponse?.metadata?.order_id ?? null,
+      amount: context?.amount ?? null,
+      seatCount: context?.seatCount ?? null,
+      durationMonths: context?.durationMonths ?? null,
       timestamp,
       status: 'failed',
     });
@@ -2166,12 +2171,7 @@ export async function logFailedPayment(
 }
 
 export async function fetchFailedPayments(): Promise<any[]> {
-  try {
-    const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (error) {
-    console.error('Error fetching failed payments:', error);
-    return [];
-  }
+  const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }

@@ -38,6 +38,7 @@ export default function AdminSubscriptionsPage() {
   const [failedPayments, setFailedPayments] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'subscriptions' | 'failedPayments'>('subscriptions');
   const [loading, setLoading] = useState(true);
+  const [failedPaymentsError, setFailedPaymentsError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -55,6 +56,21 @@ export default function AdminSubscriptionsPage() {
   // Manual activate
   const [showManual, setShowManual] = useState(false);
   const [manualForm, setManualForm] = useState<ManualForm>(EMPTY_MANUAL);
+
+  // Lock scroll when modal is open
+  useEffect(() => {
+    if (showManual) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [showManual]);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualSuccess, setManualSuccess] = useState(false);
@@ -62,14 +78,18 @@ export default function AdminSubscriptionsPage() {
 
   const load = async () => {
     setLoading(true);
+    setFailedPaymentsError(null);
     try {
-      const [subsData, usersData, failedData] = await Promise.all([fetchAllSubscriptions(), fetchAllUsers(), fetchFailedPayments()]);
+      const [subsData, usersData] = await Promise.all([fetchAllSubscriptions(), fetchAllUsers()]);
       setSubs(subsData);
       setUsers(usersData);
-      setFailedPayments(failedData);
     } finally {
       setLoading(false);
     }
+    // Load failed payments separately so a rules error doesn't block the whole page
+    fetchFailedPayments()
+      .then(setFailedPayments)
+      .catch(err => setFailedPaymentsError(err?.message || 'Could not load failed payments. Check Firestore rules for the failedPayments collection.'));
   };
 
   useEffect(() => { load(); }, []);
@@ -195,9 +215,14 @@ export default function AdminSubscriptionsPage() {
         </button>
         <button
           onClick={() => setActiveTab('failedPayments')}
-          className={`pb-2 px-1 font-semibold text-sm ${activeTab === 'failedPayments' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+          className={`pb-2 px-1 font-semibold text-sm flex items-center gap-1.5 ${activeTab === 'failedPayments' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
         >
           Failed Payments
+          {failedPayments.length > 0 && (
+            <span className="inline-flex items-center justify-center rounded-full bg-red-100 text-red-600 text-[10px] font-black px-1.5 py-0.5 min-w-[1.25rem]">
+              {failedPayments.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -397,7 +422,7 @@ export default function AdminSubscriptionsPage() {
 
       {/* Manual Activation Modal */}
       {showManual && (
-        <div className="fixed inset-x-0 bottom-0 top-0 sm:top-16 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4">
+        <div className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4">
           <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div>
@@ -516,35 +541,101 @@ export default function AdminSubscriptionsPage() {
       )}
       </>
       ) : (
-        <div className="bg-surface rounded-2xl border border-outline-variant/40 shadow-sm overflow-hidden">
-          {failedPayments.length === 0 ? (
-            <div className="p-8 text-center text-on-surface-variant text-sm">
-              No failed payments found.
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-on-surface flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" /> Failed Payments
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5">All payment attempts that were declined or cancelled.</p>
+            </div>
+            <button onClick={() => load()} className="flex items-center gap-1.5 border border-outline-variant/40 text-xs font-medium px-3 py-2 rounded-xl hover:bg-surface-container transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+          </div>
+
+          {failedPaymentsError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> {failedPaymentsError}
+            </div>
+          )}
+
+          {!failedPaymentsError && failedPayments.length === 0 ? (
+            <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-10 text-center text-sm text-on-surface-variant">
+              No failed payments recorded yet.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="bg-surface-container-low border-b border-outline-variant/40 text-on-surface-variant text-xs uppercase tracking-wider font-bold">
-                  <tr>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Payment ID</th>
-                    <th className="px-4 py-3">Error Reason</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/20">
-                  {failedPayments.map((fp) => (
-                    <tr key={fp.id} className="hover:bg-surface-container-lowest transition-colors">
-                      <td className="px-4 py-3 text-on-surface-variant">{fmt(fp.timestamp)}</td>
-                      <td className="px-4 py-3 font-medium text-on-surface">{fp.userPhone || fp.userId}</td>
-                      <td className="px-4 py-3 text-on-surface-variant font-mono">{fp.error?.metadata?.payment_id || 'N/A'}</td>
-                      <td className="px-4 py-3 text-red-600 font-medium whitespace-normal max-w-xs">
-                        {fp.error?.reason || fp.error?.description || 'Unknown error'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {failedPayments.map((fp) => {
+                const userName = (() => {
+                  const phone = fp.userPhone;
+                  const u = users.find(u => u.id === phone || u.uid === fp.userId || u.phone === phone);
+                  return u?.name || u?.email || null;
+                })();
+                const paymentId = fp.error?.metadata?.payment_id;
+                const orderId = fp.orderId || fp.error?.metadata?.order_id;
+                const errorReason = fp.error?.reason || fp.error?.description || fp.error?.code || 'Unknown error';
+                const amountRupees = fp.amount ? (fp.amount / 100) : null;
+
+                return (
+                  <div key={fp.id} className="rounded-2xl border border-red-100 bg-white overflow-hidden">
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 px-4 sm:px-5 py-4">
+                      {/* User info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="text-sm font-bold text-on-surface">{userName || fp.userPhone || fp.userId}</p>
+                          {userName && <p className="text-xs text-on-surface-variant font-mono">{fp.userPhone || fp.userId}</p>}
+                        </div>
+                        <p className="text-xs text-red-600 font-semibold">{errorReason}</p>
+                      </div>
+
+                      {/* Purchase intent */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-on-surface-variant shrink-0">
+                        {amountRupees !== null && (
+                          <span>₹<span className="font-bold text-on-surface">{amountRupees}</span></span>
+                        )}
+                        {fp.seatCount !== null && fp.seatCount !== undefined && (
+                          <span><span className="font-bold text-on-surface">{fp.seatCount}</span> seat{fp.seatCount !== 1 ? 's' : ''}</span>
+                        )}
+                        {fp.durationMonths !== null && fp.durationMonths !== undefined && (
+                          <span><span className="font-bold text-on-surface">{fp.durationMonths}</span> mo</span>
+                        )}
+                      </div>
+
+                      {/* IDs */}
+                      <div className="text-[10px] font-mono text-on-surface-variant shrink-0 space-y-0.5">
+                        {paymentId && <p title="Payment ID">{paymentId}</p>}
+                        {orderId && <p title="Order ID" className="opacity-60">{orderId}</p>}
+                      </div>
+
+                      {/* Date + activate */}
+                      <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                        <span className="text-xs text-on-surface-variant">{fmt(fp.timestamp)}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualForm(f => ({
+                              ...f,
+                              userDocId: fp.userPhone || fp.userId || '',
+                              orderId: orderId || '',
+                              seats: fp.seatCount ? String(fp.seatCount) : '1',
+                              durationMonths: fp.durationMonths ? String(fp.durationMonths) : '1',
+                            }));
+                            setShowManual(true);
+                            setManualSuccess(false);
+                            setManualError(null);
+                            setActiveTab('subscriptions');
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl bg-primary/10 text-primary px-3 py-1.5 text-[11px] font-bold hover:bg-primary/20 transition-colors"
+                        >
+                          <Plus className="h-3 w-3" /> Activate
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
