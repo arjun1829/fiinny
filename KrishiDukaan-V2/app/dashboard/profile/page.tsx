@@ -256,6 +256,22 @@ function ProfilePageInner() {
     return () => unsub();
   }, [loadSocial]);
 
+  // Preload Maps script as soon as edit mode opens so Geocoder is available
+  // for "Use Current Location" regardless of which location tab is active.
+  useEffect(() => {
+    if (!editMode) return;
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey || window.google?.maps?.places) return;
+    const scriptId = "google-maps-places-script";
+    if (document.getElementById(scriptId)) return;
+    const script = document.createElement("script");
+    script.id = scriptId;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true; script.defer = true;
+    script.onload = () => { script.dataset.loaded = "true"; };
+    document.head.appendChild(script);
+  }, [editMode]);
+
   // Google Maps Autocomplete — re-runs when locationMethod switches back to "search"
   // so the autocomplete is re-attached to the freshly-mounted input element.
   useEffect(() => {
@@ -323,20 +339,56 @@ function ProfilePageInner() {
   }, [editMode, uid, userRole, locationMethod, applyPlaceGeometry]);
 
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) { setStatus({ type: "error", message: "Geolocation not supported." }); return; }
+    if (!navigator.geolocation) {
+      setStatus({ type: "error", message: "Your browser does not support location. Use 'Search Place' or paste a Maps link instead." });
+      return;
+    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude, lng = pos.coords.longitude;
-        setGeo(new GeoPoint(lat, lng));
-        if (window.google?.maps?.Geocoder)
+
+    const applyCoords = (lat: number, lng: number) => {
+      setGeo(new GeoPoint(lat, lng));
+      setLocating(false);
+      // Reverse-geocode to fill city/state/pincode. Maps may still be loading,
+      // so retry after 1.5 s if the Geocoder isn't ready yet.
+      const doGeocode = () => {
+        if (window.google?.maps?.Geocoder) {
           new window.google.maps.Geocoder().geocode({ location: { lat, lng } }, (results: any, status: string) => {
             if (status === "OK" && results?.[0]) setForm((p) => ({ ...p, ...extractAddressFields(results[0]) }));
           });
-        setLocating(false);
+        }
+      };
+      if (window.google?.maps?.Geocoder) doGeocode();
+      else setTimeout(doGeocode, 1500);
+    };
+
+    const onFinalError = (err: GeolocationPositionError) => {
+      setLocating(false);
+      const isInApp = /instagram|fban|fbav|twitter|line\/|micromessenger|wv\b/i.test(navigator.userAgent);
+      if (isInApp) {
+        setStatus({ type: "error", message: "Location is blocked in this in-app browser. Open in Safari or Chrome, or use 'Search Place' / 'Paste Maps Link' instead." });
+      } else if (err.code === err.PERMISSION_DENIED) {
+        setStatus({ type: "error", message: "Location access denied. Enable it in browser settings, or use 'Search Place' / 'Paste Maps Link' instead." });
+      } else {
+        setStatus({ type: "error", message: "Couldn't detect your location. Use 'Search Place' or 'Paste Maps Link' instead." });
+      }
+    };
+
+    // Try high accuracy first; fall back to low accuracy on timeout
+    navigator.geolocation.getCurrentPosition(
+      (pos) => applyCoords(pos.coords.latitude, pos.coords.longitude),
+      (err) => {
+        if (err.code === err.TIMEOUT) {
+          // High-accuracy timed out (common on first request or poor GPS signal) — retry low accuracy
+          navigator.geolocation.getCurrentPosition(
+            (pos) => applyCoords(pos.coords.latitude, pos.coords.longitude),
+            onFinalError,
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+          );
+        } else {
+          onFinalError(err);
+        }
       },
-      (err) => { setLocating(false); setStatus({ type: "error", message: err.message || "Unable to access location." }); },
-      { enableHighAccuracy: true, timeout: 10000 },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
     );
   };
 
@@ -442,9 +494,17 @@ function ProfilePageInner() {
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
-      // Write onlineDelivery to users/{phone} (private schema, used by storeOnlineDelivery fetch)
+      // Write completion fields + onlineDelivery to users/{phone}.
+      // getUserProfile reads from this doc — writing these fields here ensures the
+      // dashboard layout's profile-completion check sees the latest data.
       const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
-      await setDoc(userTarget, { onlineDelivery, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(userTarget, {
+        businessName: formToSave.businessName.trim(),
+        phone: formToSave.phone.trim(),
+        city: formToSave.city.trim(),
+        onlineDelivery,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
 
       if (userRole === "manufacturer") {
         await saveManufacturerProfile(uid, formToSave, resolvedGeo, manufacturerCreatedAt);
@@ -488,6 +548,12 @@ function ProfilePageInner() {
 
   // ── View mode ──────────────────────────────────────────────────────────────
 
+  // Compute which required fields are still missing
+  const missingBusinessName = !form.businessName.trim();
+  const missingPhone        = !form.phone.trim();
+  const missingLocation     = !form.city.trim() && !form.state.trim() && !geo;
+  const isProfileIncomplete = missingBusinessName || missingPhone || missingLocation;
+
   if (!editMode) {
     return (
       <>
@@ -498,6 +564,22 @@ function ProfilePageInner() {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); }} />
         <input ref={bannerFileRef} type="file" accept="image/*" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleBannerFile(f); }} />
+
+        {/* Profile completion banner */}
+        {isProfileIncomplete && (
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-800 mb-2">Complete your profile to continue</p>
+            <ul className="text-xs text-amber-700 space-y-1 mb-3">
+              {missingBusinessName && <li>• Business name is required</li>}
+              {missingPhone        && <li>• Contact number is required</li>}
+              {missingLocation     && <li>• Location is required — search your shop, paste a Maps link, or use current location</li>}
+            </ul>
+            <button type="button" onClick={() => setEditMode(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-600 transition-colors">
+              <Pencil className="h-3.5 w-3.5" /> Fill in missing details
+            </button>
+          </div>
+        )}
 
         {/* Profile header card */}
         <div className="mb-6 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
