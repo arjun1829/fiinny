@@ -24,7 +24,11 @@ export function RecentReviews({ reviews }: { reviews: ReviewItem[] }) {
       </div>
 
       {reviews.length === 0 ? (
-        <p className="mt-4 text-sm text-on-surface-variant">{t('noDataLabel')}</p>
+        <div className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-dashed border-outline-variant/40 py-8 text-center">
+          <Star className="h-6 w-6 text-on-surface-variant/30" />
+          <p className="text-sm font-medium text-on-surface-variant">No reviews yet</p>
+          <p className="text-xs text-on-surface-variant/60">Customer reviews will appear here</p>
+        </div>
       ) : (
         <ul className="mt-4 space-y-3">
           {reviews.map((r) => (

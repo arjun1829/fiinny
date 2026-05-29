@@ -8,7 +8,7 @@ import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufact
 import type { ManufacturerProductRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
 
-// ─── Constants (shared with add form) ────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
   "Seeds", "Fertilizers", "Pesticides", "Herbicides", "Fungicides",
@@ -17,54 +17,211 @@ const CATEGORIES = [
   "Micro Nutrients", "Others",
 ] as const;
 
-const UNIT_OPTIONS = [
-  { group: "Weight — Small", options: [
-    { value: "10g", label: "10 gm" }, { value: "25g", label: "25 gm" },
-    { value: "50g", label: "50 gm" }, { value: "100g", label: "100 gm" },
-    { value: "200g", label: "200 gm" }, { value: "250g", label: "250 gm" },
-    { value: "500g", label: "500 gm" }, { value: "750g", label: "750 gm" },
-  ]},
-  { group: "Weight — Large", options: [
-    { value: "1kg", label: "1 kg" }, { value: "2kg", label: "2 kg" },
-    { value: "3kg", label: "3 kg" }, { value: "5kg", label: "5 kg" },
-    { value: "10kg", label: "10 kg" }, { value: "15kg", label: "15 kg" },
-    { value: "20kg", label: "20 kg" }, { value: "25kg", label: "25 kg" },
-    { value: "50kg", label: "50 kg" },
-  ]},
-  { group: "Volume", options: [
-    { value: "50ml", label: "50 ml" }, { value: "100ml", label: "100 ml" },
-    { value: "250ml", label: "250 ml" }, { value: "500ml", label: "500 ml" },
-    { value: "1L", label: "1 Litre" }, { value: "2L", label: "2 Litre" },
-    { value: "5L", label: "5 Litre" }, { value: "10L", label: "10 Litre" },
-    { value: "20L", label: "20 Litre" },
-  ]},
-  { group: "Pack / Unit", options: [
-    { value: "pkt", label: "Packet" }, { value: "bag", label: "Bag" },
-    { value: "pcs", label: "Piece" }, { value: "box", label: "Box" },
-    { value: "bottle", label: "Bottle" }, { value: "bundle", label: "Bundle" },
-    { value: "can", label: "Can" }, { value: "drum", label: "Drum" },
-    { value: "roll", label: "Roll" }, { value: "set", label: "Set" },
-    { value: "pair", label: "Pair" }, { value: "custom", label: "Custom…" },
-  ]},
-];
+const UNIT_TYPES = [
+  { value: "g",      label: "gm",     display: "gm" },
+  { value: "kg",     label: "KG",     display: "KG" },
+  { value: "ml",     label: "ml",     display: "ml" },
+  { value: "L",      label: "L",      display: "L" },
+  { value: "pkt",    label: "Packet", display: "Packet" },
+  { value: "pcs",    label: "Piece",  display: "Piece" },
+  { value: "bottle", label: "Bottle", display: "Bottle" },
+  { value: "can",    label: "Can",    display: "Can" },
+  { value: "custom", label: "Custom", display: "" },
+] as const;
 
-const KNOWN_UNITS = UNIT_OPTIONS.flatMap((g) => g.options.map((o) => o.value)).filter((v) => v !== "custom");
+const SIZE_OPTIONS_BY_UNIT: Record<string, string[]> = {
+  g:  ["10", "25", "50", "100", "250", "500"],
+  kg: ["1", "2", "5", "10", "25", "50"],
+  ml: ["50", "100", "250", "500"],
+  L:  ["1", "2", "5", "10", "20"],
+};
+
+const UNITS_WITH_SIZE = new Set(["g", "kg", "ml", "L"]);
+
 const MAX_VARIANTS = 8;
 const MAX_IMAGES = 5;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Variant   = { unit: string; customUnit: string; price: string; stock: string };
-type ImgSlot   = { mode: "url" | "upload"; url: string; uploading: boolean; error: string };
+type Variant = {
+  unitType: string;
+  sizeAmount: string;
+  customSize: string;
+  customUnit: string;
+  price: string;
+  stock: string;
+};
+type ImgSlot = { mode: "url" | "upload"; url: string; uploading: boolean; error: string };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildUnit(v: Variant): string {
+  if (v.unitType === "custom") return v.customUnit.trim();
+  if (!UNITS_WITH_SIZE.has(v.unitType)) return v.unitType;
+  const size = v.sizeAmount === "custom" ? v.customSize.trim() : v.sizeAmount;
+  if (!size) return v.unitType;
+  return `${size}${v.unitType}`;
+}
+
+function buildPreviewLabel(v: Variant): string {
+  if (v.unitType === "custom") return v.customUnit.trim() || "";
+  const ut = UNIT_TYPES.find(u => u.value === v.unitType);
+  if (!ut) return "";
+  if (!UNITS_WITH_SIZE.has(v.unitType)) return ut.display;
+  const size = v.sizeAmount === "custom" ? (v.customSize.trim() || "?") : v.sizeAmount;
+  if (!size) return "";
+  return `${size} ${ut.display}`;
+}
+
+function parseUnitToVariant(unit: string): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
+  const match = unit.match(/^(\d+(?:\.\d+)?)(g|kg|ml|L)$/i);
+  if (match) {
+    const size = match[1];
+    const type = match[2] === "l" ? "L" : match[2];
+    const knownSizes = SIZE_OPTIONS_BY_UNIT[type] ?? [];
+    return {
+      unitType: type,
+      sizeAmount: knownSizes.includes(size) ? size : "custom",
+      customSize: knownSizes.includes(size) ? "" : size,
+      customUnit: "",
+    };
+  }
+  if (unit === "pkt" || unit === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
+  if (unit === "pcs" || unit === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
+  if (unit === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
+  if (unit === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
+  return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: unit };
+}
 
 function rowToVariants(row: ManufacturerProductRow): Variant[] {
   const src = row.variants.length ? row.variants : [{ unit: row.unit, price: row.price }];
   return src.map((v) => ({
-    unit: KNOWN_UNITS.includes(v.unit) ? v.unit : "custom",
-    customUnit: KNOWN_UNITS.includes(v.unit) ? "" : v.unit,
+    ...parseUnitToVariant(v.unit),
     price: String(v.price),
     stock: "",
   }));
+}
+
+// ─── Variant Row ──────────────────────────────────────────────────────────────
+
+function VariantRow({ v, i, disabled, isOnly, setV, removeV }: {
+  v: Variant; i: number; disabled: boolean; isOnly: boolean;
+  setV: (i: number, p: Partial<Variant>) => void;
+  removeV: (i: number) => void;
+}) {
+  const hasSizes = UNITS_WITH_SIZE.has(v.unitType);
+  const sizeOptions = hasSizes ? SIZE_OPTIONS_BY_UNIT[v.unitType] ?? [] : [];
+  const preview = buildPreviewLabel(v);
+
+  return (
+    <div className="rounded-xl border border-outline-variant/25 bg-white p-3 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-on-surface-variant">Package {i + 1}</span>
+        <button type="button" disabled={disabled || isOnly} onClick={() => removeV(i)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-500 disabled:opacity-30 transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Step 1: Unit */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">Step 1 — Unit</span>
+        <div className="flex flex-wrap gap-1.5">
+          {UNIT_TYPES.map(ut => (
+            <button key={ut.value} type="button" disabled={disabled}
+              onClick={() => setV(i, {
+                unitType: ut.value,
+                sizeAmount: UNITS_WITH_SIZE.has(ut.value) ? (SIZE_OPTIONS_BY_UNIT[ut.value]?.[0] ?? "") : "",
+                customSize: "",
+                customUnit: "",
+              })}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
+                v.unitType === ut.value
+                  ? "border-primary bg-primary text-white shadow-sm"
+                  : "border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:border-primary/50 hover:text-primary"
+              } disabled:opacity-50`}
+            >
+              {ut.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Step 2: Package Size */}
+      {hasSizes && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">Step 2 — Package Size</span>
+          <div className="flex flex-wrap gap-1.5">
+            {sizeOptions.map(size => (
+              <button key={size} type="button" disabled={disabled}
+                onClick={() => setV(i, { sizeAmount: size, customSize: "" })}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  v.sizeAmount === size
+                    ? "border-primary bg-primary text-white shadow-sm"
+                    : "border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                } disabled:opacity-50`}
+              >
+                {size}
+              </button>
+            ))}
+            <button type="button" disabled={disabled}
+              onClick={() => setV(i, { sizeAmount: "custom", customSize: "" })}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
+                v.sizeAmount === "custom"
+                  ? "border-primary bg-primary text-white shadow-sm"
+                  : "border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:border-primary/50 hover:text-primary"
+              } disabled:opacity-50`}
+            >
+              Custom
+            </button>
+          </div>
+          {v.sizeAmount === "custom" && (
+            <input type="number" min={1} disabled={disabled}
+              placeholder="e.g. 750"
+              className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 w-32"
+              value={v.customSize} onChange={(e) => setV(i, { customSize: e.target.value })} />
+          )}
+        </div>
+      )}
+
+      {v.unitType === "custom" && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">Your Unit Label</span>
+          <input type="text" disabled={disabled}
+            placeholder="e.g. 30 tablets, 1 acre dose, 4L drum…"
+            className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+            value={v.customUnit} onChange={(e) => setV(i, { customUnit: e.target.value })} />
+        </div>
+      )}
+
+      {preview && (
+        <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-primary/60">Package</span>
+          <span className="text-sm font-bold text-primary">{preview}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-on-surface-variant">Price (₹) *</span>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-on-surface-variant">₹</span>
+            <input type="number" min={1} step={0.01} disabled={disabled}
+              className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest pl-7 pr-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+              placeholder="0" value={v.price}
+              onChange={(e) => setV(i, { price: e.target.value })} />
+          </div>
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-on-surface-variant">Stock Qty</span>
+          <input type="number" min={0} disabled={disabled}
+            className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+            placeholder="—" value={v.stock}
+            onChange={(e) => setV(i, { stock: e.target.value })} />
+        </label>
+      </div>
+    </div>
+  );
 }
 
 function rowToImages(row: ManufacturerProductRow): ImgSlot[] {
@@ -201,11 +358,15 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const handleSave = async () => {
     if (!name.trim()) { setMessage({ type: "err", text: "Product name is required." }); return; }
     const parsedVariants = variants.map((v) => ({
-      unit: v.unit === "custom" ? v.customUnit.trim() : v.unit,
+      unit: buildUnit(v),
       price: Number(v.price),
     }));
-    if (parsedVariants.some((v) => !v.unit || !Number.isFinite(v.price) || v.price <= 0)) {
-      setMessage({ type: "err", text: "Each variant needs a unit and price > 0." });
+    if (parsedVariants.some((v) => !v.unit)) {
+      setMessage({ type: "err", text: "Please complete the unit selection for each package." });
+      return;
+    }
+    if (parsedVariants.some((v) => !Number.isFinite(v.price) || v.price <= 0)) {
+      setMessage({ type: "err", text: "Each package needs a price greater than 0." });
       return;
     }
     if (images.some((s) => s.uploading)) {
@@ -443,60 +604,16 @@ export function EditProductModal({ row, onClose, onSaved }: {
               <Layers className="h-4 w-4 text-primary" /> {t('formPackSizes')}
             </div>
 
-            {/* Header */}
-            <div className="grid grid-cols-12 gap-2 px-1">
-              <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formUnitSize')}</span>
-              <span className="col-span-4 text-xs font-medium text-on-surface-variant">{t('formPriceCol')}</span>
-              <span className="col-span-3 text-xs font-medium text-on-surface-variant">{t('formStockQty')}</span>
-              <span className="col-span-1" />
+            <div className="flex flex-col gap-3">
+              {variants.map((v, i) => (
+                <VariantRow key={i} v={v} i={i} disabled={saving} isOnly={variants.length <= 1}
+                  setV={setV} removeV={removeV} />
+              ))}
             </div>
-
-            {variants.map((v, i) => (
-              <div key={i} className="space-y-1.5">
-                <div className="grid grid-cols-12 items-center gap-2">
-                  <div className="col-span-4">
-                    <select value={v.unit} onChange={(e) => setV(i, { unit: e.target.value, customUnit: "" })}
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-2 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
-                      {UNIT_OPTIONS.map((grp) => (
-                        <optgroup key={grp.group} label={grp.group}>
-                          {grp.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-4 relative">
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">₹</span>
-                    <input type="number" min={1} step={0.01} value={v.price}
-                      onChange={(e) => setV(i, { price: e.target.value })}
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white pl-6 pr-2 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      placeholder="0" />
-                  </div>
-                  <div className="col-span-3">
-                    <input type="number" min={0} value={v.stock}
-                      onChange={(e) => setV(i, { stock: e.target.value })}
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-2 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      placeholder="—" />
-                  </div>
-                  <div className="col-span-1 flex justify-center">
-                    <button type="button" disabled={variants.length <= 1}
-                      onClick={() => removeV(i)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl text-on-surface-variant hover:bg-red-50 hover:text-red-500 disabled:opacity-30">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-                {v.unit === "custom" && (
-                  <input type="text" value={v.customUnit}
-                    onChange={(e) => setV(i, { customUnit: e.target.value })}
-                    className="ml-0 w-full rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    placeholder="e.g. 30 tablets, 1 acre dose…" />
-                )}
-              </div>
-            ))}
 
             {variants.length < MAX_VARIANTS && (
               <button type="button"
-                onClick={() => setVariants((vs) => [...vs, { unit: "1kg", customUnit: "", price: "", stock: "" }])}
+                onClick={() => setVariants((vs) => [...vs, { unitType: "kg", sizeAmount: "1", customSize: "", customUnit: "", price: "", stock: "" }])}
                 className="flex items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 px-3 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
                 <Plus className="h-4 w-4" /> {t('formAddSize')}
               </button>
