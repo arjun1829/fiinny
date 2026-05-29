@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { ICONS } from '../../app/constants';
 import { auth, getUserProfile } from '../../app/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -51,6 +51,8 @@ export function Navbar({
   onCartClick,
 }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isOnBlog = pathname?.startsWith('/blog') ?? false;
   const [localUser, setLocalUser] = useState<any>(null);
   const [localUserRole, setLocalUserRole] = useState<string>('customer');
   const [localUserProfile, setLocalUserProfile] = useState<any>({ isPaid: false });
@@ -295,15 +297,15 @@ export function Navbar({
   );
 
   return (
-    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
-      <div className="flex justify-between items-center gap-4">
+    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-3 md:px-6 py-2 transition-colors">
+      <div className="flex justify-between items-center gap-2 md:gap-4">
         <div
           className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
           onClick={() => navigate('home')}
         >
-          <img 
-            src="/images/krishidukan icon.webp" 
-            alt="KrishiDukan Logo" 
+          <img
+            src="/images/krishidukan icon.webp"
+            alt="KrishiDukan Logo"
             className="w-8 h-8 md:w-10 md:h-10 object-contain"
           />
           <span className="font-black text-xl md:text-2xl text-primary group-hover:text-primary/90 transition-colors">
@@ -330,9 +332,15 @@ export function Navbar({
           ))}
           <a
             href="/blog"
-            className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors whitespace-nowrap"
+            data-tour-nav="blog"
+            className={`text-xs font-semibold transition-colors hover:text-primary whitespace-nowrap ${
+              isOnBlog ? 'text-primary' : 'text-on-surface-variant'
+            }`}
           >
-            Blog
+            {t('blog')}
+            {isOnBlog && (
+              <motion.div layoutId="activeTab" className="h-0.5 bg-primary mt-0.5 rounded-full" />
+            )}
           </a>
         </nav>
 
@@ -377,7 +385,7 @@ export function Navbar({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* Cart icon (placeholder) */}
           <button
             onClick={() => {
@@ -422,20 +430,6 @@ export function Navbar({
             <ICONS.Location className="w-5 h-5" />
           </button>
 
-          {/* Language toggle — always visible on mobile */}
-          <button
-            className="md:hidden flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl px-2.5 py-1.5 text-[11px] font-black text-on-surface hover:bg-surface-container transition-colors min-w-[36px]"
-            onClick={() => {
-              const langs = ['en', 'mr', 'hi'] as const;
-              const idx = langs.indexOf(language as any);
-              setLanguage(langs[(idx + 1) % langs.length]!);
-            }}
-            title="Change language"
-            aria-label="Change language"
-          >
-            {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
-          </button>
-
           {/* Help / Documentation */}
           <button
             data-tour-nav="help"
@@ -455,14 +449,14 @@ export function Navbar({
           <div className="relative" ref={accountMenuRef}>
             <button
               data-account-trigger
-              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-surface-container-highest transition-all"
+              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl hover:bg-surface-container-highest transition-all whitespace-nowrap"
               aria-label="Open account menu"
               aria-haspopup="menu"
               aria-expanded={isAccountMenuOpen}
               onClick={() => setIsAccountMenuOpen((prev) => !prev)}
             >
               {t('account')}
-              <ICONS.ChevronRight className="w-3.5 h-3.5 rotate-90" />
+              <ICONS.ChevronRight className="hidden md:inline w-3.5 h-3.5 rotate-90" />
             </button>
 
             <div className={`absolute right-0 top-full mt-2 z-50 w-52 bg-white border border-surface-container rounded-2xl shadow-ambient p-2 ${isAccountMenuOpen ? 'block' : 'hidden'}`}>

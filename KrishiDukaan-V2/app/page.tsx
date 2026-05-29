@@ -1112,7 +1112,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface">
+    <div className="min-h-screen flex flex-col bg-surface overflow-x-clip md:overflow-x-visible">
       <Navbar
         currentView={currentView}
         onNavigate={(view) => {
@@ -1208,36 +1208,53 @@ export default function App() {
       />
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-4 z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-2 z-50">
         {([
           { id: 'home', icon: ICONS.Home, label: t('home') },
           { id: 'market', icon: ICONS.Market, label: t('market') },
           { id: 'hub', icon: ICONS.Hub, label: t('hub') },
           { id: 'map', icon: ICONS.Location, label: t('stores') },
-          user && userRole === 'customer'
-            ? { id: 'orders', icon: ICONS.Orders, label: 'Orders' }
-            : { id: 'about', icon: ICONS.Info, label: t('mobileAbout') }
-        ].map((item) => (
-          <button
-            key={item.id}
-            data-tour-nav={item.id}
-            onClick={() => navigate(item.id as View)}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
-            }`}
-          >
-            <item.icon className={`w-5 h-5 ${currentView === item.id ? 'fill-primary/20' : ''}`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-            {currentView === item.id && (
-              <motion.div
-                layoutId="activeBubble"
-                className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
-                initial={false}
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-          </button>
-        )))}
+          // Blog lives at /blog (separate route) — navigates via window.location to leave the home App.
+          { id: 'blog', icon: ICONS.Docs, label: t('blog'), action: 'goto-blog' },
+          // Reuses the existing header Account dropdown — opens the same flow
+          // (login / dashboard / logout / language) by triggering the header button.
+          { id: 'account', icon: ICONS.Account, label: t('account'), action: 'account-menu' },
+        ] as { id: string; icon: typeof ICONS.Home; label: string; action?: 'account-menu' | 'goto-blog' }[]).map((item) => {
+          const isActive = item.id !== 'account' && item.id !== 'blog' && currentView === item.id;
+          const handleClick = () => {
+            if (item.action === 'account-menu') {
+              const trigger = document.querySelector<HTMLButtonElement>('[data-account-trigger]');
+              trigger?.click();
+              return;
+            }
+            if (item.action === 'goto-blog') {
+              if (typeof window !== 'undefined') window.location.href = '/blog';
+              return;
+            }
+            navigate(item.id as View);
+          };
+          return (
+            <button
+              key={item.id}
+              data-tour-nav={item.id}
+              onClick={handleClick}
+              className={`flex flex-col items-center gap-1 transition-colors ${
+                isActive ? 'text-primary' : 'text-on-surface-variant'
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${isActive ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+              {isActive && (
+                <motion.div
+                  layoutId="activeBubble"
+                  className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
+                  initial={false}
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </nav>
     </div>
   );
