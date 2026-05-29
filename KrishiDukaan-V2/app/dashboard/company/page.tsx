@@ -6,7 +6,7 @@ import {
   Loader2, Building2, Package, Store,
   Plus, Save, X, Check,
   Phone, Mail, Youtube, MapPin,
-  Image as ImageIcon, ExternalLink,
+  ExternalLink,
   Tag, Info,
 } from "lucide-react";
 import {
@@ -79,12 +79,9 @@ function CustomizationForm({
     tagline: initial.tagline ?? "",
     about: initial.about ?? "",
     establishedYear: initial.establishedYear ?? "",
-    website: initial.website ?? "",
     socialProof: initial.socialProof ?? "",
     primaryColor: initial.primaryColor ?? "#154212",
     accentColor: initial.accentColor ?? "#f57c00",
-    logo: initial.logo ?? "",
-    banner: initial.banner ?? "",
     certInput: "",
     videoInput: "",
   });
@@ -122,12 +119,9 @@ function CustomizationForm({
         tagline: form.tagline.trim(),
         about: form.about.trim(),
         establishedYear: form.establishedYear.trim(),
-        website: form.website.trim(),
         socialProof: form.socialProof.trim(),
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        logo: form.logo.trim(),
-        banner: form.banner.trim(),
         certifications,
         videos,
       };
@@ -219,6 +213,7 @@ function CustomizationForm({
           </label>
         </div>
       </div>
+
 
       {/* Certifications */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">

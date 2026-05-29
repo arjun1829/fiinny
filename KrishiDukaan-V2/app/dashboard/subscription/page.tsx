@@ -17,7 +17,7 @@ import {
   isListingActive,
   isSubscriptionActive,
 } from "../_lib/subscriptions-firestore";
-import { removeProductAssignment } from "../_lib/product-assignment-firestore";
+import { fetchAssignmentsForRetailer, removeProductAssignment } from "../_lib/product-assignment-firestore";
 import { fetchManufacturerRetailers } from "../_lib/manufacturer-retailers-firestore";
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
@@ -598,7 +598,7 @@ export default function SubscriptionPage() {
 
       let assigned: RetailerSeatListing[] = [];
       if (userRole === "retailer") {
-        assigned = await fetchSeatListingsForRetailer(userId);
+        assigned = await fetchAssignmentsForRetailer(userId);
         setAssignedToMe(assigned);
       } else {
         setAssignedToMe([]);
@@ -631,10 +631,14 @@ export default function SubscriptionPage() {
         }
       } catch { /* non-critical */ }
 
-      // Fetch manufacturer business names for assigned-to-me listings
+      // Fetch manufacturer business names for assigned-to-me listings.
+      // Use manufacturerId when set; fall back to ownerId (always the manufacturer's UID
+      // for assigned listings created by the assignment flow).
       if (userRole === "retailer" && assigned.length > 0) {
         try {
-          const uniqueMfrIds = Array.from(new Set(assigned.map((l) => l.manufacturerId).filter(Boolean))) as string[];
+          const uniqueMfrIds = Array.from(
+            new Set(assigned.map((l) => l.manufacturerId || l.ownerId).filter(Boolean))
+          ) as string[];
           const mfrNameMap = new Map<string, string>();
           await Promise.all(uniqueMfrIds.map(async (mfrId) => {
             try {
@@ -880,9 +884,7 @@ export default function SubscriptionPage() {
                             {productMap.get(listing.productId)?.name ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-on-surface-variant">
-                            {listing.manufacturerId
-                              ? (manufacturerNameMap.get(listing.manufacturerId) ?? "—")
-                              : "—"}
+                            {manufacturerNameMap.get(listing.manufacturerId ?? listing.ownerId) ?? "—"}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
                             {listing.assignedAt

@@ -206,7 +206,12 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         setLoading(false);
         const reason = response.error?.reason || response.error?.description || 'Unknown error';
         setError(`Payment failed: ${reason}. Please try again.`);
-        logFailedPayment(user.uid, response.error).catch(console.error);
+        logFailedPayment(user.uid, response.error, {
+          orderId: order.id,
+          amount: order.amount,
+          seatCount,
+          durationMonths: duration.months,
+        }).catch(console.error);
       });
       rzp.open();
     } catch (err: any) {

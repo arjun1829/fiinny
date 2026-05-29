@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { UserPlus } from "lucide-react";
+import { AlertTriangle, Loader2, PackagePlus, PowerOff, Trash2, UserPlus, X } from "lucide-react";
 import { auth, getUserProfile, fetchManufacturerProducts } from "../../../firebase";
 import { PageHeader } from "../../_components/page-header";
 import { HelperIcon, HelperTooltip } from "../../../../components/helpers";
 import { RetailerTable } from "../../_components/manufacturer/retailer-table";
 import { AddRetailerModal } from "../../_components/manufacturer/add-retailer-form";
 import { AssignProductModal } from "../../_components/manufacturer/assign-product-modal";
+import { BulkAssignRetailersModal } from "../../_components/manufacturer/bulk-assign-retailers-modal";
 import { EditRetailerModal } from "../../_components/manufacturer/edit-retailer-modal";
 import { RetailerDetailsModal } from "../../_components/manufacturer/retailer-details-modal";
 import { InviteCard } from "../../_components/manufacturer/invite-card";
@@ -19,6 +20,8 @@ import {
   removeNetworkRetailer,
   deactivateNetworkRetailer,
   reactivateNetworkRetailer,
+  bulkDeactivateNetworkRetailers,
+  bulkRemoveNetworkRetailers,
 } from "../../_lib/manufacturer-retailers-firestore";
 import {
   fetchSubscriptions,
@@ -30,6 +33,8 @@ import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailer
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
 import { useI18n } from "../../../i18n/I18nContext";
+
+type BulkConfirmAction = "deactivate" | "remove" | null;
 
 type AccessState = "checking" | "allowed" | "denied";
 
@@ -61,6 +66,12 @@ export default function ManufacturerRetailersPage() {
   const [editTarget,     setEditTarget]     = useState<ManufacturerRetailerRow | null>(null);
   const [detailsTarget,  setDetailsTarget]  = useState<ManufacturerRetailerRow | null>(null);
   const [toast, setToast] = useState<ToastPayload | null>(null);
+
+  // Bulk selection
+  const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set());
+  const [bulkConfirm,       setBulkConfirm]       = useState<BulkConfirmAction>(null);
+  const [bulkActioning,     setBulkActioning]     = useState(false);
+  const [bulkAssignOpen,    setBulkAssignOpen]    = useState(false);
 
   const loadAll = useCallback(async (uid: string) => {
     setListLoading(true);
@@ -128,8 +139,9 @@ export default function ManufacturerRetailersPage() {
   };
 
   const handleRemove = async (row: ManufacturerRetailerRow) => {
-    await removeNetworkRetailer(row.id, row.retailerDocId);
-    if (manufacturerId) await loadAll(manufacturerId);
+    if (!manufacturerId) return;
+    await removeNetworkRetailer(row.id, row.retailerDocId, manufacturerId);
+    await loadAll(manufacturerId);
   };
 
   const handleDeactivate = async (row: ManufacturerRetailerRow) => {
@@ -155,6 +167,40 @@ export default function ManufacturerRetailersPage() {
     }
     await loadAll(manufacturerId);
     setAssignTarget(null);
+  };
+
+  const selectedRows = rows.filter((r) => selectedIds.has(r.id));
+
+  const handleBulkDeactivate = async () => {
+    if (!manufacturerId || selectedRows.length === 0) return;
+    setBulkActioning(true);
+    try {
+      await bulkDeactivateNetworkRetailers(
+        selectedRows.map((r) => ({ inviteDocId: r.id, retailerDocId: r.retailerDocId })),
+        manufacturerId,
+      );
+      setSelectedIds(new Set());
+      await loadAll(manufacturerId);
+    } finally {
+      setBulkActioning(false);
+      setBulkConfirm(null);
+    }
+  };
+
+  const handleBulkRemove = async () => {
+    if (selectedRows.length === 0 || !manufacturerId) return;
+    setBulkActioning(true);
+    try {
+      await bulkRemoveNetworkRetailers(
+        selectedRows.map((r) => ({ inviteDocId: r.id, retailerDocId: r.retailerDocId })),
+        manufacturerId,
+      );
+      setSelectedIds(new Set());
+      if (manufacturerId) await loadAll(manufacturerId);
+    } finally {
+      setBulkActioning(false);
+      setBulkConfirm(null);
+    }
   };
 
   if (access === "checking") {
@@ -239,6 +285,45 @@ export default function ManufacturerRetailersPage() {
         />
       </section>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <span className="text-sm font-bold text-primary">
+            {selectedIds.size} retailer{selectedIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <div className="flex flex-wrap gap-2 flex-1">
+            <button
+              type="button"
+              onClick={() => setBulkAssignOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95"
+            >
+              <PackagePlus className="h-3.5 w-3.5" /> Assign Products
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkConfirm("deactivate")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              <PowerOff className="h-3.5 w-3.5" /> Deactivate
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkConfirm("remove")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Remove
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-auto rounded-lg p-1 text-on-surface-variant hover:bg-primary/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <section aria-label="Retailer list">
         <RetailerTable
           rows={rows}
@@ -249,6 +334,8 @@ export default function ManufacturerRetailersPage() {
           onDetails={(row) => setDetailsTarget(row)}
           onDeactivate={handleDeactivate}
           onActivate={handleActivate}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       </section>
 
@@ -289,6 +376,63 @@ export default function ManufacturerRetailersPage() {
           manufacturerId={manufacturerId}
           onClose={() => setDetailsTarget(null)}
           onAssignProduct={() => { setAssignTarget(detailsTarget); setDetailsTarget(null); }}
+        />
+      )}
+
+      {/* Bulk confirm modal */}
+      {bulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !bulkActioning && setBulkConfirm(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className={`flex items-start gap-3 mb-4 ${bulkConfirm === "remove" ? "text-red-600" : "text-amber-600"}`}>
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-bold text-on-surface">
+                  {bulkConfirm === "remove" ? "Remove" : "Deactivate"} {selectedIds.size} Retailer{selectedIds.size !== 1 ? "s" : ""}?
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  {bulkConfirm === "remove"
+                    ? "This will permanently remove selected retailers from your network. They won't appear in your retailer list anymore."
+                    : "This will deactivate selected retailers and release all their assigned product seats."}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" disabled={bulkActioning} onClick={() => setBulkConfirm(null)}
+                className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container disabled:opacity-60">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkActioning}
+                onClick={bulkConfirm === "remove" ? handleBulkRemove : handleBulkDeactivate}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
+                  bulkConfirm === "remove" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
+                }`}
+              >
+                {bulkActioning && <Loader2 className="h-4 w-4 animate-spin" />}
+                {bulkActioning
+                  ? (bulkConfirm === "remove" ? "Removing…" : "Deactivating…")
+                  : (bulkConfirm === "remove" ? "Remove All" : "Deactivate All")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk assign products modal */}
+      {bulkAssignOpen && manufacturerId && selectedRows.length > 0 && (
+        <BulkAssignRetailersModal
+          manufacturerId={manufacturerId}
+          selectedRetailers={selectedRows}
+          products={products}
+          subs={subs}
+          seatListings={seatListings}
+          onAssigned={async () => {
+            setSelectedIds(new Set());
+            if (manufacturerId) await loadAll(manufacturerId);
+          }}
+          onClose={() => setBulkAssignOpen(false)}
         />
       )}
     </>

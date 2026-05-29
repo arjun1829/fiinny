@@ -430,6 +430,7 @@ export type Store = {
   status: string;
   stock: string[];
   isHot?: boolean;
+  logo?: string;
   location: { lat: number; lng: number };
 };
 
@@ -456,6 +457,7 @@ export async function fetchStores(): Promise<Store[]> {
         ownerName: data.ownerName,
         // Fall back to doc.id: for phone-keyed docs the doc ID is the phone number itself
         phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+        logo: data.logo || undefined,
         address: data.address,
         city: data.city,
         state: data.state,
@@ -513,6 +515,7 @@ export async function fetchStores(): Promise<Store[]> {
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
           phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+          logo: data.logo || undefined,
           address: data.address,
           city: data.address?.city || data.city,
           state: data.address?.state || data.state,
@@ -2138,7 +2141,8 @@ export async function deleteBlogPost(id: string): Promise<void> {
 
 export async function logFailedPayment(
   uid: string,
-  errorResponse: any
+  errorResponse: any,
+  context?: { orderId?: string; amount?: number; seatCount?: number; durationMonths?: number }
 ): Promise<void> {
   try {
     const timestamp = serverTimestamp();
@@ -2154,6 +2158,10 @@ export async function logFailedPayment(
       userId: uid,
       userPhone: phone ?? uid,
       error: errorResponse,
+      orderId: context?.orderId ?? errorResponse?.metadata?.order_id ?? null,
+      amount: context?.amount ?? null,
+      seatCount: context?.seatCount ?? null,
+      durationMonths: context?.durationMonths ?? null,
       timestamp,
       status: 'failed',
     });
@@ -2163,12 +2171,7 @@ export async function logFailedPayment(
 }
 
 export async function fetchFailedPayments(): Promise<any[]> {
-  try {
-    const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (error) {
-    console.error('Error fetching failed payments:', error);
-    return [];
-  }
+  const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
