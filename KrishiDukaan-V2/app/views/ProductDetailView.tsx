@@ -252,11 +252,11 @@ function ManufacturerBrandSection({
 
   return (
     <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
-      {/* Brand header */}
-      <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
+      {/* Brand header — stacks on mobile so the brand name stays fully visible, row layout on sm+ (desktop unchanged) */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-6 bg-[#0d2b09]">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
-          <h2 className="text-xl font-bold text-white leading-tight truncate">{brandName}</h2>
+          <h2 className="text-xl font-bold text-white leading-tight break-words sm:truncate">{brandName}</h2>
           {(mfrInfo?.location || mfrInfo?.founded) && (
             <p className="text-white/60 text-xs mt-0.5">
               {[mfrInfo.location, mfrInfo.founded ? `Est. ${mfrInfo.founded}` : ""].filter(Boolean).join(" · ")}
@@ -268,7 +268,7 @@ function ManufacturerBrandSection({
             href={`/brand/${mfrInfo.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+            className="w-full justify-center sm:w-auto sm:justify-start shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
           >
             Visit Brand Store <ICONS.ChevronRight className="w-3 h-3" />
           </a>
@@ -568,7 +568,7 @@ export default function ProductDetailView({
                 <div className="w-full flex items-center gap-2 p-4">
                   <button
                     onClick={() => setExpandedStoreId(isExpanded ? null : store.id)}
-                    className="flex-1 min-w-0 flex items-center gap-4 text-left"
+                    className="flex-1 min-w-0 flex items-center gap-3 md:gap-4 text-left"
                   >
                     <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
                       {store.logo ? (
@@ -578,21 +578,32 @@ export default function ProductDetailView({
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="block font-bold text-on-surface truncate">{store.name}</span>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-                          <ICONS.Location className="w-3 h-3" />{(store as any).distanceLabel || store.distance || t('nearby')}
+                      <span className="block font-bold text-on-surface text-sm md:text-base leading-snug break-words md:truncate">{store.name}</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 md:mt-0.5">
+                        <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 whitespace-nowrap">
+                          <ICONS.Location className="w-3 h-3 shrink-0" />{(store as any).distanceLabel || store.distance || t('nearby')}
                         </span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
-                        <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
-                        {storeOnlineMap[(store as any).phone] && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest border border-green-200">
-                            <ICONS.Delivery className="w-2.5 h-2.5" /> Online Delivery
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                          <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
+                        </span>
+                        {/* Stock badge + price flow inline with metadata on mobile so they never squeeze the name */}
+                        <span className="flex items-center gap-2 md:hidden">
+                          {availability?.sellingPrice && availability.sellingPrice > 0 && (
+                            <span className="text-sm font-bold text-secondary whitespace-nowrap">
+                              ₹{availability.sellingPrice.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${
+                            availability?.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {availability?.stockLevel}
                           </span>
-                        )}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    {/* Desktop-only right cluster (price / stock badge / chevron) — unchanged desktop layout */}
+                    <div className="hidden md:flex items-center gap-2 shrink-0">
                       {availability?.sellingPrice && availability.sellingPrice > 0 && (
                         <span className="text-sm font-bold text-secondary">
                           ₹{availability.sellingPrice.toLocaleString('en-IN')}
@@ -608,6 +619,8 @@ export default function ProductDetailView({
                       <ICONS.ChevronRight className={`w-4 h-4 text-outline transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                     </div>
                   </button>
+                  {/* Chevron for mobile — sits outside the desktop cluster so it stays aligned with the MAP button */}
+                  <ICONS.ChevronRight className={`md:hidden shrink-0 w-4 h-4 text-outline transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                   <HelperTooltip side="left" textKey="storeDirections">
                     <button
                       onClick={() => {
@@ -697,6 +710,21 @@ export default function ProductDetailView({
             </div>
           )}
 
+          {/* Delivery option — temporarily hidden (restore by uncommenting) */}
+          {/*
+          <HelperTooltip side="top" textKey="productDeliveryInfo">
+            <div className="flex items-center gap-4 p-4 rounded-2xl border-2 border-surface-container hover:border-primary transition-all bg-surface-container-low group cursor-pointer">
+              <div className="p-2.5 rounded-xl bg-white shadow-sm text-on-surface-variant group-hover:bg-primary group-hover:text-white transition-colors">
+                <ICONS.Delivery className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="block font-bold text-on-surface">{t('deliverToFarm')}</span>
+                <span className="text-[10px] uppercase font-black tracking-widest text-on-surface-variant">{t('arrivalTomorrow')}</span>
+              </div>
+            </div>
+          </HelperTooltip>
+
+
           {/* Sticky Add-to-Cart bar — shown when consumer selects an online-delivery store */}
           {selectedOrderStoreId && (() => {
             const selectedStore = displayStores.find(s => s.id === selectedOrderStoreId);
@@ -780,6 +808,24 @@ export default function ProductDetailView({
           </HelperTooltip>
 
           <div className="flex items-center gap-4 sm:ml-auto">
+            {product.isOnline ? (
+              <button
+                onClick={() => onAddToCart?.(product)}
+                className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+              >
+                <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
+              </button>
+            ) : (
+              // "Contact for availability" CTA temporarily hidden (restore by uncommenting below and removing this null)
+              null
+              /*
+              <HelperTooltip side="top" textKey="productContact">
+                <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
+                  <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
+                </button>
+              </HelperTooltip>
+              */
+            )}
             <button
               onClick={() => onAddToCart?.(product)}
               className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"

@@ -1114,7 +1114,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface">
+    <div className="min-h-screen flex flex-col bg-surface overflow-x-clip md:overflow-x-visible">
       <Navbar
         currentView={currentView}
         onNavigate={(view) => {
@@ -1210,60 +1210,53 @@ export default function App() {
       />
 
       {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-container bg-white/95 px-3 py-2 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] backdrop-blur md:hidden">
-        <div className="grid grid-cols-5 gap-2">
-          {[
-            { key: 'home', icon: ICONS.Home, label: t('home'), active: currentView === 'home', onClick: () => navigate('home') },
-            { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
-            { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
-            { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
-            hasDashboardShortcut
-              ? {
-                  key: 'dashboard',
-                  icon: ICONS.Dashboard,
-                  label: t('dashboard'),
-                  active: false,
-                  onClick: () => { window.location.href = dashboardHref; },
-                }
-              : user && userRole === 'customer'
-                ? {
-                    key: 'orders',
-                    icon: ICONS.Orders,
-                    label: 'Orders',
-                    active: currentView === 'orders',
-                    onClick: () => navigate('orders'),
-                  }
-                : {
-                    key: 'help',
-                    icon: ICONS.Help,
-                    label: t('help'),
-                    active: currentView === 'help',
-                    onClick: () => navigate('help'),
-                  }
-          ].map((item) => (
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-surface-container flex items-center justify-around px-2 z-50">
+        {([
+          { id: 'home', icon: ICONS.Home, label: t('home') },
+          { id: 'market', icon: ICONS.Market, label: t('market') },
+          { id: 'hub', icon: ICONS.Hub, label: t('hub') },
+          { id: 'map', icon: ICONS.Location, label: t('stores') },
+          // Blog lives at /blog (separate route) — navigates via window.location to leave the home App.
+          { id: 'blog', icon: ICONS.Docs, label: t('blog'), action: 'goto-blog' },
+          // Reuses the existing header Account dropdown — opens the same flow
+          // (login / dashboard / logout / language) by triggering the header button.
+          { id: 'account', icon: ICONS.Account, label: t('account'), action: 'account-menu' },
+        ] as { id: string; icon: typeof ICONS.Home; label: string; action?: 'account-menu' | 'goto-blog' }[]).map((item) => {
+          const isActive = item.id !== 'account' && item.id !== 'blog' && currentView === item.id;
+          const handleClick = () => {
+            if (item.action === 'account-menu') {
+              const trigger = document.querySelector<HTMLButtonElement>('[data-account-trigger]');
+              trigger?.click();
+              return;
+            }
+            if (item.action === 'goto-blog') {
+              if (typeof window !== 'undefined') window.location.href = '/blog';
+              return;
+            }
+            navigate(item.id as View);
+          };
+          return (
             <button
-              key={item.key}
-              data-tour-nav={item.key}
-              onClick={item.onClick}
-              className={`relative flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 transition-all ${
-                item.active
-                  ? 'bg-primary/10 text-primary shadow-sm'
-                  : 'text-on-surface-variant hover:bg-surface-container-low'
+              key={item.id}
+              data-tour-nav={item.id}
+              onClick={handleClick}
+              className={`flex flex-col items-center gap-1 transition-colors ${
+                isActive ? 'text-primary' : 'text-on-surface-variant'
               }`}
             >
-              <item.icon className="h-5 w-5 shrink-0" />
-              <span className="truncate text-[9px] font-bold uppercase tracking-wide">{item.label}</span>
-              {item.active && (
+              <item.icon className={`w-5 h-5 ${isActive ? 'fill-primary/20' : ''}`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+              {isActive && (
                 <motion.div
-                  layoutId="activeBottomNav"
-                  className="absolute inset-0 -z-10 rounded-2xl border border-primary/15 bg-primary/10"
+                  layoutId="activeBubble"
+                  className="absolute -z-10 w-12 h-12 bg-primary-container/20 rounded-full"
                   initial={false}
-                  transition={{ type: 'spring', bounce: 0.18, duration: 0.45 }}
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
                 />
               )}
             </button>
-          ))}
-        </div>
+          );
+        })}
       </nav>
     </div>
   );

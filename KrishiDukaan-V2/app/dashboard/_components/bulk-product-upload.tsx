@@ -9,6 +9,8 @@ import Link from "next/link";
 import { createManufacturerProduct } from "../_lib/manufacturer-products-firestore";
 import { createProductAndInventory } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
+import { useI18n } from "../../i18n/I18nContext";
+import { HelperIcon } from "../../../components/helpers";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,17 @@ type Props = {
 };
 
 export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }: Props) {
+  const { t } = useI18n();
+  // Translate a parser-produced English error string at render time (parsing logic
+  // stays untouched). Unknown/dynamic strings fall through unchanged.
+  const tErr = (msg: string): string => {
+    if (msg === "Name required") return t("csvProductErrName");
+    if (msg === "Unit required") return t("csvProductErrUnit");
+    if (msg === "Price must be > 0") return t("csvProductErrPrice");
+    const unknownCat = msg.match(/^Unknown category "(.*)"$/);
+    if (unknownCat) return t("csvProductErrUnknownCategory", { category: unknownCat[1] ?? "" });
+    return msg;
+  };
   const [open, setOpen] = useState(false);
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [uploadRows, setUploadRows] = useState<UploadRow[] | null>(null);
@@ -170,9 +183,9 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
       ...r,
       status: (r.isDuplicate || r.errors.length ? "skipped" : "pending") as RowStatus,
       statusMsg: r.isDuplicate
-        ? "Duplicate — skipped"
+        ? t("csvProductDupSkipped")
         : r.errors.length
-          ? r.errors.join("; ")
+          ? r.errors.map(tErr).join("; ")
           : "",
     }));
     setUploadRows(rows);
@@ -184,7 +197,7 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
       setUploadRows((prev) => {
         if (!prev) return prev;
         const next = [...prev];
-        next[i] = { ...next[i]!, status: "uploading", statusMsg: "Uploading…" };
+        next[i] = { ...next[i]!, status: "uploading", statusMsg: t("csvProductUploading") };
         return next;
       });
 
@@ -216,11 +229,11 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
         setUploadRows((prev) => {
           if (!prev) return prev;
           const next = [...prev];
-          next[i] = { ...next[i]!, status: "done", statusMsg: "Added" };
+          next[i] = { ...next[i]!, status: "done", statusMsg: t("csvStatusAdded") };
           return next;
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed";
+        const msg = err instanceof Error ? err.message : t("csvProductFailedMsg");
         setUploadRows((prev) => {
           if (!prev) return prev;
           const next = [...prev];
@@ -275,7 +288,7 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
         <div className="flex items-center gap-2.5 flex-wrap">
           <Upload className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-semibold text-on-surface">
-            Bulk Upload Products (CSV)
+            {t("csvProductTitle")}
           </span>
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -284,7 +297,9 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                 : "bg-red-100 text-red-600"
             }`}
           >
-            {seatStats.available} seat{seatStats.available !== 1 ? "s" : ""} available
+            {seatStats.available !== 1
+              ? t("csvSeatsAvailable", { count: seatStats.available })
+              : t("csvSeatAvailable", { count: seatStats.available })}
           </span>
         </div>
         {open
@@ -295,14 +310,28 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
       {open && (
         <div className="border-t border-outline-variant/20 px-5 pb-5 pt-4 flex flex-col gap-4">
 
+          {/* Section guidance — purpose of bulk upload + seat usage */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-semibold">
+            <span className="inline-flex items-center gap-1.5 text-primary">
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="csvProductSection" ariaLabel={`${t("csvProductTitle")} help`} />
+              {t("csvProductTitle")}
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-on-surface-variant">
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="csvSeatBadge" ariaLabel="Available seats help" />
+              {seatStats.available !== 1
+                ? t("csvSeatsAvailable", { count: seatStats.available })
+                : t("csvSeatAvailable", { count: seatStats.available })}
+            </span>
+          </div>
+
           {/* No subscription banner */}
           {noSubscription && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              No active subscription.{" "}
+              {t("csvNoActiveSub")}{" "}
               <Link href="/dashboard/upgrade" className="font-semibold underline">
-                Purchase a plan
+                {t("csvPurchasePlan")}
               </Link>{" "}
-              to start uploading products.
+              {t("csvProductToStart")}
             </div>
           )}
 
@@ -313,10 +342,11 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
               onClick={downloadTemplate}
               className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors"
             >
-              <FileDown className="h-3.5 w-3.5" /> Download CSV Template
+              <FileDown className="h-3.5 w-3.5" /> {t("csvDownloadTemplate")}
             </button>
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="csvProductTemplate" ariaLabel={`${t("csvDownloadTemplate")} help`} />
             <span className="text-xs text-on-surface-variant">
-              Columns: <code className="font-mono">name, category, unit, price{role === "retailer" ? ", stock" : ""}, description</code>
+              {t("csvColumnsLabel")} <code className="font-mono">name, category, unit, price{role === "retailer" ? ", stock" : ""}, description</code>
             </span>
           </div>
 
@@ -330,15 +360,20 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
-              <button
-                type="button"
-                disabled={noSubscription || seatStats.available === 0}
-                onClick={() => fileRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-outline-variant/40 bg-surface-container-low/50 py-8 text-sm text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
-              >
-                <Upload className="h-5 w-5" />
-                Click to select a CSV file
-              </button>
+              <div className="relative">
+                <div className="absolute right-2 top-2 z-10">
+                  <HelperIcon size="xs" variant="ghost" side="left" textKey="csvProductUploadZone" ariaLabel={`${t("csvSelectFile")} help`} />
+                </div>
+                <button
+                  type="button"
+                  disabled={noSubscription || seatStats.available === 0}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-outline-variant/40 bg-surface-container-low/50 py-8 text-sm text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
+                >
+                  <Upload className="h-5 w-5" />
+                  {t("csvSelectFile")}
+                </button>
+              </div>
             </>
           )}
 
@@ -348,19 +383,21 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
               {/* Row summary chips */}
               <div className="flex flex-wrap gap-2 text-xs font-medium">
                 <span className="rounded-full bg-primary/10 text-primary px-2.5 py-1">
-                  {parsedRows.length} rows found
+                  {t("csvRowsFound", { count: parsedRows.length })}
                 </span>
                 <span className="rounded-full bg-green-100 text-green-700 px-2.5 py-1">
-                  {validRows.length} valid
+                  {t("csvValidCount", { count: validRows.length })}
                 </span>
                 {invalidCount > 0 && (
                   <span className="rounded-full bg-red-100 text-red-600 px-2.5 py-1">
-                    {invalidCount} invalid
+                    {t("csvInvalidCount", { count: invalidCount })}
                   </span>
                 )}
                 {dupCount > 0 && (
                   <span className="rounded-full bg-amber-100 text-amber-700 px-2.5 py-1">
-                    {dupCount} duplicate{dupCount !== 1 ? "s" : ""} in CSV
+                    {dupCount !== 1
+                      ? t("csvProductDupsInCsv", { count: dupCount })
+                      : t("csvProductDupInCsv", { count: dupCount })}
                   </span>
                 )}
               </div>
@@ -368,9 +405,9 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
               {/* Seat check warning */}
               {validRows.length > 0 && seatStats.available < validRows.length && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  Not enough seats: need {validRows.length} but only {seatStats.available} available.{" "}
+                  {t("csvProductNotEnoughSeats", { need: validRows.length, have: seatStats.available })}{" "}
                   <Link href="/dashboard/upgrade" className="font-semibold underline">
-                    Buy more seats
+                    {t("csvBuyMoreSeats")}
                   </Link>
                 </div>
               )}
@@ -381,14 +418,14 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                   <thead>
                     <tr className="border-b border-outline-variant/20 bg-surface-container-low text-on-surface-variant">
                       <th className="px-3 py-2 text-left font-semibold">#</th>
-                      <th className="px-3 py-2 text-left font-semibold">Name</th>
-                      <th className="px-3 py-2 text-left font-semibold">Category</th>
-                      <th className="px-3 py-2 text-left font-semibold">Unit</th>
-                      <th className="px-3 py-2 text-left font-semibold">Price</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColName")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColCategory")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColUnit")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColPrice")}</th>
                       {role === "retailer" && (
-                        <th className="px-3 py-2 text-left font-semibold">Stock</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("csvColStock")}</th>
                       )}
-                      <th className="px-3 py-2 text-left font-semibold">Status</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColStatus")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -415,11 +452,11 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                         )}
                         <td className="px-3 py-2">
                           {row.isDuplicate ? (
-                            <span className="text-amber-600 font-medium">Duplicate in CSV</span>
+                            <span className="text-amber-600 font-medium">{t("csvProductDupRow")}</span>
                           ) : row.errors.length ? (
-                            <span className="text-red-600">{row.errors[0]}</span>
+                            <span className="text-red-600">{tErr(row.errors[0]!)}</span>
                           ) : (
-                            <span className="text-green-600 font-medium">Ready</span>
+                            <span className="text-green-600 font-medium">{t("csvStatusReady")}</span>
                           )}
                         </td>
                       </tr>
@@ -439,14 +476,16 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                   {uploading
                     ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <Upload className="h-4 w-4" />}
-                  Upload {validRows.length} Product{validRows.length !== 1 ? "s" : ""}
+                  {validRows.length !== 1
+                    ? t("csvProductUploadBtnPlural", { count: validRows.length })
+                    : t("csvProductUploadBtn", { count: validRows.length })}
                 </button>
                 <button
                   type="button"
                   onClick={reset}
                   className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container transition-colors"
                 >
-                  <X className="h-4 w-4" /> Clear
+                  <X className="h-4 w-4" /> {t("csvClear")}
                 </button>
               </div>
             </div>
@@ -459,22 +498,22 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
                 {uploading && (
                   <span className="flex items-center gap-1 text-primary">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+                    <Loader2 className="h-3 w-3 animate-spin" /> {t("csvProductUploading")}
                   </span>
                 )}
                 {done && (
                   <>
                     <span className="rounded-full bg-green-100 text-green-700 px-2.5 py-1">
-                      {uploadRows.filter((r) => r.status === "done").length} uploaded
+                      {t("csvProductUploaded", { count: uploadRows.filter((r) => r.status === "done").length })}
                     </span>
                     {uploadRows.filter((r) => r.status === "error").length > 0 && (
                       <span className="rounded-full bg-red-100 text-red-600 px-2.5 py-1">
-                        {uploadRows.filter((r) => r.status === "error").length} failed
+                        {t("csvProductFailed", { count: uploadRows.filter((r) => r.status === "error").length })}
                       </span>
                     )}
                     {uploadRows.filter((r) => r.status === "skipped").length > 0 && (
                       <span className="rounded-full bg-surface-container-low text-on-surface-variant px-2.5 py-1">
-                        {uploadRows.filter((r) => r.status === "skipped").length} skipped
+                        {t("csvProductSkipped", { count: uploadRows.filter((r) => r.status === "skipped").length })}
                       </span>
                     )}
                   </>
@@ -487,10 +526,10 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                   <thead>
                     <tr className="border-b border-outline-variant/20 bg-surface-container-low text-on-surface-variant">
                       <th className="px-3 py-2 text-left font-semibold">#</th>
-                      <th className="px-3 py-2 text-left font-semibold">Name</th>
-                      <th className="px-3 py-2 text-left font-semibold">Unit</th>
-                      <th className="px-3 py-2 text-left font-semibold">Price</th>
-                      <th className="px-3 py-2 text-left font-semibold">Result</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColName")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColUnit")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColPrice")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvColResult")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -503,12 +542,12 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                         <td className="px-3 py-2">
                           {row.status === "uploading" && (
                             <span className="flex items-center gap-1 text-primary">
-                              <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
+                              <Loader2 className="h-3 w-3 animate-spin" /> {t("csvProductUploading")}
                             </span>
                           )}
                           {row.status === "done" && (
                             <span className="flex items-center gap-1 text-green-600 font-medium">
-                              <CheckCircle2 className="h-3 w-3" /> Added
+                              <CheckCircle2 className="h-3 w-3" /> {t("csvStatusAdded")}
                             </span>
                           )}
                           {row.status === "error" && (
@@ -518,7 +557,7 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                             <span className="text-on-surface-variant">{row.statusMsg}</span>
                           )}
                           {row.status === "pending" && (
-                            <span className="text-on-surface-variant">Waiting…</span>
+                            <span className="text-on-surface-variant">{t("csvWaiting")}</span>
                           )}
                         </td>
                       </tr>
@@ -533,7 +572,7 @@ export function BulkProductUpload({ userId, role, seatStats, onDone, storeName }
                   onClick={reset}
                   className="inline-flex w-fit items-center gap-2 rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container transition-colors"
                 >
-                  Upload Another File
+                  {t("csvUploadAnother")}
                 </button>
               )}
             </div>
