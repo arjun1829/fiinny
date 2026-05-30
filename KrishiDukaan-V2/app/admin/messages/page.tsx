@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, RefreshCw, Search, Mail, User, Clock, Inbox, MessageSquare } from "lucide-react";
+import { Trash2, RefreshCw, Search, Mail, User, Clock, Inbox, MessageSquare, Phone, Tag } from "lucide-react";
 import { fetchContactMessages, deleteContactMessage, ContactMessage } from "../../firebase";
 
 export default function AdminMessagesPage() {
@@ -138,6 +138,24 @@ export default function AdminMessagesPage() {
                     <Mail className="h-4 w-4 shrink-0" />
                     {msg.email}
                   </a>
+                  {msg.phone && (
+                    <>
+                      <span className="hidden sm:inline text-on-surface-variant/40">|</span>
+                      <a href={`tel:${msg.phone}`} className="flex items-center gap-1.5 font-medium text-on-surface hover:text-primary">
+                        <Phone className="h-3.5 w-3.5 shrink-0" />
+                        {msg.phone}
+                      </a>
+                    </>
+                  )}
+                  {msg.subject && (
+                    <>
+                      <span className="hidden sm:inline text-on-surface-variant/40">|</span>
+                      <span className="flex items-center gap-1.5 text-xs font-semibold rounded-full bg-primary/10 text-primary px-2.5 py-0.5">
+                        <Tag className="h-3 w-3 shrink-0" />
+                        {msg.subject}
+                      </span>
+                    </>
+                  )}
                   <span className="hidden sm:inline text-on-surface-variant/40">|</span>
                   <span className="flex items-center gap-1.5 text-on-surface-variant text-xs">
                     <Clock className="h-3.5 w-3.5 shrink-0" />

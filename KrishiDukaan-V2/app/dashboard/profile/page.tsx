@@ -426,6 +426,23 @@ function ProfilePageInner() {
     }
   };
 
+  const handleOnlineDeliveryToggle = async () => {
+    if (!uid || !userRole) return;
+    const newValue = !onlineDelivery;
+    setOnlineDelivery(newValue);
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", uid));
+      const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
+      const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
+      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : (phone || uid!);
+      await setDoc(doc(db, col, profileDocId), { onlineDelivery: newValue, updatedAt: serverTimestamp() }, { merge: true });
+      const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+      await setDoc(userTarget, { onlineDelivery: newValue, updatedAt: serverTimestamp() }, { merge: true });
+    } catch {
+      setOnlineDelivery(!newValue); // revert on error
+    }
+  };
+
   const handleSettingsSave = async () => {
     if (!uid || !userRole) return;
     setSettingsSaving(true);
@@ -642,6 +659,21 @@ function ProfilePageInner() {
               <div className="text-center">
                 <p className="text-base font-bold text-on-surface capitalize">{userRole ?? "—"}</p>
                 <p className="text-[10px] text-on-surface-variant">{t('accountTypeLabel')}</p>
+              </div>
+              {/* Online delivery quick toggle */}
+              <div className="ml-auto flex items-center gap-2">
+                <Truck className="h-3.5 w-3.5 text-on-surface-variant shrink-0" />
+                <span className="text-[10px] text-on-surface-variant">{t('onlineDelivery')}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={onlineDelivery}
+                  onClick={handleOnlineDeliveryToggle}
+                  className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors focus:outline-none"
+                  style={{ backgroundColor: onlineDelivery ? "var(--color-primary)" : "var(--color-surface-container-highest)" }}
+                >
+                  <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-4" : ""}`} />
+                </button>
               </div>
             </div>
 

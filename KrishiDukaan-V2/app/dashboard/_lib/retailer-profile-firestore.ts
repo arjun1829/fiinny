@@ -28,6 +28,8 @@ export type RetailerPublicProfile = {
   state?: string;
   bio?: string;
   role: string;
+  averageRating?: number;
+  totalReviews?: number;
 };
 
 export type RetailerProductSummary = {
@@ -71,6 +73,8 @@ export async function fetchRetailerPublicProfile(
         state: profileData.state ? String(profileData.state) : undefined,
         bio: profileData.bio ? String(profileData.bio) : undefined,
         role: String(profileData.role ?? "retailer"),
+        averageRating: profileData.averageRating,
+        totalReviews: profileData.totalReviews,
       };
     }
 
@@ -112,6 +116,8 @@ export async function fetchRetailerPublicProfile(
         state: profileData.state ? String(profileData.state) : undefined,
         bio: profileData.bio ? String(profileData.bio) : undefined,
         role: String(profileData.role ?? "retailer"),
+        averageRating: profileData.averageRating,
+        totalReviews: profileData.totalReviews,
       };
     }
 

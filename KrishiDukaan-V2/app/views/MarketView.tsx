@@ -359,10 +359,7 @@ export default function MarketView({
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105 bg-white"
                   />
                   <div className="absolute top-3 left-3" onClick={(e) => e.stopPropagation()}>
-                    <HelperTooltip
-                      side="bottom"
-                      textKey="stockBadge"
-                    >
+                    <HelperTooltip side="bottom" textKey="stockBadge">
                       <span className="bg-primary-container/90 backdrop-blur-md text-on-primary-container text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm cursor-help">
                         {t('inStock')}
                       </span>
@@ -371,6 +368,13 @@ export default function MarketView({
                   {product.category && product.category !== 'general' && (
                     <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm capitalize">
                       {product.category}
+                    </span>
+                  )}
+                  {(product.averageRating ?? 0) > 0 && (
+                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                      <span className="text-amber-400">★</span>
+                      {product.averageRating!.toFixed(1)}
+                      {product.totalReviews ? <span className="text-white/70">({product.totalReviews})</span> : null}
                     </span>
                   )}
                 </div>

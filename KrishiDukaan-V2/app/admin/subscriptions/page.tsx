@@ -580,58 +580,75 @@ export default function AdminSubscriptionsPage() {
 
                 return (
                   <div key={fp.id} className="rounded-2xl border border-red-100 bg-white overflow-hidden">
-                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 px-4 sm:px-5 py-4">
-                      {/* User info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <p className="text-sm font-bold text-on-surface">{userName || fp.userPhone || fp.userId}</p>
-                          {userName && <p className="text-xs text-on-surface-variant font-mono">{fp.userPhone || fp.userId}</p>}
+                    <div className="px-4 py-3 space-y-3">
+
+                      {/* Row 1 — user + date */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-on-surface truncate">{userName || fp.userPhone || fp.userId}</p>
+                          {userName && <p className="text-xs text-on-surface-variant font-mono truncate">{fp.userPhone || fp.userId}</p>}
                         </div>
-                        <p className="text-xs text-red-600 font-semibold">{errorReason}</p>
+                        <span className="text-[11px] text-on-surface-variant shrink-0 mt-0.5">{fmt(fp.timestamp)}</span>
                       </div>
 
-                      {/* Purchase intent */}
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-on-surface-variant shrink-0">
-                        {amountRupees !== null && (
-                          <span>₹<span className="font-bold text-on-surface">{amountRupees}</span></span>
-                        )}
-                        {fp.seatCount !== null && fp.seatCount !== undefined && (
-                          <span><span className="font-bold text-on-surface">{fp.seatCount}</span> seat{fp.seatCount !== 1 ? 's' : ''}</span>
-                        )}
-                        {fp.durationMonths !== null && fp.durationMonths !== undefined && (
-                          <span><span className="font-bold text-on-surface">{fp.durationMonths}</span> mo</span>
-                        )}
+                      {/* Row 2 — error reason */}
+                      <div className="inline-flex items-center gap-1.5 bg-red-50 border border-red-100 rounded-xl px-2.5 py-1">
+                        <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+                        <span className="text-xs text-red-600 font-semibold">{errorReason}</span>
                       </div>
 
-                      {/* IDs */}
-                      <div className="text-[10px] font-mono text-on-surface-variant shrink-0 space-y-0.5">
-                        {paymentId && <p title="Payment ID">{paymentId}</p>}
-                        {orderId && <p title="Order ID" className="opacity-60">{orderId}</p>}
-                      </div>
+                      {/* Row 3 — purchase intent chips */}
+                      {(amountRupees !== null || fp.seatCount != null || fp.durationMonths != null) && (
+                        <div className="flex flex-wrap gap-2">
+                          {amountRupees !== null && (
+                            <span className="bg-surface-container rounded-lg px-2.5 py-1 text-xs font-bold text-on-surface">₹{amountRupees}</span>
+                          )}
+                          {fp.seatCount != null && (
+                            <span className="bg-surface-container rounded-lg px-2.5 py-1 text-xs font-bold text-on-surface">{fp.seatCount} seat{fp.seatCount !== 1 ? 's' : ''}</span>
+                          )}
+                          {fp.durationMonths != null && (
+                            <span className="bg-surface-container rounded-lg px-2.5 py-1 text-xs font-bold text-on-surface">{fp.durationMonths} mo</span>
+                          )}
+                        </div>
+                      )}
 
-                      {/* Date + activate */}
-                      <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                        <span className="text-xs text-on-surface-variant">{fmt(fp.timestamp)}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setManualForm(f => ({
-                              ...f,
-                              userDocId: fp.userPhone || fp.userId || '',
-                              orderId: orderId || '',
-                              seats: fp.seatCount ? String(fp.seatCount) : '1',
-                              durationMonths: fp.durationMonths ? String(fp.durationMonths) : '1',
-                            }));
-                            setShowManual(true);
-                            setManualSuccess(false);
-                            setManualError(null);
-                            setActiveTab('subscriptions');
-                          }}
-                          className="flex items-center gap-1.5 rounded-xl bg-primary/10 text-primary px-3 py-1.5 text-[11px] font-bold hover:bg-primary/20 transition-colors"
-                        >
-                          <Plus className="h-3 w-3" /> Activate
-                        </button>
-                      </div>
+                      {/* Row 4 — IDs (truncated) */}
+                      {(paymentId || orderId) && (
+                        <div className="space-y-0.5">
+                          {paymentId && (
+                            <p className="text-[10px] font-mono text-on-surface-variant truncate" title={paymentId}>
+                              <span className="font-black uppercase text-[9px] tracking-widest mr-1 text-outline">pay</span>{paymentId}
+                            </p>
+                          )}
+                          {orderId && (
+                            <p className="text-[10px] font-mono text-on-surface-variant/60 truncate" title={orderId}>
+                              <span className="font-black uppercase text-[9px] tracking-widest mr-1 text-outline">ord</span>{orderId}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Row 5 — Activate button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualForm(f => ({
+                            ...f,
+                            userDocId: fp.userPhone || fp.userId || '',
+                            orderId: orderId || '',
+                            seats: fp.seatCount ? String(fp.seatCount) : '1',
+                            durationMonths: fp.durationMonths ? String(fp.durationMonths) : '1',
+                          }));
+                          setShowManual(true);
+                          setManualSuccess(false);
+                          setManualError(null);
+                          setActiveTab('subscriptions');
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-primary/10 text-primary px-3 py-2 text-xs font-bold hover:bg-primary/20 transition-colors"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Activate Subscription
+                      </button>
+
                     </div>
                   </div>
                 );

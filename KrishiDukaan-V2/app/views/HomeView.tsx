@@ -332,6 +332,13 @@ export default function HomeView({
                     </span>
                   </HelperTooltip>
                 </div>
+                {(product.averageRating ?? 0) > 0 && (
+                  <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                    <span className="text-amber-400">★</span>
+                    {product.averageRating!.toFixed(1)}
+                    {product.totalReviews ? <span className="text-white/70">({product.totalReviews})</span> : null}
+                  </span>
+                )}
               </div>
               <div className="p-3 flex flex-col flex-1">
                 <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>

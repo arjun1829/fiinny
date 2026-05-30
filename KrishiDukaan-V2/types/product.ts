@@ -8,6 +8,8 @@ export type MarketplaceProduct = {
   description: string;
   image: string;
   images?: string[];
+  averageRating?: number;
+  totalReviews?: number;
 
   /** Ownership — primary query fields */
   ownerId?: string;

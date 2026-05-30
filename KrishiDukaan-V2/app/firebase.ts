@@ -281,7 +281,30 @@ export async function saveRetailerProduct(
 
 export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> {
   try {
-    const snapshot = await getDocs(collection(db, 'products'));
+    const [snapshot, reviewsSnap] = await Promise.all([
+      getDocs(collection(db, 'products')),
+      getDocs(collection(db, 'productReviews')).catch(() => null),
+    ]);
+
+    // Compute ratings straight from the review documents (source of truth), keyed by catalogId.
+    // This avoids depending on aggregate fields being kept in sync on product/catalog docs.
+    const ratingAgg = new Map<string, { sum: number; count: number }>();
+    if (reviewsSnap) {
+      for (const d of reviewsSnap.docs) {
+        const rd = d.data();
+        const id = String(rd.catalogId || '');
+        const rating = Number(rd.rating || 0);
+        if (!id || !(rating > 0)) continue;
+        const cur = ratingAgg.get(id) ?? { sum: 0, count: 0 };
+        cur.sum += rating;
+        cur.count += 1;
+        ratingAgg.set(id, cur);
+      }
+    }
+    // Track every source product id merged under each dedup key, so a review on any
+    // variant (manufacturer/retailer copy) still contributes to the merged card's rating.
+    const idsByKey = new Map<string, string[]>();
+
     const allMapped = snapshot.docs.map((item) => {
       const data = item.data();
       return {
@@ -305,6 +328,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         isOnline: data.isOnline === true || data.sellMode === "online_delivery",
         availability: data.availability || undefined,
         source: data.source ? String(data.source) : undefined,
+        averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
+        totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
         nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
         phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
         potassium: data.potassium ? String(data.potassium) : undefined,
@@ -334,6 +359,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
     const byName = new Map<string, MarketplaceProduct>();
     for (const p of raw) {
       const key = p.name.toLowerCase().trim();
+      // Record this source id under the dedup key for rating aggregation later
+      const ids = idsByKey.get(key) ?? [];
+      ids.push(p.id);
+      idsByKey.set(key, ids);
       const existing = byName.get(key);
       if (!existing) {
         byName.set(key, { ...p, availability: p.availability ? [...p.availability] : [] });
@@ -382,6 +411,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const canonical = byName.get(key);
       if (!canonical) continue;
 
+      // A copy may also carry its own reviews — record its id for rating aggregation
+      const copyIds = idsByKey.get(key) ?? [];
+      if (!copyIds.includes(copy.id)) { copyIds.push(copy.id); idsByKey.set(key, copyIds); }
+
       const copyStoreId = (copy as any).ownerId || copy.retailerId || '';
       const copyPhone = copy.retailerPhone;
       if (!copyStoreId && !copyPhone) continue;
@@ -406,13 +439,23 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       byName.set(key, { ...canonical, availability: av });
     }
 
-    // Compute lowestPrice across all stores for each product
-    return Array.from(byName.values()).map((p) => {
+    // Compute lowestPrice + ratings across all merged store/variant sources for each product
+    return Array.from(byName.entries()).map(([key, p]) => {
       const prices = (p.availability ?? [])
         .map((a) => a.sellingPrice)
         .filter((v): v is number => typeof v === 'number' && v > 0);
       const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
-      return lowestPrice !== undefined ? { ...p, lowestPrice } : p;
+
+      // Aggregate reviews across every source id that merged into this card
+      let sum = 0, count = 0;
+      for (const id of (idsByKey.get(key) ?? [p.id])) {
+        const agg = ratingAgg.get(id);
+        if (agg) { sum += agg.sum; count += agg.count; }
+      }
+      const averageRating = count > 0 ? sum / count : p.averageRating;
+      const totalReviews = count > 0 ? count : p.totalReviews;
+
+      return { ...p, lowestPrice, averageRating, totalReviews };
     });
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
@@ -432,15 +475,33 @@ export type Store = {
   isHot?: boolean;
   logo?: string;
   location: { lat: number; lng: number };
+  averageRating?: number;
+  totalReviews?: number;
 };
 
 export async function fetchStores(): Promise<Store[]> {
   try {
-    const [storesSnapshot, retailersSnapshot, manufacturersSnapshot] = await Promise.all([
+    const [storesSnapshot, retailersSnapshot, manufacturersSnapshot, storeReviewsSnap] = await Promise.all([
       getDocs(collection(db, 'stores')),
       getDocs(collection(db, 'retailers')),
       getDocs(collection(db, 'manufacturers')),
+      getDocs(collection(db, 'storeReviews')).catch(() => null),
     ]);
+
+    // Aggregate store ratings straight from review docs (source of truth), keyed by storePhone.
+    const storeRatingAgg = new Map<string, { sum: number; count: number }>();
+    if (storeReviewsSnap) {
+      for (const d of storeReviewsSnap.docs) {
+        const rd = d.data();
+        const phone = String(rd.storePhone || '');
+        const rating = Number(rd.rating || 0);
+        if (!phone || !(rating > 0)) continue;
+        const cur = storeRatingAgg.get(phone) ?? { sum: 0, count: 0 };
+        cur.sum += rating;
+        cur.count += 1;
+        storeRatingAgg.set(phone, cur);
+      }
+    }
 
     const stores = storesSnapshot.docs.map((doc) => ({
       id: doc.id,
@@ -468,7 +529,9 @@ export async function fetchStores(): Promise<Store[]> {
         location: {
           lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
           lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
-        }
+        },
+        averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
+        totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
       } as Store & { retailerId?: string; userId?: string; city?: string; state?: string; pincode?: string };
     });
 
@@ -551,7 +614,15 @@ export async function fetchStores(): Promise<Store[]> {
       }
     }
 
-    return Array.from(globalMap.values());
+    // Attach ratings computed from storeReviews, keyed by the store's phone
+    return Array.from(globalMap.values()).map((entry) => {
+      const phone = entry.phone || (/^\+?\d{10,13}$/.test(entry.id) ? entry.id : '');
+      const agg = phone ? storeRatingAgg.get(phone) : undefined;
+      if (agg && agg.count > 0) {
+        return { ...entry, averageRating: agg.sum / agg.count, totalReviews: agg.count };
+      }
+      return entry;
+    });
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
@@ -1951,13 +2022,22 @@ export interface ContactMessage {
   email: string;
   message: string;
   createdAt: any;
+  phone?: string;
+  subject?: string;
 }
 
-export async function saveContactMessage(name: string, email: string, message: string): Promise<string> {
+export async function saveContactMessage(
+  name: string,
+  email: string,
+  message: string,
+  extras?: { phone?: string; subject?: string },
+): Promise<string> {
   const ref = await addDoc(collection(db, 'contactMessages'), {
     name: name.trim(),
     email: email.trim(),
     message: message.trim(),
+    ...(extras?.phone ? { phone: extras.phone.trim() } : {}),
+    ...(extras?.subject ? { subject: extras.subject } : {}),
     createdAt: serverTimestamp(),
   });
   return ref.id;

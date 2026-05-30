@@ -9,6 +9,7 @@ import { cacheLocation, reverseGeocodeToDisplay } from '../utils/geolocation';
 import { filterStoresByQuery, storeAddressToDisplayString, StoreWithDistance } from '../utils/nearby';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
+import { ReviewSection } from '../../components/shared/ReviewSection';
 
 interface StoreLocatorViewProps {
   onBack: () => void;
@@ -374,6 +375,14 @@ export default function StoreLocatorView({
                     <span className={`w-1.5 h-1.5 rounded-full ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
                     <span className="text-[10px] text-on-surface-variant">{(store.status || '').split('•')[0].trim()}</span>
                   </div>
+                  {(store.averageRating ?? 0) > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-amber-400 text-[10px] leading-none">{'★'.repeat(Math.round(store.averageRating!))}</span>
+                      <span className="text-[10px] font-semibold text-on-surface-variant tabular-nums">
+                        {store.averageRating!.toFixed(1)}{store.totalReviews ? ` · ${store.totalReviews} review${store.totalReviews !== 1 ? 's' : ''}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {/* MAP button — shows map overlay from top */}
                 <button
@@ -771,6 +780,15 @@ export default function StoreLocatorView({
                   {detailStore.ownerName && (
                     <p className="text-sm text-on-surface-variant mt-1">{t('owner')}: {detailStore.ownerName}</p>
                   )}
+                  {(detailStore.averageRating ?? 0) > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="text-amber-400 text-sm leading-none">{'★'.repeat(Math.round(detailStore.averageRating))}</span>
+                      <span className="text-sm font-bold text-on-surface tabular-nums">{detailStore.averageRating.toFixed(1)}</span>
+                      {detailStore.totalReviews > 0 && (
+                        <span className="text-xs text-on-surface-variant">({detailStore.totalReviews} review{detailStore.totalReviews !== 1 ? 's' : ''})</span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => setDetailStore(null)}
@@ -854,6 +872,13 @@ export default function StoreLocatorView({
                   </HelperTooltip>
                 )}
               </div>
+
+              {/* Store Reviews */}
+              {detailStore.phone && (
+                <div className="mt-2">
+                  <ReviewSection targetId={detailStore.phone} targetType="store" />
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
