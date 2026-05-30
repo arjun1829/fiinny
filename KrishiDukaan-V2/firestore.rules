@@ -72,9 +72,10 @@ service cloud.firestore {
         request.auth.uid == phone ||
         myPhone() == phone || myRole() in ['retailer', 'manufacturer']
       );
-      allow create: if isAuthed()
+      allow create: if isAdmin()
+                       || (isAuthed()
                        && myPhone() == phone
-                       && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer'];
+                       && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer']);
       allow update: if isAdmin() || (isAuthed() && (request.auth.uid == phone || myPhone() == phone) &&
         // Prevent role downgrade
         !(
@@ -90,7 +91,7 @@ service cloud.firestore {
     // Business profile — public read, owner write.
     match /profiles/{phone} {
       allow read: if true;
-      allow create: if isAuthed() && myPhone() == phone;
+      allow create: if isAdmin() || (isAuthed() && myPhone() == phone);
       allow update: if isAdmin() || (isAuthed() && myPhone() == phone)
                        || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalReviews', 'averageRating']));
       allow delete: if isAdmin();
@@ -317,14 +318,14 @@ service cloud.firestore {
     match /retailers/{retailerId} {
       allow read: if true;
       allow create: if isAuthed();
-      allow update: if isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.userId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         retailerId == request.auth.uid ||
         resource.data.phone == myPhone() ||
         resource.data.phone == myPhone().replace('+91', '')
-      );
-      allow delete: if isAuthed() && retailerId == request.auth.uid;
+      ));
+      allow delete: if isAdmin() || (isAuthed() && retailerId == request.auth.uid);
     }
 
     match /stores/{storeId} {
@@ -334,13 +335,13 @@ service cloud.firestore {
 
     match /manufacturers/{manufacturerId} {
       allow read: if true;
-      // Allow write when manufacturerId is the auth UID (legacy) OR the caller's phone (new schema)
-      allow create, update: if isAuthed() && (
+      // Allow write when manufacturerId is the auth UID (legacy) OR the caller's phone (new schema), or admin
+      allow create, update: if isAdmin() || (isAuthed() && (
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
-      );
+      ));
     }
     
            // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
