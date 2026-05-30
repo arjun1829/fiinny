@@ -6,7 +6,7 @@ import {
   Loader2, Building2, Package, Store,
   Plus, Save, X, Check,
   Phone, Mail, Youtube, MapPin,
-  ExternalLink,
+  ExternalLink, Image as ImageIcon,
   Tag, Info,
 } from "lucide-react";
 import {
@@ -82,6 +82,9 @@ function CustomizationForm({
     socialProof: initial.socialProof ?? "",
     primaryColor: initial.primaryColor ?? "#154212",
     accentColor: initial.accentColor ?? "#f57c00",
+    website: initial.website ?? "",
+    logo: initial.logo ?? "",
+    banner: initial.banner ?? "",
     certInput: "",
     videoInput: "",
   });
