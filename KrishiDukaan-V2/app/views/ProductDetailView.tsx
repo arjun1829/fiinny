@@ -1,7 +1,7 @@
 import { MarketplaceProduct } from "../../types/product";
 import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
@@ -13,6 +13,7 @@ import {
   type RetailerPublicProfile,
   type RetailerProductSummary,
 } from '../dashboard/_lib/retailer-profile-firestore';
+import { ReviewSection } from '../../components/shared/ReviewSection';
 
 type StoreListItem = {
   id: string;
@@ -100,6 +101,22 @@ function RetailerProfileSection({
             <p className="text-xs text-on-surface-variant mt-1 line-clamp-2">{profile.bio}</p>
           )}
         </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1 text-secondary">
+            <ICONS.Star className="w-4 h-4 fill-secondary" />
+            <span className="text-sm font-black">
+              {profile?.averageRating ? profile.averageRating.toFixed(1) : "0.0"}
+            </span>
+          </div>
+          <span className="text-[10px] text-on-surface-variant">
+            {profile?.totalReviews || 0} reviews
+          </span>
+        </div>
+      </div>
+      
+      {/* Store Reviews */}
+      <div className="px-6 pt-4 border-b border-surface-container pb-4">
+        <ReviewSection targetId={retailerPhone} targetType="store" />
       </div>
 
       {/* "More products" prompt + grid */}
@@ -330,6 +347,15 @@ export default function ProductDetailView({
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
+  // Live store ratings keyed by phone — reflects new reviews instantly without a full refetch.
+  const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
+    setLiveStoreRatings((prev) => {
+      const cur = prev[phone];
+      if (cur && cur.avg === avg && cur.count === count) return prev;
+      return { ...prev, [phone]: { avg, count } };
+    });
+  }, []);
 
   // Gallery: use product.images if available, else fall back to product.image alone
   const galleryImages = (product.images && product.images.length > 0)
@@ -587,6 +613,20 @@ export default function ProductDetailView({
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
                           <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
                         </span>
+                        {(() => {
+                          const live = storePhone ? liveStoreRatings[storePhone] : undefined;
+                          const avg = live ? live.avg : ((store as any).averageRating ?? 0);
+                          const count = live ? live.count : ((store as any).totalReviews ?? 0);
+                          if (!(avg > 0)) return null;
+                          return (
+                            <span className="flex items-center gap-0.5 whitespace-nowrap">
+                              <span className="text-amber-400 text-[10px] leading-none">★</span>
+                              <span className="text-[10px] font-bold text-on-surface-variant tabular-nums">
+                                {avg.toFixed(1)}{count ? ` (${count})` : ''}
+                              </span>
+                            </span>
+                          );
+                        })()}
                         {/* Stock badge + price flow inline with metadata on mobile so they never squeeze the name */}
                         <span className="flex items-center gap-2 md:hidden">
                           {availability?.sellingPrice && availability.sellingPrice > 0 && (
@@ -698,6 +738,11 @@ export default function ProductDetailView({
                             )}
                           </HelperTooltip>
                         </div>
+
+                        {/* Rate this store — write/read reviews for this specific store */}
+                        {storePhone && (
+                          <ReviewSection targetId={storePhone} targetType="store" onAggregateChange={handleStoreAggregate} />
+                        )}
                       </div>
                     </motion.div>
                   )}
@@ -771,7 +816,9 @@ export default function ProductDetailView({
             <HelperTooltip side="bottom" textKey="productReviews">
               <div className="flex items-center gap-1 text-secondary cursor-help">
                 <ICONS.Star className="w-4 h-4 fill-secondary" />
-                <span className="text-sm font-black">4.8 (124 {t('reviewsLabel')})</span>
+                <span className="text-sm font-black">
+                  {product.averageRating ? product.averageRating.toFixed(1) : "0.0"} ({product.totalReviews || 0} {t('reviewsLabel')})
+                </span>
               </div>
             </HelperTooltip>
           </div>
@@ -944,6 +991,11 @@ export default function ProductDetailView({
           </section>
         );
       })()}
+
+      {/* Product Reviews */}
+      {product.id && (
+        <ReviewSection targetId={product.id} targetType="product" />
+      )}
 
       {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
       {sellerProducts.length > 0 && !product.retailerPhone && (

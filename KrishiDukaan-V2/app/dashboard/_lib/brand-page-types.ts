@@ -51,6 +51,8 @@ export type ManufacturerBrandData = {
     whatsapp?: string;
     youtube?: string;
   };
+  averageRating?: number;
+  totalReviews?: number;
 };
 
 export type BrandProductSummary = {
@@ -134,6 +136,8 @@ export function assembleBrandData(
     logo: String(c.logo || manufacturerDoc.logo || DEFAULT_CUSTOMIZATION.logo),
     banner: String(c.banner || manufacturerDoc.banner || DEFAULT_CUSTOMIZATION.banner),
     socialLinks: c.socialLinks,
+    averageRating: typeof manufacturerDoc.averageRating === 'number' ? manufacturerDoc.averageRating : undefined,
+    totalReviews: typeof manufacturerDoc.totalReviews === 'number' ? manufacturerDoc.totalReviews : undefined,
   };
 }
 

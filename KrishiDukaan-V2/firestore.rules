@@ -91,7 +91,8 @@ service cloud.firestore {
     match /profiles/{phone} {
       allow read: if true;
       allow create: if isAuthed() && myPhone() == phone;
-      allow update: if isAdmin() || (isAuthed() && myPhone() == phone);
+      allow update: if isAdmin() || (isAuthed() && myPhone() == phone)
+                       || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalReviews', 'averageRating']));
       allow delete: if isAdmin();
     }
 
@@ -101,7 +102,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthed() && myRole() in ['retailer', 'manufacturer', 'admin']
                        && request.resource.data.createdByPhone == myPhone();
-      allow update: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
+      allow update: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone())
+                       || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalReviews', 'averageRating']));
       allow delete: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
     }
 
@@ -469,6 +471,20 @@ service cloud.firestore {
     match /appVersion/{vId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // ─── productReviews & storeReviews ───────────────────────────────────────
+    // Public read, authenticated users can write.
+    match /productReviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthed() && request.resource.data.reviewerPhone == myPhone();
+      allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
+    }
+
+    match /storeReviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthed() && request.resource.data.reviewerPhone == myPhone();
+      allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
     }
 
   }

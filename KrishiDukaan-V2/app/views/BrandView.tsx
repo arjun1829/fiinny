@@ -7,6 +7,7 @@ import {
   MapPin, ShoppingBag, ArrowRight, Store,
   Leaf, ExternalLink, Package, BadgeCheck, Phone, Mail, ChevronRight, Navigation, Building2,
 } from 'lucide-react';
+import { ReviewSection } from '../../components/shared/ReviewSection';
 import type { ManufacturerBrandData, BrandProductSummary, BrandRetailerSummary } from '../dashboard/_lib/brand-page-types';
 import { haversineDistance, formatDistance } from '../utils/haversine';
 
@@ -313,6 +314,13 @@ export default function BrandView({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {(brand.averageRating ?? 0) > 0 && (
+                <span className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-full px-3 py-1 text-xs font-bold text-white">
+                  <span className="text-amber-400">{'★'.repeat(Math.round(brand.averageRating!))}</span>
+                  {brand.averageRating!.toFixed(1)}
+                  {brand.totalReviews ? <span className="text-white/60 font-normal">· {brand.totalReviews} reviews</span> : null}
+                </span>
+              )}
               {locationDisplay && (
                 <a
                   href={brand.geo
@@ -545,6 +553,13 @@ export default function BrandView({
               ))}
             </div>
           </div>
+        </section>
+      )}
+
+      {/* ── Reviews ─────────────────────────────────────────────────────────── */}
+      {brand.phone && (
+        <section className="max-w-7xl mx-auto px-6 md:px-10">
+          <ReviewSection targetId={brand.phone} targetType="store" />
         </section>
       )}
 
