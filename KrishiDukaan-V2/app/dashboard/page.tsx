@@ -122,10 +122,12 @@ export default function DashboardPage() {
             const lowStock = products.filter(p => p.stock === 'Low Stock').length;
             const outOfStock = productCount - inStock;
 
+            const totalDirections = analytics.directionRequests.reduce((sum, d) => sum + d.value, 0);
+
             setStats([
               { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
               { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "directions", label: t('directionsLabel'), value: "0", change: "0.0%", trend: "neutral" },
+              { id: "directions", label: t('directionsLabel'), value: totalDirections.toLocaleString(), change: "0.0%", trend: "neutral" },
               { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
             ]);
 
@@ -137,17 +139,7 @@ export default function DashboardPage() {
               label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
             });
 
-            // Mock reviews for now as we don't have a reviews collection yet
-            setReviews([
-              {
-                id: "r1",
-                author: "Priya S.",
-                rating: 5,
-                excerpt: "Fresh stock and fair prices. Will visit again.",
-                date: "2026-05-10",
-                product: products[0]?.name || "Organic Seeds",
-              },
-            ]);
+            setReviews([]);
           }
         } catch (error) {
           console.error("Error fetching dashboard data:", error);
@@ -172,22 +164,22 @@ export default function DashboardPage() {
     <>
       {/* Profile summary card */}
       {profileSummary && (
-        <div className="mb-6 flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4 shadow-ambient">
-          <div className="h-14 w-14 shrink-0 rounded-full bg-white border border-outline-variant/30 flex items-center justify-center shadow overflow-hidden">
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-3 shadow-ambient sm:mb-6 sm:gap-4 sm:px-5 sm:py-4">
+          <div className="h-11 w-11 shrink-0 rounded-full bg-white border border-outline-variant/30 flex items-center justify-center shadow overflow-hidden sm:h-14 sm:w-14">
             {profileSummary.logo ? (
               <img src={profileSummary.logo} alt="Logo" className="w-full h-full object-contain p-1" />
             ) : (
               <div className="w-full h-full bg-primary flex items-center justify-center">
-                <span className="text-lg font-bold text-white">
+                <span className="text-base font-bold text-white sm:text-lg">
                   {initials(profileSummary.businessName || profileSummary.ownerName || "?")}
                 </span>
               </div>
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-bold text-on-surface truncate">{profileSummary.businessName || "—"}</p>
-            {profileSummary.ownerName && <p className="text-sm text-on-surface-variant">{profileSummary.ownerName}</p>}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+            <p className="text-sm font-bold text-on-surface truncate sm:text-base">{profileSummary.businessName || "—"}</p>
+            {profileSummary.ownerName && <p className="text-xs text-on-surface-variant sm:text-sm">{profileSummary.ownerName}</p>}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
               {(profileSummary.city || profileSummary.state) && (
                 <div className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
                   <MapPin className="h-3 w-3" />
@@ -206,11 +198,16 @@ export default function DashboardPage() {
             </div>
           </div>
           <Link href="/dashboard/profile"
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
-            <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
+            className="shrink-0 inline-flex items-center gap-1 rounded-xl border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors sm:gap-1.5 sm:px-3">
+            <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{t('editProfileBtn')}</span><span className="sm:hidden">Edit</span>
           </Link>
         </div>
       )}
+
+      {/* Quick Actions — above metrics on mobile */}
+      <div className="mb-4">
+        <QuickActions />
+      </div>
 
       <PageHeader
         title={t('overviewTitle')}
@@ -218,7 +215,7 @@ export default function DashboardPage() {
         helperKey="dashOverview"
       />
 
-      <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {stats.map((m) => {
           const helperKey =
             m.id === "views"
@@ -234,12 +231,11 @@ export default function DashboardPage() {
         })}
       </section>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 sm:mt-6">
         <DashboardInventoryHealth data={inventoryHealth} />
-        <QuickActions />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4 sm:mt-6">
         <RecentReviews reviews={reviews} />
       </div>
     </>
