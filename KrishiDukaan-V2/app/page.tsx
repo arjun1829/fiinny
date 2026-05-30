@@ -660,7 +660,9 @@ export default function App() {
     let filtered = searchedProducts;
     
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter((product) => product.category === selectedCategory);
+      filtered = filtered.filter(
+        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
+      );
     }
 
     if (maxDistance < 1000) { 
@@ -759,7 +761,7 @@ export default function App() {
     }
   };
 
-  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
+  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number) => {
     const sellerId: string =
       (store as any).retailerId ||
       (store as any).userId ||
@@ -781,13 +783,20 @@ export default function App() {
             : i
         );
       }
-      const storePhone: string | undefined = store.phone;
-      const availability = product.availability?.find(
-        (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
-      );
-      const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
-        ? availability.sellingPrice
-        : product.price;
+      // Use the price already computed and displayed in the product page sticky bar.
+      // Fall back to availability lookup only if no price was passed (defensive).
+      let storePrice: number;
+      if (price && price > 0) {
+        storePrice = price;
+      } else {
+        const storePhone: string | undefined = store.phone;
+        const availability = product.availability?.find(
+          (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
+        );
+        storePrice = availability?.sellingPrice && availability.sellingPrice > 0
+          ? availability.sellingPrice
+          : product.price;
+      }
       return [
         ...prev,
         {
@@ -858,6 +867,11 @@ export default function App() {
             }}
             onCategoryClick={(cat) => {
               setSelectedCategory(cat);
+              navigate('market');
+            }}
+            onMarketSearch={(query) => {
+              setProductSearch(query);
+              setSelectedCategory('all');
               navigate('market');
             }}
             onAddToCart={addToCart}

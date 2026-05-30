@@ -492,13 +492,31 @@ function ProfilePageInner() {
 
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
-      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : uid!;
 
       // Resolve phone for public doc key
       const idxSnap = await getDoc(doc(db, "uidIndex", uid));
       const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
 
-      // Save social links, tagline, onlineDelivery alongside profile
+      // Resolve the correct publicly-readable Firestore doc ID.
+      // Manufacturers: mfrDocId is already phone-keyed.
+      // Retailers: resolve via users/{phone}.retailerDocId (same path as saveRetailerProfile).
+      //   Using uid here would write onlineDelivery to retailers/{uid}, but
+      //   fetchStoreOnlineDelivery reads retailers/{phone} — causing the Order button to never appear.
+      let profileDocId: string;
+      if (userRole === "manufacturer") {
+        profileDocId = mfrDocId || uid!;
+      } else {
+        let rDocId = "";
+        if (phone) {
+          try {
+            const userSnap = await getDoc(doc(db, "users", phone));
+            if (userSnap.exists()) rDocId = String(userSnap.data()?.retailerDocId ?? "").trim();
+          } catch { /* ignore — fall through to phone fallback */ }
+        }
+        profileDocId = rDocId || phone || uid!;
+      }
+
+      // Save social links, tagline, onlineDelivery to the correct publicly-readable doc
       await setDoc(doc(db, col, profileDocId), {
         socialLinks: social,
         tagline,

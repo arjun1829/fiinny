@@ -34,7 +34,7 @@ interface ProductDetailViewProps {
   onViewBrand?: (manufacturerId: string) => void;
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
-  onAddToCartFromStore?: (product: MarketplaceProduct, store: any) => void;
+  onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number) => void;
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -673,8 +673,11 @@ export default function ProductDetailView({
                       {t('mapShort')}
                     </button>
                   </HelperTooltip>
-                  {onAddToCartFromStore && (
-                    storeOnlineMap[(store as any).phone] ? (
+                  {onAddToCartFromStore && (() => {
+                    const phone = (store as any).phone as string | undefined;
+                    const canOrder = !!phone && storeOnlineMap[phone] === true;
+                    if (!canOrder) return null;
+                    return (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -689,8 +692,8 @@ export default function ProductDetailView({
                         <ICONS.AddToCart className="w-3.5 h-3.5" />
                         {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
                       </button>
-                    ) : null
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* Expanded details */}
@@ -750,8 +753,9 @@ export default function ProductDetailView({
               </div>
             );
           }) : (
-            <div className="p-4 rounded-2xl border-2 border-dashed border-surface-container text-center text-on-surface-variant text-sm">
-              {t('onlyHomeDelivery')}
+            <div className="p-5 rounded-2xl border-2 border-dashed border-surface-container flex flex-col items-center gap-2 text-center">
+              <span className="text-sm font-semibold text-on-surface">Currently unavailable</span>
+              <span className="text-xs text-on-surface-variant">This product is not listed at any store right now.</span>
             </div>
           )}
 
@@ -776,11 +780,18 @@ export default function ProductDetailView({
             if (!selectedStore) return null;
             const selectedStorePhone = (selectedStore as any).phone as string | undefined;
             const selectedAvailability = product.availability?.find(
-              (a) => a.storeId === selectedStore.id || (selectedStorePhone && (a.storePhone === selectedStorePhone || a.storeId === selectedStorePhone))
+              (a) =>
+                a.storeId === selectedStore.id ||
+                (selectedStorePhone && a.storePhone === selectedStorePhone) ||
+                (selectedStorePhone && a.storeId === selectedStorePhone),
             );
-            const displayPrice = selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
-              ? selectedAvailability.sellingPrice
-              : product.price;
+            // Use the retailer's exact sellingPrice from their inventory listing.
+            // Fall back to product.price (manufacturer list price) only when no
+            // availability record exists — never use product.lowestPrice here.
+            const displayPrice =
+              selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
+                ? selectedAvailability.sellingPrice
+                : product.price;
             return (
               <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -790,7 +801,7 @@ export default function ProductDetailView({
                 </div>
                 <button
                   onClick={() => {
-                    onAddToCartFromStore?.(product, selectedStore);
+                    onAddToCartFromStore?.(product, selectedStore, displayPrice);
                     setSelectedOrderStoreId(null);
                   }}
                   className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
@@ -855,30 +866,18 @@ export default function ProductDetailView({
           </HelperTooltip>
 
           <div className="flex items-center gap-4 sm:ml-auto">
-            {product.isOnline ? (
+            {displayStores.length === 0 ? (
+              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+                Currently unavailable
+              </span>
+            ) : product.isOnline && onAddToCart ? (
               <button
-                onClick={() => onAddToCart?.(product)}
+                onClick={() => onAddToCart(product)}
                 className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
               >
                 <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
               </button>
-            ) : (
-              // "Contact for availability" CTA temporarily hidden (restore by uncommenting below and removing this null)
-              null
-              /*
-              <HelperTooltip side="top" textKey="productContact">
-                <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
-                  <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
-                </button>
-              </HelperTooltip>
-              */
-            )}
-            <button
-              onClick={() => onAddToCart?.(product)}
-              className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
-            >
-              <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
-            </button>
+            ) : null}
           </div>
         </div>
       </div>

@@ -20,6 +20,99 @@ interface MarketViewProps {
 
 type SortKey = 'default' | 'price-asc' | 'price-desc' | 'name-asc';
 
+// ─── Category scroll strip with mobile scroll arrows ──────────────────────────
+
+function CategoryStrip({
+  categories,
+  selectedCategory,
+  onCategoryChange,
+}: {
+  categories: { id: string; name: string; icon: React.ComponentType<{ className?: string }> | null }[];
+  selectedCategory: string;
+  onCategoryChange: (id: string) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft,  setCanScrollLeft]  = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateArrows = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+
+  useEffect(() => {
+    updateArrows();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateArrows, { passive: true });
+    const ro = new ResizeObserver(updateArrows);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', updateArrows); ro.disconnect(); };
+  }, [categories]);
+
+  const scroll = (dir: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -200 : 200, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative flex-1 md:flex-initial min-w-0 flex items-center">
+      {/* Left fade + arrow — mobile only */}
+      {canScrollLeft && (
+        <div className="md:hidden absolute left-0 top-0 bottom-0 z-10 flex items-center pointer-events-none">
+          <div className="w-10 h-full bg-gradient-to-r from-white to-transparent" />
+          <button
+            type="button"
+            aria-label="Scroll categories left"
+            onClick={() => scroll('left')}
+            className="pointer-events-auto absolute left-0 flex items-center justify-center w-7 h-7 rounded-full bg-white shadow-md border border-outline-variant/30 text-on-surface"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+        </div>
+      )}
+
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0"
+      >
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => onCategoryChange(cat.id)}
+            className={`flex-shrink-0 px-6 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 transition-all shadow-sm ${
+              selectedCategory === cat.id
+                ? 'bg-primary text-white shadow-primary/20'
+                : 'bg-white text-on-surface border border-surface-container-highest hover:bg-surface-container-low'
+            }`}
+          >
+            {cat.icon && <cat.icon className="w-4 h-4 text-secondary" />}
+            {cat.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Right fade + arrow — mobile only */}
+      {canScrollRight && (
+        <div className="md:hidden absolute right-0 top-0 bottom-0 z-10 flex items-center justify-end pointer-events-none">
+          <div className="w-10 h-full bg-gradient-to-l from-white to-transparent" />
+          <button
+            type="button"
+            aria-label="Scroll categories right"
+            onClick={() => scroll('right')}
+            className="pointer-events-auto absolute right-0 flex items-center justify-center w-7 h-7 rounded-full bg-white shadow-md border border-outline-variant/30 text-on-surface"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function inferBrand(name: string): string {
   // First word of product name is a reasonable brand proxy for this catalog.
   return name.trim().split(/\s+/)[0] || 'Other';
@@ -61,11 +154,14 @@ export default function MarketView({
   }, [products]);
 
   const categories = [
-    { id: 'all', name: t('allProducts'), icon: null },
-    { id: 'seeds', name: t('catSeeds'), icon: ICONS.Sprout },
-    { id: 'fertilizers', name: t('catFertilizers'), icon: ICONS.Science },
-    { id: 'pesticides', name: t('catPesticides'), icon: ICONS.Science },
-    { id: 'tools', name: t('catTools'), icon: ICONS.Market },
+    { id: 'all',           name: t('allProducts'),      icon: null },
+    { id: 'Seeds',         name: t('catSeeds'),         icon: ICONS.Sprout },
+    { id: 'Fertilizers',  name: t('catFertilizers'),  icon: ICONS.Science },
+    { id: 'Pesticides',   name: t('catPesticides'),   icon: ICONS.Science },
+    { id: 'Herbicides',   name: t('catHerbicides'),   icon: ICONS.Science },
+    { id: 'Bio Pesticides', name: t('catBioStimulants'), icon: ICONS.Science },
+    { id: 'Sprayers',     name: t('catSprayers'),     icon: ICONS.Market },
+    { id: 'Tools',        name: t('catTools'),        icon: ICONS.Market },
   ];
 
   const [filterOpen, setFilterOpen] = useState(false);
@@ -146,28 +242,12 @@ export default function MarketView({
 
       <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-6 mb-6 pb-2">
         <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
-          {/*
-            Categories row — horizontally scrollable on mobile.
-            Negative margin + matching padding lets chips bleed into the page's edge padding
-            so a partial chip on the right acts as a visual scroll affordance. Desktop is
-            reset via md:* to the original `flex gap-3 overflow-x-auto`.
-          */}
-          <div className="flex-1 md:flex-initial min-w-0 flex gap-3 overflow-x-auto hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => onCategoryChange(cat.id)}
-                className={`flex-shrink-0 px-6 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 transition-all shadow-sm ${
-                  selectedCategory === cat.id
-                    ? 'bg-primary text-white shadow-primary/20'
-                    : 'bg-white text-on-surface border border-surface-container-highest hover:bg-surface-container-low'
-                }`}
-              >
-                {cat.icon && <cat.icon className="w-4 h-4 text-secondary" />}
-                {cat.name}
-              </button>
-            ))}
-          </div>
+          {/* Category scroll strip with arrow indicators on mobile */}
+          <CategoryStrip
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onCategoryChange={onCategoryChange}
+          />
           <HelperIcon
             size="xs"
             variant="ghost"
@@ -366,7 +446,7 @@ export default function MarketView({
                     </HelperTooltip>
                   </div>
                   {product.category && product.category !== 'general' && (
-                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm capitalize">
+                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm uppercase">
                       {product.category}
                     </span>
                   )}
