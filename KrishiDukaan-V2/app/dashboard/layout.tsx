@@ -14,6 +14,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navbar } from '../../components/shared/navbar';
 import Link from 'next/link';
 import { ICONS } from '../constants';
+import {
+  getCachedLocation,
+  getUserLocation,
+  DEFAULT_LOCATION_LABEL,
+  type GeoResult,
+} from '../utils/geolocation';
 
 export default function DashboardLayout({
   children,
@@ -26,6 +32,20 @@ export default function DashboardLayout({
   const [profileIncomplete, setProfileIncomplete] = useState(false);
   const [uidState, setUidState] = useState<string | null>(null);
   const prevPathnameRef = useRef<string>(pathname ?? '');
+
+  // Location — reuse the SAME shared source as the public pages
+  // (app/utils/geolocation: localStorage cache + getUserLocation). Seed from
+  // the cached value the public pages wrote, then refresh from the device so
+  // the dashboard header stays in sync with Home/Market/Hub/Stores/Blog.
+  const [locationQuery, setLocationQuery] = useState<string>(DEFAULT_LOCATION_LABEL);
+
+  useEffect(() => {
+    const cached = getCachedLocation();
+    if (cached) setLocationQuery(cached.label);
+    void getUserLocation().then((result: GeoResult) => {
+      setLocationQuery(result.label);
+    });
+  }, []);
 
   // Pure function — only calls the stable setProfileIncomplete setter
   const applyCompletion = useCallback((profile: any) => {
@@ -122,7 +142,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen flex flex-col" data-tour="dash-shell">
-      <Navbar isDashboard={true} />
+      <Navbar
+        isDashboard={true}
+        locationQuery={locationQuery}
+        onLocationChange={(loc) => setLocationQuery(loc)}
+      />
       <div className="flex-1 flex overflow-hidden pb-16 md:pb-0">
         <DashboardShell banner={profileBanner}>{children}</DashboardShell>
       </div>
