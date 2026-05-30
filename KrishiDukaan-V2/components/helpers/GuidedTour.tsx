@@ -12,6 +12,12 @@ import {
 
 export interface TourStep {
   selector: string;
+  /**
+   * Optional selector used on mobile viewports when the desktop target is
+   * hidden/zero-size (e.g. a desktop-only navbar element). Falls back to
+   * `selector` when not provided. Does not change desktop behavior.
+   */
+  mobileSelector?: string;
   /** Localized text key (preferred). When set, title/body are ignored. */
   textKey?: HelperTextKey;
   title?: string;
@@ -19,6 +25,29 @@ export interface TourStep {
   side?: 'top' | 'bottom' | 'left' | 'right' | 'auto';
   /** Optional navigation hint — invoked just before showing this step */
   beforeShow?: () => void;
+}
+
+const MOBILE_BREAKPOINT = 768; // matches Tailwind `md`
+
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT;
+}
+
+/**
+ * Returns the element only if it is actually visible on this viewport — not
+ * `display:none` (zero-size) and not transformed fully off-screen (e.g. an
+ * `-translate-x-full` drawer that is closed). Off-screen elements would anchor
+ * the spotlight to empty space, so they are treated as not-ready.
+ */
+function resolveVisibleElement(selector: string): HTMLElement | null {
+  const el = document.querySelector(selector) as HTMLElement | null;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return null;
+  const offScreenX = r.right <= 0 || r.left >= window.innerWidth;
+  const offScreenY = r.bottom <= 0 || r.top >= window.innerHeight;
+  if (offScreenX || offScreenY) return null;
+  return el;
 }
 
 interface GuidedTourProps {
@@ -74,6 +103,19 @@ function resolveSide(
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
+  const mobile = vw < MOBILE_BREAKPOINT;
+
+  // On phones, left/right placement almost never fits a 320px card beside the
+  // target, so only consider vertical placement and pick whichever side has
+  // more room. Honors the requested vertical side when it actually fits.
+  if (mobile) {
+    const spaceAbove = rect.top;
+    const spaceBelow = vh - (rect.top + rect.height);
+    if (requested === 'top' && spaceAbove > popoverHeight + POPOVER_OFFSET + 16) return 'top';
+    if (requested === 'bottom' && spaceBelow > popoverHeight + POPOVER_OFFSET + 16) return 'bottom';
+    return spaceBelow >= spaceAbove ? 'bottom' : 'top';
+  }
+
   if (requested && requested !== 'auto') {
     return requested;
   }
@@ -119,8 +161,28 @@ function popoverPosition(
       break;
   }
 
-  left = Math.max(12, Math.min(left, window.innerWidth - popoverWidth - 12));
-  top = Math.max(12, Math.min(top, window.innerHeight - popoverHeight - 12));
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const margin = 12;
+
+  left = Math.max(margin, Math.min(left, vw - popoverWidth - margin));
+  top = Math.max(margin, Math.min(top, vh - popoverHeight - margin));
+
+  // Keep the card from covering the highlighted target: if clamping pushed it
+  // onto the spotlight, place it fully in whichever vertical gap is larger.
+  const targetTop = rect.top - PADDING;
+  const targetBottom = rect.top + rect.height + PADDING;
+  const overlaps = top < targetBottom && top + popoverHeight > targetTop;
+  if (overlaps && (side === 'top' || side === 'bottom')) {
+    const gapAbove = targetTop - margin;
+    const gapBelow = vh - targetBottom - margin;
+    if (gapBelow >= popoverHeight + POPOVER_OFFSET || gapBelow >= gapAbove) {
+      top = Math.min(targetBottom + POPOVER_OFFSET, vh - popoverHeight - margin);
+    } else {
+      top = Math.max(margin, targetTop - POPOVER_OFFSET - popoverHeight);
+    }
+  }
+
   return { top, left };
 }
 
@@ -164,36 +226,86 @@ export function GuidedTour({
     return () => window.clearTimeout(t);
   }, [mounted, forceOpen, storageKey, startDelay]);
 
+  /** Resolve the best target element for the current step & viewport. */
+  const resolveStepElement = useCallback((): HTMLElement | null => {
+    if (!step) return null;
+    if (isMobileViewport()) {
+      // Prefer an explicit mobile selector, then fall back to the default one
+      // only if it is actually visible on this viewport.
+      if (step.mobileSelector) {
+        const mobileEl = resolveVisibleElement(step.mobileSelector);
+        if (mobileEl) return mobileEl;
+      }
+      const visibleDefault = resolveVisibleElement(step.selector);
+      if (visibleDefault) return visibleDefault;
+      // Desktop target is hidden on mobile and no visible mobile target —
+      // render the card centered rather than detached at a corner.
+      return null;
+    }
+    return document.querySelector(step.selector) as HTMLElement | null;
+  }, [step]);
+
   const measure = useCallback(() => {
-    if (!step) return;
-    const el = document.querySelector(step.selector) as HTMLElement | null;
+    const el = resolveStepElement();
     if (!el) {
       setRect(null);
       return;
     }
     const r = el.getBoundingClientRect();
     setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-  }, [step]);
+  }, [resolveStepElement]);
 
   useLayoutEffect(() => {
     if (!active || !step) return;
+    // Lets a step prepare its target first (e.g. open the mobile drawer).
     step.beforeShow?.();
+
+    const mobile = isMobileViewport();
+    let scrolledOnce = false;
+
+    // Bring the target into view before measuring so the spotlight/card stay
+    // aligned — critical on mobile where targets are often below the fold or
+    // inside a drawer that is still animating open. Mobile-only so desktop
+    // scroll behavior stays exactly as before. Retries until the target is
+    // actually visible, then stops so it never fights the user's scroll.
+    const ensureInView = () => {
+      if (!mobile || scrolledOnce) return;
+      const el = resolveStepElement();
+      if (!el) return; // target not ready yet (e.g. drawer still opening)
+      scrolledOnce = true;
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      } catch {
+        el.scrollIntoView();
+      }
+    };
+
+    ensureInView();
     measure();
     if (popoverRef.current) {
       const pr = popoverRef.current.getBoundingClientRect();
       setPopSize({ w: pr.width, h: pr.height });
     }
+    const tick = () => {
+      ensureInView();
+      measure();
+    };
     const onScroll = () => measure();
     const onResize = () => measure();
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onResize);
-    const interval = window.setInterval(measure, 250);
+    const interval = window.setInterval(tick, 200);
+    // A few staggered re-checks to lock alignment once the drawer/scroll settle.
+    const t1 = window.setTimeout(tick, 250);
+    const t2 = window.setTimeout(tick, 500);
     return () => {
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onResize);
       window.clearInterval(interval);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
     };
-  }, [active, step, measure]);
+  }, [active, step, measure, resolveStepElement]);
 
   useEffect(() => {
     if (!active) return;

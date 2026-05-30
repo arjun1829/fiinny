@@ -435,6 +435,7 @@ export function Navbar({
           </div>
 
           <button
+            data-tour="location-mobile"
             className={`p-1.5 hover:bg-surface-container rounded-full transition-colors text-primary md:hidden ${isFetchingLocation ? 'animate-pulse' : ''}`}
             onClick={fetchLocation}
             title="Detect current location"
