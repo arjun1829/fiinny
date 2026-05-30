@@ -435,6 +435,7 @@ export function Navbar({
           </div>
 
           <button
+            data-tour="location-mobile"
             className={`p-1.5 hover:bg-surface-container rounded-full transition-colors text-primary md:hidden ${isFetchingLocation ? 'animate-pulse' : ''}`}
             onClick={fetchLocation}
             title="Detect current location"
@@ -461,14 +462,14 @@ export function Navbar({
                   onClick={() => setIsMobileMoreOpen(false)}
                   className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
                 >
-                  Blog
+                  {t('blog')}
                 </a>
                 <button
                   type="button"
                   onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
                   className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
                 >
-                  About
+                  {t('about')}
                 </button>
                 <button
                   type="button"
@@ -482,7 +483,7 @@ export function Navbar({
                   onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
                   className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
                 >
-                  {language === 'en' ? 'Lang: EN' : language === 'mr' ? 'Lang: मर' : 'Lang: हि'}
+                  {t('language')}: {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
                 </button>
               </div>
 
@@ -495,7 +496,7 @@ export function Navbar({
                       onClick={() => { setIsMobileMoreOpen(false); router.push('/admin'); }}
                       className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
                     >
-                      Admin Panel
+                      {t('adminPanel')}
                     </button>
                   )}
                   {canAccessDashboard && (
@@ -512,13 +513,13 @@ export function Navbar({
                         onClick={() => { setIsMobileMoreOpen(false); navigate('profile'); }}
                         className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
                       >
-                        My Profile
+                        {t('myProfile')}
                       </button>
                       <button
                         onClick={() => { setIsMobileMoreOpen(false); navigate('orders'); }}
                         className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
                       >
-                        My Orders
+                        {t('myOrders')}
                       </button>
                     </>
                   )}
@@ -594,7 +595,7 @@ export function Navbar({
                       }}
                       className="w-full text-left px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg transition-colors"
                     >
-                      Admin Panel
+                      {t('adminPanel')}
                     </button>
                   )}
                   {canAccessDashboard && (
@@ -617,7 +618,7 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
                       >
-                        My Profile
+                        {t('myProfile')}
                       </button>
                       <button
                         onClick={() => {
@@ -626,7 +627,7 @@ export function Navbar({
                         }}
                         className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
                       >
-                        My Orders
+                        {t('myOrders')}
                       </button>
                     </>
                   )}

@@ -27,6 +27,7 @@ export function DashboardShell({ children, banner }: { children: React.ReactNode
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-outline-variant/30 bg-surface-container-lowest/90 px-4 backdrop-blur md:hidden">
           <button
             type="button"
+            data-dash-menu-toggle
             className="inline-flex items-center justify-center rounded-lg border border-outline-variant/40 bg-surface-container-low p-2 text-on-surface hover:bg-surface-container"
             aria-label="Open menu"
             onClick={() => setMobileOpen(true)}

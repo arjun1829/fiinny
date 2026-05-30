@@ -15,6 +15,7 @@ interface HomeViewProps {
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
   onAddToCart?: (product: MarketplaceProduct) => void;
+  onRegisterClick?: () => void;
 }
 
 type Slide = {
@@ -36,6 +37,7 @@ export default function HomeView({
   onHubClick,
   onCategoryClick,
   onAddToCart,
+  onRegisterClick,
 }: HomeViewProps) {
   const { t } = useI18n();
 
@@ -125,7 +127,7 @@ export default function HomeView({
   const goToSlideCta = (s: Slide) => {
     if (s.onCta === 'powerPlus' && powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
     else if (s.onCta === 'hub') onHubClick();
-    else if (s.onCta === 'retailer') onHubClick();
+    else if (s.onCta === 'retailer') (onRegisterClick ?? onHubClick)();
   };
 
   // Quick-access category tiles. Map clicks to Market with that category preselected.
@@ -306,7 +308,10 @@ export default function HomeView({
               ariaLabel="Trending near you help"
             />
           </div>
-          <button className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform text-sm">
+          <button
+            onClick={() => onCategoryClick?.('all')}
+            className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform text-sm"
+          >
             {t('viewAll')} <ICONS.ArrowRight className="w-4 h-4" />
           </button>
         </div>
@@ -373,7 +378,7 @@ export default function HomeView({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <HelperTooltip side="top" textKey="homeServiceRetailer">
             <button
-              onClick={() => onHubClick()}
+              onClick={() => (onRegisterClick ?? onHubClick)()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-amber-500 to-orange-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
               <ICONS.Market className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
