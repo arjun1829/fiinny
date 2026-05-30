@@ -129,7 +129,7 @@ export type RetailerProfile = {
 };
 
 import { MarketplaceProduct } from '../types/product';
-import type { CartItem, OrderDoc, OrderStatus, SellerType } from '../types/order';
+import type { CartItem, OrderDoc, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -198,19 +198,25 @@ export async function saveRetailerProduct(
   product: CreateRetailProductInput
 ) {
   const userProfileDocId = await resolveUserProfileDocId(retailerId);
+  const retailerPhone = userProfileDocId && userProfileDocId !== retailerId ? userProfileDocId : null;
+  const storeDocId = await resolveRetailerStoreDocId(retailerId);
 
   const sellMode = product.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
-  // 1. Create the product
+  const storeName = product.store.trim();
+  const stockLevel = product.stock.trim() || 'In Stock';
+  const price = Number(product.price);
+
   await addDoc(collection(db, 'products'), {
     retailerId,
+    ...(retailerPhone ? { retailerPhone } : {}),
     name: product.name.trim(),
     fullName: product.name.trim(),
-    price: Number(product.price),
+    price,
     category: product.category.trim() || 'general',
     description: product.description.trim(),
     image: product.image.trim(),
-    stock: product.stock.trim() || 'In Stock',
-    store: product.store.trim(),
+    stock: stockLevel,
+    store: storeName,
     distance: product.distance.trim() || 'Nearby',
     sellMode,
     isOnline: sellMode === "online_delivery",
@@ -222,6 +228,13 @@ export async function saveRetailerProduct(
     applicationDesc: product.applicationDesc?.trim() || null,
     dosage: product.dosage?.trim() || null,
     bestForCrops: product.bestForCrops || null,
+    availability: [{
+      storeId: storeDocId,
+      ...(retailerPhone ? { storePhone: retailerPhone } : {}),
+      storeName,
+      stockLevel,
+      sellingPrice: price,
+    }],
   });
 
   // 2. Increment productCount in user profile
@@ -230,6 +243,38 @@ export async function saveRetailerProduct(
     await setDoc(userRef, {
       productCount: increment(1),
       updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  // 3. Ensure a retailers doc exists so this store appears on product pages.
+  // If the retailer never saved their full profile, fetchStores() won't find them.
+  // Only creates if missing — a full profile save later will merge & overwrite.
+  const retailersRef = doc(db, 'retailers', storeDocId);
+  const retailersSnap = await getDoc(retailersRef);
+  if (!retailersSnap.exists()) {
+    const userPhone = retailerPhone ?? storeDocId;
+    let shopName = storeName;
+    let ownerName = '';
+    if (userProfileDocId) {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', userProfileDocId));
+        if (uSnap.exists()) {
+          const ud = uSnap.data() as Record<string, unknown>;
+          shopName = String(ud.businessName ?? ud.shopName ?? ud.name ?? storeName);
+          ownerName = String(ud.ownerName ?? ud.name ?? '');
+        }
+      } catch { /* non-critical */ }
+    }
+    await setDoc(retailersRef, {
+      userId: retailerId,
+      retailerId,
+      role: 'retailer',
+      shopName,
+      ownerName,
+      phone: userPhone,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     }, { merge: true });
   }
 }
@@ -385,6 +430,7 @@ export type Store = {
   status: string;
   stock: string[];
   isHot?: boolean;
+  logo?: string;
   location: { lat: number; lng: number };
 };
 
@@ -409,7 +455,9 @@ export async function fetchStores(): Promise<Store[]> {
         userId: data.userId,
         name: data.shopName || data.ownerName || 'Retailer',
         ownerName: data.ownerName,
-        phone: data.phone,
+        // Fall back to doc.id: for phone-keyed docs the doc ID is the phone number itself
+        phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+        logo: data.logo || undefined,
         address: data.address,
         city: data.city,
         state: data.state,
@@ -451,6 +499,7 @@ export async function fetchStores(): Promise<Store[]> {
     );
 
     // Manufacturers appear as stores — matched by store.id === product.manufacturerId
+    // or by store.userId === product.manufacturerId (uid-keyed products)
     const manufacturers = manufacturersSnapshot.docs
       .filter((doc) => {
         const data = doc.data();
@@ -461,9 +510,12 @@ export async function fetchStores(): Promise<Store[]> {
         const data = doc.data();
         return {
           id: doc.id,
+          // Expose the Firebase Auth UID so product filters can match on manufacturerId
+          userId: data.uid || undefined,
           name: data.businessName || data.ownerName || 'Manufacturer',
           ownerName: data.ownerName,
-          phone: data.phone,
+          phone: data.phone || (/^\+?\d{10,13}$/.test(doc.id) ? doc.id : undefined),
+          logo: data.logo || undefined,
           address: data.address,
           city: data.address?.city || data.city,
           state: data.address?.state || data.state,
@@ -476,10 +528,30 @@ export async function fetchStores(): Promise<Store[]> {
             lat: data.geo?.latitude ?? data.location?.latitude ?? data.location?.lat ?? 0,
             lng: data.geo?.longitude ?? data.location?.longitude ?? data.location?.lng ?? 0,
           },
-        } as Store;
+        } as Store & { userId?: string };
       });
 
-    return [...stores, ...dedupedRetailers, ...manufacturers];
+    // Final cross-collection deduplication: retailers/ and manufacturers/ entries take priority
+    // over legacy stores/ entries (which may have stale names/coordinates).
+    // Key by phone; prefer entries with valid coordinates and richer metadata.
+    type AnyStore = Store & { retailerId?: string; userId?: string; phone?: string };
+    const scoreEntry = (s: AnyStore) =>
+      (s.retailerId || (s as any).userId ? 4 : 0) +
+      (s.name && s.name !== 'Retailer' && s.name !== 'Manufacturer' ? 2 : 0) +
+      ((s.location?.lat || s.location?.lng) ? 1 : 0);
+
+    const globalMap = new Map<string, AnyStore>();
+    for (const entry of [...stores, ...dedupedRetailers, ...manufacturers] as AnyStore[]) {
+      const phone = entry.phone || (/^\+?\d{10,13}$/.test(entry.id) ? entry.id : undefined);
+      // Key by phone if available, otherwise fall back to id (non-phone doc IDs won't collide)
+      const key = phone || entry.id;
+      const existing = globalMap.get(key);
+      if (!existing || scoreEntry(entry) > scoreEntry(existing)) {
+        globalMap.set(key, entry);
+      }
+    }
+
+    return Array.from(globalMap.values());
   } catch (error) {
     console.error('Error fetching stores from Firestore:', error);
     throw error;
@@ -842,18 +914,23 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
 }
 
 export async function saveManufacturerProduct(manufacturerId: string, product: any) {
+  // resolveUserProfileDocId returns the phone (from uidIndex) — use it as manufacturerPhone
   const userProfileDocId = await resolveUserProfileDocId(manufacturerId);
+  const manufacturerPhone = userProfileDocId && /^\+?\d{10,13}$/.test(userProfileDocId)
+    ? userProfileDocId
+    : undefined;
 
   // 1. Create the product — strip any stale ownership fields from the input
   const { retailerId: _r, ownerType: _ot, ownerId: _oi, store: _s, distance: _d, stock: _st, ...rest } = product;
   const sellMode = product?.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
-  
+
   await addDoc(collection(db, 'products'), {
     ...rest,
     ownerId: manufacturerId,
     ownerType: 'manufacturer',
     createdBy: manufacturerId,
     manufacturerId,
+    ...(manufacturerPhone ? { manufacturerPhone } : {}),
     source: 'manufacturer_inventory',
     sellMode,
     isOnline: sellMode === "online_delivery",
@@ -931,7 +1008,7 @@ export async function createOrdersFromCart(params: {
 
   const groups = new Map<string, CartItem[]>();
   items.forEach((item) => {
-    if (item.sellMode !== "online_delivery") return;
+    if (item.sellMode !== "online_delivery" || !item.sellerId) return;
     const key = `${item.sellerType}:${item.sellerId}`;
     const list = groups.get(key) ?? [];
     list.push(item);
@@ -964,6 +1041,7 @@ export async function createOrdersFromCart(params: {
       subtotal,
       deliveryMode: "delivery",
       status: "placed",
+      statusHistory: [{ status: "placed", at: new Date().toISOString() }] as StatusHistoryEntry[],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -995,8 +1073,34 @@ export async function fetchIncomingOrdersForSeller(
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   await updateDoc(doc(db, "orders", orderId), {
     status,
+    statusHistory: arrayUnion({ status, at: new Date().toISOString() } as StatusHistoryEntry),
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function fetchOrdersForCustomer(customerId: string): Promise<OrderDoc[]> {
+  const q = query(
+    collection(db, "orders"),
+    where("customerId", "==", customerId),
+  );
+  const snapshot = await getDocs(q);
+  const docs = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, "id">) }));
+  return docs.sort((a, b) => {
+    const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+    const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
+}
+
+export async function fetchStoreOnlineDelivery(phone: string): Promise<boolean> {
+  if (!phone) return false;
+  try {
+    const retailerSnap = await getDoc(doc(db, "retailers", phone));
+    if (retailerSnap.exists()) return !!(retailerSnap.data() as any).onlineDelivery;
+    const mfrSnap = await getDoc(doc(db, "manufacturers", phone));
+    if (mfrSnap.exists()) return !!(mfrSnap.data() as any).onlineDelivery;
+  } catch { /* silent fail */ }
+  return false;
 }
 
 export async function addDealerToContacts(manufacturerId: string, dealerId: string) {
@@ -1268,7 +1372,6 @@ export async function adminUpdateUser(uid: string, updates: {
   phone?: string;
   role?: string;
   isPaid?: boolean;
-  totalSeats?: number;
   productCount?: number;
   subscriptionStatus?: string;
   shopName?: string;
@@ -1290,7 +1393,6 @@ export async function adminUpdateUser(uid: string, updates: {
     if (updates.role === 'admin') payload.isPaid = true;
   }
   if (updates.isPaid !== undefined) payload.isPaid = updates.isPaid;
-  if (updates.totalSeats !== undefined) payload.totalSeats = Number(updates.totalSeats);
   if (updates.productCount !== undefined) payload.productCount = Number(updates.productCount);
   if (updates.subscriptionStatus !== undefined) payload.subscriptionStatus = updates.subscriptionStatus;
   if (updates.shopName !== undefined) payload.shopName = updates.shopName.trim();
@@ -1402,11 +1504,28 @@ export async function adminUpdateUser(uid: string, updates: {
       }
     }
   }
+
 }
 
 export async function fetchAllSubscriptions(): Promise<any[]> {
   const snapshot = await getDocs(collection(db, 'subscriptions'));
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function adminUpdateSubscriptionSeats(subId: string, userDocId: string, newSeats: number): Promise<void> {
+  if (newSeats < 0) throw new Error('Seats cannot be negative.');
+  const subRef = doc(db, 'subscriptions', subId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) throw new Error('Subscription not found.');
+  await updateDoc(subRef, {
+    seatsPurchased: newSeats,
+    updatedAt: serverTimestamp(),
+  });
+  // Keep users.totalSeats in sync
+  await setDoc(doc(db, 'users', userDocId), {
+    totalSeats: newSeats,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 export async function adminRevokeSubscription(userDocId: string): Promise<void> {
@@ -1478,8 +1597,9 @@ export async function adminManualActivate(
   });
 
   const role = userData.role === 'manufacturer' ? 'manufacturer' : 'retailer';
+  const authUid = (userData as any).uid || '';
   await addDoc(collection(db, 'subscriptions'), {
-    ownerId: userDocId,
+    ownerId: authUid || userDocId,
     ownerPhone: userDocId,
     ownerType: role,
     planName: 'Standard',
@@ -1926,4 +2046,132 @@ export async function fetchBusinessProfile(uid: string, role: string, phone?: st
     console.error('Error fetching business profile:', error);
   }
   return null;
+}
+
+// ─── Blog Posts ───────────────────────────────────────────────────────────────
+
+export type BlogPost = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string;
+  tags: string[];
+  author: string;
+  status: 'draft' | 'published';
+  readTime?: number;
+  publishedAt?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+function decodeSlug(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeBlogSlug(value: string): string {
+  return decodeSlug(value)
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\u0900-\u097F\s-]/gi, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export async function fetchBlogPosts(status: 'published' | 'all' = 'published'): Promise<BlogPost[]> {
+  let q;
+  if (status === 'published') {
+    q = query(collection(db, 'blogPosts'), where('status', '==', 'published'), orderBy('publishedAt', 'desc'));
+  } else {
+    q = query(collection(db, 'blogPosts'), orderBy('createdAt', 'desc'));
+  }
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<BlogPost, 'id'>) }));
+}
+
+export async function fetchBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+  const decodedSlug = decodeSlug(slug);
+  const candidates = Array.from(new Set([
+    slug,
+    decodedSlug,
+    normalizeBlogSlug(slug),
+    encodeURIComponent(decodedSlug),
+  ].filter(Boolean)));
+
+  for (const candidate of candidates) {
+    const q = query(collection(db, 'blogPosts'), where('slug', '==', candidate));
+    const snap = await getDocs(q);
+    const docSnap = snap.docs.find((d) => (d.data() as BlogPost).status === 'published');
+    if (docSnap) return { id: docSnap.id, ...(docSnap.data() as Omit<BlogPost, 'id'>) };
+  }
+
+  const allPublished = await fetchBlogPosts('published');
+  const normalizedSlug = normalizeBlogSlug(slug);
+  return allPublished.find((post) => normalizeBlogSlug(post.slug || post.title) === normalizedSlug) ?? null;
+}
+
+export async function createBlogPost(data: Omit<BlogPost, 'id'>): Promise<string> {
+  const ref = await addDoc(collection(db, 'blogPosts'), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    publishedAt: data.status === 'published' ? serverTimestamp() : null,
+  });
+  return ref.id;
+}
+
+export async function updateBlogPost(id: string, data: Partial<Omit<BlogPost, 'id'>>): Promise<void> {
+  const updates: Record<string, unknown> = { ...data, updatedAt: serverTimestamp() };
+  if (data.status === 'published') updates.publishedAt = serverTimestamp();
+  await updateDoc(doc(db, 'blogPosts', id), updates);
+}
+
+export async function deleteBlogPost(id: string): Promise<void> {
+  await deleteDoc(doc(db, 'blogPosts', id));
+}
+
+// --- Failed Payments ---
+
+export async function logFailedPayment(
+  uid: string,
+  errorResponse: any,
+  context?: { orderId?: string; amount?: number; seatCount?: number; durationMonths?: number }
+): Promise<void> {
+  try {
+    const timestamp = serverTimestamp();
+    let phone: string | null = null;
+    try {
+      const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
+      if (idxSnap.exists()) {
+        phone = String(idxSnap.data().phone ?? '');
+      }
+    } catch { /* ignore */ }
+
+    await addDoc(collection(db, 'failedPayments'), {
+      userId: uid,
+      userPhone: phone ?? uid,
+      error: errorResponse,
+      orderId: context?.orderId ?? errorResponse?.metadata?.order_id ?? null,
+      amount: context?.amount ?? null,
+      seatCount: context?.seatCount ?? null,
+      durationMonths: context?.durationMonths ?? null,
+      timestamp,
+      status: 'failed',
+    });
+  } catch (err) {
+    console.error('Error logging failed payment:', err);
+  }
+}
+
+export async function fetchFailedPayments(): Promise<any[]> {
+  const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }

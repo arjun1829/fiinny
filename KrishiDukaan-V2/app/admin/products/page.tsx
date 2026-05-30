@@ -195,15 +195,15 @@ export default function AdminProductsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Box className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-black text-on-surface">Products</h1>
+          <div className="mb-1 flex items-center gap-2 sm:gap-3">
+            <Box className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
+            <h1 className="text-lg font-black text-on-surface sm:text-2xl">Products</h1>
           </div>
-          <p className="text-sm text-on-surface-variant ml-9">All marketplace products. Admin can add, edit, or delete any product — no seat limits.</p>
+          <p className="ml-7 text-xs text-on-surface-variant sm:ml-9 sm:text-sm">All marketplace products. Admin can add, edit, or delete any product.</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors shrink-0">
+        <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-container sm:w-auto shrink-0">
           <Plus className="h-4 w-4" /> Add Product
         </button>
       </div>
@@ -232,7 +232,7 @@ export default function AdminProductsPage() {
           <div className="px-5 py-3 border-b border-outline-variant/20 bg-surface-container-low">
             <span className="text-xs font-bold text-on-surface-variant">{filtered.length} product{filtered.length !== 1 ? "s" : ""}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-outline-variant/20">
@@ -310,18 +310,66 @@ export default function AdminProductsPage() {
               </tbody>
             </table>
           </div>
+          <div className="divide-y divide-outline-variant/10 md:hidden">
+            {filtered.map(p => {
+              const imgs: string[] = (p as any).images?.length ? (p as any).images : (p.image ? [p.image] : []);
+              return (
+                <div key={p.id} className="space-y-3 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-container">
+                      {imgs[0] ? (
+                        <img src={imgs[0]} alt={p.name} className="h-full w-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-on-surface-variant/30">
+                          <ImageIcon className="h-5 w-5" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-on-surface">{p.name}</p>
+                      <p className="mt-0.5 text-[11px] text-on-surface-variant">{p.description}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-black uppercase text-on-surface-variant">{p.category}</span>
+                        <span className="text-sm font-bold text-on-surface">₹{p.price}</span>
+                        <span className={`text-[11px] font-bold ${p.stock === "In Stock" ? "text-green-600" : p.stock === "Low Stock" ? "text-yellow-600" : "text-red-500"}`}>{p.stock}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] text-on-surface-variant">{p.store || "—"}</p>
+                      <p className="text-[11px] text-on-surface-variant">{imgs.length} image{imgs.length !== 1 ? "s" : ""}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => openEdit(p)} className="rounded-lg border border-outline-variant/30 px-2.5 py-1.5 text-[11px] font-medium text-on-surface hover:bg-surface-container transition-colors">
+                        Edit
+                      </button>
+                      <button onClick={() => { setConfirmDelete(p); setDeleteError(null); }} disabled={deleting === p.id}
+                        className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && (
+              <div className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Add/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-surface-container shrink-0">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-surface-container p-5 shrink-0 sm:p-6">
               <h2 className="text-lg font-bold text-on-surface">{editId ? "Edit Product" : "Add Product"}</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-surface-container transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleSave} className="overflow-y-auto p-6 space-y-4 flex-1">
+            <form onSubmit={handleSave} className="flex-1 space-y-4 overflow-y-auto p-5 sm:p-6">
               {formError && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">{formError}</div>
               )}
@@ -376,7 +424,7 @@ export default function AdminProductsPage() {
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {images.map((slot, i) => (
                     <ImageCard key={i} slot={slot} index={i}
                       onChange={patch => updateSlot(i, patch)}
@@ -385,7 +433,7 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
                 <button type="button" onClick={() => setShowForm(false)} className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 py-3 rounded-2xl bg-primary text-white text-sm font-bold hover:bg-primary-container transition-colors disabled:opacity-60">
                   {saving ? "Saving…" : editId ? "Save Changes" : "Add Product"}
@@ -398,7 +446,7 @@ export default function AdminProductsPage() {
 
       {/* Delete Confirmation Modal */}
       {confirmDelete && (
-        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-4 backdrop-blur-sm sm:items-center">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
             <div className="text-center">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4">
@@ -412,7 +460,7 @@ export default function AdminProductsPage() {
             {deleteError && (
               <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">{deleteError}</div>
             )}
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
               <button type="button" onClick={() => { setConfirmDelete(null); setDeleteError(null); }} disabled={deleting === confirmDelete.id}
                 className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors disabled:opacity-50">
                 Cancel

@@ -16,7 +16,6 @@ import {
   PowerOff,
   RefreshCw,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import { cn } from "../../_lib/cn";
@@ -38,6 +37,9 @@ type RetailerTableProps = {
   onDetails?: (row: ManufacturerRetailerRow) => void;
   onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
   onActivate?: (row: ManufacturerRetailerRow) => void;
+  // Selection
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 };
 
 function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
@@ -58,14 +60,6 @@ function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardi
       </span>
     );
   }
-  if (status === "removed") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-on-surface/10 px-2.5 py-0.5 text-xs font-semibold text-on-surface-variant">
-        <XCircle className="h-3 w-3" />
-        {t('removedStatus')}
-      </span>
-    );
-  }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-harvest/15 px-2.5 py-0.5 text-xs font-semibold text-harvest">
       <Clock className="h-3 w-3" />
@@ -79,9 +73,6 @@ function RowInviteActions({ row }: { row: ManufacturerRetailerRow }) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  if (row.status === "revoked") {
-    return <span className="text-xs text-on-surface-variant">—</span>;
-  }
   if (!row.inviteCode) {
     return <span className="text-xs text-on-surface-variant">—</span>;
   }
@@ -172,10 +163,6 @@ function RemoveAction({
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
-
-  if (row.status === "revoked") {
-    return <span className="text-xs text-on-surface-variant">{t('removedStatus')}</span>;
-  }
 
   if (confirming) {
     return (
@@ -271,8 +258,33 @@ function DeactivateAction({
   );
 }
 
-export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit, onDetails, onDeactivate, onActivate }: RetailerTableProps) {
+export function RetailerTable({
+  rows, loading, onRemove, onAssignProduct, onEdit, onDetails, onDeactivate, onActivate,
+  selectedIds, onSelectionChange,
+}: RetailerTableProps) {
   const { t } = useI18n();
+
+  const activeRows = rows.filter((r) => r.onboardingStatus === "active" && r.status !== "revoked");
+  const allActiveSelected = activeRows.length > 0 && activeRows.every((r) => selectedIds?.has(r.id));
+
+  const toggleRow = (id: string) => {
+    if (!onSelectionChange || !selectedIds) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onSelectionChange(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (!onSelectionChange || !selectedIds) return;
+    if (allActiveSelected) {
+      onSelectionChange(new Set());
+    } else {
+      onSelectionChange(new Set(activeRows.map((r) => r.id)));
+    }
+  };
+
+  const selectable = !!onSelectionChange;
+
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
@@ -300,6 +312,18 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
             <tr>
+              {selectable && (
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allActiveSelected}
+                    onChange={toggleSelectAll}
+                    disabled={activeRows.length === 0}
+                    className="h-4 w-4 rounded border-outline-variant/50 accent-primary cursor-pointer"
+                    title="Select all active retailers"
+                  />
+                </th>
+              )}
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('shopNameCol')}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('ownerCol')}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('phoneCol')}</th>
@@ -313,21 +337,37 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
           </thead>
           <tbody className="divide-y divide-outline-variant/20">
             {rows.map((row) => {
-              const isRevoked = row.status === "revoked";
               const isManuallyInactive = row.onboardingStatus === "inactive";
-              const canAssign = onAssignProduct && !isRevoked && !isManuallyInactive;
-              const canDeactivate = onDeactivate && !isRevoked && !isManuallyInactive && row.onboardingStatus === "active";
-              const canActivate = onActivate && isManuallyInactive;
+              const canAssign    = onAssignProduct && !isManuallyInactive;
+              const canDeactivate = onDeactivate && !isManuallyInactive && row.onboardingStatus === "active";
+              const canActivate  = onActivate && isManuallyInactive;
+
+              const isSelectable = selectable && row.onboardingStatus === "active";
+              const isChecked    = selectedIds?.has(row.id) ?? false;
 
               return (
                 <tr
                   key={row.id}
                   className={cn(
                     "hover:bg-surface-container/50 transition-opacity",
-                    isRevoked && "opacity-50",
-                    isManuallyInactive && !isRevoked && "opacity-60",
+                    isManuallyInactive && "opacity-60",
+                    isChecked && "bg-primary/5",
                   )}
                 >
+                  {selectable && (
+                    <td className="px-4 py-3 w-10">
+                      {isSelectable ? (
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleRow(row.id)}
+                          className="h-4 w-4 rounded border-outline-variant/50 accent-primary cursor-pointer"
+                        />
+                      ) : (
+                        <span className="block h-4 w-4" />
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3 font-medium text-on-surface">
                     {row.shopName || <span className="text-on-surface-variant">—</span>}
                   </td>
@@ -362,7 +402,7 @@ export function RetailerTable({ rows, loading, onRemove, onAssignProduct, onEdit
                           </button>
                         )}
                         {/* Edit */}
-                        {onEdit && !isRevoked && !isManuallyInactive && (
+                        {onEdit && !isManuallyInactive && (
                           <button type="button" onClick={() => onEdit(row)}
                             className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
                             <Pencil className="h-3.5 w-3.5" /> {t('editBtn')}

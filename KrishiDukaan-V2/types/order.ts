@@ -7,15 +7,21 @@ export type OrderStatus =
   | "delivered"
   | "rejected";
 
+export type StatusHistoryEntry = {
+  status: OrderStatus;
+  at: string; // ISO 8601 string
+};
+
 export type CartItem = {
   productId: string;
   sellerId: string;
   sellerType: SellerType;
+  sellerName?: string;
   name: string;
   image: string;
   price: number;
   qty: number;
-  sellMode: "online_delivery" | "offline_store_only";
+  sellMode: "online_delivery" | "offline_store_only" | "pending";
 };
 
 export type OrderItem = {
@@ -34,11 +40,12 @@ export type OrderDoc = {
   customerAddress: string;
   sellerId: string;
   sellerType: SellerType;
+  sellerName?: string;
   items: OrderItem[];
   subtotal: number;
   deliveryMode: "delivery";
   status: OrderStatus;
+  statusHistory?: StatusHistoryEntry[];
   createdAt?: unknown;
   updatedAt?: unknown;
 };
-

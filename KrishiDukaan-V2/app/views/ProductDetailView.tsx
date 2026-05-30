@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect } from 'react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
-import { db, trackDirectionRequest, trackProductClick, trackStoreCall } from '../firebase';
+import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -33,6 +33,7 @@ interface ProductDetailViewProps {
   onViewBrand?: (manufacturerId: string) => void;
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
+  onAddToCartFromStore?: (product: MarketplaceProduct, store: any) => void;
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -251,11 +252,11 @@ function ManufacturerBrandSection({
 
   return (
     <section className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
-      {/* Brand header */}
-      <div className="flex items-center justify-between gap-4 p-6 bg-[#0d2b09]">
+      {/* Brand header — stacks on mobile so the brand name stays fully visible, row layout on sm+ (desktop unchanged) */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-6 bg-[#0d2b09]">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
-          <h2 className="text-xl font-bold text-white leading-tight truncate">{brandName}</h2>
+          <h2 className="text-xl font-bold text-white leading-tight break-words sm:truncate">{brandName}</h2>
           {(mfrInfo?.location || mfrInfo?.founded) && (
             <p className="text-white/60 text-xs mt-0.5">
               {[mfrInfo.location, mfrInfo.founded ? `Est. ${mfrInfo.founded}` : ""].filter(Boolean).join(" · ")}
@@ -267,7 +268,7 @@ function ManufacturerBrandSection({
             href={`/brand/${mfrInfo.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+            className="w-full justify-center sm:w-auto sm:justify-start shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
           >
             Visit Brand Store <ICONS.ChevronRight className="w-3 h-3" />
           </a>
@@ -322,10 +323,13 @@ export default function ProductDetailView({
   onViewBrand,
   storesWithDistance = [],
   onAddToCart,
+  onAddToCartFromStore,
 }: ProductDetailViewProps) {
   const { t } = useI18n();
   const product = products.find(p => p.id === productId) || products[0];
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
+  const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
+  const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
 
   // Gallery: use product.images if available, else fall back to product.image alone
   const galleryImages = (product.images && product.images.length > 0)
@@ -336,9 +340,9 @@ export default function ProductDetailView({
   useEffect(() => {
     if (product && product.id) {
       trackProductClick(product.id);
-      // Reset gallery to first image when product changes
       const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
       setActiveImage(imgs[0]);
+      setSelectedOrderStoreId(null);
     }
   }, [product.id]);
 
@@ -352,33 +356,135 @@ export default function ProductDetailView({
   const availableStores = useMemo(() => {
     const sourceStores = storesWithDistance.length > 0 ? storesWithDistance : stores;
     const filtered = sourceStores.filter(store => {
-      // 1. Check if assigned via availability array (match by UID or phone)
       const storePhone = (store as any).phone as string | undefined;
+      const storeUserId = (store as any).userId as string | undefined;
+      const storeRetailerId = (store as any).retailerId as string | undefined;
+
+      // 1. Check if assigned via availability array
       const inAvailability = product.availability?.some(
         (a) =>
           a.storeId === store.id ||
           (a.storePhone && storePhone && a.storePhone === storePhone) ||
-          (a.storePhone && a.storePhone === store.id),
+          (a.storePhone && a.storePhone === store.id) ||
+          (a.storeId && storePhone && a.storeId === storePhone) ||
+          (a.storeId && storeUserId && a.storeId === storeUserId) ||
+          (a.storeId && storeRetailerId && a.storeId === storeRetailerId),
       );
       if (inAvailability) return true;
-      
-      // 2. Check if this is the primary owner's store
-      const isOwnerStore = 
-        store.id === product.retailerId || 
-        store.id === product.manufacturerId || 
+
+      // 2. Check if this is the primary owner's store (match by UID, phone, or name)
+      const rid = product.retailerId;
+      const rPhone = product.retailerPhone;
+      const storeMfrId = (store as any).userId as string | undefined;
+      const mfrPhone = product.manufacturerPhone;
+      const isOwnerStore =
+        (rid && (store.id === rid || storeUserId === rid || storeRetailerId === rid)) ||
+        (rPhone && (store.id === rPhone || storePhone === rPhone)) ||
+        // Match manufacturer by UID (primary) — store.userId = data.uid from manufacturers doc
+        (product.manufacturerId && storeMfrId && storeMfrId === product.manufacturerId) ||
+        // Match manufacturer by phone (belt-and-suspenders for phone-keyed schema)
+        (mfrPhone && (store.id === mfrPhone || storePhone === mfrPhone)) ||
+        // Legacy: store.id is the phone doc ID, product.manufacturerId was incorrectly set to phone
+        store.id === product.manufacturerId ||
         store.name === product.store ||
         (store as any).shopName === product.store ||
         (store as any).ownerName === product.store;
-        
+
       return isOwnerStore;
     });
 
+    // Deduplicate: same store can match via both availability array and owner-store check,
+    // or exist in multiple Firestore collections (stores + retailers). Key by phone, then name.
+    const seen = new Map<string, typeof filtered[number]>();
+    for (const store of filtered) {
+      const phone = (store as any).phone as string | undefined;
+      const key = phone || store.name?.toLowerCase().trim() || store.id;
+      if (!seen.has(key)) {
+        seen.set(key, store);
+      } else {
+        // Keep the entry with the smaller distance
+        const existing = seen.get(key)!;
+        if (((store as any).distanceKm ?? Infinity) < ((existing as any).distanceKm ?? Infinity)) {
+          seen.set(key, store);
+        }
+      }
+    }
+    const deduped = Array.from(seen.values());
+
     // Sort by distance if we have computed distances
     if (storesWithDistance.length > 0) {
-      return [...filtered].sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+      return deduped.sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     }
-    return filtered;
+    return deduped;
   }, [product, storesWithDistance, stores]);
+
+  // Fallback: if no store matched from pre-loaded list, fetch the retailer's profile
+  // directly. This handles retailers who listed a product before saving their profile
+  // (no retailers doc yet) or before retailerPhone was stored on the product.
+  const [fallbackStore, setFallbackStore] = useState<any | null>(null);
+  useEffect(() => {
+    if (availableStores.length > 0) { setFallbackStore(null); return; }
+    const phone = product.retailerPhone;
+    const uid = product.retailerId;
+    if (!phone && !uid) return;
+
+    const resolve = async () => {
+      let profile: Record<string, unknown> | null = null;
+      let resolvedPhone = phone ?? '';
+
+      if (phone) {
+        profile = await fetchUserProfileByPhone(phone).catch(() => null);
+      } else if (uid) {
+        // Resolve UID → phone via uidIndex, then fetch user profile
+        const { getDoc, doc } = await import('firebase/firestore');
+        const { db: firestoreDb } = await import('../firebase');
+        const idxSnap = await getDoc(doc(firestoreDb, 'uidIndex', uid)).catch(() => null);
+        if (idxSnap?.exists()) {
+          resolvedPhone = String(idxSnap.data().phone ?? '');
+          if (resolvedPhone) {
+            profile = await fetchUserProfileByPhone(resolvedPhone).catch(() => null);
+          }
+        }
+      }
+
+      if (!profile) return;
+      setFallbackStore({
+        id: resolvedPhone || uid || 'retailer',
+        name: String(profile.businessName ?? profile.shopName ?? profile.name ?? 'Retailer'),
+        ownerName: String(profile.ownerName ?? profile.name ?? ''),
+        phone: resolvedPhone,
+        distance: 'Nearby',
+        status: 'Active',
+        stock: [],
+        location: { lat: 0, lng: 0 },
+        userId: String(profile.uid ?? uid ?? ''),
+        retailerId: String(profile.uid ?? uid ?? ''),
+      });
+    };
+
+    resolve();
+  }, [availableStores.length, product.retailerPhone, product.retailerId]);
+
+  const displayStores = availableStores.length > 0
+    ? availableStores
+    : fallbackStore ? [fallbackStore] : [];
+
+  useEffect(() => {
+    if (displayStores.length === 0) return;
+    let cancelled = false;
+    const phones = displayStores
+      .map((s) => (s as any).phone as string | undefined)
+      .filter((p): p is string => !!p);
+    if (phones.length === 0) return;
+    Promise.all(phones.map(async (phone) => {
+      const isOnline = await fetchStoreOnlineDelivery(phone);
+      return [phone, isOnline] as [string, boolean];
+    })).then((results) => {
+      if (!cancelled) setStoreOnlineMap(Object.fromEntries(results));
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayStores.length, product.id]);
 
   return (
     <div className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 flex flex-col gap-10">
@@ -442,7 +548,7 @@ export default function ProductDetailView({
             />
           </div>
 
-          {availableStores.length > 0 ? availableStores.map(store => {
+          {displayStores.length > 0 ? displayStores.map(store => {
             const storePhone = (store as any).phone as string | undefined;
             const availability = product.availability?.find(
               (a) =>
@@ -462,22 +568,42 @@ export default function ProductDetailView({
                 <div className="w-full flex items-center gap-2 p-4">
                   <button
                     onClick={() => setExpandedStoreId(isExpanded ? null : store.id)}
-                    className="flex-1 min-w-0 flex items-center gap-4 text-left"
+                    className="flex-1 min-w-0 flex items-center gap-3 md:gap-4 text-left"
                   >
-                    <div className={`p-2.5 rounded-xl transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'}`}>
-                      <ICONS.Market className="w-5 h-5" />
+                    <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
+                      {store.logo ? (
+                        <img src={store.logo} alt={store.name} className="w-10 h-10 object-cover" />
+                      ) : (
+                        <ICONS.Market className="w-5 h-5" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="block font-bold text-on-surface truncate">{store.name}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-                          <ICONS.Location className="w-3 h-3" />{(store as any).distanceLabel || store.distance || t('nearby')}
+                      <span className="block font-bold text-on-surface text-sm md:text-base leading-snug break-words md:truncate">{store.name}</span>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 md:mt-0.5">
+                        <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 whitespace-nowrap">
+                          <ICONS.Location className="w-3 h-3 shrink-0" />{(store as any).distanceLabel || store.distance || t('nearby')}
                         </span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
-                        <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                          <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
+                        </span>
+                        {/* Stock badge + price flow inline with metadata on mobile so they never squeeze the name */}
+                        <span className="flex items-center gap-2 md:hidden">
+                          {availability?.sellingPrice && availability.sellingPrice > 0 && (
+                            <span className="text-sm font-bold text-secondary whitespace-nowrap">
+                              ₹{availability.sellingPrice.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${
+                            availability?.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {availability?.stockLevel}
+                          </span>
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    {/* Desktop-only right cluster (price / stock badge / chevron) — unchanged desktop layout */}
+                    <div className="hidden md:flex items-center gap-2 shrink-0">
                       {availability?.sellingPrice && availability.sellingPrice > 0 && (
                         <span className="text-sm font-bold text-secondary">
                           ₹{availability.sellingPrice.toLocaleString('en-IN')}
@@ -493,6 +619,8 @@ export default function ProductDetailView({
                       <ICONS.ChevronRight className={`w-4 h-4 text-outline transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                     </div>
                   </button>
+                  {/* Chevron for mobile — sits outside the desktop cluster so it stays aligned with the MAP button */}
+                  <ICONS.ChevronRight className={`md:hidden shrink-0 w-4 h-4 text-outline transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                   <HelperTooltip side="left" textKey="storeDirections">
                     <button
                       onClick={() => {
@@ -505,6 +633,24 @@ export default function ProductDetailView({
                       {t('mapShort')}
                     </button>
                   </HelperTooltip>
+                  {onAddToCartFromStore && (
+                    storeOnlineMap[(store as any).phone] ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOrderStoreId(selectedOrderStoreId === store.id ? null : store.id);
+                        }}
+                        className={`shrink-0 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                          selectedOrderStoreId === store.id
+                            ? 'bg-green-600 text-white border-green-600 scale-[1.02]'
+                            : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
+                        }`}
+                      >
+                        <ICONS.AddToCart className="w-3.5 h-3.5" />
+                        {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
+                      </button>
+                    ) : null
+                  )}
                 </div>
 
                 {/* Expanded details */}
@@ -564,7 +710,8 @@ export default function ProductDetailView({
             </div>
           )}
 
-          {/* Delivery option */}
+          {/* Delivery option — temporarily hidden (restore by uncommenting) */}
+          {/*
           <HelperTooltip side="top" textKey="productDeliveryInfo">
             <div className="flex items-center gap-4 p-4 rounded-2xl border-2 border-surface-container hover:border-primary transition-all bg-surface-container-low group cursor-pointer">
               <div className="p-2.5 rounded-xl bg-white shadow-sm text-on-surface-variant group-hover:bg-primary group-hover:text-white transition-colors">
@@ -576,6 +723,38 @@ export default function ProductDetailView({
               </div>
             </div>
           </HelperTooltip>
+
+
+          {/* Sticky Add-to-Cart bar — shown when consumer selects an online-delivery store */}
+          {selectedOrderStoreId && (() => {
+            const selectedStore = displayStores.find(s => s.id === selectedOrderStoreId);
+            if (!selectedStore) return null;
+            const selectedStorePhone = (selectedStore as any).phone as string | undefined;
+            const selectedAvailability = product.availability?.find(
+              (a) => a.storeId === selectedStore.id || (selectedStorePhone && (a.storePhone === selectedStorePhone || a.storeId === selectedStorePhone))
+            );
+            const displayPrice = selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
+              ? selectedAvailability.sellingPrice
+              : product.price;
+            return (
+              <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-green-700 mb-0.5">Order from</p>
+                  <p className="text-sm font-bold text-on-surface truncate">{selectedStore.name}</p>
+                  <p className="text-xs text-on-surface-variant">₹{displayPrice.toLocaleString('en-IN')} · Online Delivery</p>
+                </div>
+                <button
+                  onClick={() => {
+                    onAddToCartFromStore?.(product, selectedStore);
+                    setSelectedOrderStoreId(null);
+                  }}
+                  className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
+                >
+                  <ICONS.AddToCart className="w-4 h-4" /> Add to Cart
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -637,12 +816,22 @@ export default function ProductDetailView({
                 <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
               </button>
             ) : (
+              // "Contact for availability" CTA temporarily hidden (restore by uncommenting below and removing this null)
+              null
+              /*
               <HelperTooltip side="top" textKey="productContact">
                 <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
                   <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
                 </button>
               </HelperTooltip>
+              */
             )}
+            <button
+              onClick={() => onAddToCart?.(product)}
+              className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+            >
+              <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
+            </button>
           </div>
         </div>
       </div>

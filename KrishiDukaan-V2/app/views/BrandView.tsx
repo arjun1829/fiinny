@@ -103,7 +103,7 @@ function BrandGeoMap({
   );
 }
 
-// ─── Retailer store card (matches ProductDetailView expandable card style) ─────
+// ─── Retailer store card — matches ProductDetailView card exactly ──────────────
 
 function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
   retailer: RetailerWithDistance;
@@ -111,33 +111,52 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
   onToggle: () => void;
 }) {
   const loc = [retailer.address.city, retailer.address.state].filter(Boolean).join(', ');
+  const mapsHref = retailer.geo
+    ? `https://www.google.com/maps/dir/?api=1&destination=${retailer.geo.latitude},${retailer.geo.longitude}`
+    : loc
+      ? `https://www.google.com/maps/search/${encodeURIComponent(`${retailer.shopName} ${loc}`)}`
+      : null;
 
   return (
-    <div className={`rounded-2xl border-2 transition-all overflow-hidden ${
-      isExpanded
-        ? 'border-primary bg-white shadow-ambient'
-        : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
+    <div className={`rounded-2xl border-2 transition-all cursor-pointer overflow-hidden ${
+      isExpanded ? 'border-primary bg-white shadow-ambient' : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
     }`}>
-      {/* Summary row */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-4 p-4 text-left"
-      >
-        <div className={`p-2.5 rounded-xl transition-colors shrink-0 ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'}`}>
-          <Store className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <span className="block font-bold text-on-surface truncate">{retailer.shopName || 'Store'}</span>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-              <MapPin className="w-3 h-3" />
-              {retailer.distanceKm < Infinity ? retailer.distanceLabel : loc || 'Nearby'}
-            </span>
+      {/* Always-visible summary row */}
+      <div className="w-full flex items-center gap-2 p-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-4 text-left"
+        >
+          <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${retailer.logo ? 'w-10 h-10' : 'p-2.5'}`}>
+            {retailer.logo ? (
+              <img src={retailer.logo} alt={retailer.shopName} className="w-10 h-10 object-cover" />
+            ) : (
+              <Store className="w-5 h-5" />
+            )}
           </div>
-        </div>
-        <ChevronRight className={`w-4 h-4 text-outline transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
-      </button>
+          <div className="flex-1 min-w-0">
+            <span className="block font-bold text-on-surface truncate">{retailer.shopName || 'Store'}</span>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+                <MapPin className="w-3 h-3" />{retailer.distanceLabel || loc || 'Nearby'}
+              </span>
+            </div>
+          </div>
+          <ChevronRight className={`w-4 h-4 text-outline transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
+        </button>
+        {mapsHref && (
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-primary text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"
+          >
+            <Navigation className="w-3.5 h-3.5" /> Map
+          </a>
+        )}
+      </div>
 
       {/* Expanded details */}
       <AnimatePresence>
@@ -156,38 +175,32 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
                 </p>
               )}
               <div className="flex gap-2">
-                {/* View on Map — links to Google Maps directions if geo available, else text query */}
-                {retailer.geo ? (
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${retailer.geo.latitude},${retailer.geo.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 bg-primary text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Navigation className="w-3.5 h-3.5" /> View on Map
-                  </a>
-                ) : loc ? (
-                  <a
-                    href={`https://www.google.com/maps/search/${encodeURIComponent(`${retailer.shopName} ${loc}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 bg-primary text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Navigation className="w-3.5 h-3.5" /> View on Map
-                  </a>
-                ) : null}
-                {/* Call Store */}
                 {retailer.phone ? (
                   <a
                     href={`tel:${retailer.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Phone className="w-3.5 h-3.5" /> Call
+                  </a>
+                ) : null}
+                {retailer.secondaryPhone ? (
+                  <a
+                    href={`tel:${retailer.secondaryPhone}`}
                     className="flex-1 border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Phone className="w-3.5 h-3.5" /> Call Store
+                    <Phone className="w-3.5 h-3.5" /> Call 2
                   </a>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full border border-outline-variant text-on-surface-variant py-2.5 rounded-xl text-xs font-black uppercase tracking-widest opacity-60 cursor-not-allowed flex items-center justify-center gap-1.5"
+                  >
+                    <Phone className="w-3.5 h-3.5" /> Call Store
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
@@ -301,9 +314,15 @@ export default function BrandView({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {locationDisplay && (
-                <span className="flex items-center gap-1.5 text-white/70 text-xs">
+                <a
+                  href={brand.geo
+                    ? `https://www.google.com/maps?q=${brand.geo.latitude},${brand.geo.longitude}`
+                    : `https://www.google.com/maps/search/${encodeURIComponent(locationDisplay)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-white/70 text-xs hover:text-white transition-colors"
+                >
                   <MapPin className="w-3.5 h-3.5 text-amber-400" /> {locationDisplay}
-                </span>
+                </a>
               )}
               {brand.establishedYear && (
                 <>
@@ -324,11 +343,16 @@ export default function BrandView({
               )}
             </div>
             {brand.about && <p className="text-white/60 text-sm leading-relaxed max-w-lg">{brand.about}</p>}
-            {(brand.phone || brand.email) && (
+            {(brand.phone || brand.secondaryPhone || brand.email) && (
               <div className="flex flex-wrap gap-4">
                 {brand.phone && (
                   <a href={`tel:${brand.phone}`} className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition-colors">
                     <Phone className="w-3.5 h-3.5 text-amber-400" /> {brand.phone}
+                  </a>
+                )}
+                {brand.secondaryPhone && (
+                  <a href={`tel:${brand.secondaryPhone}`} className="flex items-center gap-1.5 text-white/70 hover:text-white text-xs transition-colors">
+                    <Phone className="w-3.5 h-3.5 text-amber-400" /> {brand.secondaryPhone}
                   </a>
                 )}
                 {brand.email && (
@@ -416,16 +440,16 @@ export default function BrandView({
 
               {/* Map */}
               {hasMapData && (
-                <div className={`h-80 rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-surface-container shrink-0 ${
+                <div className={`h-80 rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-surface-container ${
                   retailersWithDistance.length > 0 ? 'md:flex-1' : 'w-full'
                 }`}>
                   <BrandGeoMap manufacturerGeo={brand.geo} retailers={retailers} />
                 </div>
               )}
 
-              {/* Retailer store cards — same expandable style as ProductDetailView */}
+              {/* Retailer store cards */}
               {retailersWithDistance.length > 0 && (
-                <div className="md:w-80 flex flex-col gap-3 max-h-80 overflow-y-auto pr-0.5">
+                <div className="md:flex-1 flex flex-col gap-3 max-h-80 overflow-y-auto pr-0.5">
                   {retailersWithDistance.map((r) => (
                     <RetailerStoreCard
                       key={r.phone}

@@ -6,7 +6,7 @@ import {
   Loader2, Building2, Package, Store,
   Plus, Save, X, Check,
   Phone, Mail, Youtube, MapPin,
-  Image as ImageIcon, ExternalLink,
+  ExternalLink,
   Tag, Info,
 } from "lucide-react";
 import {
@@ -23,6 +23,8 @@ import {
 } from "../_lib/brand-page-firestore";
 import type { BrandPageCustomization } from "../_lib/brand-page-types";
 import { resolveManufacturerDocId } from "../_lib/profile-persistence";
+import { useI18n } from "../../i18n/I18nContext";
+import { HelperIcon } from "../../../components/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,16 +74,14 @@ function CustomizationForm({
   initial: Partial<BrandPageCustomization>;
   onSaved: (updated: Partial<BrandPageCustomization>) => void;
 }) {
+  const { t } = useI18n();
   const [form, setForm] = useState({
     tagline: initial.tagline ?? "",
     about: initial.about ?? "",
     establishedYear: initial.establishedYear ?? "",
-    website: initial.website ?? "",
     socialProof: initial.socialProof ?? "",
     primaryColor: initial.primaryColor ?? "#154212",
     accentColor: initial.accentColor ?? "#f57c00",
-    logo: initial.logo ?? "",
-    banner: initial.banner ?? "",
     certInput: "",
     videoInput: "",
   });
@@ -105,8 +105,8 @@ function CustomizationForm({
 
   const addVideo = () => {
     const id = extractYouTubeId(form.videoInput);
-    if (!id) { setVideoError("Couldn't parse YouTube video ID. Paste a full URL or the 11-character ID."); return; }
-    if (videos.includes(id)) { setVideoError("Video already added."); return; }
+    if (!id) { setVideoError(t("cpYoutubeParseError")); return; }
+    if (videos.includes(id)) { setVideoError(t("cpYoutubeAlreadyAdded")); return; }
     setVideos((p) => [...p, id]);
     setForm((p) => ({ ...p, videoInput: "" }));
     setVideoError(null);
@@ -119,12 +119,9 @@ function CustomizationForm({
         tagline: form.tagline.trim(),
         about: form.about.trim(),
         establishedYear: form.establishedYear.trim(),
-        website: form.website.trim(),
         socialProof: form.socialProof.trim(),
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        logo: form.logo.trim(),
-        banner: form.banner.trim(),
         certifications,
         videos,
       };
@@ -133,7 +130,7 @@ function CustomizationForm({
       setTimeout(() => setSavedOk(false), 3000);
       onSaved(data);
     } catch (err) {
-      setStatus({ type: "err", msg: err instanceof Error ? err.message : "Save failed." });
+      setStatus({ type: "err", msg: err instanceof Error ? err.message : t("cpSaveFailed") });
     } finally {
       setSaving(false);
     }
@@ -145,7 +142,7 @@ function CustomizationForm({
 
       {/* Read-only profile summary */}
       <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4 space-y-2">
-        <p className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">Profile Data (edit in Profile page)</p>
+        <p className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">{t("cpProfileDataLabel")}</p>
         <div className="grid grid-cols-2 gap-2 text-sm text-on-surface-variant">
           <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> {profileData.businessName || "—"}</span>
           <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> {profileData.phone || "—"}</span>
@@ -162,58 +159,68 @@ function CustomizationForm({
 
       {/* Brand Story */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-5">
-        <h3 className="text-xs font-black uppercase tracking-widest text-primary">Brand Story</h3>
+        <h3 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
+          {t("cpBrandStory")}
+          <HelperIcon size="xs" variant="ghost" side="right" textKey="cpBrandStorySection" ariaLabel={`${t("cpBrandStory")} help`} />
+        </h3>
         <div className="grid gap-4 md:grid-cols-2">
           <label className={`${labelCls} md:col-span-2`}>
-            <span className="font-medium text-on-surface">Tagline</span>
+            <span className="font-medium text-on-surface">{t("cpTagline")}</span>
             <input className={inputCls} value={form.tagline} onChange={set("tagline")} maxLength={120}
-              placeholder="Short brand tagline farmers will remember" />
+              placeholder={t("cpTaglinePlaceholder")} />
           </label>
           <label className={`${labelCls} md:col-span-2`}>
-            <span className="font-medium text-on-surface">About</span>
+            <span className="font-medium text-on-surface">{t("cpAbout")}</span>
             <textarea rows={4} className={`${inputCls} resize-none`} value={form.about} onChange={set("about")}
-              placeholder="Tell farmers about your company, mission, and what makes your products special..." />
+              placeholder={t("cpAboutPlaceholder")} />
           </label>
           <label className={labelCls}>
-            <span className="font-medium text-on-surface">Founded Year</span>
-            <input className={inputCls} value={form.establishedYear} onChange={set("establishedYear")} maxLength={4} placeholder="e.g. 2019" />
+            <span className="font-medium text-on-surface">{t("cpFoundedYear")}</span>
+            <input className={inputCls} value={form.establishedYear} onChange={set("establishedYear")} maxLength={4} placeholder={t("cpFoundedYearPlaceholder")} />
           </label>
           <label className={labelCls}>
-            <span className="font-medium text-on-surface">Website</span>
-            <input type="url" className={inputCls} value={form.website} onChange={set("website")} placeholder="https://yoursite.com" />
+            <span className="font-medium text-on-surface">{t("cpWebsite")}</span>
+            <input type="url" className={inputCls} value={form.website} onChange={set("website")} placeholder={t("cpWebsitePlaceholder")} />
           </label>
           <label className={`${labelCls} md:col-span-2`}>
-            <span className="font-medium text-on-surface">Social Proof / Achievement</span>
+            <span className="font-medium text-on-surface">{t("cpSocialProof")}</span>
             <input className={inputCls} value={form.socialProof} onChange={set("socialProof")} maxLength={120}
-              placeholder="e.g. 75,800+ farmers trust Power Plus" />
+              placeholder={t("cpSocialProofPlaceholder")} />
           </label>
         </div>
       </div>
 
       {/* Images */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-widest text-primary">Brand Images</h3>
+        <h3 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
+          {t("cpBrandImages")}
+          <HelperIcon size="xs" variant="ghost" side="right" textKey="cpBrandImagesSection" ariaLabel={`${t("cpBrandImages")} help`} />
+        </h3>
         <div className="grid gap-4 md:grid-cols-2">
           <label className={labelCls}>
-            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Logo URL</span>
-            <input className={inputCls} value={form.logo} onChange={set("logo")} placeholder="https://... or /images/logo.png" />
+            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> {t("cpLogoUrl")}</span>
+            <input className={inputCls} value={form.logo} onChange={set("logo")} placeholder={t("cpLogoPlaceholder")} />
             {form.logo && (
-              <img src={form.logo} alt="Logo preview" className="mt-1 h-12 w-auto object-contain rounded-lg border border-outline-variant/20" />
+              <img src={form.logo} alt={t("cpLogoPreviewAlt")} className="mt-1 h-12 w-auto object-contain rounded-lg border border-outline-variant/20" />
             )}
           </label>
           <label className={labelCls}>
-            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Banner URL</span>
-            <input className={inputCls} value={form.banner} onChange={set("banner")} placeholder="https://... or /images/banner.jpg" />
+            <span className="font-medium text-on-surface flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> {t("cpBannerUrl")}</span>
+            <input className={inputCls} value={form.banner} onChange={set("banner")} placeholder={t("cpBannerPlaceholder")} />
             {form.banner && (
-              <img src={form.banner} alt="Banner preview" className="mt-1 h-12 w-auto object-cover rounded-lg border border-outline-variant/20" />
+              <img src={form.banner} alt={t("cpBannerPreviewAlt")} className="mt-1 h-12 w-auto object-cover rounded-lg border border-outline-variant/20" />
             )}
           </label>
         </div>
       </div>
 
+
       {/* Certifications */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-widest text-primary">Certifications & Badges</h3>
+        <h3 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
+          {t("cpCertifications")}
+          <HelperIcon size="xs" variant="ghost" side="right" textKey="cpCertificationsSection" ariaLabel={`${t("cpCertifications")} help`} />
+        </h3>
         <div className="flex flex-wrap gap-2">
           {certifications.map((c) => (
             <span key={c} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
@@ -228,24 +235,27 @@ function CustomizationForm({
           <input className={`${inputCls} flex-1`} value={form.certInput}
             onChange={(e) => setForm((p) => ({ ...p, certInput: e.target.value }))}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCert(); } }}
-            placeholder="e.g. ISO 9001:2015 — press Enter to add" />
+            placeholder={t("cpCertPlaceholder")} />
           <button type="button" onClick={addCert}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20">
-            <Plus className="w-3.5 h-3.5" /> Add
+            <Plus className="w-3.5 h-3.5" /> {t("cpAdd")}
           </button>
         </div>
       </div>
 
       {/* Brand Colors */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-widest text-primary">Brand Colors</h3>
+        <h3 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
+          {t("cpBrandColors")}
+          <HelperIcon size="xs" variant="ghost" side="right" textKey="cpBrandColorsSection" ariaLabel={`${t("cpBrandColors")} help`} />
+        </h3>
         <div className="flex flex-wrap gap-6">
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="color" value={form.primaryColor}
               onChange={(e) => setForm((p) => ({ ...p, primaryColor: e.target.value }))}
               className="w-10 h-10 rounded-lg cursor-pointer border border-outline-variant/30" />
             <div>
-              <p className="text-sm font-medium text-on-surface">Primary Color</p>
+              <p className="text-sm font-medium text-on-surface">{t("cpPrimaryColor")}</p>
               <p className="text-xs text-on-surface-variant">{form.primaryColor}</p>
             </div>
           </label>
@@ -254,7 +264,7 @@ function CustomizationForm({
               onChange={(e) => setForm((p) => ({ ...p, accentColor: e.target.value }))}
               className="w-10 h-10 rounded-lg cursor-pointer border border-outline-variant/30" />
             <div>
-              <p className="text-sm font-medium text-on-surface">Accent Color</p>
+              <p className="text-sm font-medium text-on-surface">{t("cpAccentColor")}</p>
               <p className="text-xs text-on-surface-variant">{form.accentColor}</p>
             </div>
           </label>
@@ -264,8 +274,11 @@ function CustomizationForm({
       {/* Videos */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-4">
         <div>
-          <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-1">YouTube Videos</h3>
-          <p className="text-xs text-on-surface-variant">Paste a full YouTube URL or just the 11-character video ID.</p>
+          <h3 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary mb-1">
+            {t("cpYoutubeVideos")}
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="cpYoutubeSection" ariaLabel={`${t("cpYoutubeVideos")} help`} />
+          </h3>
+          <p className="text-xs text-on-surface-variant">{t("cpYoutubeHint")}</p>
         </div>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -273,11 +286,11 @@ function CustomizationForm({
             <input className={`${inputCls} pl-10`} value={form.videoInput}
               onChange={(e) => { setForm((p) => ({ ...p, videoInput: e.target.value })); setVideoError(null); }}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addVideo(); } }}
-              placeholder="https://youtu.be/... or video ID" />
+              placeholder={t("cpYoutubePlaceholder")} />
           </div>
           <button type="button" onClick={addVideo}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-bold hover:opacity-90 shrink-0">
-            <Plus className="w-4 h-4" /> Add
+            <Plus className="w-4 h-4" /> {t("cpAdd")}
           </button>
         </div>
         {videoError && <p className="text-xs text-red-600">✗ {videoError}</p>}
@@ -304,11 +317,11 @@ function CustomizationForm({
         <button type="button" onClick={handleSave} disabled={saving}
           className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 disabled:opacity-60">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {saving ? "Saving…" : "Save Brand Page"}
+          {saving ? t("cpSaving") : t("cpSaveBrandPage")}
         </button>
         {savedOk && (
           <span className="flex items-center gap-1.5 text-sm font-semibold text-green-700">
-            <Check className="w-4 h-4" /> Saved successfully
+            <Check className="w-4 h-4" /> {t("cpSavedSuccess")}
           </span>
         )}
       </div>
@@ -319,6 +332,7 @@ function CustomizationForm({
 // ─── Products Tab (read-only, live from inventory) ────────────────────────────
 
 function ProductsTab({ uid }: { uid: string }) {
+  const { t } = useI18n();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
@@ -328,8 +342,9 @@ function ProductsTab({ uid }: { uid: string }) {
     setLoading(true);
     fetchManufacturerProducts(uid)
       .then(setProducts)
-      .catch(() => setStatus({ type: "err", msg: "Could not load products." }))
+      .catch(() => setStatus({ type: "err", msg: t("cpProductsLoadError") }))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
   return (
@@ -337,17 +352,17 @@ function ProductsTab({ uid }: { uid: string }) {
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
       <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-3">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
-        <p>Products are pulled live from your inventory and shown on your brand page automatically.</p>
+        <p>{t("cpProductsLiveNote")}</p>
       </div>
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
-          <Loader2 className="w-5 h-5 animate-spin" /> Loading…
+          <Loader2 className="w-5 h-5 animate-spin" /> {t("cpLoadingShort")}
         </div>
       ) : products.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Package className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No products in your inventory yet.</p>
-          <p className="text-sm text-on-surface-variant">Add products from the Inventory section — they will appear on your brand page automatically.</p>
+          <p className="font-semibold text-on-surface-variant">{t("cpNoProducts")}</p>
+          <p className="text-sm text-on-surface-variant">{t("cpNoProductsHint")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -387,6 +402,7 @@ function ProductsTab({ uid }: { uid: string }) {
 // ─── Stores Tab (read-only, live from retailer network) ───────────────────────
 
 function StoresTab({ userPhone }: { userPhone: string }) {
+  const { t } = useI18n();
   const [stores, setStores] = useState<RetailerNetworkStore[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
@@ -396,8 +412,9 @@ function StoresTab({ userPhone }: { userPhone: string }) {
     setLoading(true);
     fetchManufacturerNetworkStores(userPhone)
       .then(setStores)
-      .catch(() => setStatus({ type: "err", msg: "Could not load retailer network." }))
+      .catch(() => setStatus({ type: "err", msg: t("cpStoresLoadError") }))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPhone]);
 
   return (
@@ -405,17 +422,17 @@ function StoresTab({ userPhone }: { userPhone: string }) {
       <StatusBanner status={status} onDismiss={() => setStatus(null)} />
       <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-3">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
-        <p>Stores are pulled live from your retailer network and shown as &quot;Where to Buy&quot; on your brand page.</p>
+        <p>{t("cpStoresLiveNote")}</p>
       </div>
       {loading ? (
         <div className="flex h-32 items-center justify-center gap-2 text-sm text-on-surface-variant">
-          <Loader2 className="w-5 h-5 animate-spin" /> Loading…
+          <Loader2 className="w-5 h-5 animate-spin" /> {t("cpLoadingShort")}
         </div>
       ) : stores.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-outline-variant/50 px-6 py-14 text-center space-y-3">
           <Store className="w-10 h-10 text-on-surface-variant/30 mx-auto" />
-          <p className="font-semibold text-on-surface-variant">No retailers in your network yet.</p>
-          <p className="text-sm text-on-surface-variant">Add retailers from the Retailer Network section — they will appear on your brand page automatically.</p>
+          <p className="font-semibold text-on-surface-variant">{t("cpNoStores")}</p>
+          <p className="text-sm text-on-surface-variant">{t("cpNoStoresHint")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -447,6 +464,7 @@ function StoresTab({ userPhone }: { userPhone: string }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function CompanyDashboardPage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("brand");
@@ -464,7 +482,7 @@ export default function CompanyDashboardPage() {
       try {
         const profile = await getUserProfile(user.uid);
         if ((profile as any)?.role !== "manufacturer") {
-          setError("Brand pages are only available for manufacturer accounts.");
+          setError(t("cpOnlyManufacturer"));
           setLoading(false);
           return;
         }
@@ -481,7 +499,7 @@ export default function CompanyDashboardPage() {
         ]);
 
         if (!mfrDoc) {
-          setError("Manufacturer profile not found. Please complete your profile first.");
+          setError(t("cpProfileNotFound"));
           setLoading(false);
           return;
         }
@@ -497,24 +515,25 @@ export default function CompanyDashboardPage() {
         setSlug(String(mfrDoc.slug ?? ""));
         setCustomization(custom ?? {});
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load brand page data.");
+        setError(err instanceof Error ? err.message : t("cpLoadFailed"));
       } finally {
         setLoading(false);
       }
     });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
-    { id: "brand", label: "Brand Info", icon: Building2 },
-    { id: "products", label: "Products", icon: Package },
-    { id: "stores", label: "Stores", icon: Store },
+    { id: "brand", label: t("cpTabBrandInfo"), icon: Building2 },
+    { id: "products", label: t("cpTabProducts"), icon: Package },
+    { id: "stores", label: t("cpTabStores"), icon: Store },
   ];
 
   if (loading) {
     return (
       <div className="flex h-60 items-center justify-center gap-2 text-sm text-on-surface-variant">
-        <Loader2 className="w-5 h-5 animate-spin" /> Loading brand page…
+        <Loader2 className="w-5 h-5 animate-spin" /> {t("cpLoadingBrandPage")}
       </div>
     );
   }
@@ -524,10 +543,10 @@ export default function CompanyDashboardPage() {
       <div className="p-8 space-y-4 max-w-lg">
         <div className="flex items-center gap-3 text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
           <Info className="w-5 h-5 shrink-0" />
-          <p className="text-sm">{error ?? "Profile not found."}</p>
+          <p className="text-sm">{error ?? t("cpProfileNotFoundShort")}</p>
         </div>
         <p className="text-xs text-on-surface-variant">
-          Complete your manufacturer profile first, then come back to customize your brand page.
+          {t("cpCompleteProfileHint")}
         </p>
       </div>
     );
@@ -541,21 +560,25 @@ export default function CompanyDashboardPage() {
           <Building2 className="w-7 h-7 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-black text-on-surface leading-tight">{profileData.businessName || "Your Brand Page"}</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">Customize what farmers see on your public brand page</p>
+          <h1 className="text-xl font-black text-on-surface leading-tight">{profileData.businessName || t("cpBrandPageFallbackTitle")}</h1>
+          <p className="flex items-center gap-1.5 text-sm text-on-surface-variant mt-0.5">
+            {t("cpHeaderDesc")}
+            <HelperIcon size="xs" variant="ghost" side="right" textKey="cpHeader" ariaLabel={`${t("cpBrandPageFallbackTitle")} help`} />
+          </p>
           {slug && (
             <a href={`/brand/${slug}`} target="_blank" rel="noopener noreferrer"
               className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-              <ExternalLink className="w-3 h-3" /> View Brand Page
+              <ExternalLink className="w-3 h-3" /> {t("cpViewBrandPage")}
             </a>
           )}
         </div>
         <span className="flex items-center gap-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full shrink-0">
-          <Check className="w-3 h-3" /> Manufacturer
+          <Check className="w-3 h-3" /> {t("cpManufacturerBadge")}
         </span>
       </div>
 
       {/* Tab bar */}
+      <div className="flex items-center gap-2">
       <div className="flex gap-1 rounded-2xl border border-outline-variant/30 bg-surface-container-low p-1 w-fit">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button key={id} type="button" onClick={() => setActiveTab(id)}
@@ -568,6 +591,8 @@ export default function CompanyDashboardPage() {
             {label}
           </button>
         ))}
+      </div>
+        <HelperIcon size="sm" variant="ghost" side="right" textKey="cpTabs" ariaLabel={`${t("cpTabBrandInfo")} help`} />
       </div>
 
       {/* Tab content */}

@@ -1,7 +1,8 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import { LayoutGrid } from 'lucide-react';
+import { useRouter, usePathname } from 'next/navigation';
 import { ICONS } from '../../app/constants';
 import { auth, getUserProfile } from '../../app/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -11,7 +12,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 
 interface NavbarProps {
   currentView?: View;
@@ -51,6 +52,8 @@ export function Navbar({
   onCartClick,
 }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isOnBlog = pathname?.startsWith('/blog') ?? false;
   const [localUser, setLocalUser] = useState<any>(null);
   const [localUserRole, setLocalUserRole] = useState<string>('customer');
   const [localUserProfile, setLocalUserProfile] = useState<any>({ isPaid: false });
@@ -61,8 +64,10 @@ export function Navbar({
   const { language, setLanguage, t } = useI18n();
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMoreRef = useRef<HTMLDivElement>(null);
   const desktopSearchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
 
@@ -136,6 +141,9 @@ export function Navbar({
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
         setIsAccountMenuOpen(false);
       }
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(event.target as Node)) {
+        setIsMobileMoreOpen(false);
+      }
       // Close search results if clicking outside both search bars
       const inDesktop = desktopSearchRef.current?.contains(event.target as Node);
       const inMobile = mobileSearchRef.current?.contains(event.target as Node);
@@ -147,6 +155,7 @@ export function Navbar({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsAccountMenuOpen(false);
+        setIsMobileMoreOpen(false);
         setShowResults(false);
       }
     };
@@ -227,6 +236,11 @@ export function Navbar({
   ];
   const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
+  const cycleLanguage = () => {
+    const langs = ['en', 'mr', 'hi'] as const;
+    const idx = langs.indexOf(language as any);
+    setLanguage(langs[(idx + 1) % langs.length]!);
+  };
 
   const SearchDropdown = () => (
     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-ambient border border-surface-container z-[100] overflow-hidden max-h-[70vh] overflow-y-auto">
@@ -295,15 +309,15 @@ export function Navbar({
   );
 
   return (
-    <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
-      <div className="flex justify-between items-center gap-4">
+    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-3 md:px-6 py-2 transition-colors">
+      <div className="flex justify-between items-center gap-2 md:gap-4">
         <div
           className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
           onClick={() => navigate('home')}
         >
-          <img 
-            src="/images/krishidukan icon.webp" 
-            alt="KrishiDukan Logo" 
+          <img
+            src="/images/krishidukan icon.webp"
+            alt="KrishiDukan Logo"
             className="w-8 h-8 md:w-10 md:h-10 object-contain"
           />
           <span className="font-black text-xl md:text-2xl text-primary group-hover:text-primary/90 transition-colors">
@@ -328,6 +342,18 @@ export function Navbar({
               )}
             </button>
           ))}
+          <a
+            href="/blog"
+            data-tour-nav="blog"
+            className={`text-xs font-semibold transition-colors hover:text-primary whitespace-nowrap ${
+              isOnBlog ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            {t('blog')}
+            {isOnBlog && (
+              <motion.div layoutId="activeTab" className="h-0.5 bg-primary mt-0.5 rounded-full" />
+            )}
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -371,7 +397,7 @@ export function Navbar({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* Cart icon (placeholder) */}
           <button
             onClick={() => {
@@ -416,25 +442,109 @@ export function Navbar({
             <ICONS.Location className="w-5 h-5" />
           </button>
 
-          {/* Language toggle — always visible on mobile */}
-          <button
-            className="md:hidden flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl px-2.5 py-1.5 text-[11px] font-black text-on-surface hover:bg-surface-container transition-colors min-w-[36px]"
-            onClick={() => {
-              const langs = ['en', 'mr', 'hi'] as const;
-              const idx = langs.indexOf(language as any);
-              setLanguage(langs[(idx + 1) % langs.length]!);
-            }}
-            title="Change language"
-            aria-label="Change language"
-          >
-            {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
-          </button>
+          {/* More menu — mobile only */}
+          <div className="relative md:hidden" ref={mobileMoreRef}>
+            <button
+              type="button"
+              onClick={() => setIsMobileMoreOpen(prev => !prev)}
+              className={`p-1.5 rounded-xl transition-colors ${isMobileMoreOpen ? 'bg-primary text-white' : 'hover:bg-surface-container text-on-surface-variant'}`}
+              aria-label="More"
+              aria-expanded={isMobileMoreOpen}
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+
+            <div className={`absolute right-0 top-full mt-2 w-52 rounded-2xl border border-surface-container bg-white p-2 shadow-ambient z-[90] ${isMobileMoreOpen ? 'block' : 'hidden'}`}>
+              <div className="grid grid-cols-2 gap-2 p-1">
+                <a
+                  href="/blog"
+                  onClick={() => setIsMobileMoreOpen(false)}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  Blog
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  About
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('help'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  {t('help')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  {language === 'en' ? 'Lang: EN' : language === 'mr' ? 'Lang: मर' : 'Lang: हि'}
+                </button>
+              </div>
+
+              <div className="my-2 border-t border-surface-container" />
+
+              {user ? (
+                <div className="space-y-1">
+                  {isAdmin && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/admin'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      Admin Panel
+                    </button>
+                  )}
+                  {canAccessDashboard && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('dashboard')}
+                    </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('profile'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('orders'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        My Orders
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setIsMobileMoreOpen(false); handleLogout(); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                  >
+                    {t('logout')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('login'); }}
+                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                >
+                  {t('login')}
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* Help / Documentation */}
           <button
             data-tour-nav="help"
             onClick={() => navigate('help')}
-            className={`inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
+            className={`hidden md:inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
               currentView === 'help'
                 ? 'bg-primary text-white border-primary'
                 : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
@@ -446,17 +556,17 @@ export function Navbar({
             <span className="hidden md:inline whitespace-nowrap">{t('help')}</span>
           </button>
 
-          <div className="relative" ref={accountMenuRef}>
+          <div className="relative hidden md:block" ref={accountMenuRef}>
             <button
               data-account-trigger
-              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-surface-container-highest transition-all"
+              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl hover:bg-surface-container-highest transition-all whitespace-nowrap"
               aria-label="Open account menu"
               aria-haspopup="menu"
               aria-expanded={isAccountMenuOpen}
               onClick={() => setIsAccountMenuOpen((prev) => !prev)}
             >
               {t('account')}
-              <ICONS.ChevronRight className="w-3.5 h-3.5 rotate-90" />
+              <ICONS.ChevronRight className="hidden md:inline w-3.5 h-3.5 rotate-90" />
             </button>
 
             <div className={`absolute right-0 top-full mt-2 z-50 w-52 bg-white border border-surface-container rounded-2xl shadow-ambient p-2 ${isAccountMenuOpen ? 'block' : 'hidden'}`}>
@@ -498,6 +608,28 @@ export function Navbar({
                       {t('dashboard')}
                     </button>
                   )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('profile');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Profile
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('orders');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        My Orders
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => {
                       setIsAccountMenuOpen(false);
@@ -521,6 +653,7 @@ export function Navbar({
               )}
             </div>
           </div>
+
         </div>
       </div>
 
@@ -561,6 +694,7 @@ export function Navbar({
           {shouldShowDropdown && <SearchDropdown />}
         </div>
       )}
+
     </header>
   );
 }

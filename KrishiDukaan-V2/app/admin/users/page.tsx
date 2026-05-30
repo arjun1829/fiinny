@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
-  Instagram, Facebook, MessageCircle, Youtube, MapPin,
+  Instagram, Facebook, MessageCircle, Youtube, MapPin, Package,
+  ChevronRight, ExternalLink,
 } from "lucide-react";
-import { fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile } from "../../firebase";
+import {
+  fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile,
+  fetchRetailerProducts, fetchManufacturerProducts,
+} from "../../firebase";
 
 declare global {
   interface Window { google?: any }
@@ -30,7 +34,6 @@ type EditState = {
   phone: string;
   role: string;
   isPaid: boolean;
-  totalSeats: string;
   subscriptionStatus: string;
   // business
   shopName: string;
@@ -80,6 +83,11 @@ export default function AdminUsersPage() {
   const [confirmEmail, setConfirmEmail] = useState("");
   const [promoting, setPromoting] = useState(false);
   const [promoteSearch, setPromoteSearch] = useState("");
+
+  // Products panel
+  const [productsUser, setProductsUser] = useState<any | null>(null);
+  const [userProducts, setUserProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // Google Maps autocomplete refs
   const addressInputRef = useRef<HTMLInputElement>(null);
@@ -169,6 +177,22 @@ export default function AdminUsersPage() {
     customer: users.filter(u => !u.role || u.role === "customer").length,
   };
 
+  const openProducts = async (u: any) => {
+    setProductsUser(u);
+    setUserProducts([]);
+    setProductsLoading(true);
+    // u.id is the phone (Firestore doc ID); u.uid is the Firebase Auth UID stored as a field.
+    // Products are indexed by uid (retailerId / manufacturerId / ownerId).
+    const uid = u.uid || u.id;
+    try {
+      const products = u.role === "manufacturer"
+        ? await fetchManufacturerProducts(uid)
+        : await fetchRetailerProducts(uid);
+      setUserProducts(products);
+    } catch { /* show empty */ }
+    finally { setProductsLoading(false); }
+  };
+
   const openEdit = (u: any) => {
     setEditTarget({
       uid: u.id,
@@ -177,7 +201,6 @@ export default function AdminUsersPage() {
       phone: u.phone || "",
       role: u.role || "customer",
       isPaid: !!u.isPaid,
-      totalSeats: String(u.totalSeats ?? "0"),
       subscriptionStatus: u.subscriptionStatus || "",
       shopName: u.shopName || "",
       businessName: u.businessName || "",
@@ -247,7 +270,6 @@ export default function AdminUsersPage() {
         phone: editTarget.phone,
         role: editTarget.role,
         isPaid: editTarget.isPaid,
-        totalSeats: Number(editTarget.totalSeats) || 0,
         subscriptionStatus: editTarget.subscriptionStatus || undefined,
         shopName: editTarget.role === "retailer" ? editTarget.shopName : undefined,
         businessName: editTarget.role === "manufacturer" ? editTarget.businessName : undefined,
@@ -263,7 +285,6 @@ export default function AdminUsersPage() {
         ...u,
         name: editTarget.name, email: editTarget.email, phone: editTarget.phone,
         role: editTarget.role, isPaid: editTarget.isPaid,
-        totalSeats: Number(editTarget.totalSeats),
         subscriptionStatus: editTarget.subscriptionStatus,
         shopName: editTarget.shopName, businessName: editTarget.businessName,
         address: currentAddress, city: editTarget.city,
@@ -312,17 +333,17 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="flex items-center gap-3 mb-1">
-          <Users className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-black text-on-surface">Users & Roles</h1>
+        <div className="flex items-center gap-2 sm:gap-3 mb-1">
+          <Users className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+          <h1 className="text-lg sm:text-2xl font-black text-on-surface">Users & Roles</h1>
         </div>
-        <p className="text-sm text-on-surface-variant ml-9">View and edit all platform users, their roles and subscription status.</p>
+        <p className="text-xs sm:text-sm text-on-surface-variant ml-7 sm:ml-9">View and edit all platform users.</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {(["all", "retailer", "manufacturer", "customer", "admin"] as const).map(role => (
           <button key={role} onClick={() => setFilterRole(role)}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${filterRole === role ? "bg-primary text-white shadow-sm" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 ${filterRole === role ? "bg-primary text-white shadow-sm" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
             {role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)} ({counts[role as keyof typeof counts]})
           </button>
         ))}
@@ -341,10 +362,11 @@ export default function AdminUsersPage() {
         </div>
       ) : (
         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
-          <div className="px-5 py-3 border-b border-outline-variant/20 bg-surface-container-low">
+          <div className="px-4 sm:px-5 py-3 border-b border-outline-variant/20 bg-surface-container-low">
             <span className="text-xs font-bold text-on-surface-variant">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</span>
           </div>
-          <div className="overflow-x-auto">
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-outline-variant/20">
@@ -375,7 +397,18 @@ export default function AdminUsersPage() {
                         {u.isPaid ? "Active" : "Free"}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-sm text-on-surface">{u.productCount ?? "—"}</td>
+                    <td className="px-5 py-3">
+                      {(u.productCount ?? 0) > 0 ? (
+                        <button type="button" onClick={() => openProducts(u)}
+                          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
+                          <Package className="h-3.5 w-3.5" />
+                          {u.productCount}
+                          <ChevronRight className="h-3 w-3" />
+                        </button>
+                      ) : (
+                        <span className="text-sm text-on-surface-variant">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-sm text-on-surface">{u.totalSeats ?? "—"}</td>
                     <td className="px-5 py-3 text-right">
                       <button type="button" onClick={() => openEdit(u)}
@@ -391,13 +424,51 @@ export default function AdminUsersPage() {
               </tbody>
             </table>
           </div>
+          {/* Mobile card list */}
+          <div className="md:hidden divide-y divide-outline-variant/10">
+            {filtered.map(u => (
+              <div key={u.id} className="px-4 py-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-on-surface truncate">{u.name || "—"}</p>
+                    <p className="text-[11px] text-on-surface-variant truncate">{u.email || u.phone || u.id}</p>
+                  </div>
+                  <button type="button" onClick={() => openEdit(u)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container shrink-0">
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
+                    {u.role || "customer"}
+                  </span>
+                  <span className={`flex items-center gap-1 text-[11px] font-bold ${u.isPaid ? "text-green-600" : "text-on-surface-variant"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${u.isPaid ? "bg-green-500" : "bg-gray-300"}`} />
+                    {u.isPaid ? "Active" : "Free"}
+                  </span>
+                  {(u.productCount ?? 0) > 0 && (
+                    <button type="button" onClick={() => openProducts(u)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                      <Package className="h-3 w-3" /> {u.productCount}
+                    </button>
+                  )}
+                  {(u.totalSeats ?? 0) > 0 && (
+                    <span className="text-[11px] text-on-surface-variant">{u.totalSeats} seats</span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-4 py-10 text-center text-sm text-on-surface-variant">No users found.</div>
+            )}
+          </div>
         </div>
       )}
 
       {/* ─── Edit User Modal ─────────────────────────────────────────────────────── */}
       {editTarget && (
-        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4 sm:pt-20">
+          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-full">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div>
@@ -450,7 +521,6 @@ export default function AdminUsersPage() {
                       {SUB_STATUSES.map(s => <option key={s} value={s}>{s || "— not set —"}</option>)}
                     </select>
                   </div>
-                  <Field label="Total Seats" value={editTarget.totalSeats} onChange={v => set("totalSeats", v)} placeholder="0" type="number" />
                 </div>
               </div>
 
@@ -483,7 +553,7 @@ export default function AdminUsersPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid gap-2 sm:grid-cols-3">
                       <Field label="City" value={editTarget.city} onChange={v => set("city", v)} placeholder="City" />
                       <Field label="State" value={editTarget.state} onChange={v => set("state", v)} placeholder="State" />
                       <Field label="Pincode" value={editTarget.pincode} onChange={v => set("pincode", v)} placeholder="000000" />
@@ -529,19 +599,86 @@ export default function AdminUsersPage() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0">
+            <div className="flex flex-col-reverse gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0 sm:flex-row sm:items-center sm:justify-end">
               <button type="button" onClick={() => setEditTarget(null)} disabled={saving}
-                className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+                className="w-full rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60 sm:w-auto">
                 Cancel
               </button>
               <button type="button" onClick={handleSaveEdit} disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60">
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60 sm:w-auto">
                 {saving ? (
                   <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> Saving…</>
                 ) : (
                   <><Check className="h-4 w-4" /> Save changes</>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Products Panel ──────────────────────────────────────────────── */}
+      {productsUser && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/40 backdrop-blur-sm pt-16">
+          <div className="w-full max-w-md h-full bg-white flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
+              <div>
+                <h2 className="text-base font-semibold text-on-surface">
+                  Products — {productsUser.name || productsUser.email || "User"}
+                </h2>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  {productsUser.role} · {userProducts.length} product{userProducts.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+              <button type="button" onClick={() => setProductsUser(null)}
+                className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {productsLoading ? (
+                <div className="flex h-40 items-center justify-center">
+                  <div className="w-7 h-7 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : userProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-2 text-on-surface-variant">
+                  <Package className="h-8 w-8 opacity-30" />
+                  <p className="text-sm">No products found for this user.</p>
+                </div>
+              ) : userProducts.map(p => (
+                <div key={p.id}
+                  className="flex items-start gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
+                  {p.image ? (
+                    <img src={p.image} alt={p.name} className="h-12 w-12 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-surface-container shrink-0 flex items-center justify-center">
+                      <Package className="h-5 w-5 text-on-surface-variant opacity-40" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-on-surface truncate">{p.name || "—"}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-on-surface-variant">{p.category || "—"}</span>
+                      {p.price > 0 && (
+                        <span className="text-xs font-bold text-secondary">₹{p.price.toLocaleString("en-IN")}</span>
+                      )}
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
+                        p.stock === "In Stock" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                      }`}>{p.stock || "—"}</span>
+                      {p.source && (
+                        <span className="text-[10px] text-on-surface-variant font-mono">{p.source}</span>
+                      )}
+                    </div>
+                  </div>
+                  <a href={`/?view=product&product=${p.id}`} target="_blank" rel="noopener noreferrer"
+                    className="shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              ))}
             </div>
           </div>
         </div>

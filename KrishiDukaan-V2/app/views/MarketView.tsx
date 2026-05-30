@@ -15,6 +15,7 @@ interface MarketViewProps {
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   storesWithDistance?: StoreWithDistance[];
+  onAddToCart?: (product: MarketplaceProduct) => void;
 }
 
 type SortKey = 'default' | 'price-asc' | 'price-desc' | 'name-asc';
@@ -37,6 +38,7 @@ export default function MarketView({
   selectedCategory,
   onCategoryChange,
   storesWithDistance = [],
+  onAddToCart,
 }: MarketViewProps) {
   const { t } = useI18n();
   const DISTANCE_OPTIONS = useMemo(() => [
@@ -142,9 +144,15 @@ export default function MarketView({
         </p>
       </header>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-6 pb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex gap-3 overflow-x-auto hide-scrollbar">
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-6 mb-6 pb-2">
+        <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
+          {/*
+            Categories row — horizontally scrollable on mobile.
+            Negative margin + matching padding lets chips bleed into the page's edge padding
+            so a partial chip on the right acts as a visual scroll affordance. Desktop is
+            reset via md:* to the original `flex gap-3 overflow-x-auto`.
+          */}
+          <div className="flex-1 md:flex-initial min-w-0 flex gap-3 overflow-x-auto hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
             {categories.map((cat) => (
               <button
                 key={cat.id}
@@ -204,7 +212,7 @@ export default function MarketView({
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  className="absolute right-0 top-full mt-2 w-[280px] bg-white rounded-2xl shadow-2xl border border-surface-container p-4 z-50"
+                  className="absolute left-0 md:left-auto md:right-0 top-full mt-2 w-[min(280px,calc(100vw-2rem))] md:w-[280px] bg-white rounded-2xl shadow-2xl border border-surface-container p-4 z-50"
                 >
                   <div className="mb-4">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-outline">
@@ -296,7 +304,7 @@ export default function MarketView({
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  className="absolute right-0 top-full mt-2 w-[200px] bg-white rounded-2xl shadow-2xl border border-surface-container py-2 z-50"
+                  className="absolute right-0 top-full mt-2 w-[min(200px,calc(100vw-2rem))] md:w-[200px] bg-white rounded-2xl shadow-2xl border border-surface-container py-2 z-50"
                 >
                   {DISTANCE_OPTIONS.map((o) => (
                     <button
@@ -424,7 +432,7 @@ export default function MarketView({
                   <div onClick={(e) => e.stopPropagation()} className="mt-2">
                     <HelperTooltip side="top" textKey="marketAddToCart">
                       <button
-                        onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
+                        onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
                         className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
                       >
                         {t('addToCart')}

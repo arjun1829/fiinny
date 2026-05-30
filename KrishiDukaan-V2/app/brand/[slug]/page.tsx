@@ -118,10 +118,13 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
       const shopName = String(r.shopName ?? r.ownerName ?? "");
       const ownerName = String(r.ownerName ?? "");
 
+      const mirrorLogo = String(r.logo ?? "");
+
       // If mirror already has both geo and city, use it directly
       if (mirrorGeo && mirrorAddr.city) {
         return {
           phone: d.id,
+          secondaryPhone: String(r.secondaryPhone ?? ""),
           shopName,
           ownerName,
           address: {
@@ -130,6 +133,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
             line1: String(mirrorAddr.line1 ?? ""),
           },
           geo: mirrorGeo,
+          logo: mirrorLogo || undefined,
         };
       }
 
@@ -142,6 +146,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
           const rdAddr = (rd.address ?? {}) as Record<string, unknown>;
           return {
             phone: d.id,
+            secondaryPhone: String(rd.secondaryPhone ?? r.secondaryPhone ?? ""),
             shopName: shopName || String(rd.shopName ?? rd.ownerName ?? ""),
             ownerName: ownerName || String(rd.ownerName ?? ""),
             address: {
@@ -150,6 +155,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
               line1: String(rdAddr.line1 ?? mirrorAddr.line1 ?? ""),
             },
             geo: parseGeo(rd.geo) ?? mirrorGeo,
+            logo: String(rd.logo ?? "") || mirrorLogo || undefined,
           };
         }
       } catch {
@@ -158,6 +164,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
 
       return {
         phone: d.id,
+        secondaryPhone: String(r.secondaryPhone ?? ""),
         shopName,
         ownerName,
         address: {
@@ -166,6 +173,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
           line1: String(mirrorAddr.line1 ?? ""),
         },
         geo: mirrorGeo,
+        logo: mirrorLogo || undefined,
       };
     }),
   );

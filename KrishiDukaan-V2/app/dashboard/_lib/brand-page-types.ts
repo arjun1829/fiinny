@@ -26,6 +26,7 @@ export type BrandPageCustomization = {
 
 export type ManufacturerBrandData = {
   phone: string;
+  secondaryPhone: string;
   uid: string | null;
   businessName: string;
   ownerName: string;
@@ -62,10 +63,12 @@ export type BrandProductSummary = {
 
 export type BrandRetailerSummary = {
   phone: string;
+  secondaryPhone: string;
   shopName: string;
   ownerName: string;
   address: { city: string; state: string; line1: string };
   geo: { latitude: number; longitude: number } | null;
+  logo?: string;
 };
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -97,6 +100,7 @@ export function assembleBrandData(
 
   return {
     phone: manufacturerPhone,
+    secondaryPhone: String(manufacturerDoc.secondaryPhone ?? ""),
     uid: manufacturerDoc.uid
       ? String(manufacturerDoc.uid)
       : manufacturerDoc.manufacturerId
@@ -118,7 +122,8 @@ export function assembleBrandData(
     tagline: String(c.tagline ?? DEFAULT_CUSTOMIZATION.tagline),
     about: String(c.about ?? DEFAULT_CUSTOMIZATION.about),
     establishedYear: String(c.establishedYear ?? DEFAULT_CUSTOMIZATION.establishedYear),
-    website: String(c.website ?? DEFAULT_CUSTOMIZATION.website),
+    // website, logo, banner: customization overrides > profile field > default
+    website: String(c.website || manufacturerDoc.website || DEFAULT_CUSTOMIZATION.website),
     socialProof: String(c.socialProof ?? DEFAULT_CUSTOMIZATION.socialProof),
     certifications: Array.isArray(c.certifications)
       ? c.certifications
@@ -126,8 +131,8 @@ export function assembleBrandData(
     videos: Array.isArray(c.videos) ? c.videos : DEFAULT_CUSTOMIZATION.videos,
     primaryColor: String(c.primaryColor ?? DEFAULT_CUSTOMIZATION.primaryColor),
     accentColor: String(c.accentColor ?? DEFAULT_CUSTOMIZATION.accentColor),
-    logo: String(c.logo ?? DEFAULT_CUSTOMIZATION.logo),
-    banner: String(c.banner ?? DEFAULT_CUSTOMIZATION.banner),
+    logo: String(c.logo || manufacturerDoc.logo || DEFAULT_CUSTOMIZATION.logo),
+    banner: String(c.banner || manufacturerDoc.banner || DEFAULT_CUSTOMIZATION.banner),
     socialLinks: c.socialLinks,
   };
 }

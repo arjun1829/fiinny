@@ -245,6 +245,26 @@ export default function ProfileView({
         </form>
       </div>
 
+      {/* Quick link to orders — customers only */}
+      {role === 'customer' && uid && (
+        <button
+          type="button"
+          onClick={() => onNavigate && onNavigate('orders')}
+          className="w-full bg-white rounded-3xl border border-surface-container p-6 shadow-ambient flex items-center justify-between hover:border-primary/30 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <ICONS.Delivery className="w-5 h-5 text-primary" />
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-on-surface">My Orders</p>
+              <p className="text-xs text-on-surface-variant">View & track all your orders</p>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-on-surface-variant group-hover:text-primary transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      )}
+
       {isBusinessRole && (
         <div className="bg-white rounded-3xl border border-surface-container p-6 md:p-8 shadow-ambient">
           <div className="flex items-center gap-2 mb-4">

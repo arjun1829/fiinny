@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   CreditCard, Search, RefreshCw, ShieldOff, Plus, X, Check,
-  ChevronDown, CalendarPlus, AlertTriangle,
+  ChevronDown, CalendarPlus, AlertTriangle, Pencil,
 } from "lucide-react";
 import {
   fetchAllSubscriptions, fetchAllUsers,
   adminRevokeSubscription, adminExtendSubscription, adminManualActivate,
+  adminUpdateSubscriptionSeats, fetchFailedPayments
 } from "../../firebase";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -34,7 +35,10 @@ const EMPTY_MANUAL: ManualForm = {
 export default function AdminSubscriptionsPage() {
   const [subs, setSubs] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [failedPayments, setFailedPayments] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'subscriptions' | 'failedPayments'>('subscriptions');
   const [loading, setLoading] = useState(true);
+  const [failedPaymentsError, setFailedPaymentsError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -44,9 +48,29 @@ export default function AdminSubscriptionsPage() {
   const [extendMonths, setExtendMonths] = useState(1);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Edit seats
+  const [editingSeats, setEditingSeats] = useState<string | null>(null);
+  const [editSeatsValue, setEditSeatsValue] = useState("");
+  const [savingSeats, setSavingSeats] = useState(false);
+
   // Manual activate
   const [showManual, setShowManual] = useState(false);
   const [manualForm, setManualForm] = useState<ManualForm>(EMPTY_MANUAL);
+
+  // Lock scroll when modal is open
+  useEffect(() => {
+    if (showManual) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [showManual]);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualSuccess, setManualSuccess] = useState(false);
@@ -54,6 +78,7 @@ export default function AdminSubscriptionsPage() {
 
   const load = async () => {
     setLoading(true);
+    setFailedPaymentsError(null);
     try {
       const [subsData, usersData] = await Promise.all([fetchAllSubscriptions(), fetchAllUsers()]);
       setSubs(subsData);
@@ -61,6 +86,10 @@ export default function AdminSubscriptionsPage() {
     } finally {
       setLoading(false);
     }
+    // Load failed payments separately so a rules error doesn't block the whole page
+    fetchFailedPayments()
+      .then(setFailedPayments)
+      .catch(err => setFailedPaymentsError(err?.message || 'Could not load failed payments. Check Firestore rules for the failedPayments collection.'));
   };
 
   useEffect(() => { load(); }, []);
@@ -130,6 +159,23 @@ export default function AdminSubscriptionsPage() {
     (!userSearch || [u.name, u.email, u.phone, u.id].join(" ").toLowerCase().includes(userSearch.toLowerCase()))
   );
 
+  const handleSaveSeats = async (sub: any) => {
+    const newSeats = Number(editSeatsValue);
+    if (isNaN(newSeats) || newSeats < 0) { setActionError("Invalid seat count."); return; }
+    setSavingSeats(true);
+    setActionError(null);
+    try {
+      const userDocId = sub.ownerPhone || sub.ownerId;
+      await adminUpdateSubscriptionSeats(sub.id, userDocId, newSeats);
+      setEditingSeats(null);
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Failed to update seats.");
+    } finally {
+      setSavingSeats(false);
+    }
+  };
+
   const handleManualActivate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualForm.userDocId || !manualForm.paymentId) {
@@ -159,22 +205,45 @@ export default function AdminSubscriptionsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex space-x-2 border-b border-outline-variant/20 mb-4">
+        <button
+          onClick={() => setActiveTab('subscriptions')}
+          className={`pb-2 px-1 font-semibold text-sm ${activeTab === 'subscriptions' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+        >
+          Active Subscriptions
+        </button>
+        <button
+          onClick={() => setActiveTab('failedPayments')}
+          className={`pb-2 px-1 font-semibold text-sm flex items-center gap-1.5 ${activeTab === 'failedPayments' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+        >
+          Failed Payments
+          {failedPayments.length > 0 && (
+            <span className="inline-flex items-center justify-center rounded-full bg-red-100 text-red-600 text-[10px] font-black px-1.5 py-0.5 min-w-[1.25rem]">
+              {failedPayments.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'subscriptions' ? (
+      <>
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <CreditCard className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-black text-on-surface">Subscriptions</h1>
+          <div className="flex items-center gap-2 sm:gap-3 mb-1">
+            <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+            <h1 className="text-lg sm:text-2xl font-black text-on-surface">Subscriptions</h1>
           </div>
-          <p className="text-sm text-on-surface-variant ml-9">Manage user subscriptions — extend, revoke, or manually activate payments.</p>
+          <p className="text-xs sm:text-sm text-on-surface-variant ml-7 sm:ml-9">Manage subscriptions — extend, revoke, or activate.</p>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button onClick={() => load()} className="flex items-center gap-2 border border-outline-variant/40 text-sm font-medium px-3 py-2 rounded-xl hover:bg-surface-container transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
+        <div className="grid grid-cols-2 gap-2 shrink-0 sm:flex">
+          <button onClick={() => load()} className="flex items-center justify-center gap-1.5 border border-outline-variant/40 text-xs sm:text-sm font-medium px-2.5 sm:px-3 py-2 rounded-xl hover:bg-surface-container transition-colors">
+            <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Refresh
           </button>
           <button onClick={() => { setShowManual(true); setManualSuccess(false); setManualError(null); }}
-            className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:opacity-90 transition-colors">
-            <Plus className="h-4 w-4" /> Manual Activate
+            className="flex items-center justify-center gap-1.5 bg-primary text-white text-xs sm:text-sm font-bold px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl hover:opacity-90 transition-colors">
+            <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Activate
           </button>
         </div>
       </div>
@@ -195,10 +264,10 @@ export default function AdminSubscriptionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {(["all", "active", "unpaid", "revoked"] as const).map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${statusFilter === s ? "bg-primary text-white" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 ${statusFilter === s ? "bg-primary text-white" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
             {s.charAt(0).toUpperCase() + s.slice(1)} ({counts[s as keyof typeof counts] ?? subs.length})
           </button>
         ))}
@@ -234,18 +303,45 @@ export default function AdminSubscriptionsPage() {
             const isExpanded = extending === sub.id;
             return (
               <div key={sub.id} className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
-                <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4">
                   {/* User */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-on-surface truncate">{userName}</p>
-                    <p className="text-xs text-on-surface-variant font-mono">{sub.ownerPhone || sub.ownerId || "—"}</p>
+                    <p className="text-sm sm:text-base font-semibold text-on-surface truncate">{userName}</p>
+                    <p className="text-[11px] sm:text-xs text-on-surface-variant font-mono truncate">{sub.ownerPhone || sub.ownerId || "—"}</p>
                   </div>
 
                   {/* Plan info */}
-                  <div className="flex flex-wrap gap-3 text-xs text-on-surface-variant shrink-0">
-                    <span className="font-medium">
-                      <span className="text-on-surface font-bold">{sub.seatsPurchased ?? "?"}</span> seats
-                    </span>
+                  <div className="flex flex-wrap gap-2 sm:gap-3 text-[11px] sm:text-xs text-on-surface-variant shrink-0 items-center">
+                    {editingSeats === sub.id ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          value={editSeatsValue}
+                          onChange={e => setEditSeatsValue(e.target.value)}
+                          className="w-16 rounded-lg border border-primary/40 bg-white px-2 py-1 text-sm font-bold text-on-surface outline-none ring-primary/30 focus:ring-2"
+                          autoFocus
+                          onKeyDown={e => { if (e.key === "Enter") handleSaveSeats(sub); if (e.key === "Escape") setEditingSeats(null); }}
+                        />
+                        <span className="font-medium">seats</span>
+                        <button type="button" onClick={() => handleSaveSeats(sub)} disabled={savingSeats}
+                          className="p-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50">
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" onClick={() => setEditingSeats(null)}
+                          className="p-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button"
+                        onClick={() => { setEditingSeats(sub.id); setEditSeatsValue(String(sub.seatsPurchased ?? 0)); }}
+                        className="font-medium inline-flex items-center gap-1 hover:text-primary transition-colors"
+                        title="Click to edit seats">
+                        <span className="text-on-surface font-bold">{sub.seatsPurchased ?? "?"}</span> seats
+                        <Pencil className="h-3 w-3 opacity-40" />
+                      </button>
+                    )}
                     <span className="font-medium">
                       <span className="text-on-surface font-bold">{sub.durationMonths ?? "?"}</span> mo
                     </span>
@@ -255,14 +351,14 @@ export default function AdminSubscriptionsPage() {
                   </div>
 
                   {/* Dates */}
-                  <div className="text-xs text-on-surface-variant shrink-0">
+                  <div className="text-[11px] sm:text-xs text-on-surface-variant shrink-0">
                     <p>{fmt(sub.startDate)} → {fmt(sub.expiryDate)}</p>
                     {sub.activatedByAdmin && <p className="text-purple-600 font-semibold">Manual activation</p>}
                   </div>
 
-                  {/* Payment ID */}
+                  {/* Payment ID — hidden on mobile to save space */}
                   {sub.razorpayPaymentId && (
-                    <span className="font-mono text-[10px] bg-surface-container px-2 py-0.5 rounded-lg text-on-surface-variant shrink-0 max-w-[140px] truncate">
+                    <span className="hidden sm:inline font-mono text-[10px] bg-surface-container px-2 py-0.5 rounded-lg text-on-surface-variant shrink-0 max-w-[140px] truncate">
                       {sub.razorpayPaymentId}
                     </span>
                   )}
@@ -273,11 +369,11 @@ export default function AdminSubscriptionsPage() {
                   </span>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => setExtending(isExpanded ? null : sub.id)}
-                      className="flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-[11px] sm:text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
                       <CalendarPlus className="h-3.5 w-3.5" />
                       Extend
                       <ChevronDown className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
@@ -286,7 +382,7 @@ export default function AdminSubscriptionsPage() {
                       type="button"
                       onClick={() => handleRevoke(sub)}
                       disabled={revoking === sub.id}
-                      className="flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 py-1.5 text-[11px] sm:text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
                       {revoking === sub.id ? (
                         <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
                       ) : (
@@ -326,8 +422,8 @@ export default function AdminSubscriptionsPage() {
 
       {/* Manual Activation Modal */}
       {showManual && (
-        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div>
                 <h2 className="text-base font-semibold text-on-surface">Manual Activation</h2>
@@ -370,7 +466,7 @@ export default function AdminSubscriptionsPage() {
                     <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)}
                       placeholder="Search user by name, email or phone…"
                       className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 mb-2" />
-                    <div className="max-h-40 overflow-y-auto rounded-xl border border-outline-variant/30 bg-white">
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-outline-variant/30 bg-white">
                       {filteredUsers.slice(0, 20).map(u => (
                         <button key={u.id} type="button"
                           onClick={() => { setManualForm(f => ({ ...f, userDocId: u.id })); setUserSearch(""); }}
@@ -408,7 +504,7 @@ export default function AdminSubscriptionsPage() {
                   className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Seats</label>
                   <input type="number" min="1" value={manualForm.seats}
@@ -425,7 +521,7 @@ export default function AdminSubscriptionsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
                 <button type="button" onClick={() => setShowManual(false)}
                   className="flex-1 py-2.5 rounded-xl border border-outline-variant/40 text-sm font-medium text-on-surface hover:bg-surface-container">
                   Cancel
@@ -441,6 +537,107 @@ export default function AdminSubscriptionsPage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      </>
+      ) : (
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-on-surface flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" /> Failed Payments
+              </h2>
+              <p className="text-xs text-on-surface-variant mt-0.5">All payment attempts that were declined or cancelled.</p>
+            </div>
+            <button onClick={() => load()} className="flex items-center gap-1.5 border border-outline-variant/40 text-xs font-medium px-3 py-2 rounded-xl hover:bg-surface-container transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+          </div>
+
+          {failedPaymentsError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> {failedPaymentsError}
+            </div>
+          )}
+
+          {!failedPaymentsError && failedPayments.length === 0 ? (
+            <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-10 text-center text-sm text-on-surface-variant">
+              No failed payments recorded yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {failedPayments.map((fp) => {
+                const userName = (() => {
+                  const phone = fp.userPhone;
+                  const u = users.find(u => u.id === phone || u.uid === fp.userId || u.phone === phone);
+                  return u?.name || u?.email || null;
+                })();
+                const paymentId = fp.error?.metadata?.payment_id;
+                const orderId = fp.orderId || fp.error?.metadata?.order_id;
+                const errorReason = fp.error?.reason || fp.error?.description || fp.error?.code || 'Unknown error';
+                const amountRupees = fp.amount ? (fp.amount / 100) : null;
+
+                return (
+                  <div key={fp.id} className="rounded-2xl border border-red-100 bg-white overflow-hidden">
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4 px-4 sm:px-5 py-4">
+                      {/* User info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="text-sm font-bold text-on-surface">{userName || fp.userPhone || fp.userId}</p>
+                          {userName && <p className="text-xs text-on-surface-variant font-mono">{fp.userPhone || fp.userId}</p>}
+                        </div>
+                        <p className="text-xs text-red-600 font-semibold">{errorReason}</p>
+                      </div>
+
+                      {/* Purchase intent */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-on-surface-variant shrink-0">
+                        {amountRupees !== null && (
+                          <span>₹<span className="font-bold text-on-surface">{amountRupees}</span></span>
+                        )}
+                        {fp.seatCount !== null && fp.seatCount !== undefined && (
+                          <span><span className="font-bold text-on-surface">{fp.seatCount}</span> seat{fp.seatCount !== 1 ? 's' : ''}</span>
+                        )}
+                        {fp.durationMonths !== null && fp.durationMonths !== undefined && (
+                          <span><span className="font-bold text-on-surface">{fp.durationMonths}</span> mo</span>
+                        )}
+                      </div>
+
+                      {/* IDs */}
+                      <div className="text-[10px] font-mono text-on-surface-variant shrink-0 space-y-0.5">
+                        {paymentId && <p title="Payment ID">{paymentId}</p>}
+                        {orderId && <p title="Order ID" className="opacity-60">{orderId}</p>}
+                      </div>
+
+                      {/* Date + activate */}
+                      <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                        <span className="text-xs text-on-surface-variant">{fmt(fp.timestamp)}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualForm(f => ({
+                              ...f,
+                              userDocId: fp.userPhone || fp.userId || '',
+                              orderId: orderId || '',
+                              seats: fp.seatCount ? String(fp.seatCount) : '1',
+                              durationMonths: fp.durationMonths ? String(fp.durationMonths) : '1',
+                            }));
+                            setShowManual(true);
+                            setManualSuccess(false);
+                            setManualError(null);
+                            setActiveTab('subscriptions');
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl bg-primary/10 text-primary px-3 py-1.5 text-[11px] font-bold hover:bg-primary/20 transition-colors"
+                        >
+                          <Plus className="h-3 w-3" /> Activate
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
