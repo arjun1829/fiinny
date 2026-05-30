@@ -113,6 +113,10 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
   const hasDashboardShortcut = !!user && (userRole === 'admin' || userRole === 'retailer' || userRole === 'manufacturer');
   const dashboardHref = userRole === 'admin' ? '/admin' : '/dashboard';
+  // Views below (ProfileView, SubscriptionView, Footer) only accept the
+  // consumer-facing roles; map 'admin' to 'customer' for them.
+  const consumerRole: 'customer' | 'retailer' | 'manufacturer' =
+    userRole === 'admin' ? 'customer' : userRole;
   
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
   const [allStores, setAllStores] = useState<any[]>([]);
@@ -602,7 +606,7 @@ export default function App() {
         distanceKm: minDistance
       };
     });
-  }, [allProducts, storesWithDistance]);
+  }, [mergedProducts, storesWithDistance]);
 
   const searchedProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
@@ -810,12 +814,12 @@ export default function App() {
 
   const tourSteps: TourStep[] = useMemo(() => [
     { selector: '[data-tour="hero"]', textKey: 'tourWelcome', side: 'bottom' },
-    { selector: '[data-tour="search"]', textKey: 'tourSearch', side: 'bottom' },
-    { selector: '[data-tour="location"]', textKey: 'tourLocation', side: 'bottom' },
+    { selector: '[data-tour="search"]', mobileSelector: '[data-tour="search-mobile"]', textKey: 'tourSearch', side: 'bottom' },
+    { selector: '[data-tour="location"]', mobileSelector: '[data-tour="location-mobile"]', textKey: 'tourLocation', side: 'bottom' },
     { selector: '[data-tour="shop-by-crop"]', textKey: 'tourShopByCrop', side: 'top' },
-    { selector: '[data-tour-nav="market"]', textKey: 'tourMarket', side: 'top' },
-    { selector: '[data-tour-nav="map"]', textKey: 'tourStores', side: 'top' },
-    { selector: '[data-tour-nav="hub"]', textKey: 'tourHubs', side: 'top' },
+    { selector: '[data-tour-nav="market"]', mobileSelector: '[data-tour-bottomnav] [data-tour-nav="market"]', textKey: 'tourMarket', side: 'top' },
+    { selector: '[data-tour-nav="map"]', mobileSelector: '[data-tour-bottomnav] [data-tour-nav="map"]', textKey: 'tourStores', side: 'top' },
+    { selector: '[data-tour-nav="hub"]', mobileSelector: '[data-tour-bottomnav] [data-tour-nav="hub"]', textKey: 'tourHubs', side: 'top' },
   ], []);
 
   const renderView = () => {
@@ -857,6 +861,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
+            onRegisterClick={() => navigate('signup')}
           />
         );
       case 'market':
@@ -969,7 +974,7 @@ export default function App() {
         return (
           <ProfileView
             uid={user?.uid}
-            role={userRole}
+            role={consumerRole}
             profile={userProfile}
             onProfileSave={handleProfileSave}
             onRetailerProductSaved={loadData}
@@ -985,8 +990,8 @@ export default function App() {
                   <svg className="w-5 h-5 text-on-surface-variant" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
                 </button>
                 <div>
-                  <h1 className="text-2xl font-black text-on-surface">My Orders</h1>
-                  <p className="text-sm text-on-surface-variant">Track all your orders and their delivery status</p>
+                  <h1 className="text-2xl font-black text-on-surface">{t('myOrders')}</h1>
+                  <p className="text-sm text-on-surface-variant">{t('ordersPageSubtitle')}</p>
                 </div>
               </div>
             </div>
@@ -1078,7 +1083,7 @@ export default function App() {
           />
         );
       case 'subscription':
-        return <SubscriptionView user={user} role={userRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
+        return <SubscriptionView user={user} role={consumerRole} onSuccess={handleSubscriptionSuccess} onLogout={handleLogout} />;
       case 'brand': {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
@@ -1108,13 +1113,14 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
+            onRegisterClick={() => navigate('signup')}
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface overflow-x-clip md:overflow-x-visible">
+    <div className="min-h-screen flex flex-col bg-surface">
       <Navbar
         currentView={currentView}
         onNavigate={(view) => {
@@ -1158,7 +1164,7 @@ export default function App() {
       <Footer
         onNavigate={(view) => navigate(view as View)}
         onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
-        userRole={userRole}
+        userRole={consumerRole}
         onUpgradeRole={handleUpgradeRole}
       />
 
@@ -1210,7 +1216,7 @@ export default function App() {
       />
 
       {/* Mobile Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-container bg-white/95 px-3 py-2 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] backdrop-blur md:hidden">
+      <nav data-tour-bottomnav className="fixed bottom-0 left-0 right-0 z-50 border-t border-surface-container bg-white/95 px-3 py-2 shadow-[0_-6px_20px_rgba(0,0,0,0.06)] backdrop-blur md:hidden">
         <div className="grid grid-cols-5 gap-2">
           {[
             { key: 'home', icon: ICONS.Home, label: t('home'), active: currentView === 'home', onClick: () => navigate('home') },
@@ -1229,7 +1235,7 @@ export default function App() {
                 ? {
                     key: 'orders',
                     icon: ICONS.Orders,
-                    label: 'Orders',
+                    label: t('orders'),
                     active: currentView === 'orders',
                     onClick: () => navigate('orders'),
                   }

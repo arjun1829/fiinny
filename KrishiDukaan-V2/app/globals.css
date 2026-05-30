@@ -5,12 +5,12 @@
 
 @layer base {
   html {
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   body {
     @apply bg-surface text-on-surface font-sans antialiased;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 
