@@ -10,10 +10,16 @@ import {
 } from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navbar } from '../../components/shared/navbar';
 import Link from 'next/link';
 import { ICONS } from '../constants';
+import {
+  getCachedLocation,
+  getUserLocation,
+  DEFAULT_LOCATION_LABEL,
+  type GeoResult,
+} from '../utils/geolocation';
 
 export default function DashboardLayout({
   children,
@@ -24,54 +30,88 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+  const [uidState, setUidState] = useState<string | null>(null);
+  const prevPathnameRef = useRef<string>(pathname ?? '');
 
+  // Location — reuse the SAME shared source as the public pages
+  // (app/utils/geolocation: localStorage cache + getUserLocation). Seed from
+  // the cached value the public pages wrote, then refresh from the device so
+  // the dashboard header stays in sync with Home/Market/Hub/Stores/Blog.
+  const [locationQuery, setLocationQuery] = useState<string>(DEFAULT_LOCATION_LABEL);
+
+  useEffect(() => {
+    const cached = getCachedLocation();
+    if (cached) setLocationQuery(cached.label);
+    void getUserLocation().then((result: GeoResult) => {
+      setLocationQuery(result.label);
+    });
+  }, []);
+
+  // Pure function — only calls the stable setProfileIncomplete setter
+  const applyCompletion = useCallback((profile: any) => {
+    const hasBusinessName = !!String(profile?.businessName ?? "").trim();
+    const hasPhone       = !!String(profile?.phone       ?? "").trim();
+    const hasCity        = !!String(profile?.city        ?? "").trim();
+    setProfileIncomplete(!hasBusinessName || !hasPhone || !hasCity);
+  }, []);
+
+  // Auth guard — runs once on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push('/?view=login');
-      } else {
-        const profile = await getUserProfile(user.uid);
-        const role = profile?.role;
-        const isPaid = profile?.isPaid;
+        return;
+      }
+      setUidState(user.uid);
+      const profile = await getUserProfile(user.uid);
+      const role = profile?.role;
+      const isPaid = profile?.isPaid;
 
-        // Profile is considered complete if business name + phone + city are all set.
-        // These are written to users/{phone} by saveManufacturerProfile / saveRetailerProfile.
-        const hasBusinessName = !!String(profile?.businessName ?? "").trim();
-        const hasPhone = !!String(profile?.phone ?? "").trim();
-        const hasCity = !!String(profile?.city ?? "").trim();
-        setProfileIncomplete(!hasBusinessName || !hasPhone || !hasCity);
+      applyCompletion(profile);
 
-        if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
+      if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
+        setLoading(false);
+      } else if (role === 'retailer') {
+        const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
+        if (accepted) {
           setLoading(false);
-        } else if (role === 'retailer') {
-          // Retailer not yet marked paid — try progressively cheaper checks:
-          // 1. Auto-accept any pending phone-matched invites (sets isPaid:true via backfill).
-          // 2. Grant access if already linked to an active manufacturer network.
-          // 3. Direct seat check: has at least one active assigned seat listing (source of truth).
-          //    This catches cases where steps 1/2 failed but the seat was already created.
-          const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
-          if (accepted) {
+        } else {
+          const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
+          if (linked) {
             setLoading(false);
           } else {
-            const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
-            if (linked) {
+            const hasSeat = await grantAccessIfHasActiveSeat(user.uid).catch(() => false);
+            if (hasSeat) {
               setLoading(false);
             } else {
-              const hasSeat = await grantAccessIfHasActiveSeat(user.uid).catch(() => false);
-              if (hasSeat) {
-                setLoading(false);
-              } else {
-                router.push('/');
-              }
+              router.push('/');
             }
           }
-        } else {
-          router.push('/');
         }
+      } else {
+        router.push('/');
       }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, applyCompletion]);
+
+  // Re-check profile completion when the user navigates away from the profile page.
+  // This catches the case where the user saves their profile and then goes elsewhere.
+  useEffect(() => {
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = pathname ?? '';
+    if (prev === '/dashboard/profile' && pathname !== '/dashboard/profile' && uidState) {
+      getUserProfile(uidState).then(applyCompletion).catch(() => {/* ignore */});
+    }
+  }, [pathname, uidState, applyCompletion]);
+
+  // Gate: redirect to profile page when incomplete and not already there
+  useEffect(() => {
+    if (loading) return;
+    if (profileIncomplete && pathname !== '/dashboard/profile') {
+      router.replace('/dashboard/profile');
+    }
+  }, [loading, profileIncomplete, pathname, router]);
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -83,12 +123,12 @@ export default function DashboardLayout({
   const isOnProfilePage = pathname === '/dashboard/profile';
 
   const profileBanner = profileIncomplete && !isOnProfilePage ? (
-    <div className="bg-amber-50 px-4 py-2.5 flex items-center justify-between gap-4 flex-wrap">
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="text-amber-500 text-lg shrink-0">⚠</span>
         <p className="text-sm font-semibold text-amber-800 leading-snug">
-          Profile incomplete.{' '}
-          <span className="font-normal text-amber-700">Add your business name, contact number, and location to complete your profile and generate your brand page.</span>
+          Complete your profile to continue.{' '}
+          <span className="font-normal text-amber-700">Business name, contact number, and location are required.</span>
         </p>
       </div>
       <Link
@@ -102,7 +142,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen flex flex-col" data-tour="dash-shell">
-      <Navbar isDashboard={true} />
+      <Navbar
+        isDashboard={true}
+        locationQuery={locationQuery}
+        onLocationChange={(loc) => setLocationQuery(loc)}
+      />
       <div className="flex-1 flex overflow-hidden pb-16 md:pb-0">
         <DashboardShell banner={profileBanner}>{children}</DashboardShell>
       </div>
