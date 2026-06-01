@@ -130,7 +130,11 @@ export default function App() {
   const [checkoutInfo, setCheckoutInfo] = useState({
     customerName: "",
     customerPhone: "",
-    customerAddress: "",
+    addressArea: "",
+    addressCity: "",
+    addressDistrict: "",
+    addressState: "",
+    addressPincode: "",
   });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -408,7 +412,11 @@ export default function App() {
           setCheckoutInfo((prev) => ({
             customerName: prev.customerName || profileData.name || "",
             customerPhone: prev.customerPhone || profileData.phone || "",
-            customerAddress: prev.customerAddress || profileData.address || "",
+            addressArea: prev.addressArea || "",
+            addressCity: prev.addressCity || "",
+            addressDistrict: prev.addressDistrict || "",
+            addressState: prev.addressState || "",
+            addressPincode: prev.addressPincode || "",
           }));
 
           // Paywall: only block if not paid AND not an invited retailer.
@@ -715,6 +723,39 @@ export default function App() {
     setToastType("success");
   };
 
+  // Compute formatted address from structured fields
+  const customerAddress = [
+    checkoutInfo.addressArea,
+    checkoutInfo.addressCity,
+    checkoutInfo.addressDistrict,
+    checkoutInfo.addressState,
+    checkoutInfo.addressPincode,
+  ].filter(Boolean).join(", ");
+
+  // Compute cart subtotal for ready items
+  const cartSubtotal = cartItems
+    .filter((i) => i.sellMode === "online_delivery" && i.sellerId)
+    .reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  // Core order creation — called after successful payment
+  const createOrdersAfterPayment = async () => {
+    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
+
+    const orderIds = await createOrdersFromCart({
+      customerId: user!.uid,
+      customerName: checkoutInfo.customerName,
+      customerPhone: checkoutInfo.customerPhone,
+      customerAddress,
+      items: readyItems,
+    });
+    setCartItems(pendingItems);
+    const pendingMsg = pendingItems.length > 0
+      ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
+      : "";
+    setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+  };
+
   const placeOrders = async () => {
     if (!user || userRole !== "customer") {
       setCheckoutMessage("Please login with a customer account.");
@@ -724,13 +765,16 @@ export default function App() {
       setCheckoutMessage("Your cart is empty.");
       return;
     }
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim() || !checkoutInfo.customerAddress.trim()) {
-      setCheckoutMessage("Please fill name, phone, and delivery address.");
+    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim()) {
+      setCheckoutMessage("Please fill your name and phone number.");
+      return;
+    }
+    if (!customerAddress.trim()) {
+      setCheckoutMessage("Please enter your delivery address.");
       return;
     }
 
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
-    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
     if (!readyItems.length) {
       setCheckoutMessage("No items are ready for ordering. Please select a store for your items first.");
       return;
@@ -738,23 +782,70 @@ export default function App() {
 
     setCheckoutLoading(true);
     setCheckoutMessage(null);
+
     try {
-      const orderIds = await createOrdersFromCart({
-        customerId: user.uid,
-        customerName: checkoutInfo.customerName,
-        customerPhone: checkoutInfo.customerPhone,
-        customerAddress: checkoutInfo.customerAddress,
-        items: readyItems,
+      // Step 1: Create Razorpay order on server
+      const orderRes = await fetch("/api/payment/create-cart-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: cartSubtotal,
+          userId: user.uid,
+          note: `Cart: ${readyItems.length} item(s)`,
+        }),
       });
-      setCartItems(pendingItems);
-      const pendingMsg = pendingItems.length > 0
-        ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
-        : "";
-      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).${pendingMsg}`);
+      if (!orderRes.ok) throw new Error("Could not initiate payment. Please try again.");
+      const rzpOrder = await orderRes.json();
+
+      // Step 2: Open Razorpay modal
+      const rzp = new (window as any).Razorpay({
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        order_id: rzpOrder.id,
+        amount: rzpOrder.amount,
+        currency: "INR",
+        name: "KrishiDukan",
+        description: `Order (${readyItems.length} item${readyItems.length > 1 ? "s" : ""})`,
+        prefill: {
+          name: checkoutInfo.customerName,
+          contact: checkoutInfo.customerPhone,
+        },
+        theme: { color: "#1a6b2a" },
+        handler: async (response: any) => {
+          // Step 3: Verify payment
+          try {
+            const verifyRes = await fetch("/api/payment/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyData.status === "ok") {
+              // Step 4: Create Firestore orders
+              await createOrdersAfterPayment();
+            } else {
+              setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
+            }
+          } catch {
+            setCheckoutMessage("❌ Payment verified but order creation failed. Please contact support.");
+          } finally {
+            setCheckoutLoading(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setCheckoutLoading(false);
+            setCheckoutMessage("Payment cancelled. Your cart is safe.");
+          },
+        },
+      });
+      rzp.open();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to place order.";
+      const msg = e instanceof Error ? e.message : "Failed to initiate payment.";
       setCheckoutMessage(msg);
-    } finally {
       setCheckoutLoading(false);
     }
   };
@@ -775,6 +866,7 @@ export default function App() {
     setCartItems((prev) => {
       const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
       if (found) {
+        // bump qty for existing online_delivery item from same seller
         return prev.map((i) =>
           i.productId === product.id && i.sellerId === sellerId
             ? { ...i, qty: i.qty + 1 }
@@ -788,8 +880,12 @@ export default function App() {
       const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
         ? availability.sellingPrice
         : product.price;
+      // Remove any existing pending item for this product (prevents duplicate productId issue)
+      const withoutPending = prev.filter(
+        (i) => !(i.productId === product.id && i.sellMode === "pending")
+      );
       return [
-        ...prev,
+        ...withoutPending,
         {
           productId: product.id,
           sellerId,
@@ -806,6 +902,33 @@ export default function App() {
     setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
     setToastType("success");
   }, []);
+
+  // Buy Now: add to cart (auto-select first online store if available) + go to cart
+  const handleBuyNow = useCallback((product: MarketplaceProduct) => {
+    // Find first online-delivery store for this product
+    const onlineStore = storesWithDistance.find((store) => {
+      const storePhone = (store as any).phone as string | undefined;
+      const storeUserId = (store as any).userId as string | undefined;
+      const storeRetailerId = (store as any).retailerId as string | undefined;
+
+      const inAvailability = product.availability?.some(
+        (a) =>
+          a.storeId === store.id ||
+          (a.storePhone && storePhone && a.storePhone === storePhone) ||
+          (a.storeId && storeUserId && a.storeId === storeUserId) ||
+          (a.storeId && storeRetailerId && a.storeId === storeRetailerId)
+      );
+      return inAvailability;
+    });
+
+    if (onlineStore) {
+      handleAddToCartFromStore(product, onlineStore);
+    } else {
+      // No specific store found — add as pending and navigate to cart
+      addToCart(product);
+    }
+    navigate("cart");
+  }, [storesWithDistance, handleAddToCartFromStore, addToCart, navigate]);
 
   const navigateToMap = (storeId?: string, fromProductId?: string | null) => {
     setMapFilterProductId(fromProductId !== undefined ? fromProductId : null);
@@ -870,6 +993,9 @@ export default function App() {
             products={marketProducts}
             onProductClick={navigateToProduct}
             onAddToCart={addToCart}
+            onBuyNow={handleBuyNow}
+            cartItems={cartItems}
+            onGoToCart={() => navigate("cart")}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             storesWithDistance={storesWithDistance}
@@ -909,6 +1035,7 @@ export default function App() {
           }}
           onAddToCart={addToCart}
           onAddToCartFromStore={handleAddToCartFromStore}
+          onBuyNow={handleBuyNow}
         />;
       case 'cart':
         return (
@@ -918,7 +1045,11 @@ export default function App() {
             isCustomer={userRole === "customer"}
             customerName={checkoutInfo.customerName}
             customerPhone={checkoutInfo.customerPhone}
-            customerAddress={checkoutInfo.customerAddress}
+            addressArea={checkoutInfo.addressArea}
+            addressCity={checkoutInfo.addressCity}
+            addressDistrict={checkoutInfo.addressDistrict}
+            addressState={checkoutInfo.addressState}
+            addressPincode={checkoutInfo.addressPincode}
             onCustomerFieldChange={(field, value) =>
               setCheckoutInfo((prev) => ({ ...prev, [field]: value }))
             }
@@ -928,7 +1059,7 @@ export default function App() {
               )
             }
             onRemove={(productId) =>
-              setCartItems((prev) => prev.filter((item) => item.productId !== productId))
+              setCartItems((prev) => prev.filter((item) => item.productId === productId ? false : true))
             }
             onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
               setCartItems((prev) =>
@@ -946,6 +1077,8 @@ export default function App() {
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}
             allProducts={mergedProducts}
+            subtotal={cartSubtotal}
+            mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
           />
         );
       case 'map':

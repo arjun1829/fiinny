@@ -8,6 +8,7 @@ import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { trackProductImpression } from '../firebase';
 import type { StoreWithDistance } from '../utils/nearby';
 import { useI18n } from '../i18n/I18nContext';
+import type { CartItem } from '../../types/order';
 
 interface MarketViewProps {
   products?: MarketplaceProduct[];
@@ -16,6 +17,9 @@ interface MarketViewProps {
   onCategoryChange: (category: string) => void;
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
+  onBuyNow?: (product: MarketplaceProduct) => void;
+  cartItems?: CartItem[];
+  onGoToCart?: () => void;
 }
 
 type SortKey = 'default' | 'price-asc' | 'price-desc' | 'name-asc';
@@ -39,6 +43,9 @@ export default function MarketView({
   onCategoryChange,
   storesWithDistance = [],
   onAddToCart,
+  onBuyNow,
+  cartItems = [],
+  onGoToCart,
 }: MarketViewProps) {
   const { t } = useI18n();
   const DISTANCE_OPTIONS = useMemo(() => [
@@ -433,16 +440,46 @@ export default function MarketView({
                     </div>
                     <span className="text-[10px] text-outline font-semibold">{brand}</span>
                   </div>
-                  <div onClick={(e) => e.stopPropagation()} className="mt-2">
-                    <HelperTooltip side="top" textKey="marketAddToCart">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
-                        className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
-                      >
-                        {t('addToCart')}
-                      </button>
-                    </HelperTooltip>
-                  </div>
+                  {/* Cart CTA — changes state once item is in cart */}
+                  {(() => {
+                    const inCart = cartItems.some((ci) => ci.productId === product.id);
+                    if (inCart) {
+                      return (
+                        <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
+                            className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                          >
+                            Go to Cart
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                            className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                          >
+                            Buy Now
+                          </button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
+                        <HelperTooltip side="top" textKey="marketAddToCart">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                            className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                          >
+                            {t('addToCart')}
+                          </button>
+                        </HelperTooltip>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
+                          className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                        >
+                          Buy Now
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.article>
             );
