@@ -3,35 +3,39 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { Truck, Phone, MapPin, Package, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Truck, Phone, MapPin, Package, CheckCircle2, XCircle, Clock, Download } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
+import { generateInvoicePDF } from "../../utils/invoice-generator";
 
-const STATUS_FLOW: OrderStatus[] = ["placed", "accepted", "out_for_delivery", "delivered"];
+// Visible progress flow — "accepted" is kept in the type for backward compat but removed from the UI
+const STATUS_FLOW: OrderStatus[] = ["placed", "out_for_delivery", "delivered"];
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string; icon: typeof Clock }> = {
-  placed:           { label: "Order Placed",      color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   icon: Clock },
-  accepted:         { label: "Accepted",          color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
-  out_for_delivery: { label: "Out for Delivery",  color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
-  delivered:        { label: "Delivered",          color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
-  rejected:         { label: "Rejected",          color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
+  placed:           { label: "Order Placed",     color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   icon: Clock },
+  accepted:         { label: "Processing",       color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
+  out_for_delivery: { label: "Out for Delivery", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
+  delivered:        { label: "Delivered",         color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
+  rejected:         { label: "Rejected",         color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
 };
 
 const NEXT_ACTIONS: Record<OrderStatus, { next: OrderStatus; label: string; color: string }[]> = {
+  // Placed → dispatch directly (no manual accept step for prepaid orders)
   placed: [
-    { next: "accepted",  label: "Accept Order",  color: "bg-blue-600 hover:bg-blue-700 text-white" },
-    { next: "rejected",  label: "Reject",        color: "bg-red-100 hover:bg-red-200 text-red-700 border border-red-200" },
+    { next: "out_for_delivery", label: "Mark Ready & Dispatch", color: "bg-purple-600 hover:bg-purple-700 text-white" },
+    { next: "rejected",         label: "Reject",               color: "bg-red-100 hover:bg-red-200 text-red-700 border border-red-200" },
   ],
+  // Legacy "accepted" orders: still allow advancing to dispatch
   accepted: [
-    { next: "out_for_delivery", label: "Mark Dispatched / Out for Delivery", color: "bg-purple-600 hover:bg-purple-700 text-white" },
+    { next: "out_for_delivery", label: "Mark Dispatched", color: "bg-purple-600 hover:bg-purple-700 text-white" },
   ],
   out_for_delivery: [
     { next: "delivered", label: "Mark Delivered", color: "bg-green-600 hover:bg-green-700 text-white" },
   ],
   delivered: [],
-  rejected: [],
+  rejected:  [],
 };
 
 type FilterTab = "all" | "placed" | "accepted" | "out_for_delivery" | "delivered" | "rejected";
@@ -108,6 +112,7 @@ export default function OrdersPage() {
   const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [sellerInfo, setSellerInfo] = useState<{ name: string; phone: string; gstin: string } | null>(null);
 
   const load = async (nextUid: string, nextSellerType: "retailer" | "manufacturer") => {
     setLoading(true);
@@ -140,6 +145,11 @@ export default function OrdersPage() {
       if (role === "retailer" || role === "manufacturer") {
         setUid(user.uid);
         setSellerType(role);
+        setSellerInfo({
+          name:  String((profile as any)?.businessName ?? (profile as any)?.shopName ?? (profile as any)?.name ?? ""),
+          phone: String((profile as any)?.phone ?? ""),
+          gstin: String((profile as any)?.gstin ?? ""),
+        });
         if (hasOnlineDelivery) {
           await load(user.uid, role);
         } else {
@@ -175,12 +185,13 @@ export default function OrdersPage() {
   }, {});
 
   const FILTER_TABS: { key: FilterTab; label: string; color: string }[] = [
-    { key: "all",              label: `All (${orders.length})`,                              color: "bg-surface-container text-on-surface" },
-    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                color: "bg-amber-100 text-amber-800" },
-    { key: "accepted",         label: `Accepted (${statusCounts["accepted"] || 0})`,         color: "bg-blue-100 text-blue-800" },
-    { key: "out_for_delivery", label: `Dispatched (${statusCounts["out_for_delivery"] || 0})`, color: "bg-purple-100 text-purple-800" },
-    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,        color: "bg-green-100 text-green-800" },
-    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,         color: "bg-red-100 text-red-800" },
+    { key: "all",              label: `All (${orders.length})`,                                        color: "bg-surface-container text-on-surface" },
+    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                          color: "bg-amber-100 text-amber-800" },
+    { key: "out_for_delivery", label: `Dispatched (${statusCounts["out_for_delivery"] || 0})`,         color: "bg-purple-100 text-purple-800" },
+    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,                 color: "bg-green-100 text-green-800" },
+    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,                   color: "bg-red-100 text-red-800" },
+    // Legacy tab — only show if there are orders with accepted status
+    ...(statusCounts["accepted"] ? [{ key: "accepted" as FilterTab, label: `Processing (${statusCounts["accepted"]})`, color: "bg-blue-100 text-blue-800" }] : []),
   ];
 
   return (
@@ -287,8 +298,18 @@ export default function OrdersPage() {
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-black text-secondary text-xl">₹{Number(order.subtotal || 0).toFixed(0)}</p>
-                        <p className="text-[10px] text-on-surface-variant">{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</p>
+                        <p className="font-black text-secondary text-xl">
+                          ₹{Number(order.grandTotal ?? order.subtotal ?? 0).toFixed(0)}
+                        </p>
+                        {(order.deliveryCharge ?? 0) > 0 && (
+                          <p className="text-[10px] text-on-surface-variant">
+                            incl. ₹{order.deliveryCharge} delivery
+                          </p>
+                        )}
+                        <p className="text-[10px] text-on-surface-variant">
+                          {(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}
+                          {order.invoiceNumber ? ` · ${order.invoiceNumber}` : ""}
+                        </p>
                       </div>
                     </div>
 
@@ -300,7 +321,13 @@ export default function OrdersPage() {
                           className={`flex justify-between px-4 py-2.5 text-sm ${idx > 0 ? "border-t border-surface-container" : ""}`}
                         >
                           <span className="text-on-surface">
-                            {item.name} <span className="text-on-surface-variant">× {item.qty}</span>
+                            {item.name}
+                            {item.variantUnit && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-primary bg-primary/8 px-1.5 py-0.5 rounded-full">
+                                {item.variantUnit}
+                              </span>
+                            )}
+                            {" "}<span className="text-on-surface-variant">× {item.qty}</span>
                           </span>
                           <span className="font-bold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(0)}</span>
                         </div>
@@ -311,27 +338,37 @@ export default function OrdersPage() {
                     <OrderProgressBar status={order.status} />
 
                     {/* Action buttons */}
-                    {actions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {actions.map((action) => (
-                          <button
-                            key={action.next}
-                            disabled={isUpdating}
-                            onClick={() => void onAdvance(order.id, action.next)}
-                            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
-                          >
-                            {isUpdating ? (
-                              <span className="flex items-center gap-2">
-                                <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                Updating…
-                              </span>
-                            ) : (
-                              action.label
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {actions.map((action) => (
+                        <button
+                          key={action.next}
+                          disabled={isUpdating}
+                          onClick={() => void onAdvance(order.id, action.next)}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
+                        >
+                          {isUpdating ? (
+                            <span className="flex items-center gap-2">
+                              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                              Updating…
+                            </span>
+                          ) : (
+                            action.label
+                          )}
+                        </button>
+                      ))}
+                      {/* Download Invoice — available for all orders */}
+                      <button
+                        type="button"
+                        onClick={() => generateInvoicePDF(order, sellerInfo ? {
+                          name: sellerInfo.name,
+                          phone: sellerInfo.phone,
+                          gstin: sellerInfo.gstin || undefined,
+                        } : undefined)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border border-outline-variant/50 bg-white text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Invoice
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

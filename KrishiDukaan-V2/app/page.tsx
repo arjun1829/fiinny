@@ -792,13 +792,13 @@ export default function App() {
         );
       }
       // Use variant price if available, then passed price, then availability lookup.
+      const storePhone: string | undefined = (store as any).phone || undefined;
       let storePrice: number;
       if (variant && variant.price > 0) {
         storePrice = variant.price;
       } else if (price && price > 0) {
         storePrice = price;
       } else {
-        const storePhone: string | undefined = store.phone;
         const availability = product.availability?.find(
           (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
         );
@@ -813,6 +813,7 @@ export default function App() {
           sellerId,
           sellerType,
           sellerName: store.name || undefined,
+          ...(storePhone ? { sellerPhone: storePhone } : {}),
           name: product.name,
           image: product.image,
           price: storePrice,

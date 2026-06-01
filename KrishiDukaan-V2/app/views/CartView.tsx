@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
@@ -8,6 +8,7 @@ import { fetchStoreOnlineDelivery } from "../firebase";
 import { ICONS } from "../constants";
 import { useI18n } from "../i18n/I18nContext";
 import { HelperIcon } from "../../components/helpers";
+import { parseVariantWeightKg } from "../utils/weight";
 
 type CartViewProps = {
   items: CartItem[];
@@ -34,6 +35,160 @@ function formatDistance(km: number): string {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   if (km < 100) return `${km.toFixed(1)} km`;
   return `${Math.round(km)} km`;
+}
+
+// ─── Delivery Estimate ────────────────────────────────────────────────────────
+// Fetches delivery charges for each seller group using their configured weight slabs.
+
+type DeliveryEstimate = {
+  totalCharge: number;
+  /** Map of sellerId → charge */
+  bySellerCharge: Record<string, number>;
+  /** Map of sellerId → totalWeightKg */
+  bySellerWeight: Record<string, number>;
+  loading: boolean;
+};
+
+function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
+  const [bySellerCharge, setBySellerCharge] = useState<Record<string, number>>({});
+  const [bySellerWeight, setBySellerWeight] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(false);
+
+  // Stable dep key: only re-run when items/qty/variant actually change
+  const depKey = readyItems
+    .map((i) => `${i.sellerId}:${i.productId}:${i.qty}:${i.variantUnit ?? ""}`)
+    .sort()
+    .join("|");
+
+  useEffect(() => {
+    if (!readyItems.length) {
+      setBySellerCharge({});
+      setBySellerWeight({});
+      return;
+    }
+
+    // Group by seller
+    const groups = new Map<string, CartItem[]>();
+    readyItems.forEach((item) => {
+      const list = groups.get(item.sellerId) ?? [];
+      list.push(item);
+      groups.set(item.sellerId, list);
+    });
+
+    setLoading(true);
+
+    async function fetchAll() {
+      const charges: Record<string, number> = {};
+      const weights: Record<string, number> = {};
+
+      await Promise.all(
+        Array.from(groups.entries()).map(async ([sellerId, items]) => {
+          const weightKg = Number(
+            items
+              .reduce((s, i) => s + i.qty * parseVariantWeightKg(i.variantUnit), 0)
+              .toFixed(3),
+          );
+          weights[sellerId] = weightKg;
+
+          console.log("[DeliveryEstimate] seller:", sellerId, "weightKg:", weightKg, "items:", items.map(i => `${i.name}×${i.qty} ${i.variantUnit ?? ""}`));
+
+          if (weightKg === 0) {
+            console.log("[DeliveryEstimate] weight=0, no delivery charge applied");
+            charges[sellerId] = 0;
+            return;
+          }
+
+          try {
+            const { getDoc, doc } = await import("firebase/firestore");
+            const { db } = await import("../firebase");
+
+            // Priority 1: use sellerPhone stored on the cart item (set when adding to cart)
+            // This avoids the UID→uidIndex→phone round-trip which fails when
+            // the sellerId is already the phone (store document ID = phone).
+            const directPhone: string | undefined = items[0]?.sellerPhone;
+
+            let phone: string | null = directPhone || null;
+
+            if (!phone) {
+              // Priority 2: try uidIndex lookup (sellerId = Auth UID)
+              const idxSnap = await getDoc(doc(db, "uidIndex", sellerId));
+              phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+              console.log("[DeliveryEstimate] uidIndex lookup for", sellerId, "→", phone);
+            } else {
+              console.log("[DeliveryEstimate] using stored sellerPhone:", phone);
+            }
+
+            // Priority 3: sellerId itself may already be a phone (E164 or 10-digit)
+            if (!phone && /^(\+91)?[6-9]\d{9}$/.test(sellerId.replace(/\s/g, ""))) {
+              phone = sellerId;
+              console.log("[DeliveryEstimate] sellerId looks like a phone, using directly:", phone);
+            }
+
+            if (!phone) {
+              console.warn("[DeliveryEstimate] could not resolve phone for seller:", sellerId);
+              charges[sellerId] = 0;
+              return;
+            }
+
+            const settingsSnap = await getDoc(doc(db, "deliverySettings", phone));
+            console.log("[DeliveryEstimate] deliverySettings doc exists:", settingsSnap.exists(), "for phone:", phone);
+
+            if (!settingsSnap.exists()) {
+              charges[sellerId] = 0;
+              return;
+            }
+
+            const slabs = settingsSnap.data().weightSlabs as
+              | { minKg: number; maxKg: number; charge: number }[]
+              | undefined;
+            console.log("[DeliveryEstimate] slabs:", JSON.stringify(slabs));
+
+            if (!slabs?.length) { charges[sellerId] = 0; return; }
+
+            const sorted = [...slabs].sort((a, b) => a.minKg - b.minKg);
+            let charge = 0;
+            for (const slab of sorted) {
+              if (weightKg >= slab.minKg && weightKg < slab.maxKg) {
+                charge = slab.charge;
+                console.log("[DeliveryEstimate] matched slab:", slab, "→ charge:", charge);
+                break;
+              }
+            }
+            // Open-ended last slab (above all configured ranges)
+            if (!charge) {
+              const last = sorted[sorted.length - 1];
+              if (last && weightKg >= last.minKg) {
+                charge = last.charge;
+                console.log("[DeliveryEstimate] last-slab fallback:", last, "→ charge:", charge);
+              }
+            }
+            if (!charge) {
+              console.warn("[DeliveryEstimate] no slab matched weightKg=", weightKg, "slabs:", sorted);
+            }
+            charges[sellerId] = charge;
+          } catch (err) {
+            console.error("[DeliveryEstimate] fetch error:", err);
+            charges[sellerId] = 0;
+          }
+        }),
+      );
+
+      console.log("[DeliveryEstimate] final charges:", charges, "weights:", weights);
+      setBySellerCharge(charges);
+      setBySellerWeight(weights);
+      setLoading(false);
+    }
+
+    void fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey]);
+
+  const totalCharge = useMemo(
+    () => Object.values(bySellerCharge).reduce((s, v) => s + v, 0),
+    [bySellerCharge],
+  );
+
+  return { totalCharge, bySellerCharge, bySellerWeight, loading };
 }
 
 function useStoreAvailability(product: MarketplaceProduct | undefined, stores: StoreWithDistance[]) {
@@ -433,6 +588,10 @@ export default function CartView({
   const subtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
   const canCheckout = readyItems.length > 0;
 
+  const { totalCharge: deliveryCharge, bySellerCharge, bySellerWeight, loading: estimatingDelivery } =
+    useDeliveryEstimates(readyItems);
+  const grandTotal = subtotal + deliveryCharge;
+
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
       <div className="flex items-center justify-between gap-4 mb-2">
@@ -507,16 +666,55 @@ export default function CartView({
 
       {/* Checkout section */}
       <div className="mt-8 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
-        {/* Subtotal — only ready items */}
-        <div className="flex items-center justify-between text-lg font-bold">
-          <span className="inline-flex items-center gap-1.5">
-            {t('cartSubtotal')}
-            {readyItems.length > 0 && readyItems.length < items.length && (
-              <span className="text-xs font-medium text-on-surface-variant">({t('cartItemsOf', { ready: readyItems.length, total: items.length })})</span>
-            )}
-            <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel={`${t('cartSubtotal')} help`} />
-          </span>
-          <span>₹{subtotal.toLocaleString("en-IN")}</span>
+
+        {/* Order summary — product subtotal + delivery + grand total */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-sm text-on-surface-variant">
+            <span className="inline-flex items-center gap-1.5">
+              {t('cartSubtotal')}
+              {readyItems.length > 0 && readyItems.length < items.length && (
+                <span className="text-xs font-medium">
+                  ({t('cartItemsOf', { ready: readyItems.length, total: items.length })})
+                </span>
+              )}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel={`${t('cartSubtotal')} help`} />
+            </span>
+            <span className="font-semibold text-on-surface">₹{subtotal.toLocaleString("en-IN")}</span>
+          </div>
+
+          {/* Delivery charge row */}
+          {canCheckout && (
+            <div className="flex items-center justify-between text-sm text-on-surface-variant">
+              <span className="inline-flex items-center gap-1.5">
+                Delivery Charges
+                {estimatingDelivery && (
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                )}
+              </span>
+              <span className={`font-semibold ${deliveryCharge > 0 ? "text-on-surface" : "text-green-700"}`}>
+                {estimatingDelivery ? "—" : deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString("en-IN")}` : "Free"}
+              </span>
+            </div>
+          )}
+
+          {/* Weight info — only when non-zero */}
+          {canCheckout && !estimatingDelivery && Object.values(bySellerWeight).some((w) => w > 0) && (
+            <p className="text-[10px] text-on-surface-variant">
+              Est. weight:{" "}
+              {Object.values(bySellerWeight)
+                .reduce((s, w) => s + w, 0)
+                .toFixed(2)}{" "}
+              kg
+            </p>
+          )}
+
+          {/* Grand total */}
+          <div className="flex items-center justify-between border-t border-outline-variant/20 pt-2 mt-1">
+            <span className="text-base font-bold text-on-surface">Grand Total</span>
+            <span className="text-xl font-black text-secondary">
+              ₹{grandTotal.toLocaleString("en-IN")}
+            </span>
+          </div>
         </div>
 
         {pendingItems.length > 0 && canCheckout && (
@@ -555,15 +753,17 @@ export default function CartView({
               className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
             />
             <button
-              disabled={loading || !canCheckout}
+              disabled={loading || !canCheckout || estimatingDelivery}
               onClick={() => void onCheckout()}
               className="rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold disabled:opacity-60"
             >
               {loading
                 ? t('cartPlacingOrders')
-                : canCheckout
-                  ? `${t('cartPlaceOrder')} (${readyItems.length})`
-                  : t('cartSelectStoresToOrder')}
+                : !canCheckout
+                  ? t('cartSelectStoresToOrder')
+                  : estimatingDelivery
+                    ? "Calculating charges…"
+                    : `${t('cartPlaceOrder')} · ₹${grandTotal.toLocaleString("en-IN")}`}
             </button>
           </div>
         ) : (

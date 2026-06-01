@@ -34,7 +34,7 @@ declare global { interface Window { google?: any; } }
 const initialForm: ProfileFormValues = {
   businessName: "", ownerName: "", phone: "", secondaryPhone: "", email: "",
   line1: "", city: "", state: "", pincode: "",
-  website: "", logoUrl: "", bannerUrl: "",
+  website: "", logoUrl: "", bannerUrl: "", gstin: "",
 };
 
 type SocialLinks = { instagram: string; facebook: string; whatsapp: string; youtube: string };
@@ -904,6 +904,14 @@ function ProfilePageInner() {
                 </span>
                 <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                   className={inputCls} placeholder={t('emailPlaceholder')} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">
+                  {t('gstinLabel')}
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional — shown on invoices)</span>
+                </span>
+                <input type="text" value={form.gstin ?? ""} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                  className={inputCls} placeholder="e.g. 27AAAAA0000A1Z5" maxLength={15} />
               </label>
             </div>
           </section>
