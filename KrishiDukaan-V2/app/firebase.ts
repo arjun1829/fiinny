@@ -1073,8 +1073,16 @@ export async function createOrdersFromCart(params: {
   customerPhone: string;
   customerAddress: string;
   items: CartItem[];
+  payment?: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    amount: number;
+    status: "paid";
+    paidAt: string;
+  };
 }): Promise<string[]> {
-  const { customerId, customerName, customerPhone, customerAddress, items } = params;
+  const { customerId, customerName, customerPhone, customerAddress, items, payment } = params;
   if (!items.length) return [];
 
   const groups = new Map<string, CartItem[]>();
@@ -1112,6 +1120,7 @@ export async function createOrdersFromCart(params: {
       subtotal,
       deliveryMode: "delivery",
       status: "placed",
+      ...(payment ? { payment } : {}),
       statusHistory: [{ status: "placed", at: new Date().toISOString() }] as StatusHistoryEntry[],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1148,6 +1157,27 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
     updatedAt: serverTimestamp(),
   });
 }
+
+export async function updateOrderPayment(orderId: string, paymentInfo: {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+  amount: number;
+}): Promise<void> {
+  await updateDoc(doc(db, "orders", orderId), {
+    payment: {
+      razorpayOrderId: paymentInfo.razorpayOrderId,
+      razorpayPaymentId: paymentInfo.razorpayPaymentId,
+      razorpaySignature: paymentInfo.razorpaySignature,
+      status: "paid",
+      amount: paymentInfo.amount,
+      paidAt: new Date().toISOString(),
+    },
+    updatedAt: serverTimestamp(),
+  });
+}
+
+
 
 export async function fetchOrdersForCustomer(customerId: string): Promise<OrderDoc[]> {
   const q = query(

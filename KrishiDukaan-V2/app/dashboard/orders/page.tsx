@@ -3,7 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { Truck, Phone, MapPin, Package, CheckCircle2, XCircle, Clock } from "lucide-react";
+import {
+  Truck,
+  Phone,
+  MapPin,
+  Package,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  CreditCard,
+  ShieldCheck,
+  BadgeCheck,
+  AlertCircle,
+  IndianRupee,
+} from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
@@ -35,6 +48,7 @@ const NEXT_ACTIONS: Record<OrderStatus, { next: OrderStatus; label: string; colo
 };
 
 type FilterTab = "all" | "placed" | "accepted" | "out_for_delivery" | "delivered" | "rejected";
+type ViewTab = "orders" | "payments";
 
 function formatDate(createdAt: unknown): string {
   try {
@@ -42,6 +56,16 @@ function formatDate(createdAt: unknown): string {
     return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "—";
+  }
+}
+
+function formatDateStr(iso: string | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
   }
 }
 
@@ -98,6 +122,114 @@ function OrderProgressBar({ status }: { status: OrderStatus }) {
   );
 }
 
+function PaymentBadge({ payment }: { payment: OrderDoc["payment"] }) {
+  if (!payment) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">
+        <AlertCircle className="w-3 h-3" /> COD / Unpaid
+      </span>
+    );
+  }
+  if (payment.status === "paid") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold uppercase tracking-wider">
+        <BadgeCheck className="w-3 h-3" /> Paid via Razorpay
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold uppercase tracking-wider">
+      <XCircle className="w-3 h-3" /> {payment.status}
+    </span>
+  );
+}
+
+// Payment detail card for the Payments tab
+function PaymentCard({ order }: { order: OrderDoc }) {
+  const payment = order.payment;
+  const isPaid = payment?.status === "paid";
+
+  return (
+    <div className="rounded-2xl border border-outline-variant/20 bg-white shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className={`px-5 py-3 border-b flex items-center justify-between ${isPaid ? "bg-green-50 border-green-100" : "bg-surface-container-lowest border-outline-variant/20"}`}>
+        <div className="flex items-center gap-2">
+          <CreditCard className={`w-4 h-4 ${isPaid ? "text-green-600" : "text-on-surface-variant/40"}`} />
+          <span className={`text-xs font-black uppercase tracking-widest ${isPaid ? "text-green-700" : "text-on-surface-variant"}`}>
+            {isPaid ? "Payment Received" : "No Online Payment"}
+          </span>
+        </div>
+        <PaymentBadge payment={payment} />
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Order reference */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-black text-on-surface text-lg">#{order.id.slice(0, 8).toUpperCase()}</p>
+            <div className="flex items-center gap-3 mt-1 text-sm text-on-surface-variant">
+              <span className="font-semibold">{order.customerName}</span>
+              {order.customerPhone && (
+                <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-bold">
+                  <Phone className="w-3 h-3" /> {order.customerPhone}
+                </a>
+              )}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="font-black text-secondary text-xl">₹{Number(order.subtotal || 0).toFixed(0)}</p>
+            <p className="text-[10px] text-on-surface-variant">{(order.items || []).length} item(s)</p>
+          </div>
+        </div>
+
+        {/* Payment details */}
+        {isPaid && payment ? (
+          <div className="rounded-xl bg-green-50 border border-green-100 p-4 space-y-2.5">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck className="w-4 h-4 text-green-600" />
+              <span className="text-xs font-black text-green-700 uppercase tracking-widest">Razorpay Payment Details</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 text-sm">
+              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
+                <span className="text-on-surface-variant font-medium">Payment ID</span>
+                <span className="font-mono font-bold text-on-surface text-xs bg-white px-2 py-0.5 rounded-lg border border-green-100">
+                  {payment.razorpayPaymentId || "—"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
+                <span className="text-on-surface-variant font-medium">Order ID</span>
+                <span className="font-mono text-xs text-on-surface-variant">{payment.razorpayOrderId || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
+                <span className="text-on-surface-variant font-medium">Amount Paid</span>
+                <span className="font-black text-green-700 flex items-center gap-1">
+                  <IndianRupee className="w-3.5 h-3.5" />{Number(payment.amount || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5">
+                <span className="text-on-surface-variant font-medium">Paid At</span>
+                <span className="font-semibold text-on-surface text-xs">{formatDateStr(payment.paidAt)}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-surface-container-lowest border border-dashed border-outline-variant/40 p-4 text-center">
+            <AlertCircle className="w-8 h-8 text-on-surface-variant/30 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-on-surface-variant">No online payment for this order</p>
+            <p className="text-xs text-on-surface-variant/70 mt-1">This order was placed without Razorpay payment or payment is pending.</p>
+          </div>
+        )}
+
+        {/* Order date */}
+        <div className="flex items-center justify-between text-xs text-on-surface-variant border-t border-surface-container pt-3">
+          <span>Order placed</span>
+          <span className="font-semibold">{formatDate(order.createdAt)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { t } = useI18n();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
@@ -108,6 +240,7 @@ export default function OrdersPage() {
   const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
 
   const load = async (nextUid: string, nextSellerType: "retailer" | "manufacturer") => {
     setLoading(true);
@@ -174,6 +307,11 @@ export default function OrdersPage() {
     return acc;
   }, {});
 
+  const paidOrdersCount = orders.filter((o) => o.payment?.status === "paid").length;
+  const totalRevenue = orders
+    .filter((o) => o.payment?.status === "paid")
+    .reduce((sum, o) => sum + (o.payment?.amount || 0), 0);
+
   const FILTER_TABS: { key: FilterTab; label: string; color: string }[] = [
     { key: "all",              label: `All (${orders.length})`,                              color: "bg-surface-container text-on-surface" },
     { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                color: "bg-amber-100 text-amber-800" },
@@ -225,117 +363,188 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Filter tabs */}
-          <div className="flex flex-wrap gap-2">
-            {FILTER_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  activeFilter === tab.key
-                    ? `${tab.color} ring-2 ring-offset-1 ring-primary/30 shadow-sm`
-                    : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* View tabs: Orders | Payments */}
+          <div className="flex gap-1 p-1 bg-surface-container-low rounded-2xl w-fit">
+            <button
+              onClick={() => setActiveViewTab("orders")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                activeViewTab === "orders"
+                  ? "bg-white text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              Orders ({orders.length})
+            </button>
+            <button
+              onClick={() => setActiveViewTab("payments")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                activeViewTab === "payments"
+                  ? "bg-white text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <CreditCard className="w-4 h-4" />
+              Payments
+              {paidOrdersCount > 0 && (
+                <span className="ml-1 bg-green-100 text-green-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                  {paidOrdersCount}
+                </span>
+              )}
+            </button>
           </div>
 
-          {filteredOrders.length === 0 ? (
-            <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
-              No orders in this category.
-            </div>
-          ) : (
-            filteredOrders.map((order) => {
-              const config = STATUS_CONFIG[order.status];
-              const actions = NEXT_ACTIONS[order.status] || [];
-              const isUpdating = updatingId === order.id;
-              return (
-                <div key={order.id} className="rounded-2xl border border-outline-variant/20 bg-white shadow-sm overflow-hidden">
-                  {/* Status banner */}
-                  <div className={`px-5 py-2.5 border-b ${config.bg} flex items-center justify-between`}>
-                    <div className="flex items-center gap-2">
-                      <config.icon className={`w-4 h-4 ${config.color}`} />
-                      <span className={`text-xs font-black uppercase tracking-widest ${config.color}`}>
-                        {config.label}
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-semibold text-on-surface-variant">
-                      {formatDate(order.createdAt)}
-                    </span>
+          {activeViewTab === "payments" ? (
+            /* ── PAYMENTS TAB ── */
+            <div className="space-y-4">
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-green-50 border border-green-100 p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                    <IndianRupee className="w-5 h-5 text-green-600" />
                   </div>
-
-                  <div className="p-5 space-y-4">
-                    {/* Order header */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-black text-on-surface text-lg">#{order.id.slice(0, 8).toUpperCase()}</p>
-                        <div className="flex items-center gap-3 mt-1 text-sm text-on-surface-variant">
-                          <span className="font-semibold">{order.customerName}</span>
-                          {order.customerPhone && (
-                            <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-bold">
-                              <Phone className="w-3 h-3" /> {order.customerPhone}
-                            </a>
-                          )}
-                        </div>
-                        {order.customerAddress && (
-                          <p className="flex items-start gap-1 mt-1 text-xs text-on-surface-variant">
-                            <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                            {order.customerAddress}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="font-black text-secondary text-xl">₹{Number(order.subtotal || 0).toFixed(0)}</p>
-                        <p className="text-[10px] text-on-surface-variant">{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</p>
-                      </div>
-                    </div>
-
-                    {/* Items */}
-                    <div className="border rounded-xl border-surface-container overflow-hidden">
-                      {(order.items || []).map((item, idx) => (
-                        <div
-                          key={`${order.id}-${item.productId}`}
-                          className={`flex justify-between px-4 py-2.5 text-sm ${idx > 0 ? "border-t border-surface-container" : ""}`}
-                        >
-                          <span className="text-on-surface">
-                            {item.name} <span className="text-on-surface-variant">× {item.qty}</span>
-                          </span>
-                          <span className="font-bold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(0)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Progress bar */}
-                    <OrderProgressBar status={order.status} />
-
-                    {/* Action buttons */}
-                    {actions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {actions.map((action) => (
-                          <button
-                            key={action.next}
-                            disabled={isUpdating}
-                            onClick={() => void onAdvance(order.id, action.next)}
-                            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
-                          >
-                            {isUpdating ? (
-                              <span className="flex items-center gap-2">
-                                <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                Updating…
-                              </span>
-                            ) : (
-                              action.label
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-green-600">Total Collected</p>
+                    <p className="text-xl font-black text-green-700">₹{totalRevenue.toLocaleString("en-IN")}</p>
                   </div>
                 </div>
-              );
-            })
+                <div className="rounded-2xl bg-primary/5 border border-primary/10 p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <BadgeCheck className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Paid Orders</p>
+                    <p className="text-xl font-black text-primary">{paidOrdersCount} / {orders.length}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment cards */}
+              <div className="space-y-3">
+                {orders.map((order) => (
+                  <PaymentCard key={order.id} order={order} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* ── ORDERS TAB ── */
+            <>
+              {/* Filter tabs */}
+              <div className="flex flex-wrap gap-2">
+                {FILTER_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      activeFilter === tab.key
+                        ? `${tab.color} ring-2 ring-offset-1 ring-primary/30 shadow-sm`
+                        : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredOrders.length === 0 ? (
+                <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
+                  No orders in this category.
+                </div>
+              ) : (
+                filteredOrders.map((order) => {
+                  const config = STATUS_CONFIG[order.status];
+                  const actions = NEXT_ACTIONS[order.status] || [];
+                  const isUpdating = updatingId === order.id;
+                  return (
+                    <div key={order.id} className="rounded-2xl border border-outline-variant/20 bg-white shadow-sm overflow-hidden">
+                      {/* Status banner */}
+                      <div className={`px-5 py-2.5 border-b ${config.bg} flex items-center justify-between`}>
+                        <div className="flex items-center gap-2">
+                          <config.icon className={`w-4 h-4 ${config.color}`} />
+                          <span className={`text-xs font-black uppercase tracking-widest ${config.color}`}>
+                            {config.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <PaymentBadge payment={order.payment} />
+                          <span className="text-[10px] font-semibold text-on-surface-variant">
+                            {formatDate(order.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-5 space-y-4">
+                        {/* Order header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-on-surface text-lg">#{order.id.slice(0, 8).toUpperCase()}</p>
+                            <div className="flex items-center gap-3 mt-1 text-sm text-on-surface-variant">
+                              <span className="font-semibold">{order.customerName}</span>
+                              {order.customerPhone && (
+                                <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-bold">
+                                  <Phone className="w-3 h-3" /> {order.customerPhone}
+                                </a>
+                              )}
+                            </div>
+                            {order.customerAddress && (
+                              <p className="flex items-start gap-1 mt-1 text-xs text-on-surface-variant">
+                                <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                                {order.customerAddress}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-black text-secondary text-xl">₹{Number(order.subtotal || 0).toFixed(0)}</p>
+                            <p className="text-[10px] text-on-surface-variant">{(order.items || []).length} item{(order.items || []).length !== 1 ? "s" : ""}</p>
+                          </div>
+                        </div>
+
+                        {/* Items */}
+                        <div className="border rounded-xl border-surface-container overflow-hidden">
+                          {(order.items || []).map((item, idx) => (
+                            <div
+                              key={`${order.id}-${item.productId}`}
+                              className={`flex justify-between px-4 py-2.5 text-sm ${idx > 0 ? "border-t border-surface-container" : ""}`}
+                            >
+                              <span className="text-on-surface">
+                                {item.name} <span className="text-on-surface-variant">× {item.qty}</span>
+                              </span>
+                              <span className="font-bold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(0)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Progress bar */}
+                        <OrderProgressBar status={order.status} />
+
+                        {/* Action buttons */}
+                        {actions.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {actions.map((action) => (
+                              <button
+                                key={action.next}
+                                disabled={isUpdating}
+                                onClick={() => void onAdvance(order.id, action.next)}
+                                className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
+                              >
+                                {isUpdating ? (
+                                  <span className="flex items-center gap-2">
+                                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    Updating…
+                                  </span>
+                                ) : (
+                                  action.label
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </>
           )}
         </div>
       )}

@@ -431,7 +431,7 @@ export default function StoreLocatorView({
           animate={{ y: 0 }}
           exit={{ y: '-100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-          className="fixed inset-0 z-50 md:hidden flex flex-col bg-white"
+          className="fixed inset-0 z-[120] md:hidden flex flex-col bg-white"
         >
           {/* Map fills top portion */}
           <div className="flex-1 relative bg-surface-container-high">
@@ -762,7 +762,7 @@ export default function StoreLocatorView({
     <AnimatePresence>
       {detailStore && (
         <div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-20 md:pb-4"
+          className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-20 md:pb-4"
           onClick={() => setDetailStore(null)}
         >
           <motion.div

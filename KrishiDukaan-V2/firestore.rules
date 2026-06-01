@@ -228,7 +228,12 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthed() && (
         resource.data.sellerPhone == myPhone() ||
         resource.data.sellerId == request.auth.uid
-      ) && request.resource.data.status in ['placed','accepted','out_for_delivery','delivered','rejected']);
+      ) && request.resource.data.status in ['placed','accepted','out_for_delivery','delivered','rejected'])
+        // Allow customer to update payment field on their own order
+        || (isAuthed() && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.customerPhone == myPhone()
+        ) && request.resource.data.keys().hasOnly(['payment', 'updatedAt']));
     }
 
     // ─── hubs ────────────────────────────────────────────────────────────────

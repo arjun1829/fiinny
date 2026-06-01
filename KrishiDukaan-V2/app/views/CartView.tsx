@@ -8,6 +8,7 @@ import { fetchStoreOnlineDelivery } from "../firebase";
 import { ICONS } from "../constants";
 import { useI18n } from "../i18n/I18nContext";
 import { HelperIcon } from "../../components/helpers";
+import { ShieldCheck, CreditCard, Lock } from "lucide-react";
 
 type CartViewProps = {
   items: CartItem[];
@@ -21,12 +22,15 @@ type CartViewProps = {
   onRemove: (productId: string) => void;
   onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
   onCheckout: () => Promise<void>;
+  onRazorpayCheckout?: (amount: number, saveAddress: boolean) => void;
+  onSaveAddress?: (address: string) => Promise<void>;
   onGoLogin: () => void;
   onGoOrders?: () => void;
   loading: boolean;
   message: string | null;
   storesWithDistance: StoreWithDistance[];
   allProducts: MarketplaceProduct[];
+  hasProfileAddress?: boolean;
 };
 
 function formatDistance(km: number): string {
@@ -414,14 +418,18 @@ export default function CartView({
   onRemove,
   onAssignStore,
   onCheckout,
+  onRazorpayCheckout,
+  onSaveAddress,
   onGoLogin,
   onGoOrders,
   loading,
   message,
   storesWithDistance,
   allProducts,
+  hasProfileAddress,
 }: CartViewProps) {
   const { t } = useI18n();
+  const [saveAddress, setSaveAddress] = useState(false);
 
   const readyItems = items.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
@@ -530,39 +538,100 @@ export default function CartView({
 
         {isLoggedIn && isCustomer ? (
           <div className="mt-5 grid gap-3">
-            <input
-              value={customerName}
-              onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
-              placeholder={t('cartFullNamePlaceholder')}
-              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
-            />
-            <input
-              value={customerPhone}
-              onChange={(e) => onCustomerFieldChange("customerPhone", e.target.value)}
-              placeholder={t('cartPhonePlaceholder')}
-              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
-            />
-            <textarea
-              value={customerAddress}
-              onChange={(e) => onCustomerFieldChange("customerAddress", e.target.value)}
-              placeholder={t('cartAddressPlaceholder')}
-              rows={3}
-              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
-            />
-            <button
-              disabled={loading || !canCheckout}
-              onClick={() => void onCheckout()}
-              className="rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold disabled:opacity-60"
-            >
-              {loading
-                ? t('cartPlacingOrders')
-                : canCheckout
-                  ? `${t('cartPlaceOrder')} (${readyItems.length})`
-                  : t('cartSelectStoresToOrder')}
-            </button>
+            {/* Auto-filled notice */}
+            {(customerName || customerPhone) && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/15">
+                <svg className="w-3.5 h-3.5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                <p className="text-xs text-primary font-semibold">Details auto-filled from your profile. Edit below if needed.</p>
+              </div>
+            )}
+
+            <div className="grid gap-1">
+              <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Full Name</label>
+              <input
+                value={customerName}
+                onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
+                placeholder="Your full name"
+                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              />
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Phone Number</label>
+              <input
+                value={customerPhone}
+                onChange={(e) => onCustomerFieldChange("customerPhone", e.target.value)}
+                placeholder="+91 XXXXX XXXXX"
+                type="tel"
+                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+              />
+            </div>
+
+            <div className="grid gap-1">
+              <div className="flex items-center justify-between px-1">
+                <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Delivery Address</label>
+                {hasProfileAddress && (
+                  <span className="text-[10px] text-primary font-bold">From profile</span>
+                )}
+              </div>
+              <textarea
+                value={customerAddress}
+                onChange={(e) => onCustomerFieldChange("customerAddress", e.target.value)}
+                placeholder="House no., Street, Village/City, District, State, PIN"
+                rows={3}
+                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all resize-none"
+              />
+              {/* Save address checkbox */}
+              {onSaveAddress && customerAddress.trim() && (
+                <label className="flex items-center gap-2 px-1 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={saveAddress}
+                    onChange={(e) => setSaveAddress(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs text-on-surface-variant group-hover:text-on-surface transition-colors">
+                    Save as my default delivery address
+                  </span>
+                </label>
+              )}
+            </div>
+
+            {/* Payment button - Razorpay */}
+            {canCheckout && onRazorpayCheckout ? (
+              <div className="flex flex-col gap-2">
+                <button
+                  disabled={loading || !canCheckout || !customerName.trim() || !customerPhone.trim() || !customerAddress.trim()}
+                  onClick={() => onRazorpayCheckout(subtotal, saveAddress)}
+                  className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
+                >
+                  {loading ? (
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing Payment…</>
+                  ) : (
+                    <><CreditCard className="w-4 h-4" /> Pay ₹{subtotal.toLocaleString("en-IN")} &amp; Place Order</>
+                  )}
+                </button>
+                <div className="flex items-center justify-center gap-2 text-[11px] text-on-surface-variant/70">
+                  <Lock className="w-3 h-3" />
+                  <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
+                </div>
+              </div>
+            ) : canCheckout ? (
+              <button
+                disabled={loading || !canCheckout}
+                onClick={() => void onCheckout()}
+                className="rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold disabled:opacity-60"
+              >
+                {loading ? t('cartPlacingOrders') : `${t('cartPlaceOrder')} (${readyItems.length})`}
+              </button>
+            ) : (
+              <button disabled className="rounded-xl bg-primary/40 text-white px-4 py-3 text-sm font-bold cursor-not-allowed">
+                {t('cartSelectStoresToOrder')}
+              </button>
+            )}
           </div>
         ) : (
-          <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold">
+          <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">
             {t('cartLoginToCheckout')}
           </button>
         )}

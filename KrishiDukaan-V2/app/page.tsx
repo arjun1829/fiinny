@@ -24,9 +24,10 @@ import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
+import { auth, db, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, updateOrderPayment, trackPageView, requestRoleUpgrade } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { MarketplaceProduct } from '../types/product';
 import { LatLng } from './utils/haversine';
 import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } from './utils/geolocation';
@@ -405,11 +406,11 @@ export default function App() {
             totalSeats: profileData.totalSeats || 0,
             productCount: profileData.productCount || 0
           });
-          setCheckoutInfo((prev) => ({
-            customerName: prev.customerName || profileData.name || "",
-            customerPhone: prev.customerPhone || profileData.phone || "",
-            customerAddress: prev.customerAddress || profileData.address || "",
-          }));
+          setCheckoutInfo({
+            customerName: profileData.name || "",
+            customerPhone: profileData.phone || "",
+            customerAddress: (profileData as any).deliveryAddress || "",
+          });
 
           // Paywall: only block if not paid AND not an invited retailer.
           // Invited retailers have isPaid set to true by the backfill; if it hasn't
@@ -423,6 +424,7 @@ export default function App() {
         setUser(null);
         setUserRole('customer');
         setUserProfile({ name: '', phone: '', email: '', isPaid: false });
+        setCheckoutInfo({ customerName: '', customerPhone: '', customerAddress: '' });
       }
     });
 
@@ -759,6 +761,147 @@ export default function App() {
     }
   };
 
+  // ─── Razorpay checkout ────────────────────────────────────────────────────────
+  const handleRazorpayCheckout = async (amount: number, saveAddress: boolean = false) => {
+    if (!user || userRole !== 'customer') return;
+    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim() || !checkoutInfo.customerAddress.trim()) {
+      setCheckoutMessage('Please fill name, phone, and delivery address.');
+      return;
+    }
+
+    const readyItems = cartItems.filter((i) => i.sellMode === 'online_delivery' && i.sellerId);
+    if (!readyItems.length) {
+      setCheckoutMessage('No items are ready for ordering. Please select a store for your items first.');
+      return;
+    }
+
+    setCheckoutLoading(true);
+    setCheckoutMessage(null);
+
+    try {
+      // Step 1: Create Razorpay order on server
+      const res = await fetch('/api/payment/create-cart-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          customerName: checkoutInfo.customerName,
+          customerPhone: checkoutInfo.customerPhone,
+        }),
+      });
+      const rzpOrder = await res.json();
+      if (!rzpOrder.orderId) throw new Error('Failed to create payment order');
+
+      // Step 2: Open Razorpay checkout modal
+      const rzpKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
+      const options: any = {
+        key: rzpKeyId,
+        amount: rzpOrder.amount,
+        currency: rzpOrder.currency || 'INR',
+        name: 'KrishiDukan',
+        description: `Order of ${readyItems.length} item(s)`,
+        image: '/images/krishidukan icon.webp',
+        order_id: rzpOrder.orderId,
+        prefill: {
+          name: checkoutInfo.customerName,
+          contact: checkoutInfo.customerPhone,
+        },
+        theme: { color: '#22c55e' },
+        handler: async (response: any) => {
+          try {
+            // Step 3: Verify payment
+            const verifyRes = await fetch('/api/payment/verify-cart', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyData.status !== 'ok') throw new Error('Payment verification failed');
+
+            // Step 4: Place orders in Firebase
+            const pendingItems = cartItems.filter((i) => i.sellMode === 'pending' || !i.sellerId);
+            const orderIds = await createOrdersFromCart({
+              customerId: user.uid,
+              customerName: checkoutInfo.customerName,
+              customerPhone: checkoutInfo.customerPhone,
+              customerAddress: checkoutInfo.customerAddress,
+              items: readyItems,
+            });
+
+            // Step 5: Update each order with payment info
+            await Promise.all(orderIds.map((orderId) =>
+              updateOrderPayment(orderId, {
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                amount,
+              })
+            ));
+
+            // Step 6: Save delivery address to profile if requested
+            if (saveAddress && checkoutInfo.customerAddress.trim() && user) {
+              try {
+                const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid));
+                const phone = idxSnap.exists() ? idxSnap.data().phone : null;
+                if (phone) {
+                  await updateDoc(doc(db, 'users', phone), {
+                    deliveryAddress: checkoutInfo.customerAddress.trim(),
+                  });
+                }
+              } catch (e) {
+                console.warn('Could not save delivery address to profile:', e);
+              }
+            }
+
+            setCartItems(pendingItems);
+            const pendingMsg = pendingItems.length > 0
+              ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
+              : '';
+            setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+            setToastMsg('Payment successful! Your order has been placed.');
+            setToastType('success');
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Payment succeeded but order failed. Contact support.';
+            setCheckoutMessage(msg);
+            setToastMsg('Order failed after payment. Contact support.');
+            setToastType('error');
+          } finally {
+            setCheckoutLoading(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setCheckoutLoading(false);
+            setCheckoutMessage('Payment cancelled. You can try again.');
+          },
+        },
+      };
+
+      // Load Razorpay script if not already loaded
+      if (typeof window !== 'undefined') {
+        if (!(window as any).Razorpay) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load Razorpay'));
+            document.body.appendChild(script);
+          });
+        }
+        const rzp = new (window as any).Razorpay(options);
+        rzp.open();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Payment failed.';
+      setCheckoutMessage(msg);
+      setCheckoutLoading(false);
+    }
+  };
+
   const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
     const sellerId: string =
       (store as any).retailerId ||
@@ -940,6 +1083,21 @@ export default function App() {
               )
             }
             onCheckout={placeOrders}
+            onRazorpayCheckout={handleRazorpayCheckout}
+            onSaveAddress={async (address) => {
+              if (!user) return;
+              try {
+                const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid));
+                const phone = idxSnap.exists() ? idxSnap.data().phone : null;
+                if (phone) {
+                  await updateDoc(doc(db, 'users', phone), { deliveryAddress: address.trim() });
+                  setCheckoutInfo((prev) => ({ ...prev, customerAddress: address.trim() }));
+                }
+              } catch (e) {
+                console.warn('Could not save address:', e);
+              }
+            }}
+            hasProfileAddress={!!checkoutInfo.customerAddress}
             onGoLogin={() => navigate("login")}
             onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
@@ -1223,29 +1381,22 @@ export default function App() {
             { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
             { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
             { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
-            hasDashboardShortcut
-              ? {
-                  key: 'dashboard',
-                  icon: ICONS.Dashboard,
-                  label: t('dashboard'),
-                  active: false,
-                  onClick: () => { window.location.href = dashboardHref; },
+            // Last item is always "Account" — behaviour depends on auth state
+            {
+              key: 'account',
+              icon: ICONS.Account,
+              label: t('account'),
+              active: currentView === 'profile' || currentView === 'login' || currentView === 'signup',
+              onClick: () => {
+                if (!user) {
+                  navigate('login');
+                } else if (hasDashboardShortcut) {
+                  window.location.href = dashboardHref;
+                } else {
+                  navigate('profile');
                 }
-              : user && userRole === 'customer'
-                ? {
-                    key: 'orders',
-                    icon: ICONS.Orders,
-                    label: t('orders'),
-                    active: currentView === 'orders',
-                    onClick: () => navigate('orders'),
-                  }
-                : {
-                    key: 'help',
-                    icon: ICONS.Help,
-                    label: t('help'),
-                    active: currentView === 'help',
-                    onClick: () => navigate('help'),
-                  }
+              },
+            },
           ].map((item) => (
             <button
               key={item.key}

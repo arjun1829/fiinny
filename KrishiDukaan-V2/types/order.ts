@@ -32,6 +32,17 @@ export type OrderItem = {
   lineTotal: number;
 };
 
+export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";
+
+export type PaymentInfo = {
+  razorpayOrderId: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  status: PaymentStatus;
+  amount: number; // in INR
+  paidAt?: string; // ISO timestamp
+};
+
 export type OrderDoc = {
   id: string;
   customerId: string;
@@ -46,6 +57,7 @@ export type OrderDoc = {
   deliveryMode: "delivery";
   status: OrderStatus;
   statusHistory?: StatusHistoryEntry[];
+  payment?: PaymentInfo;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
