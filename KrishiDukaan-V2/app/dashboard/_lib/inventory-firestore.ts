@@ -9,20 +9,22 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
-  type Timestamp,
 } from "firebase/firestore";
 
 import { db } from "../../firebase";
 import type {
+  DiscountUpdateInput,
   InventoryDoc,
   InventoryRow,
   ManufacturerProductRow,
   ProductDoc,
 } from "../_types/inventory";
 import { deriveStockStatus } from "../_types/inventory";
+import { calcDiscount, getActiveDiscountPct } from "../../utils/discount";
 import {
   addSeatListingToBatch,
   canAssignSeat,
@@ -119,6 +121,10 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
       ? String(data.manufacturerProductId)
       : undefined,
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : undefined,
+    discountEnabled:   data.discountEnabled === true,
+    discountPct:       toNum(data.discountPct, 0),
+    discountStartDate: (data.discountStartDate as Timestamp) ?? null,
+    discountEndDate:   (data.discountEndDate as Timestamp) ?? null,
   };
 }
 
@@ -286,6 +292,7 @@ export async function fetchRetailerInventoryRows(
     const inv = inventoryMap.get(p.id);
     if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
+    const raw = p as unknown as Record<string, unknown>;
     return [
       {
         inventoryId: inv.id,
@@ -301,8 +308,13 @@ export async function fetchRetailerInventoryRows(
         assignedByManufacturer: inv.assignedByManufacturer === true,
         updatedAt: timestampToDate(inv.updatedAt),
         source: p.source,
-        // Add ownerId to the row so we can detect if it's "Pending Acceptance"
         ownerId: p.ownerId,
+        originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+        discountEnabled:   inv.discountEnabled ?? false,
+        discountPct:       inv.discountPct ?? 0,
+        discountStartDate: timestampToDate(inv.discountStartDate),
+        discountEndDate:   timestampToDate(inv.discountEndDate),
+        effectiveDiscountPct: getActiveDiscountPct(inv),
       },
     ];
   });
@@ -377,12 +389,18 @@ export async function fetchManufacturerCatalogueRows(
       source: p.source ?? "manufacturer_inventory",
       isActive: p.isActive,
       updatedAt: timestampToDate(p.updatedAt),
+      originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",
       applicationDesc: p.applicationDesc ?? "",
       dosage: p.dosage ?? "",
       bestForCrops: p.bestForCrops ?? [],
+      discountEnabled:   inv?.discountEnabled ?? false,
+      discountPct:       inv?.discountPct ?? 0,
+      discountStartDate: timestampToDate(inv?.discountStartDate),
+      discountEndDate:   timestampToDate(inv?.discountEndDate),
+      effectiveDiscountPct: inv ? getActiveDiscountPct(inv) : 0,
     };
   });
 
@@ -879,6 +897,134 @@ export async function activateProduct(
       } catch {}
     })();
   }
+}
+
+// ─── Discount operations ──────────────────────────────────────────────────────
+
+/**
+ * Saves discount settings for a seller's inventory record and mirrors the
+ * computed effectiveDiscountPct to the product doc. Also triggers a
+ * recompute of maxDiscountPct on the original product (fire-and-forget).
+ */
+export async function updateDiscountRecord(
+  inventoryId: string,
+  productId: string,
+  patch: DiscountUpdateInput,
+  originalProductId?: string | null,
+): Promise<void> {
+  if (patch.discountPct < 0 || patch.discountPct > 99) {
+    throw new Error("Discount percentage must be between 0 and 99.");
+  }
+  if (
+    patch.discountStartDate &&
+    patch.discountEndDate &&
+    patch.discountEndDate <= patch.discountStartDate
+  ) {
+    throw new Error("End date must be after start date.");
+  }
+
+  const startTs = patch.discountStartDate ? Timestamp.fromDate(patch.discountStartDate) : null;
+  const endTs   = patch.discountEndDate   ? Timestamp.fromDate(patch.discountEndDate)   : null;
+
+  const effectivePct = getActiveDiscountPct({
+    discountEnabled:   patch.discountEnabled,
+    discountPct:       patch.discountPct,
+    discountStartDate: startTs,
+    discountEndDate:   endTs,
+  });
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+
+  batch.update(doc(db, "inventory", inventoryId), {
+    discountEnabled:   patch.discountEnabled,
+    discountPct:       patch.discountPct,
+    discountStartDate: startTs,
+    discountEndDate:   endTs,
+    updatedAt: now,
+  });
+
+  batch.update(doc(db, "products", productId), {
+    effectiveDiscountPct: effectivePct,
+    updatedAt: now,
+  });
+
+  await batch.commit();
+
+  // Sync discountPct into the availability[] entry on the root product (fire-and-forget).
+  // This is how the product detail page reads per-seller discounts.
+  if (originalProductId) {
+    syncAvailabilityDiscount(originalProductId, productId, effectivePct).catch(() => {});
+  }
+
+  // Recompute maxDiscountPct on the root/original product (fire-and-forget).
+  const rootId = originalProductId ?? productId;
+  recomputeMaxDiscount(rootId).catch(() => {});
+}
+
+/**
+ * Updates the `discountPct` field on the matching entry in the original product's
+ * `availability[]` array. Uses a transaction to safely replace the array element.
+ */
+async function syncAvailabilityDiscount(
+  rootProductId: string,
+  sellerProductId: string,
+  effectivePct: number,
+): Promise<void> {
+  const rootRef = doc(db, "products", rootProductId);
+  const snap = await getDoc(rootRef);
+  if (!snap.exists()) return;
+
+  const data = snap.data() as Record<string, unknown>;
+  const availability = Array.isArray(data.availability) ? [...(data.availability as Record<string, unknown>[])] : [];
+  if (!availability.length) return;
+
+  // Fetch the seller product to get its ownerId / retailerId for matching
+  const sellerSnap = await getDoc(doc(db, "products", sellerProductId));
+  if (!sellerSnap.exists()) return;
+  const seller = sellerSnap.data() as Record<string, unknown>;
+  const sellerOwnerId  = String(seller.ownerId  ?? "");
+  const sellerPhone    = String(seller.retailerPhone ?? seller.ownerPhone ?? "");
+
+  const updated = availability.map((entry) => {
+    const storeId    = String(entry.storeId    ?? "");
+    const storePhone = String(entry.storePhone ?? "");
+    const matches =
+      (sellerOwnerId && storeId === sellerOwnerId) ||
+      (sellerPhone   && (storePhone === sellerPhone || storeId === sellerPhone));
+    return matches ? { ...entry, discountPct: effectivePct } : entry;
+  });
+
+  await updateDoc(rootRef, { availability: updated });
+}
+
+/**
+ * Finds all active seller copies of a product (via originalProductId) and
+ * updates maxDiscountPct on the root doc with the highest active discount.
+ */
+async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
+  const [rootSnap, copiesSnap] = await Promise.all([
+    getDoc(doc(db, "products", rootProductId)),
+    getDocs(
+      query(
+        collection(db, "products"),
+        where("originalProductId", "==", rootProductId),
+        where("isActive", "==", true),
+      ),
+    ),
+  ]);
+
+  const pcts: number[] = [];
+  if (rootSnap.exists()) {
+    const d = rootSnap.data() as Record<string, unknown>;
+    if (d.isActive !== false) pcts.push(toNum(d.effectiveDiscountPct, 0));
+  }
+  copiesSnap.docs.forEach((d) =>
+    pcts.push(toNum((d.data() as Record<string, unknown>).effectiveDiscountPct, 0)),
+  );
+
+  const maxPct = Math.max(0, ...pcts);
+  await updateDoc(doc(db, "products", rootProductId), { maxDiscountPct: maxPct });
 }
 
 /**

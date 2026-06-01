@@ -9,6 +9,8 @@ import { trackProductImpression } from '../firebase';
 import type { StoreWithDistance } from '../utils/nearby';
 import { useI18n } from '../i18n/I18nContext';
 import type { CartItem } from '../../types/order';
+import { Tag } from 'lucide-react';
+import { calcDiscount } from '../utils/discount';
 
 interface MarketViewProps {
   products?: MarketplaceProduct[];
@@ -350,6 +352,9 @@ export default function MarketView({
               product.fullName && product.fullName !== product.name
                 ? product.fullName.replace(product.name, '').trim() || null
                 : null;
+            const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
+            const hasOffer = maxPct > 0;
+            const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
             return (
               <motion.article
                 key={`${product.id}-${idx}`}
@@ -357,7 +362,11 @@ export default function MarketView({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: Math.min(idx * 0.03, 0.6) }}
                 onClick={() => onProductClick(product.id)}
-                className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-ambient transition-all duration-300 flex flex-col border border-surface-container group cursor-pointer"
+                className={`bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-ambient transition-all duration-300 flex flex-col border group cursor-pointer ${
+                  hasOffer
+                    ? 'border-green-400 shadow-green-100 hover:shadow-green-200'
+                    : 'border-surface-container'
+                }`}
               >
                 <div className="aspect-[4/3] relative overflow-hidden bg-surface-container">
                   <img
@@ -365,18 +374,30 @@ export default function MarketView({
                     alt={product.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105 bg-white"
                   />
-                  <div className="absolute top-3 left-3" onClick={(e) => e.stopPropagation()}>
-                    <HelperTooltip side="bottom" textKey="stockBadge">
-                      <span className="bg-primary-container/90 backdrop-blur-md text-on-primary-container text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm cursor-help">
-                        {t('inStock')}
-                      </span>
-                    </HelperTooltip>
-                  </div>
+
+                  {/* ── Corner offer ribbon (top-left) ── */}
+                  {hasOffer && (
+                    <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
+                      <div
+                        className="absolute bg-green-500 shadow-md text-white text-center"
+                        style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
+                      >
+                        <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
+                          <Tag className="h-2.5 w-2.5 shrink-0" />
+                          {maxPct}% OFF
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Category badge — top right */}
                   {product.category && product.category !== 'general' && (
-                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm capitalize">
+                    <span className="absolute top-2.5 right-2.5 bg-white/90 backdrop-blur-md text-on-surface text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm capitalize">
                       {product.category}
                     </span>
                   )}
+
+                  {/* Rating badge — bottom left */}
                   {(product.averageRating ?? 0) > 0 && (
                     <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
                       <span className="text-amber-400">★</span>
@@ -386,60 +407,102 @@ export default function MarketView({
                   )}
                 </div>
 
-                <div className="p-4 flex flex-col flex-1">
-                  <div onClick={(e) => e.stopPropagation()} className="self-start mb-2">
-                    <HelperTooltip side="bottom" textKey="marketNearbyStore">
-                      <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help">
-                        <ICONS.Market className="w-3 h-3" />
-                        <span className="text-[10px] font-bold tracking-tight">
-                          {product.store} • {formatDistance(dist, t('nearby'))}
-                        </span>
-                      </div>
-                    </HelperTooltip>
+                <div className={`p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                  <div className="flex items-center justify-between gap-1 mb-2">
+                    <div onClick={(e) => e.stopPropagation()} className="self-start">
+                      <HelperTooltip side="bottom" textKey="marketNearbyStore">
+                        <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help">
+                          <ICONS.Market className="w-3 h-3" />
+                          <span className="text-[10px] font-bold tracking-tight">
+                            {product.store} • {formatDistance(dist, t('nearby'))}
+                          </span>
+                        </div>
+                      </HelperTooltip>
+                    </div>
+                    {/* Out of Stock label — shown only when all known sellers report no stock */}
+                    {product.stock && product.stock.toLowerCase().includes('out') && (
+                      <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-red-500 border border-red-200 bg-red-50 px-1.5 py-0.5 rounded-full">
+                        Out of Stock
+                      </span>
+                    )}
                   </div>
                   <h3 className="font-bold text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
                     {product.name}
                   </h3>
-                  <p className="text-on-surface-variant text-xs mt-1 line-clamp-2">
-                    {product.description}
-                  </p>
+                  {product.description && product.description.trim() && (
+                    <p className="text-on-surface-variant text-xs mt-1 line-clamp-2">
+                      {product.description}
+                    </p>
+                  )}
 
-                  <div className="mt-auto pt-3 flex justify-between items-end border-t border-surface-container">
-                    <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
-                      <HelperTooltip side="top" textKey="marketUnits">
-                        <span className="text-[10px] text-outline font-bold uppercase tracking-widest cursor-help">
-                          {size || t('perUnitCaps')}
+                  {hasOffer ? (
+                    /* ── Offer price block ── */
+                    <div className="mt-auto pt-2.5 border-t border-green-100">
+                      {/* Unit label */}
+                      <span className="text-[10px] text-outline font-bold uppercase tracking-widest">
+                        {size || t('perUnitCaps')}
+                      </span>
+                      {/* Price row: big discounted + strikethrough original */}
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <span className="text-xl font-black text-green-700 leading-none">
+                          ₹{discountedPrice.toLocaleString('en-IN')}
                         </span>
-                      </HelperTooltip>
-                      <HelperTooltip side="top" textKey="marketPriceInfo">
-                        <div className="flex items-baseline gap-1 cursor-help">
-                          {product.lowestPrice && product.lowestPrice < product.price ? (
-                            <>
-                              <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-                              <span className="text-lg font-bold text-secondary">
-                                ₹{product.lowestPrice.toLocaleString('en-IN')}
-                              </span>
-                              <span className="text-[10px] text-outline line-through">
-                                ₹{product.price.toLocaleString('en-IN')}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-lg font-bold text-secondary">
-                                ₹{product.price.toLocaleString('en-IN')}
-                              </span>
-                              {product.oldPrice && product.oldPrice > product.price && (
-                                <span className="text-[10px] text-outline line-through">
-                                  ₹{product.oldPrice}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </HelperTooltip>
+                        <span className="text-sm font-semibold text-outline line-through leading-none">
+                          ₹{product.price.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      {/* Save badge */}
+                      <div className="mt-1.5 flex items-center justify-between gap-1">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm shadow-green-600/30">
+                          <Tag className="h-2.5 w-2.5 shrink-0" />
+                          Save ₹{(product.price - discountedPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </span>
+                        {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
+                          <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[10px] text-outline font-semibold">{brand}</span>
-                  </div>
+                  ) : (
+                    /* ── Regular price block ── */
+                    <div className={`mt-auto pt-3 flex justify-between items-end border-t border-surface-container`}>
+                      <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
+                        <HelperTooltip side="top" textKey="marketUnits">
+                          <span className="text-[10px] text-outline font-bold uppercase tracking-widest cursor-help">
+                            {size || t('perUnitCaps')}
+                          </span>
+                        </HelperTooltip>
+                        <HelperTooltip side="top" textKey="marketPriceInfo">
+                          <div className="flex items-baseline gap-1 cursor-help">
+                            {product.lowestPrice && product.lowestPrice < product.price ? (
+                              <>
+                                <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
+                                <span className="text-lg font-bold text-secondary">
+                                  ₹{product.lowestPrice.toLocaleString('en-IN')}
+                                </span>
+                                <span className="text-[10px] text-outline line-through">
+                                  ₹{product.price.toLocaleString('en-IN')}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-lg font-bold text-secondary">
+                                  ₹{product.price.toLocaleString('en-IN')}
+                                </span>
+                                {product.oldPrice && product.oldPrice > product.price && (
+                                  <span className="text-[10px] text-outline line-through">
+                                    ₹{product.oldPrice}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </HelperTooltip>
+                      </div>
+                      {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
+                        <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                      )}
+                    </div>
+                  )}
                   {/* Cart CTA — changes state once item is in cart */}
                   {(() => {
                     const inCart = cartItems.some((ci) => ci.productId === product.id);

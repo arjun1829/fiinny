@@ -9,6 +9,7 @@ import { ICONS } from "../constants";
 import { useI18n } from "../i18n/I18nContext";
 import { HelperIcon } from "../../components/helpers";
 import { ShieldCheck, CreditCard, Lock } from "lucide-react";
+import { calcDiscount } from "../utils/discount";
 
 type AddressField = "customerName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
 
@@ -24,9 +25,9 @@ type CartViewProps = {
   addressState: string;
   addressPincode: string;
   onCustomerFieldChange: (field: AddressField, value: string) => void;
-  onQtyChange: (productId: string, qty: number) => void;
-  onRemove: (productId: string) => void;
-  onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
+  onQtyChange: (itemKey: string, qty: number) => void;
+  onRemove: (itemKey: string) => void;
+  onAssignStore: (itemKey: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   onCheckout: () => Promise<void>;
   onRazorpayCheckout?: (amount: number, saveAddress: boolean) => void;
   onSaveAddress?: (address: string) => Promise<void>;
@@ -221,7 +222,7 @@ function StorePickerInline({
 }: {
   product: MarketplaceProduct;
   stores: StoreWithDistance[];
-  onSelect: (sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
+  onSelect: (sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   currentSellerId?: string;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -269,14 +270,36 @@ function StorePickerInline({
           const availability = product.availability?.find(
             (a) => a.storeId === store.id || (phone && (a.storePhone === phone || a.storeId === phone))
           );
-          const storePrice = availability?.sellingPrice && availability.sellingPrice > 0 ? availability.sellingPrice : undefined;
 
-          const displayPrice = storePrice ?? product.price;
+          // Resolve this store's discount from sellerDiscounts map (keyed by uid/phone)
+          const storeUid = String((store as any).userId ?? (store as any).retailerId ?? '');
+          const storeDiscountPct: number =
+            (storeUid && product.sellerDiscounts?.[storeUid])
+              ? product.sellerDiscounts[storeUid]
+              : (phone && product.sellerDiscounts?.[phone])
+                ? product.sellerDiscounts[phone]
+                : (store.id && product.sellerDiscounts?.[store.id])
+                  ? product.sellerDiscounts[store.id]
+                  : 0;
+
+          // Resolve price: availability entry → product price
+          const rawPrice = availability?.sellingPrice && availability.sellingPrice > 0
+            ? availability.sellingPrice
+            : product.price;
+          const { finalPrice: discountedPrice } = calcDiscount(rawPrice, storeDiscountPct);
+          const displayPrice = storeDiscountPct > 0 ? discountedPrice : rawPrice;
+          const hasDiscount = storeDiscountPct > 0;
+
           return (
             <button
               key={store.id}
               type="button"
-              onClick={() => !isCurrent && onSelect(sellerId, sellerType, store.name || "Store", displayPrice)}
+              onClick={() => !isCurrent && onSelect(
+                sellerId, sellerType, store.name || "Store",
+                displayPrice,
+                hasDiscount ? storeDiscountPct : undefined,
+                hasDiscount ? rawPrice : undefined,
+              )}
               disabled={isCurrent}
               className={`w-full text-left rounded-xl border px-3 py-2.5 transition-all ${
                 isCurrent
@@ -292,7 +315,15 @@ function StorePickerInline({
                       <ICONS.Location className="w-3 h-3" />
                       {(store as any).distanceLabel || formatDistance((store as any).distanceKm)}
                     </span>
-                    <span className="font-bold text-secondary">₹{displayPrice.toLocaleString("en-IN")}</span>
+                    {hasDiscount ? (
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span className="font-bold text-green-700">₹{displayPrice.toLocaleString("en-IN")}</span>
+                        <span className="line-through text-on-surface-variant/60">₹{rawPrice.toLocaleString("en-IN")}</span>
+                        <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">{storeDiscountPct}% OFF</span>
+                      </span>
+                    ) : (
+                      <span className="font-bold text-secondary">₹{displayPrice.toLocaleString("en-IN")}</span>
+                    )}
                     <span className="inline-flex items-center gap-0.5 text-green-700">
                       <ICONS.Delivery className="w-3 h-3" /> {t('cartOnline')}
                     </span>
@@ -329,9 +360,9 @@ function CartItemCard({
   item: CartItem;
   product: MarketplaceProduct | undefined;
   stores: StoreWithDistance[];
-  onQtyChange: (productId: string, qty: number) => void;
-  onRemove: (productId: string) => void;
-  onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
+  onQtyChange: (itemKey: string, qty: number) => void;
+  onRemove: (itemKey: string) => void;
+  onAssignStore: (itemKey: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   isPending: boolean;
   t: (key: string) => string;
 }) {
@@ -352,24 +383,51 @@ function CartItemCard({
           <p className="font-bold text-on-surface truncate">{item.name}</p>
 
           {!isPending && (
-            <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                <ICONS.Delivery className="w-3 h-3" />
-                {item.sellerName || t('cartStoreSelected')}
-              </span>
-              <span className="text-sm font-bold text-secondary">₹{item.price.toLocaleString("en-IN")}</span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowPicker(!showPicker); }}
-                className="text-[11px] font-bold text-primary hover:underline"
-              >
-                {showPicker ? t('cartHide') : t('cartChangeStore')}
-              </button>
+            <div className="mt-1 flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                  <ICONS.Delivery className="w-3 h-3" />
+                  {item.sellerName || t('cartStoreSelected')}
+                </span>
+                {item.discountPct && item.discountPct > 0 && item.originalPrice ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-green-700">₹{item.price.toLocaleString("en-IN")}</span>
+                    <span className="text-xs line-through text-on-surface-variant">₹{item.originalPrice.toLocaleString("en-IN")}</span>
+                    <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">{item.discountPct}% OFF</span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-bold text-secondary">₹{item.price.toLocaleString("en-IN")}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowPicker(!showPicker); }}
+                  className="text-[11px] font-bold text-primary hover:underline"
+                >
+                  {showPicker ? t('cartHide') : t('cartChangeStore')}
+                </button>
+              </div>
+              {item.discountPct && item.discountPct > 0 && item.originalPrice && (
+                <p className="text-[10px] font-semibold text-green-600">
+                  You save ₹{(item.originalPrice - item.price).toLocaleString("en-IN")} per unit
+                </p>
+              )}
             </div>
           )}
 
           {isPending && (
-            <p className="text-xs text-on-surface-variant mt-0.5">₹{item.price.toFixed(2)}</p>
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              {item.discountPct && item.discountPct > 0 && item.originalPrice ? (
+                <>
+                  <span className="text-sm font-bold text-green-700">₹{item.price.toLocaleString("en-IN")}</span>
+                  <span className="text-xs line-through text-on-surface-variant">₹{item.originalPrice.toLocaleString("en-IN")}</span>
+                  <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">
+                    {item.discountPct}% OFF
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs text-on-surface-variant">₹{item.price.toLocaleString("en-IN")}</span>
+              )}
+            </div>
           )}
 
           <div className={`flex items-center gap-2 flex-wrap ${isPending ? "mt-2" : "mt-2.5"}`}>
@@ -384,11 +442,11 @@ function CartItemCard({
               </button>
             )}
             <div className="flex items-center gap-1">
-              <button onClick={() => onQtyChange(item.productId, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
+              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
               <span className={`${isPending ? "w-6" : "w-8"} text-center font-bold text-sm`}>{item.qty}</span>
-              <button onClick={() => onQtyChange(item.productId, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
+              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
             </div>
-            <button onClick={() => onRemove(item.productId)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
+            <button onClick={() => onRemove(`${item.productId}_${item.sellerId}_${item.sellMode}`)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
           </div>
         </div>
         <div className="font-black text-on-surface text-right shrink-0">
@@ -403,8 +461,8 @@ function CartItemCard({
             stores={stores}
             t={t}
             currentSellerId={isPending ? undefined : item.sellerId}
-            onSelect={(sellerId, sellerType, sellerName, storePrice) => {
-              onAssignStore(item.productId, sellerId, sellerType, sellerName, storePrice);
+            onSelect={(sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
+              onAssignStore(`${item.productId}_${item.sellerId}_${item.sellMode}`, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
               setShowPicker(false);
             }}
           />
@@ -567,6 +625,20 @@ export default function CartView({
           </span>
           <span>₹{subtotal.toLocaleString("en-IN")}</span>
         </div>
+        {/* Total savings line — shown only when at least one item has a discount */}
+        {(() => {
+          const totalSavings = readyItems.reduce((sum, item) => {
+            if (!item.discountPct || !item.originalPrice) return sum;
+            return sum + (item.originalPrice - item.price) * item.qty;
+          }, 0);
+          if (totalSavings <= 0) return null;
+          return (
+            <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
+              <span>Total Savings</span>
+              <span>-₹{totalSavings.toLocaleString("en-IN")}</span>
+            </div>
+          );
+        })()}
 
         {pendingItems.length > 0 && canCheckout && (
           <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">

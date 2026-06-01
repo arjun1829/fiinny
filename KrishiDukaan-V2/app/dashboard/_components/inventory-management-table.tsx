@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Power, PowerOff, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Power, PowerOff, Save, Tag, Trash2 } from "lucide-react";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
 import { updateInventoryRecord, acceptAssignedProduct } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
+import { DiscountPanel } from "./discount-panel";
 
 type RowDraft = {
   stockQuantity: number;
@@ -52,6 +53,7 @@ function RowActions({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
 
   const isPending = userId && row.ownerId !== userId;
 
@@ -96,7 +98,7 @@ function RowActions({
   };
 
   return (
-    <div className="flex flex-col gap-1 min-w-[120px]">
+    <div className="flex flex-col gap-1 min-w-[140px]">
       {rowError ? <p className="text-[10px] text-red-600">{rowError}</p> : null}
       <div className="flex flex-wrap items-center gap-1">
         {isPending ? (
@@ -139,6 +141,23 @@ function RowActions({
               </button>
             ) : null}
 
+            {/* Discount button — available for all own products */}
+            {!row.assignedByManufacturer ? (
+              <button
+                type="button"
+                onClick={() => setDiscountOpen((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors",
+                  row.effectiveDiscountPct > 0
+                    ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
+                    : "border-outline-variant/40 text-on-surface-variant hover:border-primary/40 hover:text-primary",
+                )}
+              >
+                <Tag className="h-3.5 w-3.5" />
+                {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
+              </button>
+            ) : null}
+
             {onDelete && !row.assignedByManufacturer ? (
               confirmDelete ? (
                 <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
@@ -177,6 +196,27 @@ function RowActions({
           </>
         )}
       </div>
+
+      {/* Inline discount panel */}
+      {discountOpen && !row.assignedByManufacturer && (
+        <div className="mt-2 w-72">
+          <DiscountPanel
+            inventoryId={row.inventoryId}
+            productId={row.productId}
+            originalProductId={row.originalProductId}
+            sellingPrice={row.sellingPrice}
+            discountEnabled={row.discountEnabled}
+            discountPct={row.discountPct}
+            discountStartDate={row.discountStartDate}
+            discountEndDate={row.discountEndDate}
+            isActive={row.isActive}
+            onSaved={async () => {
+              setDiscountOpen(false);
+              await onUpdated();
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -277,6 +317,7 @@ export function InventoryManagementTable({
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Selling Price</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Reorder At</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Stock Status</th>
+                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Discount</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Updated</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">Save</th>
                 {hasActions ? (
@@ -388,6 +429,20 @@ export function InventoryManagementTable({
                       >
                         {isInactive ? "Inactive" : stockStatusLabel(status)}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 md:px-4">
+                      {r.effectiveDiscountPct > 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-bold text-green-700">
+                          <Tag className="h-3 w-3" />
+                          {r.effectiveDiscountPct}% OFF
+                        </span>
+                      ) : r.discountEnabled && r.discountPct > 0 ? (
+                        <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                          {r.discountPct}% (inactive)
+                        </span>
+                      ) : (
+                        <span className="text-xs text-on-surface-variant">—</span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-on-surface-variant md:px-4">
                       {updatedLabel}

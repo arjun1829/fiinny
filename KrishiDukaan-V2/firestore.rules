@@ -312,7 +312,11 @@ service cloud.firestore {
         (resource.data.source == 'manufacturer_assigned' && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
         // Allow any retailer to add their store to the product's availability array
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability']) ||
+        // Allow owner to update discount mirror fields (effectiveDiscountPct, maxDiscountPct, availability+discount)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['effectiveDiscountPct', 'updatedAt']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['maxDiscountPct']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt', 'effectiveDiscountPct'])
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -358,6 +362,22 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
+    // ─── Discount field validation helper ───────────────────────────────────
+    // Returns true when the incoming write does not set invalid discount values.
+    // discountPct must be 0–99; dates must be absent or timestamps.
+    function discountFieldsValid() {
+      let d = request.resource.data;
+      return (
+        // discountPct: absent, or a number in [0, 99]
+        (!('discountPct' in d) || (d.discountPct is number && d.discountPct >= 0 && d.discountPct <= 99)) &&
+        // discountEnabled: absent or bool
+        (!('discountEnabled' in d) || d.discountEnabled is bool) &&
+        // date fields: absent, null, or timestamp
+        (!('discountStartDate' in d) || d.discountStartDate == null || d.discountStartDate is timestamp) &&
+        (!('discountEndDate'   in d) || d.discountEndDate   == null || d.discountEndDate   is timestamp)
+      );
+    }
+
     match /inventory/{inventoryId} {
       allow read: if isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
@@ -368,8 +388,8 @@ service cloud.firestore {
         // Allow if retailerPhone is set (post-backfill) and matches caller
         (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone))
       );
-      allow create: if isAuthed();
-      allow update: if isAuthed() && (
+      allow create: if isAuthed() && discountFieldsValid();
+      allow update: if isAuthed() && discountFieldsValid() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
