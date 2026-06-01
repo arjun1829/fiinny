@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   increment,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -1079,4 +1080,54 @@ export async function deleteProduct(
       } catch {}
     })();
   }
+}
+
+// ─── Admin discount management ────────────────────────────────────────────────
+
+export type AdminDiscountRow = {
+  inventoryId: string;
+  productId: string;
+  productName: string;
+  ownerPhone: string;
+  ownerType: string;
+  sellingPrice: number;
+  discountEnabled: boolean;
+  discountPct: number;
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+  effectiveDiscountPct: number;
+  updatedAt: Date | null;
+};
+
+/**
+ * Fetches all inventory docs that have a discount configured.
+ * Admin-only — requires isAdmin() read permission on inventory collection.
+ */
+export async function fetchAllDiscounts(): Promise<AdminDiscountRow[]> {
+  const snap = await getDocs(
+    query(collection(db, "inventory"), where("discountPct", ">", 0), orderBy("discountPct", "desc")),
+  );
+  if (snap.empty) return [];
+
+  const productIds = Array.from(new Set(snap.docs.map((d) => String(d.data().productId ?? "")))).filter(Boolean);
+  const productNameMap = await fetchProductNames(productIds);
+
+  return snap.docs.map((d) => {
+    const data = d.data() as Record<string, unknown>;
+    const inv = mapInventory(d.id, data);
+    return {
+      inventoryId: d.id,
+      productId: inv.productId,
+      productName: productNameMap.get(inv.productId) ?? "—",
+      ownerPhone: String(data.ownerPhone ?? data.retailerPhone ?? data.manufacturerPhone ?? "—"),
+      ownerType: String(data.ownerType ?? "retailer"),
+      sellingPrice: inv.sellingPrice,
+      discountEnabled: inv.discountEnabled ?? false,
+      discountPct: inv.discountPct ?? 0,
+      discountStartDate: timestampToDate(inv.discountStartDate),
+      discountEndDate: timestampToDate(inv.discountEndDate),
+      effectiveDiscountPct: getActiveDiscountPct(inv),
+      updatedAt: timestampToDate(inv.updatedAt),
+    };
+  });
 }

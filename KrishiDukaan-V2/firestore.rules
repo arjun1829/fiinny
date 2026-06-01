@@ -379,7 +379,7 @@ service cloud.firestore {
     }
 
     match /inventory/{inventoryId} {
-      allow read: if isAuthed() && (
+      allow read: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
@@ -387,20 +387,20 @@ service cloud.firestore {
         phoneMatches(resource.data.retailerDocId) ||
         // Allow if retailerPhone is set (post-backfill) and matches caller
         (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone))
-      );
-      allow create: if isAuthed() && discountFieldsValid();
-      allow update: if isAuthed() && discountFieldsValid() && (
+      ));
+      allow create: if isAdmin() || (isAuthed() && discountFieldsValid());
+      allow update: if isAdmin() || (isAuthed() && discountFieldsValid() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
         (phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid) ||
         // Also allow if retailerPhone already matches (re-running backfill)
         (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone) && request.resource.data.retailerId == request.auth.uid)
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid
-      );
+      ));
     }
 
     match /manufacturerRetailers/{docId} {
