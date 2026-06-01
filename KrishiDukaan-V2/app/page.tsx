@@ -689,12 +689,15 @@ export default function App() {
     navigate('product', { productId: id });
   };
 
-  const addToCart = (product: MarketplaceProduct) => {
+  const addToCart = (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
     setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
+      const variantUnit = variant?.unit;
+      const found = prev.find(
+        (i) => i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit,
+      );
       if (found) {
         return prev.map((i) =>
-          i.productId === product.id && i.sellMode === "pending"
+          i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit
             ? { ...i, qty: i.qty + 1 }
             : i
         );
@@ -707,13 +710,15 @@ export default function App() {
           sellerType: "retailer" as const,
           name: product.name,
           image: product.image,
-          price: product.price,
+          price: variant ? variant.price : product.price,
           qty: 1,
           sellMode: "pending" as const,
+          ...(variantUnit ? { variantUnit } : {}),
         },
       ];
     });
-    setToastMsg(`${product.name} added to cart.`);
+    const label = variant ? `${product.name} (${variant.unit})` : product.name;
+    setToastMsg(`${label} added to cart.`);
     setToastType("success");
   };
 
@@ -761,7 +766,7 @@ export default function App() {
     }
   };
 
-  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number) => {
+  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number, variant?: { unit: string; price: number; stock?: number }) => {
     const sellerId: string =
       (store as any).retailerId ||
       (store as any).userId ||
@@ -773,20 +778,24 @@ export default function App() {
     }
     const sellerType: "retailer" | "manufacturer" =
       (store as any).retailerId ? "retailer" : "manufacturer";
+    const variantUnit = variant?.unit;
 
     setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
+      const found = prev.find(
+        (i) => i.productId === product.id && i.sellerId === sellerId && i.variantUnit === variantUnit,
+      );
       if (found) {
         return prev.map((i) =>
-          i.productId === product.id && i.sellerId === sellerId
+          i.productId === product.id && i.sellerId === sellerId && i.variantUnit === variantUnit
             ? { ...i, qty: i.qty + 1 }
             : i
         );
       }
-      // Use the price already computed and displayed in the product page sticky bar.
-      // Fall back to availability lookup only if no price was passed (defensive).
+      // Use variant price if available, then passed price, then availability lookup.
       let storePrice: number;
-      if (price && price > 0) {
+      if (variant && variant.price > 0) {
+        storePrice = variant.price;
+      } else if (price && price > 0) {
         storePrice = price;
       } else {
         const storePhone: string | undefined = store.phone;
@@ -809,10 +818,12 @@ export default function App() {
           price: storePrice,
           qty: 1,
           sellMode: "online_delivery" as const,
+          ...(variantUnit ? { variantUnit } : {}),
         },
       ];
     });
-    setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
+    const label = variant ? `${product.name} (${variant.unit})` : product.name;
+    setToastMsg(`${label} added to cart from ${store.name || 'this store'}.`);
     setToastType("success");
   }, []);
 

@@ -101,6 +101,7 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
+    variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
   };
 }
 
@@ -301,8 +302,8 @@ export async function fetchRetailerInventoryRows(
         assignedByManufacturer: inv.assignedByManufacturer === true,
         updatedAt: timestampToDate(inv.updatedAt),
         source: p.source,
-        // Add ownerId to the row so we can detect if it's "Pending Acceptance"
         ownerId: p.ownerId,
+        variants: p.variants,
       },
     ];
   });

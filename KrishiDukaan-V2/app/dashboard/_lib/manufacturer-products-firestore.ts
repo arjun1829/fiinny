@@ -26,6 +26,7 @@ import {
 export type ProductVariant = {
   unit: string;
   price: number;
+  stock?: number;
 };
 
 export type ManufacturerProductInput = {

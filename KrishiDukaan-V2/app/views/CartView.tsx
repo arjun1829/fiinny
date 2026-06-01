@@ -338,6 +338,11 @@ function CartItemCard({
         <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-surface-container shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-bold text-on-surface truncate">{item.name}</p>
+          {item.variantUnit && (
+            <span className="inline-flex items-center text-[10px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full mt-0.5">
+              {item.variantUnit}
+            </span>
+          )}
 
           {!isPending && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">

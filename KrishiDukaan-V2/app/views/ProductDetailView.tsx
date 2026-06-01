@@ -33,8 +33,8 @@ interface ProductDetailViewProps {
   onViewSellerAll?: (storeName: string) => void;
   onViewBrand?: (manufacturerId: string) => void;
   storesWithDistance?: StoreWithDistance[];
-  onAddToCart?: (product: MarketplaceProduct) => void;
-  onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number) => void;
+  onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
+  onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -347,6 +347,13 @@ export default function ProductDetailView({
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
+
+  // Variant selection — default to the first variant (or the product itself if no variants)
+  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
+  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
+  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
+  const displayStock = selectedVariant?.stock;
   // Live store ratings keyed by phone — reflects new reviews instantly without a full refetch.
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
@@ -369,6 +376,7 @@ export default function ProductDetailView({
       const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
       setActiveImage(imgs[0]);
       setSelectedOrderStoreId(null);
+      setSelectedVariantIdx(0);
     }
   }, [product.id]);
 
@@ -801,7 +809,7 @@ export default function ProductDetailView({
                 </div>
                 <button
                   onClick={() => {
-                    onAddToCartFromStore?.(product, selectedStore, displayPrice);
+                    onAddToCartFromStore?.(product, selectedStore, displayPrice, selectedVariant ?? undefined);
                     setSelectedOrderStoreId(null);
                   }}
                   className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
@@ -839,11 +847,56 @@ export default function ProductDetailView({
           </p>
         </div>
 
+        {/* Variant selector */}
+        {productVariants && productVariants.length > 1 && (
+          <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              Package Size
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {productVariants.map((v, i) => {
+                const isSelected = selectedVariantIdx === i;
+                const outOfStock = v.stock !== undefined && v.stock === 0;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={outOfStock}
+                    onClick={() => setSelectedVariantIdx(i)}
+                    className={`rounded-xl border-2 px-4 py-2 text-sm font-bold transition-all flex flex-col items-center min-w-[72px] ${
+                      isSelected
+                        ? "border-primary bg-primary text-white shadow-md"
+                        : outOfStock
+                          ? "border-outline-variant/30 bg-surface-container text-on-surface-variant/40 cursor-not-allowed"
+                          : "border-outline-variant/40 bg-white text-on-surface hover:border-primary hover:text-primary"
+                    }`}
+                  >
+                    <span>{v.unit}</span>
+                    <span className={`text-xs font-extrabold mt-0.5 ${isSelected ? "text-white/90" : "text-secondary"}`}>
+                      ₹{v.price.toLocaleString("en-IN")}
+                    </span>
+                    {outOfStock && (
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-red-400 mt-0.5">
+                        Out of stock
+                      </span>
+                    )}
+                    {!outOfStock && v.stock !== undefined && v.stock <= 10 && (
+                      <span className={`text-[9px] font-bold uppercase tracking-wide mt-0.5 ${isSelected ? "text-white/80" : "text-amber-600"}`}>
+                        Only {v.stock} left
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Price + quantity + CTA */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t border-surface-container">
           <HelperTooltip side="top" textKey="marketPriceInfo">
             <div className="flex items-end gap-3 cursor-help">
-              {product.lowestPrice && product.lowestPrice < product.price ? (
+              {!selectedVariant && product.lowestPrice && product.lowestPrice < product.price ? (
                 <>
                   <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.lowestPrice.toLocaleString('en-IN')}</span>
                   <div className="flex flex-col mb-1">
@@ -853,14 +906,19 @@ export default function ProductDetailView({
                 </>
               ) : (
                 <>
-                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.price}</span>
-                  {product.oldPrice && (
+                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{displayPrice.toLocaleString('en-IN')}</span>
+                  {!selectedVariant && product.oldPrice && (
                     <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
                   )}
                 </>
               )}
-              {product.oldPrice && (
+              {!selectedVariant && product.oldPrice && (
                 <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
+              )}
+              {displayStock !== undefined && displayStock > 0 && displayStock <= 20 && (
+                <span className="mb-1 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                  {displayStock} in stock
+                </span>
               )}
             </div>
           </HelperTooltip>
@@ -872,10 +930,12 @@ export default function ProductDetailView({
               </span>
             ) : product.isOnline && onAddToCart ? (
               <button
-                onClick={() => onAddToCart(product)}
-                className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+                onClick={() => onAddToCart(product, selectedVariant ?? undefined)}
+                disabled={displayStock === 0}
+                className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
+                <ICONS.AddToCart className="w-5 h-5" />
+                {displayStock === 0 ? "Out of Stock" : t('addToCart')}
               </button>
             ) : null}
           </div>

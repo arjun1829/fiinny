@@ -12,6 +12,7 @@ export interface ProductDoc {
   createdAt?: Timestamp | null;
   updatedAt?: Timestamp | null;
   isActive: boolean;
+  variants?: { unit: string; price: number; stock?: number }[];
 
   /** Ownership — primary query fields */
   ownerId?: string;
@@ -78,6 +79,8 @@ export interface InventoryRow {
   source?: string;
   /** UID or placeholder retailerDocId */
   ownerId?: string;
+  /** All package variants for this product */
+  variants?: { unit: string; price: number; stock?: number }[];
 }
 
 /** Row for the manufacturer's catalogue table. */
@@ -91,7 +94,7 @@ export interface ManufacturerProductRow {
   description: string;
   image: string;
   images: string[];
-  variants: { unit: string; price: number }[];
+  variants: { unit: string; price: number; stock?: number }[];
   stockQuantity: number;
   source: string;
   isActive: boolean;

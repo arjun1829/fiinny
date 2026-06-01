@@ -152,7 +152,7 @@ export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: 
                       )}
                     </td>
 
-                    <td className="px-3 py-3 md:px-4 tabular-nums text-on-surface-variant">{r.stockQuantity > 0 ? r.stockQuantity : <span className="text-on-surface-variant/40">—</span>}</td>
+                    <td className="px-3 py-3 md:px-4 tabular-nums text-on-surface-variant">{r.stockQuantity}</td>
 
                     <td className="px-3 py-3 md:px-4">
                       <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold", cls)}>

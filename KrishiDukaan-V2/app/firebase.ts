@@ -336,6 +336,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
         dosage: data.dosage ? String(data.dosage) : undefined,
         bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
+        variants: Array.isArray(data.variants) ? data.variants : undefined,
+        images: Array.isArray(data.images) ? data.images : undefined,
       } as MarketplaceProduct;
     });
 

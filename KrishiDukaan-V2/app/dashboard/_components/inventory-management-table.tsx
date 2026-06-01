@@ -312,6 +312,11 @@ export function InventoryManagementTable({
                     <td className="px-3 py-3 md:px-4">
                       <p className="font-medium text-on-surface">{r.productName}</p>
                       <p className="text-xs text-on-surface-variant">{r.category} · {r.unit}</p>
+                      {r.variants && r.variants.length > 1 && (
+                        <p className="text-[10px] text-primary font-semibold mt-0.5">
+                          {r.variants.length} variants
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-3 md:px-4">
                       <span
@@ -340,7 +345,7 @@ export function InventoryManagementTable({
                         step={1}
                         disabled={disabled || savingId === r.inventoryId || isInactive}
                         className="w-20 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 md:w-24 disabled:opacity-50"
-                        value={d != null ? d.stockQuantity : ""}
+                        value={d != null ? d.stockQuantity : r.stockQuantity}
                         onChange={(e) =>
                           setDraft(r.inventoryId, {
                             stockQuantity: e.target.value === "" ? 0 : Number(e.target.value),
@@ -355,7 +360,7 @@ export function InventoryManagementTable({
                         step={0.01}
                         disabled={disabled || savingId === r.inventoryId || isInactive}
                         className="w-24 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 md:w-28 disabled:opacity-50"
-                        value={d != null ? d.sellingPrice : ""}
+                        value={d != null ? d.sellingPrice : r.sellingPrice}
                         onChange={(e) =>
                           setDraft(r.inventoryId, {
                             sellingPrice: e.target.value === "" ? 0 : Number(e.target.value),
@@ -371,7 +376,7 @@ export function InventoryManagementTable({
                         title="Reorder threshold"
                         disabled={disabled || savingId === r.inventoryId || isInactive}
                         className="w-20 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-                        value={d != null ? d.reorderThreshold : ""}
+                        value={d != null ? d.reorderThreshold : r.reorderThreshold}
                         onChange={(e) =>
                           setDraft(r.inventoryId, {
                             reorderThreshold: e.target.value === "" ? 0 : Number(e.target.value),
