@@ -8,10 +8,30 @@ import { Navbar } from "../../components/shared/navbar";
 import { AdminShell } from "./_components/admin-shell";
 import Link from "next/link";
 import { ICONS } from "../constants";
+import {
+  getCachedLocation,
+  getUserLocation,
+  DEFAULT_LOCATION_LABEL,
+  type GeoResult,
+} from "../utils/geolocation";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+
+  // Location — reuse the SAME shared source as the public pages
+  // (app/utils/geolocation: localStorage cache + getUserLocation). Seed from the
+  // cached value the public pages wrote, then refresh from the device so the
+  // admin header stays in sync with Home/Market/Hub/Stores/Blog.
+  const [locationQuery, setLocationQuery] = useState<string>(DEFAULT_LOCATION_LABEL);
+
+  useEffect(() => {
+    const cached = getCachedLocation();
+    if (cached) setLocationQuery(cached.label);
+    void getUserLocation().then((result: GeoResult) => {
+      setLocationQuery(result.label);
+    });
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -40,7 +60,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar isDashboard={true} />
+      <Navbar
+        isDashboard={true}
+        locationQuery={locationQuery}
+        onLocationChange={(loc) => setLocationQuery(loc)}
+      />
       <div className="flex-1 flex overflow-hidden pb-16 md:pb-0">
         <AdminShell>{children}</AdminShell>
       </div>

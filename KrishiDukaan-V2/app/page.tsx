@@ -131,7 +131,11 @@ export default function App() {
   const [checkoutInfo, setCheckoutInfo] = useState({
     customerName: "",
     customerPhone: "",
-    customerAddress: "",
+    addressArea: "",
+    addressCity: "",
+    addressDistrict: "",
+    addressState: "",
+    addressPincode: "",
   });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -409,7 +413,11 @@ export default function App() {
           setCheckoutInfo({
             customerName: profileData.name || "",
             customerPhone: profileData.phone || "",
-            customerAddress: (profileData as any).deliveryAddress || "",
+            addressArea: (profileData as any).addressArea || "",
+            addressCity: (profileData as any).addressCity || "",
+            addressDistrict: (profileData as any).addressDistrict || "",
+            addressState: (profileData as any).addressState || "",
+            addressPincode: (profileData as any).addressPincode || "",
           });
 
           // Paywall: only block if not paid AND not an invited retailer.
@@ -424,7 +432,15 @@ export default function App() {
         setUser(null);
         setUserRole('customer');
         setUserProfile({ name: '', phone: '', email: '', isPaid: false });
-        setCheckoutInfo({ customerName: '', customerPhone: '', customerAddress: '' });
+        setCheckoutInfo({ 
+          customerName: '', 
+          customerPhone: '', 
+          addressArea: '',
+          addressCity: '',
+          addressDistrict: '',
+          addressState: '',
+          addressPincode: ''
+        });
       }
     });
 
@@ -717,6 +733,40 @@ export default function App() {
     setToastType("success");
   };
 
+  // Compute formatted address from structured fields
+  const customerAddress = [
+    checkoutInfo.addressArea,
+    checkoutInfo.addressCity,
+    checkoutInfo.addressDistrict,
+    checkoutInfo.addressState,
+    checkoutInfo.addressPincode,
+  ].filter(Boolean).join(", ");
+
+  // Compute cart subtotal for ready items
+  const cartSubtotal = cartItems
+    .filter((i) => i.sellMode === "online_delivery" && i.sellerId)
+    .reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  // Core order creation — called after successful payment
+  const createOrdersAfterPayment = async (paymentDetails?: any) => {
+    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
+
+    const orderIds = await createOrdersFromCart({
+      customerId: user!.uid,
+      customerName: checkoutInfo.customerName,
+      customerPhone: checkoutInfo.customerPhone,
+      customerAddress,
+      items: readyItems,
+      payment: paymentDetails,
+    });
+    setCartItems(pendingItems);
+    const pendingMsg = pendingItems.length > 0
+      ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
+      : "";
+    setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+  };
+
   const placeOrders = async () => {
     if (!user || userRole !== "customer") {
       setCheckoutMessage("Please login with a customer account.");
@@ -726,52 +776,18 @@ export default function App() {
       setCheckoutMessage("Your cart is empty.");
       return;
     }
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim() || !checkoutInfo.customerAddress.trim()) {
-      setCheckoutMessage("Please fill name, phone, and delivery address.");
+    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim()) {
+      setCheckoutMessage("Please fill your name and phone number.");
+      return;
+    }
+    if (!customerAddress.trim()) {
+      setCheckoutMessage("Please enter your delivery address.");
       return;
     }
 
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
-    const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
     if (!readyItems.length) {
       setCheckoutMessage("No items are ready for ordering. Please select a store for your items first.");
-      return;
-    }
-
-    setCheckoutLoading(true);
-    setCheckoutMessage(null);
-    try {
-      const orderIds = await createOrdersFromCart({
-        customerId: user.uid,
-        customerName: checkoutInfo.customerName,
-        customerPhone: checkoutInfo.customerPhone,
-        customerAddress: checkoutInfo.customerAddress,
-        items: readyItems,
-      });
-      setCartItems(pendingItems);
-      const pendingMsg = pendingItems.length > 0
-        ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
-        : "";
-      setCheckoutMessage(`Order placed successfully. Created ${orderIds.length} seller order(s).${pendingMsg}`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to place order.";
-      setCheckoutMessage(msg);
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  // ─── Razorpay checkout ────────────────────────────────────────────────────────
-  const handleRazorpayCheckout = async (amount: number, saveAddress: boolean = false) => {
-    if (!user || userRole !== 'customer') return;
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim() || !checkoutInfo.customerAddress.trim()) {
-      setCheckoutMessage('Please fill name, phone, and delivery address.');
-      return;
-    }
-
-    const readyItems = cartItems.filter((i) => i.sellMode === 'online_delivery' && i.sellerId);
-    if (!readyItems.length) {
-      setCheckoutMessage('No items are ready for ordering. Please select a store for your items first.');
       return;
     }
 
@@ -780,39 +796,37 @@ export default function App() {
 
     try {
       // Step 1: Create Razorpay order on server
-      const res = await fetch('/api/payment/create-cart-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const orderRes = await fetch("/api/payment/create-cart-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
-          customerName: checkoutInfo.customerName,
-          customerPhone: checkoutInfo.customerPhone,
+          amount: cartSubtotal,
+          userId: user.uid,
+          note: `Cart: ${readyItems.length} item(s)`,
         }),
       });
-      const rzpOrder = await res.json();
-      if (!rzpOrder.orderId) throw new Error('Failed to create payment order');
+      if (!orderRes.ok) throw new Error("Could not initiate payment. Please try again.");
+      const rzpOrder = await orderRes.json();
 
-      // Step 2: Open Razorpay checkout modal
-      const rzpKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
-      const options: any = {
-        key: rzpKeyId,
+      // Step 2: Open Razorpay modal
+      const rzp = new (window as any).Razorpay({
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        order_id: rzpOrder.id,
         amount: rzpOrder.amount,
-        currency: rzpOrder.currency || 'INR',
-        name: 'KrishiDukan',
-        description: `Order of ${readyItems.length} item(s)`,
-        image: '/images/krishidukan icon.webp',
-        order_id: rzpOrder.orderId,
+        currency: "INR",
+        name: "KrishiDukan",
+        description: `Order (${readyItems.length} item${readyItems.length > 1 ? "s" : ""})`,
         prefill: {
           name: checkoutInfo.customerName,
           contact: checkoutInfo.customerPhone,
         },
-        theme: { color: '#22c55e' },
+        theme: { color: "#1a6b2a" },
         handler: async (response: any) => {
+          // Step 3: Verify payment
           try {
-            // Step 3: Verify payment
-            const verifyRes = await fetch('/api/payment/verify-cart', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+            const verifyRes = await fetch("/api/payment/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
@@ -820,55 +834,21 @@ export default function App() {
               }),
             });
             const verifyData = await verifyRes.json();
-            if (verifyData.status !== 'ok') throw new Error('Payment verification failed');
-
-            // Step 4: Place orders in Firebase
-            const pendingItems = cartItems.filter((i) => i.sellMode === 'pending' || !i.sellerId);
-            const orderIds = await createOrdersFromCart({
-              customerId: user.uid,
-              customerName: checkoutInfo.customerName,
-              customerPhone: checkoutInfo.customerPhone,
-              customerAddress: checkoutInfo.customerAddress,
-              items: readyItems,
-            });
-
-            // Step 5: Update each order with payment info
-            await Promise.all(orderIds.map((orderId) =>
-              updateOrderPayment(orderId, {
+            if (verifyData.status === "ok") {
+              // Step 4: Create Firestore orders
+              await createOrdersAfterPayment({
                 razorpayOrderId: response.razorpay_order_id,
                 razorpayPaymentId: response.razorpay_payment_id,
                 razorpaySignature: response.razorpay_signature,
-                amount,
-              })
-            ));
-
-            // Step 6: Save delivery address to profile if requested
-            if (saveAddress && checkoutInfo.customerAddress.trim() && user) {
-              try {
-                const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid));
-                const phone = idxSnap.exists() ? idxSnap.data().phone : null;
-                if (phone) {
-                  await updateDoc(doc(db, 'users', phone), {
-                    deliveryAddress: checkoutInfo.customerAddress.trim(),
-                  });
-                }
-              } catch (e) {
-                console.warn('Could not save delivery address to profile:', e);
-              }
+                amount: rzpOrder.amount / 100,
+                status: "paid",
+                paidAt: new Date().toISOString(),
+              });
+            } else {
+              setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
-
-            setCartItems(pendingItems);
-            const pendingMsg = pendingItems.length > 0
-              ? ` ${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} still in cart (store not selected).`
-              : '';
-            setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
-            setToastMsg('Payment successful! Your order has been placed.');
-            setToastType('success');
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Payment succeeded but order failed. Contact support.';
-            setCheckoutMessage(msg);
-            setToastMsg('Order failed after payment. Contact support.');
-            setToastType('error');
+          } catch {
+            setCheckoutMessage("❌ Payment verified but order creation failed. Please contact support.");
           } finally {
             setCheckoutLoading(false);
           }
@@ -876,31 +856,19 @@ export default function App() {
         modal: {
           ondismiss: () => {
             setCheckoutLoading(false);
-            setCheckoutMessage('Payment cancelled. You can try again.');
+            setCheckoutMessage("Payment cancelled. Your cart is safe.");
           },
         },
-      };
-
-      // Load Razorpay script if not already loaded
-      if (typeof window !== 'undefined') {
-        if (!(window as any).Razorpay) {
-          await new Promise<void>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error('Failed to load Razorpay'));
-            document.body.appendChild(script);
-          });
-        }
-        const rzp = new (window as any).Razorpay(options);
-        rzp.open();
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Payment failed.';
+      });
+      rzp.open();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to initiate payment.";
       setCheckoutMessage(msg);
       setCheckoutLoading(false);
     }
   };
+
+
 
   const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
     const sellerId: string =
@@ -918,6 +886,7 @@ export default function App() {
     setCartItems((prev) => {
       const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
       if (found) {
+        // bump qty for existing online_delivery item from same seller
         return prev.map((i) =>
           i.productId === product.id && i.sellerId === sellerId
             ? { ...i, qty: i.qty + 1 }
@@ -931,8 +900,12 @@ export default function App() {
       const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
         ? availability.sellingPrice
         : product.price;
+      // Remove any existing pending item for this product (prevents duplicate productId issue)
+      const withoutPending = prev.filter(
+        (i) => !(i.productId === product.id && i.sellMode === "pending")
+      );
       return [
-        ...prev,
+        ...withoutPending,
         {
           productId: product.id,
           sellerId,
@@ -949,6 +922,33 @@ export default function App() {
     setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
     setToastType("success");
   }, []);
+
+  // Buy Now: add to cart (auto-select first online store if available) + go to cart
+  const handleBuyNow = useCallback((product: MarketplaceProduct) => {
+    // Find first online-delivery store for this product
+    const onlineStore = storesWithDistance.find((store) => {
+      const storePhone = (store as any).phone as string | undefined;
+      const storeUserId = (store as any).userId as string | undefined;
+      const storeRetailerId = (store as any).retailerId as string | undefined;
+
+      const inAvailability = product.availability?.some(
+        (a) =>
+          a.storeId === store.id ||
+          (a.storePhone && storePhone && a.storePhone === storePhone) ||
+          (a.storeId && storeUserId && a.storeId === storeUserId) ||
+          (a.storeId && storeRetailerId && a.storeId === storeRetailerId)
+      );
+      return inAvailability;
+    });
+
+    if (onlineStore) {
+      handleAddToCartFromStore(product, onlineStore);
+    } else {
+      // No specific store found — add as pending and navigate to cart
+      addToCart(product);
+    }
+    navigate("cart");
+  }, [storesWithDistance, handleAddToCartFromStore, addToCart, navigate]);
 
   const navigateToMap = (storeId?: string, fromProductId?: string | null) => {
     setMapFilterProductId(fromProductId !== undefined ? fromProductId : null);
@@ -1013,6 +1013,9 @@ export default function App() {
             products={marketProducts}
             onProductClick={navigateToProduct}
             onAddToCart={addToCart}
+            onBuyNow={handleBuyNow}
+            cartItems={cartItems}
+            onGoToCart={() => navigate("cart")}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
             storesWithDistance={storesWithDistance}
@@ -1052,6 +1055,7 @@ export default function App() {
           }}
           onAddToCart={addToCart}
           onAddToCartFromStore={handleAddToCartFromStore}
+          onBuyNow={handleBuyNow}
         />;
       case 'cart':
         return (
@@ -1061,7 +1065,11 @@ export default function App() {
             isCustomer={userRole === "customer"}
             customerName={checkoutInfo.customerName}
             customerPhone={checkoutInfo.customerPhone}
-            customerAddress={checkoutInfo.customerAddress}
+            addressArea={checkoutInfo.addressArea}
+            addressCity={checkoutInfo.addressCity}
+            addressDistrict={checkoutInfo.addressDistrict}
+            addressState={checkoutInfo.addressState}
+            addressPincode={checkoutInfo.addressPincode}
             onCustomerFieldChange={(field, value) =>
               setCheckoutInfo((prev) => ({ ...prev, [field]: value }))
             }
@@ -1071,7 +1079,7 @@ export default function App() {
               )
             }
             onRemove={(productId) =>
-              setCartItems((prev) => prev.filter((item) => item.productId !== productId))
+              setCartItems((prev) => prev.filter((item) => item.productId === productId ? false : true))
             }
             onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
               setCartItems((prev) =>
@@ -1083,27 +1091,33 @@ export default function App() {
               )
             }
             onCheckout={placeOrders}
-            onRazorpayCheckout={handleRazorpayCheckout}
-            onSaveAddress={async (address) => {
+            onSaveAddress={async () => {
               if (!user) return;
               try {
                 const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid));
                 const phone = idxSnap.exists() ? idxSnap.data().phone : null;
                 if (phone) {
-                  await updateDoc(doc(db, 'users', phone), { deliveryAddress: address.trim() });
-                  setCheckoutInfo((prev) => ({ ...prev, customerAddress: address.trim() }));
+                  await updateDoc(doc(db, 'users', phone), { 
+                    addressArea: checkoutInfo.addressArea,
+                    addressCity: checkoutInfo.addressCity,
+                    addressDistrict: checkoutInfo.addressDistrict,
+                    addressState: checkoutInfo.addressState,
+                    addressPincode: checkoutInfo.addressPincode,
+                  });
                 }
               } catch (e) {
                 console.warn('Could not save address:', e);
               }
             }}
-            hasProfileAddress={!!checkoutInfo.customerAddress}
+            hasProfileAddress={!!checkoutInfo.addressArea}
             onGoLogin={() => navigate("login")}
             onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}
             allProducts={mergedProducts}
+            subtotal={cartSubtotal}
+            mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
           />
         );
       case 'map':

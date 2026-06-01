@@ -35,6 +35,7 @@ interface ProductDetailViewProps {
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
   onAddToCartFromStore?: (product: MarketplaceProduct, store: any) => void;
+  onBuyNow?: (product: MarketplaceProduct) => void;
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -341,6 +342,7 @@ export default function ProductDetailView({
   storesWithDistance = [],
   onAddToCart,
   onAddToCartFromStore,
+  onBuyNow,
 }: ProductDetailViewProps) {
   const { t } = useI18n();
   const product = products.find(p => p.id === productId) || products[0];
@@ -854,30 +856,18 @@ export default function ProductDetailView({
             </div>
           </HelperTooltip>
 
-          <div className="flex items-center gap-4 sm:ml-auto">
-            {product.isOnline ? (
-              <button
-                onClick={() => onAddToCart?.(product)}
-                className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
-              >
-                <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
-              </button>
-            ) : (
-              // "Contact for availability" CTA temporarily hidden (restore by uncommenting below and removing this null)
-              null
-              /*
-              <HelperTooltip side="top" textKey="productContact">
-                <button className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2">
-                  <ICONS.Phone className="w-5 h-5" /> {t('contactForAvailability')}
-                </button>
-              </HelperTooltip>
-              */
-            )}
+          <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
             <button
               onClick={() => onAddToCart?.(product)}
-              className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+              className="h-12 px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-2"
             >
               <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
+            </button>
+            <button
+              onClick={() => onBuyNow ? onBuyNow(product) : onAddToCart?.(product)}
+              className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+            >
+              Buy Now
             </button>
           </div>
         </div>

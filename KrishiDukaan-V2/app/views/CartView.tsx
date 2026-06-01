@@ -10,14 +10,20 @@ import { useI18n } from "../i18n/I18nContext";
 import { HelperIcon } from "../../components/helpers";
 import { ShieldCheck, CreditCard, Lock } from "lucide-react";
 
+type AddressField = "customerName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
+
 type CartViewProps = {
   items: CartItem[];
   isLoggedIn: boolean;
   isCustomer: boolean;
   customerName: string;
   customerPhone: string;
-  customerAddress: string;
-  onCustomerFieldChange: (field: "customerName" | "customerPhone" | "customerAddress", value: string) => void;
+  addressArea: string;
+  addressCity: string;
+  addressDistrict: string;
+  addressState: string;
+  addressPincode: string;
+  onCustomerFieldChange: (field: AddressField, value: string) => void;
   onQtyChange: (productId: string, qty: number) => void;
   onRemove: (productId: string) => void;
   onAssignStore: (productId: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number) => void;
@@ -31,6 +37,8 @@ type CartViewProps = {
   storesWithDistance: StoreWithDistance[];
   allProducts: MarketplaceProduct[];
   hasProfileAddress?: boolean;
+  subtotal: number;
+  mapsApiKey?: string;
 };
 
 function formatDistance(km: number): string {
@@ -412,7 +420,11 @@ export default function CartView({
   isCustomer,
   customerName,
   customerPhone,
-  customerAddress,
+  addressArea,
+  addressCity,
+  addressDistrict,
+  addressState,
+  addressPincode,
   onCustomerFieldChange,
   onQtyChange,
   onRemove,
@@ -427,14 +439,48 @@ export default function CartView({
   storesWithDistance,
   allProducts,
   hasProfileAddress,
+  subtotal,
+  mapsApiKey,
 }: CartViewProps) {
   const { t } = useI18n();
   const [saveAddress, setSaveAddress] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   const readyItems = items.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
-  const subtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
   const canCheckout = readyItems.length > 0;
+
+  const handleUseLocation = async () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        try {
+          const key = mapsApiKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+          const res = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${key}`
+          );
+          const data = await res.json();
+          const comps: any[] = data.results?.[0]?.address_components || [];
+          const get = (type: string) =>
+            comps.find((c: any) => c.types.includes(type))?.long_name || "";
+          onCustomerFieldChange("addressArea", get("sublocality_level_1") || get("neighborhood") || get("locality"));
+          onCustomerFieldChange("addressCity", get("locality") || get("administrative_area_level_2"));
+          onCustomerFieldChange("addressDistrict", get("administrative_area_level_2") || get("administrative_area_level_3"));
+          onCustomerFieldChange("addressState", get("administrative_area_level_1"));
+          onCustomerFieldChange("addressPincode", get("postal_code"));
+        } catch {
+          // fallback: just fill coordinates
+          onCustomerFieldChange("addressArea", `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => setLocating(false),
+      { timeout: 8000 }
+    );
+  };
 
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
@@ -538,52 +584,79 @@ export default function CartView({
 
         {isLoggedIn && isCustomer ? (
           <div className="mt-5 grid gap-3">
-            {/* Auto-filled notice */}
-            {(customerName || customerPhone) && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/15">
-                <svg className="w-3.5 h-3.5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                <p className="text-xs text-primary font-semibold">Details auto-filled from your profile. Edit below if needed.</p>
+            {/* Name */}
+            <input
+              value={customerName}
+              onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
+              placeholder={t('cartFullNamePlaceholder')}
+              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
+            />
+            {/* Phone — auto-populated from profile */}
+            <input
+              value={customerPhone}
+              onChange={(e) => onCustomerFieldChange("customerPhone", e.target.value)}
+              placeholder={t('cartPhonePlaceholder')}
+              type="tel"
+              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
+            />
+            {/* Address — structured fields */}
+            <div className="rounded-xl border border-outline-variant/40 bg-white p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Delivery Address</span>
+                <button
+                  type="button"
+                  onClick={handleUseLocation}
+                  disabled={locating}
+                  className="inline-flex items-center gap-1.5 text-[10px] font-bold text-primary hover:underline disabled:opacity-60"
+                >
+                  {locating ? (
+                    <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
+                  ) : (
+                    <ICONS.Location className="w-3 h-3" />
+                  )}
+                  {locating ? "Locating…" : "Use My Location"}
+                </button>
               </div>
-            )}
-
-            <div className="grid gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Full Name</label>
               <input
-                value={customerName}
-                onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
-                placeholder="Your full name"
-                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+                value={addressArea}
+                onChange={(e) => onCustomerFieldChange("addressArea", e.target.value)}
+                placeholder="Area / Locality"
+                className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm w-full"
               />
-            </div>
-
-            <div className="grid gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant px-1">Phone Number</label>
-              <input
-                value={customerPhone}
-                onChange={(e) => onCustomerFieldChange("customerPhone", e.target.value)}
-                placeholder="+91 XXXXX XXXXX"
-                type="tel"
-                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-              />
-            </div>
-
-            <div className="grid gap-1">
-              <div className="flex items-center justify-between px-1">
-                <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Delivery Address</label>
-                {hasProfileAddress && (
-                  <span className="text-[10px] text-primary font-bold">From profile</span>
-                )}
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={addressCity}
+                  onChange={(e) => onCustomerFieldChange("addressCity", e.target.value)}
+                  placeholder="City"
+                  className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
+                />
+                <input
+                  value={addressDistrict}
+                  onChange={(e) => onCustomerFieldChange("addressDistrict", e.target.value)}
+                  placeholder="District"
+                  className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
+                />
               </div>
-              <textarea
-                value={customerAddress}
-                onChange={(e) => onCustomerFieldChange("customerAddress", e.target.value)}
-                placeholder="House no., Street, Village/City, District, State, PIN"
-                rows={3}
-                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all resize-none"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={addressState}
+                  onChange={(e) => onCustomerFieldChange("addressState", e.target.value)}
+                  placeholder="State"
+                  className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
+                />
+                <input
+                  value={addressPincode}
+                  onChange={(e) => onCustomerFieldChange("addressPincode", e.target.value)}
+                  placeholder="Pincode"
+                  type="number"
+                  maxLength={6}
+                  className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
+                />
+              </div>
+              
               {/* Save address checkbox */}
-              {onSaveAddress && customerAddress.trim() && (
-                <label className="flex items-center gap-2 px-1 cursor-pointer group">
+              {onSaveAddress && (addressArea.trim() || addressCity.trim() || addressDistrict.trim() || addressState.trim() || addressPincode.trim()) && (
+                <label className="flex items-center gap-2 mt-2 px-1 cursor-pointer group">
                   <input
                     type="checkbox"
                     checked={saveAddress}
@@ -597,38 +670,38 @@ export default function CartView({
               )}
             </div>
 
-            {/* Payment button - Razorpay */}
-            {canCheckout && onRazorpayCheckout ? (
-              <div className="flex flex-col gap-2">
-                <button
-                  disabled={loading || !canCheckout || !customerName.trim() || !customerPhone.trim() || !customerAddress.trim()}
-                  onClick={() => onRazorpayCheckout(subtotal, saveAddress)}
-                  className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
-                >
-                  {loading ? (
-                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing Payment…</>
-                  ) : (
-                    <><CreditCard className="w-4 h-4" /> Pay ₹{subtotal.toLocaleString("en-IN")} &amp; Place Order</>
-                  )}
-                </button>
-                <div className="flex items-center justify-center gap-2 text-[11px] text-on-surface-variant/70">
-                  <Lock className="w-3 h-3" />
-                  <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
-                </div>
-              </div>
-            ) : canCheckout ? (
+            {/* Pay & Place Order */}
+            <div className="flex flex-col gap-2">
               <button
                 disabled={loading || !canCheckout}
-                onClick={() => void onCheckout()}
-                className="rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold disabled:opacity-60"
+                onClick={() => {
+                  if (saveAddress && onSaveAddress) {
+                    onSaveAddress(addressArea); // Trigger save via prop before checkout
+                  }
+                  void onCheckout();
+                }}
+                className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
               >
-                {loading ? t('cartPlacingOrders') : `${t('cartPlaceOrder')} (${readyItems.length})`}
+                {loading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Processing Payment…
+                  </>
+                ) : canCheckout ? (
+                  <><CreditCard className="w-4 h-4" /> Pay ₹{subtotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
+                ) : (
+                  t('cartSelectStoresToOrder')
+                )}
               </button>
-            ) : (
-              <button disabled className="rounded-xl bg-primary/40 text-white px-4 py-3 text-sm font-bold cursor-not-allowed">
-                {t('cartSelectStoresToOrder')}
-              </button>
-            )}
+              <div className="flex items-center justify-center gap-2 text-[11px] text-on-surface-variant/70">
+                <Lock className="w-3 h-3" />
+                <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
+              </div>
+            </div>
+          </div>
+        ) : isLoggedIn && !isCustomer ? (
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800">
+            Orders can only be placed from a customer account. Please log in with your customer account.
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">

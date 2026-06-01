@@ -8,28 +8,25 @@ const razorpay = new Razorpay({
 
 export async function POST(request: Request) {
   try {
-    const { amount, customerName, customerPhone, orderId } = await request.json();
+    const { amount, userId, note } = await request.json();
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
     }
 
-    const options = {
-      amount: Math.round(amount * 100), // convert to paise
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount * 100), // convert ₹ to paise
       currency: 'INR',
       receipt: `cart_${Date.now()}`,
       notes: {
-        customerName: customerName || '',
-        customerPhone: customerPhone || '',
-        cartOrderId: orderId || '',
-        type: 'cart_order',
+        userId: userId || '',
+        note: note || 'Cart Order',
       },
-    };
+    });
 
-    const order = await razorpay.orders.create(options);
-    return NextResponse.json({ orderId: order.id, amount: order.amount, currency: order.currency });
+    return NextResponse.json(order);
   } catch (error) {
-    console.error('Error creating Razorpay cart order:', error);
+    console.error('Cart order creation failed:', error);
     return NextResponse.json({ error: 'Failed to create payment order' }, { status: 500 });
   }
 }
