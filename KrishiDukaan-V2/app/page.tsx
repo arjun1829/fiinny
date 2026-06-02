@@ -679,7 +679,9 @@ export default function App() {
     let filtered = searchedProducts;
     
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter((product) => product.category === selectedCategory);
+      filtered = filtered.filter(
+        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
+      );
     }
 
     if (maxDistance < 1000) { 
@@ -706,17 +708,21 @@ export default function App() {
     navigate('product', { productId: id });
   };
 
-  const addToCart = (product: MarketplaceProduct) => {
+  const addToCart = (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
     // Use the best available discount (maxDiscountPct) as a preview for the pending item.
     // The price will be updated to the specific store's price when the user selects a store.
     const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
     const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
 
+
     setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
+      const variantUnit = variant?.unit;
+      const found = prev.find(
+        (i) => i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit,
+      );
       if (found) {
         return prev.map((i) =>
-          i.productId === product.id && i.sellMode === "pending"
+          i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit
             ? { ...i, qty: i.qty + 1 }
             : i
         );
@@ -729,15 +735,17 @@ export default function App() {
           sellerType: "retailer" as const,
           name: product.name,
           image: product.image,
-          price: maxPct > 0 ? discountedPrice : product.price,
-          originalPrice: maxPct > 0 ? product.price : undefined,
-          discountPct: maxPct > 0 ? maxPct : undefined,
+          price: variant ? variant.price : (maxPct > 0 ? discountedPrice : product.price),
+          originalPrice: !variant && maxPct > 0 ? product.price : undefined,
+          discountPct: !variant && maxPct > 0 ? maxPct : undefined,
           qty: 1,
           sellMode: "pending" as const,
+          ...(variantUnit ? { variantUnit } : {}),
         },
       ];
     });
-    setToastMsg(`${product.name} added to cart.`);
+    const label = variant ? `${product.name} (${variant.unit})` : product.name;
+    setToastMsg(`${label} added to cart.`);
     setToastType("success");
   };
 
@@ -881,8 +889,7 @@ export default function App() {
   };
 
 
-
-  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
+  const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number, variant?: { unit: string; price: number; stock?: number }) => {
     const sellerId: string =
       (store as any).retailerId ||
       (store as any).userId ||
@@ -894,35 +901,47 @@ export default function App() {
     }
     const sellerType: "retailer" | "manufacturer" =
       (store as any).retailerId ? "retailer" : "manufacturer";
+    const variantUnit = variant?.unit;
 
     setCartItems((prev) => {
-      const found = prev.find((i) => i.productId === product.id && i.sellerId === sellerId);
+      const found = prev.find(
+        (i) => i.productId === product.id && i.sellerId === sellerId && i.variantUnit === variantUnit,
+      );
       if (found) {
         // bump qty for existing online_delivery item from same seller
         return prev.map((i) =>
-          i.productId === product.id && i.sellerId === sellerId
+          i.productId === product.id && i.sellerId === sellerId && i.variantUnit === variantUnit
             ? { ...i, qty: i.qty + 1 }
             : i
         );
       }
-      const storePhone: string | undefined = store.phone;
-      const availability = product.availability?.find(
-        (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
-      );
-      const originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
-        ? availability.sellingPrice
-        : product.price;
-
-      // Resolve this store's specific discount from sellerDiscounts map
-      const storeDiscountPct: number =
-        (sellerId && product.sellerDiscounts?.[sellerId])
-          ? product.sellerDiscounts[sellerId]
-          : (storePhone && product.sellerDiscounts?.[storePhone])
-            ? product.sellerDiscounts[storePhone]
-            : (store.id && product.sellerDiscounts?.[store.id])
-              ? product.sellerDiscounts[store.id]
-              : 0;
-      const { finalPrice: storePrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+      // Use variant price if available, then passed price, then availability lookup with discount.
+      const storePhone: string | undefined = (store as any).phone || undefined;
+      let storePrice: number;
+      let originalStorePrice: number | undefined;
+      let storeDiscountPct = 0;
+      if (variant && variant.price > 0) {
+        storePrice = variant.price;
+      } else if (price && price > 0) {
+        storePrice = price;
+      } else {
+        const availability = product.availability?.find(
+          (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
+        );
+        originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
+          ? availability.sellingPrice
+          : product.price;
+        storeDiscountPct =
+          (sellerId && product.sellerDiscounts?.[sellerId])
+            ? product.sellerDiscounts[sellerId]
+            : (storePhone && product.sellerDiscounts?.[storePhone])
+              ? product.sellerDiscounts[storePhone]
+              : (store.id && product.sellerDiscounts?.[store.id])
+                ? product.sellerDiscounts[store.id]
+                : 0;
+        const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+        storePrice = finalPrice;
+      }
 
       // Remove any existing pending item for this product (prevents duplicate productId issue)
       const withoutPending = prev.filter(
@@ -935,6 +954,7 @@ export default function App() {
           sellerId,
           sellerType,
           sellerName: store.name || undefined,
+          ...(storePhone ? { sellerPhone: storePhone } : {}),
           name: product.name,
           image: product.image,
           price: storePrice,
@@ -942,10 +962,12 @@ export default function App() {
           discountPct: storeDiscountPct > 0 ? storeDiscountPct : undefined,
           qty: 1,
           sellMode: "online_delivery" as const,
+          ...(variantUnit ? { variantUnit } : {}),
         },
       ];
     });
-    setToastMsg(`${product.name} added to cart from ${store.name || 'this store'}.`);
+    const label = variant ? `${product.name} (${variant.unit})` : product.name;
+    setToastMsg(`${label} added to cart from ${store.name || 'this store'}.`);
     setToastType("success");
   }, []);
 
@@ -1027,6 +1049,11 @@ export default function App() {
             }}
             onCategoryClick={(cat) => {
               setSelectedCategory(cat);
+              navigate('market');
+            }}
+            onMarketSearch={(query) => {
+              setProductSearch(query);
+              setSelectedCategory('all');
               navigate('market');
             }}
             onAddToCart={addToCart}

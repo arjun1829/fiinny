@@ -104,6 +104,7 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
+    variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
   };
 }
 
@@ -316,6 +317,7 @@ export async function fetchRetailerInventoryRows(
         discountStartDate: timestampToDate(inv.discountStartDate),
         discountEndDate:   timestampToDate(inv.discountEndDate),
         effectiveDiscountPct: getActiveDiscountPct(inv),
+        variants: p.variants,
       },
     ];
   });

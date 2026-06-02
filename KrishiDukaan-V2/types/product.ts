@@ -46,6 +46,9 @@ export type MarketplaceProduct = {
   /** Lowest selling price across all stores that stock this product */
   lowestPrice?: number;
 
+  /** Variants — package sizes with per-variant price and stock */
+  variants?: { unit: string; price: number; stock?: number }[];
+
   /** Product detail enrichment */
   composition?: { name: string; value: string; color: string }[];
   benefits?: string[];

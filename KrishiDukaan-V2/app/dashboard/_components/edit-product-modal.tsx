@@ -5,6 +5,7 @@ import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Ta
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
+import { updateInventoryRecord } from "../_lib/inventory-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
 
@@ -95,10 +96,14 @@ function parseUnitToVariant(unit: string): Pick<Variant, "unitType" | "sizeAmoun
 
 function rowToVariants(row: ManufacturerProductRow): Variant[] {
   const src = row.variants.length ? row.variants : [{ unit: row.unit, price: row.price }];
-  return src.map((v) => ({
+  return src.map((v, i) => ({
     ...parseUnitToVariant(v.unit),
     price: String(v.price),
-    stock: "",
+    // Prefer per-variant stock saved in the variants array.
+    // Fall back to the flat inventory stockQuantity for the first variant (legacy records).
+    stock: v.stock !== undefined
+      ? String(v.stock)
+      : (i === 0 && row.stockQuantity > 0 ? String(row.stockQuantity) : ""),
   }));
 }
 
@@ -357,10 +362,14 @@ export function EditProductModal({ row, onClose, onSaved }: {
 
   const handleSave = async () => {
     if (!name.trim()) { setMessage({ type: "err", text: "Product name is required." }); return; }
-    const parsedVariants = variants.map((v) => ({
-      unit: buildUnit(v),
-      price: Number(v.price),
-    }));
+    const parsedVariants = variants.map((v) => {
+      const stockNum = v.stock !== "" ? Number(v.stock) : undefined;
+      return {
+        unit: buildUnit(v),
+        price: Number(v.price),
+        ...(stockNum !== undefined && Number.isFinite(stockNum) ? { stock: stockNum } : {}),
+      };
+    });
     if (parsedVariants.some((v) => !v.unit)) {
       setMessage({ type: "err", text: "Please complete the unit selection for each package." });
       return;
@@ -391,6 +400,18 @@ export function EditProductModal({ row, onClose, onSaved }: {
         dosage: dosage.trim() || "",
         bestForCrops: bestForCrops.trim() ? bestForCrops.split(",").map((s) => s.trim()).filter(Boolean) : [],
       });
+
+      // Update inventory: use first variant's stock; fall back to existing stockQuantity.
+      const firstVariantStock = parsedVariants[0]?.stock;
+      const stockQty = firstVariantStock !== undefined ? firstVariantStock : Number(variants[0]?.stock ?? "");
+      if (row.inventoryId && Number.isFinite(stockQty) && stockQty >= 0) {
+        await updateInventoryRecord(row.inventoryId, {
+          stockQuantity: stockQty,
+          sellingPrice: parsedVariants[0].price,
+          reorderThreshold: 0,
+        });
+      }
+
       setMessage({ type: "ok", text: "Saved successfully." });
       onSaved();
     } catch (err) {

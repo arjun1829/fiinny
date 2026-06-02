@@ -13,6 +13,7 @@ import {
   Package,
   ReceiptText,
   Star,
+  Truck,
   UserCircle2,
   UsersRound,
   X,
@@ -26,6 +27,7 @@ const baseNav = [
   { href: "/dashboard/analytics", labelKey: "sideAnalytics" as const, icon: BarChart3 },
   { href: "/dashboard/inventory", labelKey: "sideInventory" as const, icon: Package },
   { href: "/dashboard/orders", labelKey: "sideOrders" as const, icon: ReceiptText },
+  { href: "/dashboard/delivery", labelKey: "sideDelivery" as const, icon: Truck },
   { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
   { href: "/dashboard/profile", labelKey: "sideProfile" as const, icon: UserCircle2 },
 ] as const;
@@ -58,6 +60,8 @@ function hrefToTourKey(href: string): string {
       return "profile";
     case "/dashboard/settings":
       return "settings";
+    case "/dashboard/delivery":
+      return "delivery";
     case "/dashboard/manufacturer/retailers":
       return "retailer-network";
     default:

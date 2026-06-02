@@ -339,6 +339,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         // Discount fields — written by updateDiscountRecord when a seller sets a discount
         effectiveDiscountPct: typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0,
         maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
+        variants: Array.isArray(data.variants) ? data.variants : undefined,
+        images: Array.isArray(data.images) ? data.images : undefined,
       } as MarketplaceProduct;
     });
 
@@ -1104,6 +1106,81 @@ export async function fetchRetailerInventory(retailerId: string): Promise<any[]>
   }
 }
 
+import { parseVariantWeightKg } from "./utils/weight";
+
+async function fetchSellerGstin(
+  sellerId: string,
+  sellerType: SellerType,
+  directPhone?: string,
+): Promise<string | null> {
+  try {
+    let phone: string | null = directPhone || null;
+    if (!phone) {
+      const idxSnap = await getDoc(doc(db, "uidIndex", sellerId));
+      phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+    }
+    if (!phone && /^(\+91)?[6-9]\d{9}$/.test(sellerId.replace(/\s/g, ""))) {
+      phone = sellerId;
+    }
+    const col = sellerType === "manufacturer" ? "manufacturers" : "retailers";
+    const docId = phone || sellerId;
+    const sellerSnap = await getDoc(doc(db, col, docId));
+    if (sellerSnap.exists()) {
+      const g = String(sellerSnap.data().gstin ?? "").trim();
+      return g || null;
+    }
+  } catch { /* silent */ }
+  return null;
+}
+
+/**
+ * Resolves the delivery charge for a seller given total cart weight.
+ *
+ * Phone resolution order:
+ *  1. `directPhone` argument (from CartItem.sellerPhone — most reliable)
+ *  2. `uidIndex/{sellerId}` lookup (when sellerId is a Firebase Auth UID)
+ *  3. sellerId treated as phone directly (when store.id is the phone)
+ */
+async function fetchSellerDeliveryCharge(
+  sellerId: string,
+  totalWeightKg: number,
+  directPhone?: string,
+): Promise<number> {
+  try {
+    // Resolve seller phone using the three-path strategy
+    let phone: string | null = directPhone || null;
+
+    if (!phone) {
+      const idxSnap = await getDoc(doc(db, "uidIndex", sellerId));
+      phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") || null : null;
+    }
+
+    // Fallback: sellerId may already be the phone (retailers keyed by phone)
+    if (!phone && /^(\+91)?[6-9]\d{9}$/.test(sellerId.replace(/\s/g, ""))) {
+      phone = sellerId;
+    }
+
+    if (!phone) return 0;
+
+    const settingsSnap = await getDoc(doc(db, "deliverySettings", phone));
+    if (!settingsSnap.exists()) return 0;
+
+    const slabs = settingsSnap.data().weightSlabs as
+      | { minKg: number; maxKg: number; charge: number }[]
+      | undefined;
+    if (!slabs?.length) return 0;
+
+    const sorted = [...slabs].sort((a, b) => a.minKg - b.minKg);
+    for (const slab of sorted) {
+      if (totalWeightKg >= slab.minKg && totalWeightKg < slab.maxKg) return slab.charge;
+    }
+    // Open-ended last slab (covers weights above all configured maxKg values)
+    const last = sorted[sorted.length - 1];
+    if (last && totalWeightKg >= last.minKg) return last.charge;
+  } catch { /* silent */ }
+  return 0;
+}
+
 export async function createOrdersFromCart(params: {
   customerId: string;
   customerName: string;
@@ -1135,6 +1212,7 @@ export async function createOrdersFromCart(params: {
 
   for (const [key, groupItems] of Array.from(groups.entries())) {
     const [sellerType, sellerId] = key.split(":") as [SellerType, string];
+
     const normalizedItems = groupItems.map((item) => {
       const lineTotal = Number((item.price * item.qty).toFixed(2));
       const base: Record<string, unknown> = {
@@ -1143,6 +1221,7 @@ export async function createOrdersFromCart(params: {
         price: item.price,
         qty: item.qty,
         lineTotal,
+        ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;
@@ -1161,16 +1240,44 @@ export async function createOrdersFromCart(params: {
       }, 0).toFixed(2)
     );
 
-    const ref = await addDoc(collection(db, "orders"), {
+    const totalWeightKg = Number(
+      groupItems
+        .reduce((sum, item) => sum + item.qty * parseVariantWeightKg(item.variantUnit), 0)
+        .toFixed(3),
+    );
+
+    // Use the phone stored on CartItems (avoids UID→phone round-trip that fails
+    // when the seller's document ID is already their phone).
+    const sellerPhoneHint = groupItems[0]?.sellerPhone;
+
+    const [deliveryCharge, sellerGstNumber] = await Promise.all([
+      fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint),
+      fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
+    ]);
+
+    const grandTotal = Number((subtotal + deliveryCharge).toFixed(2));
+    const sellerName = groupItems[0]?.sellerName ?? "";
+
+    // Derive invoiceNumber from the document ref ID (generated before addDoc)
+    const orderRef = doc(collection(db, "orders"));
+    const invoiceNumber = `INV-${orderRef.id.slice(0, 8).toUpperCase()}`;
+
+    await setDoc(orderRef, {
       customerId,
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       customerAddress: customerAddress.trim(),
       sellerId,
       sellerType,
+      ...(sellerName ? { sellerName } : {}),
+      ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
       subtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
+      deliveryCharge,
+      grandTotal,
+      totalWeightKg,
+      invoiceNumber,
       deliveryMode: "delivery",
       status: "placed",
       ...(payment ? { payment } : {}),
@@ -1179,7 +1286,7 @@ export async function createOrdersFromCart(params: {
       updatedAt: serverTimestamp(),
     });
 
-    createdOrderIds.push(ref.id);
+    createdOrderIds.push(orderRef.id);
   }
 
   return createdOrderIds;

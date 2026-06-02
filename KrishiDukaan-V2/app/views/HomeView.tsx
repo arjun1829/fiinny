@@ -16,6 +16,7 @@ interface HomeViewProps {
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
+  onMarketSearch?: (query: string) => void;
   onAddToCart?: (product: MarketplaceProduct) => void;
   onRegisterClick?: () => void;
 }
@@ -29,7 +30,7 @@ type Slide = {
   bgClass: string;
   bgImg?: string;
   imgUrl?: string;
-  onCta: 'powerPlus' | 'hub' | 'retailer';
+  onCta: 'powerPlus' | 'market' | 'retailer';
 };
 
 export default function HomeView({
@@ -38,6 +39,7 @@ export default function HomeView({
   onProductClick,
   onHubClick,
   onCategoryClick,
+  onMarketSearch,
   onAddToCart,
   onRegisterClick,
 }: HomeViewProps) {
@@ -71,7 +73,7 @@ export default function HomeView({
       ctaLabel: 'Explore Products',
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1400&q=80',
-      onCta: 'hub',
+      onCta: 'market',
     },
     {
       id: 'genuine',
@@ -86,7 +88,7 @@ export default function HomeView({
       ctaLabel: 'Explore products',
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=1400&q=80',
-      onCta: 'hub',
+      onCta: 'market',
     },
     {
       id: 'manufacturer',
@@ -127,21 +129,26 @@ export default function HomeView({
   }, [slides.length]);
 
   const goToSlideCta = (s: Slide) => {
-    if (s.onCta === 'powerPlus' && powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
-    else if (s.onCta === 'hub') onHubClick();
-    else if (s.onCta === 'retailer') (onRegisterClick ?? onHubClick)();
+    if (s.onCta === 'powerPlus') {
+      if (powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
+      else onMarketSearch?.('Power Plus');
+    } else if (s.onCta === 'market') {
+      onCategoryClick?.('all');
+    } else if (s.onCta === 'retailer') {
+      onRegisterClick?.();
+    }
   };
 
-  // Quick-access category tiles. Map clicks to Market with that category preselected.
+  // Quick-access category tiles — IDs match Firestore product.category values (case-insensitive).
   const categoryTiles = [
-    { id: 'pesticides', label: t('catPesticides'), imgUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-emerald-50 to-emerald-100' },
-    { id: 'fertilizers', label: t('catFertilizers'), imgUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-amber-50 to-orange-100' },
-    { id: 'pesticides', label: t('catHerbicides'), imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-rose-50 to-pink-100' },
-    { id: 'fertilizers', label: t('catBioStimulants'), imgUrl: 'https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-teal-50 to-cyan-100' },
-    { id: 'tools', label: t('catSprayers'), imgUrl: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-sky-50 to-blue-100' },
-    { id: 'seeds', label: t('catSeeds'), imgUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-yellow-50 to-amber-100' },
-    { id: 'tools', label: t('catTools'), imgUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-slate-50 to-gray-100' },
-    { id: 'all', label: t('catViewAll'), imgUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-primary/10 to-primary/20' },
+    { id: 'Pesticides',    label: t('catPesticides'),    imgUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-emerald-50 to-emerald-100' },
+    { id: 'Fertilizers',  label: t('catFertilizers'),  imgUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-amber-50 to-orange-100' },
+    { id: 'Herbicides',   label: t('catHerbicides'),   imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-rose-50 to-pink-100' },
+    { id: 'Bio Pesticides', label: t('catBioStimulants'), imgUrl: 'https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-teal-50 to-cyan-100' },
+    { id: 'Sprayers',     label: t('catSprayers'),     imgUrl: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-sky-50 to-blue-100' },
+    { id: 'Seeds',        label: t('catSeeds'),        imgUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-yellow-50 to-amber-100' },
+    { id: 'Tools',        label: t('catTools'),        imgUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-slate-50 to-gray-100' },
+    { id: 'all',          label: t('catViewAll'),      imgUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-primary/10 to-primary/20' },
   ];
 
   return (
@@ -179,15 +186,13 @@ export default function HomeView({
                       <p className="text-white/85 text-base md:text-lg mb-7 max-w-md">
                         {s.subtitle}
                       </p>
-                      <HelperTooltip side="bottom" textKey="homeHeroCta">
-                        <button
-                          onClick={() => goToSlideCta(s)}
-                          className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl hover:scale-105 transition-transform shadow-xl inline-flex items-center gap-2"
-                        >
-                          <ICONS.ArrowRight className="w-5 h-5" />
-                          {s.ctaLabel}
-                        </button>
-                      </HelperTooltip>
+                      <button
+                        onClick={() => goToSlideCta(s)}
+                        className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl shadow-xl inline-flex items-center gap-2"
+                      >
+                        <ICONS.ArrowRight className="w-5 h-5" />
+                        {s.ctaLabel}
+                      </button>
                     </div>
                     {s.imgUrl && (
                       <div className="flex-shrink-0 w-48 md:w-64">
@@ -408,9 +413,8 @@ export default function HomeView({
       {/* Service strip */}
       <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <HelperTooltip side="top" textKey="homeServiceRetailer">
-            <button
-              onClick={() => (onRegisterClick ?? onHubClick)()}
+          <button
+              onClick={() => onRegisterClick?.()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-amber-500 to-orange-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
               <ICONS.Market className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
@@ -424,9 +428,7 @@ export default function HomeView({
                 </span>
               </div>
             </button>
-          </HelperTooltip>
-          <HelperTooltip side="top" textKey="homeServiceAdvisory">
-            <button
+          <button
               onClick={() => onHubClick()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-sky-500 to-indigo-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
@@ -441,7 +443,6 @@ export default function HomeView({
                 </span>
               </div>
             </button>
-          </HelperTooltip>
         </div>
       </section>
     </div>
