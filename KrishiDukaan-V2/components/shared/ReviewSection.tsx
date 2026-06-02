@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react';
-import { getProductReviews, getStoreReviews, addProductReview, addStoreReview, Review } from '../../app/reviews';
+import {
+  getProductReviews,
+  getStoreReviews,
+  addProductReview,
+  addStoreReview,
+  updateProductReview,
+  updateStoreReview,
+  getUserProductReview,
+  getUserStoreReview,
+  Review,
+} from '../../app/reviews';
 import { auth } from '../../app/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../app/firebase';
-import { Star, MessageSquare, User } from 'lucide-react';
+import { Star, MessageSquare, Pencil } from 'lucide-react';
 
 export function ReviewSection({
   targetId,
@@ -23,7 +33,9 @@ export function ReviewSection({
   const [hoverRating, setHoverRating] = useState(0);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  
+  const [isEditing, setIsEditing] = useState(false);
+  const [existingReview, setExistingReview] = useState<Review | null>(null);
+
   // Auth state
   const [userPhone, setUserPhone] = useState('');
   const [userName, setUserName] = useState('');
@@ -33,7 +45,6 @@ export function ReviewSection({
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsLoggedIn(true);
-        // Try to get user's phone and name
         let phone = '';
         let name = user.displayName || 'Anonymous Farmer';
         try {
@@ -56,11 +67,13 @@ export function ReviewSection({
         setIsLoggedIn(false);
         setUserPhone('');
         setUserName('');
+        setExistingReview(null);
       }
     });
     return () => unsub();
   }, []);
 
+  // Fetch all reviews
   useEffect(() => {
     if (!targetId) return;
     setLoading(true);
@@ -71,6 +84,18 @@ export function ReviewSection({
       .finally(() => setLoading(false));
   }, [targetId, targetType]);
 
+  // Check if current user already has a review
+  useEffect(() => {
+    if (!targetId || !userPhone || !isLoggedIn) {
+      setExistingReview(null);
+      return;
+    }
+    const fetchExisting = targetType === 'product'
+      ? getUserProductReview(targetId, userPhone)
+      : getUserStoreReview(targetId, userPhone);
+    fetchExisting.then(setExistingReview).catch(() => setExistingReview(null));
+  }, [targetId, userPhone, isLoggedIn, targetType]);
+
   // Report the live aggregate up to the parent so cards/badges can reflect it immediately.
   useEffect(() => {
     if (!onAggregateChange || !targetId) return;
@@ -79,27 +104,56 @@ export function ReviewSection({
     onAggregateChange(targetId, avg, count);
   }, [reviews, targetId, onAggregateChange]);
 
+  const openNewReview = () => {
+    setIsEditing(false);
+    setRating(5);
+    setText('');
+    setShowForm(true);
+  };
+
+  const openEditReview = () => {
+    if (!existingReview) return;
+    setIsEditing(true);
+    setRating(existingReview.rating);
+    setText(existingReview.reviewText);
+    setShowForm(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isLoggedIn || !text.trim() || !userPhone) return;
-    
+
     setSubmitting(true);
     try {
-      if (targetType === 'product') {
-        await addProductReview(targetId, userPhone, userName, rating, text);
-        const updated = await getProductReviews(targetId);
-        setReviews(updated);
+      if (isEditing && existingReview) {
+        // Edit existing review
+        if (targetType === 'product') {
+          await updateProductReview(existingReview.id, rating, text);
+        } else {
+          await updateStoreReview(existingReview.id, rating, text);
+        }
       } else {
-        await addStoreReview(targetId, userPhone, userName, rating, text);
-        const updated = await getStoreReviews(targetId);
-        setReviews(updated);
+        // Submit new review
+        if (targetType === 'product') {
+          await addProductReview(targetId, userPhone, userName, rating, text);
+        } else {
+          await addStoreReview(targetId, userPhone, userName, rating, text);
+        }
       }
+      // Refresh reviews and existing review
+      const [updated, myReview] = await Promise.all([
+        targetType === 'product' ? getProductReviews(targetId) : getStoreReviews(targetId),
+        targetType === 'product' ? getUserProductReview(targetId, userPhone) : getUserStoreReview(targetId, userPhone),
+      ]);
+      setReviews(updated);
+      setExistingReview(myReview);
       setShowForm(false);
       setText('');
       setRating(5);
+      setIsEditing(false);
     } catch (err) {
-      console.error("Failed to submit review", err);
-      alert("Failed to submit review. You might not have permission.");
+      console.error('Failed to submit review', err);
+      alert('Failed to submit review. You might not have permission.');
     } finally {
       setSubmitting(false);
     }
@@ -116,20 +170,30 @@ export function ReviewSection({
 
   return (
     <section className="bg-white rounded-3xl border border-surface-container shadow-sm p-6 md:p-8 flex flex-col gap-6 mt-8">
-      <div className="flex items-center justify-between border-b border-surface-container-low pb-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-surface-container-low pb-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-xl text-primary">
             <MessageSquare className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-extrabold text-on-surface tracking-tight">Customer Reviews</h2>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-on-surface tracking-tight">Customer Reviews</h2>
         </div>
         {!showForm && isLoggedIn && (
-          <button 
-            onClick={() => setShowForm(true)}
-            className="px-5 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
-          >
-            Write a Review
-          </button>
+          existingReview ? (
+            <button
+              onClick={openEditReview}
+              className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-2.5 bg-surface-container text-on-surface font-bold rounded-xl border border-outline-variant/40 hover:bg-surface-container-high hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
+            >
+              <Pencil className="w-4 h-4" />
+              Edit Your Review
+            </button>
+          ) : (
+            <button
+              onClick={openNewReview}
+              className="w-full sm:w-auto px-5 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
+            >
+              Write a Review
+            </button>
+          )
         )}
       </div>
 
@@ -144,15 +208,45 @@ export function ReviewSection({
         </div>
       )}
 
-      {showForm && isLoggedIn && (
-        <form onSubmit={handleSubmit} className="bg-surface-container-lowest p-6 rounded-3xl flex flex-col gap-5 border border-surface-container shadow-inner">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+      {/* Existing review banner */}
+      {isLoggedIn && existingReview && !showForm && (
+        <div className="bg-gradient-to-r from-primary/5 to-secondary/5 border border-primary/20 rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
               {userName.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h3 className="font-bold text-on-surface leading-none">{userName}</h3>
-              <p className="text-xs text-on-surface-variant mt-1 uppercase tracking-widest font-semibold">Posting publicly</p>
+              <p className="text-xs font-black uppercase tracking-widest text-primary mb-0.5">Your Review</p>
+              <div className="flex items-center gap-1.5">
+                {[1,2,3,4,5].map(s => (
+                  <Star key={s} className={`w-3.5 h-3.5 ${s <= existingReview.rating ? 'fill-amber-400 text-amber-400' : 'text-surface-container-highest fill-surface-container-low'}`} />
+                ))}
+                <span className="text-xs text-on-surface-variant ml-1 font-medium">{existingReview.reviewText.slice(0, 60)}{existingReview.reviewText.length > 60 ? '…' : ''}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={openEditReview}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary border border-primary/30 rounded-lg hover:bg-primary/10 transition-colors"
+          >
+            <Pencil className="w-3 h-3" /> Edit
+          </button>
+        </div>
+      )}
+
+      {showForm && isLoggedIn && (
+        <form onSubmit={handleSubmit} className="bg-surface-container-lowest p-6 rounded-3xl flex flex-col gap-5 border border-surface-container shadow-inner">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="font-bold text-on-surface leading-none">{userName}</h3>
+                <p className="text-xs text-on-surface-variant mt-1 uppercase tracking-widest font-semibold">
+                  {isEditing ? 'Editing your review' : 'Posting publicly'}
+                </p>
+              </div>
             </div>
           </div>
           
@@ -191,7 +285,7 @@ export function ReviewSection({
           <div className="flex justify-end gap-3 mt-2">
             <button 
               type="button" 
-              onClick={() => setShowForm(false)}
+              onClick={() => { setShowForm(false); setIsEditing(false); }}
               className="px-6 py-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-bold rounded-xl transition-all text-sm uppercase tracking-wider"
             >
               Cancel
@@ -201,7 +295,7 @@ export function ReviewSection({
               disabled={submitting}
               className="px-8 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 text-sm uppercase tracking-wider"
             >
-              {submitting ? 'Posting...' : 'Post Review'}
+              {submitting ? (isEditing ? 'Updating...' : 'Posting...') : (isEditing ? 'Update Review' : 'Post Review')}
             </button>
           </div>
         </form>
@@ -210,7 +304,7 @@ export function ReviewSection({
       {reviews.length > 0 ? (
         <div className="grid grid-cols-1 gap-4">
           {reviews.map(review => (
-            <div key={review.id} className="bg-surface-container-lowest border border-surface-container p-5 rounded-2xl hover:border-primary/30 transition-colors group">
+            <div key={review.id} className={`border p-5 rounded-2xl hover:border-primary/30 transition-colors group ${review.reviewerPhone === userPhone ? 'bg-primary/5 border-primary/20' : 'bg-surface-container-lowest border-surface-container'}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold">
@@ -218,26 +312,45 @@ export function ReviewSection({
                   </div>
                   <div className="flex flex-col">
                     <span className="font-bold text-on-surface">{review.reviewerName}</span>
-                    <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">Verified Buyer</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">Verified Buyer</span>
+                      {review.reviewerPhone === userPhone && (
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">You</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-0.5 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">
-                  <span className="text-xs font-black text-amber-700 mr-1">{review.rating.toFixed(1)}</span>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className={`w-3.5 h-3.5 ${
-                        star <= review.rating
-                          ? 'fill-amber-400 text-amber-400'
-                          : 'text-amber-200 fill-amber-50'
-                      }`}
-                    />
-                  ))}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0.5 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">
+                    <span className="text-xs font-black text-amber-700 mr-1">{review.rating.toFixed(1)}</span>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={`w-3.5 h-3.5 ${
+                          star <= review.rating
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'text-amber-200 fill-amber-50'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {review.reviewerPhone === userPhone && (
+                    <button
+                      onClick={openEditReview}
+                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
+                      title="Edit your review"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
               <p className="text-on-surface-variant text-sm leading-relaxed whitespace-pre-wrap ml-12 pl-1 mt-1">
                 {review.reviewText}
               </p>
+              {review.updatedAt && (
+                <p className="text-[10px] text-on-surface-variant/50 ml-12 pl-1 mt-1 font-medium">edited</p>
+              )}
             </div>
           ))}
         </div>

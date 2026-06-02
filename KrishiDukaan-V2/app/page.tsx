@@ -24,14 +24,16 @@ import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { auth, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, trackPageView, requestRoleUpgrade } from './firebase';
+import { auth, db, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, updateOrderPayment, trackPageView, requestRoleUpgrade } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { MarketplaceProduct } from '../types/product';
 import { LatLng } from './utils/haversine';
 import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } from './utils/geolocation';
 import { computeStoreDistances } from './utils/nearby';
 import type { CartItem } from '../types/order';
+import { calcDiscount } from './utils/discount';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
@@ -409,15 +411,15 @@ export default function App() {
             totalSeats: profileData.totalSeats || 0,
             productCount: profileData.productCount || 0
           });
-          setCheckoutInfo((prev) => ({
-            customerName: prev.customerName || profileData.name || "",
-            customerPhone: prev.customerPhone || profileData.phone || "",
-            addressArea: prev.addressArea || "",
-            addressCity: prev.addressCity || "",
-            addressDistrict: prev.addressDistrict || "",
-            addressState: prev.addressState || "",
-            addressPincode: prev.addressPincode || "",
-          }));
+          setCheckoutInfo({
+            customerName: profileData.name || "",
+            customerPhone: profileData.phone || "",
+            addressArea: (profileData as any).addressArea || "",
+            addressCity: (profileData as any).addressCity || "",
+            addressDistrict: (profileData as any).addressDistrict || "",
+            addressState: (profileData as any).addressState || "",
+            addressPincode: (profileData as any).addressPincode || "",
+          });
 
           // Paywall: only block if not paid AND not an invited retailer.
           // Invited retailers have isPaid set to true by the backfill; if it hasn't
@@ -431,6 +433,15 @@ export default function App() {
         setUser(null);
         setUserRole('customer');
         setUserProfile({ name: '', phone: '', email: '', isPaid: false });
+        setCheckoutInfo({ 
+          customerName: '', 
+          customerPhone: '', 
+          addressArea: '',
+          addressCity: '',
+          addressDistrict: '',
+          addressState: '',
+          addressPincode: ''
+        });
       }
     });
 
@@ -696,6 +707,11 @@ export default function App() {
   };
 
   const addToCart = (product: MarketplaceProduct) => {
+    // Use the best available discount (maxDiscountPct) as a preview for the pending item.
+    // The price will be updated to the specific store's price when the user selects a store.
+    const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
+    const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
+
     setCartItems((prev) => {
       const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
       if (found) {
@@ -713,7 +729,9 @@ export default function App() {
           sellerType: "retailer" as const,
           name: product.name,
           image: product.image,
-          price: product.price,
+          price: maxPct > 0 ? discountedPrice : product.price,
+          originalPrice: maxPct > 0 ? product.price : undefined,
+          discountPct: maxPct > 0 ? maxPct : undefined,
           qty: 1,
           sellMode: "pending" as const,
         },
@@ -738,7 +756,7 @@ export default function App() {
     .reduce((sum, item) => sum + item.price * item.qty, 0);
 
   // Core order creation — called after successful payment
-  const createOrdersAfterPayment = async () => {
+  const createOrdersAfterPayment = async (paymentDetails?: any) => {
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
     const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
 
@@ -748,6 +766,7 @@ export default function App() {
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
       items: readyItems,
+      payment: paymentDetails,
     });
     setCartItems(pendingItems);
     const pendingMsg = pendingItems.length > 0
@@ -784,12 +803,16 @@ export default function App() {
     setCheckoutMessage(null);
 
     try {
-      // Step 1: Create Razorpay order on server
+      // Step 1: Create Razorpay order on server (server verifies prices — never trust client amount)
       const orderRes = await fetch("/api/payment/create-cart-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: cartSubtotal,
+          items: readyItems.map((i) => ({
+            productId: i.productId,
+            sellerId:  i.sellerId,
+            qty:       i.qty,
+          })),
           userId: user.uid,
           note: `Cart: ${readyItems.length} item(s)`,
         }),
@@ -825,7 +848,14 @@ export default function App() {
             const verifyData = await verifyRes.json();
             if (verifyData.status === "ok") {
               // Step 4: Create Firestore orders
-              await createOrdersAfterPayment();
+              await createOrdersAfterPayment({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                amount: rzpOrder.amount / 100,
+                status: "paid",
+                paidAt: new Date().toISOString(),
+              });
             } else {
               setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
@@ -849,6 +879,8 @@ export default function App() {
       setCheckoutLoading(false);
     }
   };
+
+
 
   const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any) => {
     const sellerId: string =
@@ -877,9 +909,21 @@ export default function App() {
       const availability = product.availability?.find(
         (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
       );
-      const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
+      const originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
         ? availability.sellingPrice
         : product.price;
+
+      // Resolve this store's specific discount from sellerDiscounts map
+      const storeDiscountPct: number =
+        (sellerId && product.sellerDiscounts?.[sellerId])
+          ? product.sellerDiscounts[sellerId]
+          : (storePhone && product.sellerDiscounts?.[storePhone])
+            ? product.sellerDiscounts[storePhone]
+            : (store.id && product.sellerDiscounts?.[store.id])
+              ? product.sellerDiscounts[store.id]
+              : 0;
+      const { finalPrice: storePrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+
       // Remove any existing pending item for this product (prevents duplicate productId issue)
       const withoutPending = prev.filter(
         (i) => !(i.productId === product.id && i.sellMode === "pending")
@@ -894,6 +938,8 @@ export default function App() {
           name: product.name,
           image: product.image,
           price: storePrice,
+          originalPrice: storeDiscountPct > 0 ? originalStorePrice : undefined,
+          discountPct: storeDiscountPct > 0 ? storeDiscountPct : undefined,
           qty: 1,
           sellMode: "online_delivery" as const,
         },
@@ -1053,24 +1099,69 @@ export default function App() {
             onCustomerFieldChange={(field, value) =>
               setCheckoutInfo((prev) => ({ ...prev, [field]: value }))
             }
-            onQtyChange={(productId, qty) =>
+            onQtyChange={(itemKey, qty) =>
               setCartItems((prev) =>
-                prev.map((item) => (item.productId === productId ? { ...item, qty } : item))
+                prev.map((item) => (`${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? { ...item, qty } : item))
               )
             }
-            onRemove={(productId) =>
-              setCartItems((prev) => prev.filter((item) => item.productId === productId ? false : true))
+            onRemove={(itemKey) =>
+              setCartItems((prev) => prev.filter((item) => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? false : true))
             }
-            onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
-              setCartItems((prev) =>
-                prev.map((item) =>
-                  item.productId === productId && (item.sellMode === "pending" || item.sellMode === "online_delivery")
-                    ? { ...item, sellerId, sellerType, sellerName, sellMode: "online_delivery" as const, ...(storePrice ? { price: storePrice } : {}) }
+            onAssignStore={(itemKey, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) =>
+              setCartItems((prev) => {
+                const pendingItem = prev.find(item => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey);
+                if (!pendingItem) return prev;
+
+                const existingItem = prev.find(item => item.productId === pendingItem.productId && item.sellerId === sellerId && item.sellMode === "online_delivery" && `${item.productId}_${item.sellerId}_${item.sellMode}` !== itemKey);
+
+                if (existingItem) {
+                  return prev
+                    .map(item => {
+                      if (item === existingItem) {
+                        return { ...item, qty: item.qty + pendingItem.qty };
+                      }
+                      if (item === pendingItem) {
+                        return null;
+                      }
+                      return item;
+                    })
+                    .filter(Boolean) as CartItem[];
+                }
+
+                return prev.map((item) =>
+                  `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                    ? {
+                        ...item,
+                        sellerId, sellerType, sellerName,
+                        sellMode: "online_delivery" as const,
+                        ...(storePrice != null ? { price: storePrice } : {}),
+                        ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
+                        ...(originalPrice != null ? { originalPrice } : { originalPrice: undefined }),
+                      }
                     : item
-                )
-              )
+                );
+              })
             }
             onCheckout={placeOrders}
+            onSaveAddress={async () => {
+              if (!user) return;
+              try {
+                const idxSnap = await getDoc(doc(db, 'uidIndex', user.uid));
+                const phone = idxSnap.exists() ? idxSnap.data().phone : null;
+                if (phone) {
+                  await updateDoc(doc(db, 'users', phone), { 
+                    addressArea: checkoutInfo.addressArea,
+                    addressCity: checkoutInfo.addressCity,
+                    addressDistrict: checkoutInfo.addressDistrict,
+                    addressState: checkoutInfo.addressState,
+                    addressPincode: checkoutInfo.addressPincode,
+                  });
+                }
+              } catch (e) {
+                console.warn('Could not save address:', e);
+              }
+            }}
+            hasProfileAddress={!!checkoutInfo.addressArea}
             onGoLogin={() => navigate("login")}
             onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
@@ -1356,29 +1447,22 @@ export default function App() {
             { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
             { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
             { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
-            hasDashboardShortcut
-              ? {
-                  key: 'dashboard',
-                  icon: ICONS.Dashboard,
-                  label: t('dashboard'),
-                  active: false,
-                  onClick: () => { window.location.href = dashboardHref; },
+            // Last item is always "Account" — behaviour depends on auth state
+            {
+              key: 'account',
+              icon: ICONS.Account,
+              label: t('account'),
+              active: currentView === 'profile' || currentView === 'login' || currentView === 'signup',
+              onClick: () => {
+                if (!user) {
+                  navigate('login');
+                } else if (hasDashboardShortcut) {
+                  window.location.href = dashboardHref;
+                } else {
+                  navigate('profile');
                 }
-              : user && userRole === 'customer'
-                ? {
-                    key: 'orders',
-                    icon: ICONS.Orders,
-                    label: t('orders'),
-                    active: currentView === 'orders',
-                    onClick: () => navigate('orders'),
-                  }
-                : {
-                    key: 'help',
-                    icon: ICONS.Help,
-                    label: t('help'),
-                    active: currentView === 'help',
-                    onClick: () => navigate('help'),
-                  }
+              },
+            },
           ].map((item) => (
             <button
               key={item.key}

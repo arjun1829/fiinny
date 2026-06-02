@@ -2,6 +2,8 @@ import { MarketplaceProduct } from "../../types/product";
 import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { calcDiscount } from '../utils/discount';
+import { Tag } from 'lucide-react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
@@ -532,12 +534,35 @@ export default function ProductDetailView({
         <div className="flex flex-col gap-4">
           <motion.div
             layoutId={`prod-img-${product.id}`}
-            className="rounded-3xl overflow-hidden bg-[#f7f5f0] shadow-ambient border border-surface-container relative flex items-center justify-center"
+            className={`rounded-3xl overflow-hidden bg-[#f7f5f0] shadow-ambient border relative flex items-center justify-center ${
+              (product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0) > 0
+                ? 'border-green-400 shadow-green-100'
+                : 'border-surface-container'
+            }`}
             style={{ minHeight: '280px', maxHeight: '480px', height: 'auto' }}
           >
             <img src={activeImage} className="w-full object-contain" style={{ maxHeight: '480px' }} alt={product.name} />
+
+            {/* Corner offer ribbon on product image */}
+            {(product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0) > 0 && (() => {
+              const pct = product.maxDiscountPct ?? product.effectiveDiscountPct!;
+              return (
+                <div className="absolute top-0 left-0 w-28 h-28 overflow-hidden pointer-events-none">
+                  <div
+                    className="absolute bg-green-500 shadow-md text-white text-center"
+                    style={{ width: 150, top: 26, left: -38, transform: 'rotate(-45deg)', padding: '6px 0' }}
+                  >
+                    <span className="flex items-center justify-center gap-1 text-xs font-black tracking-wide">
+                      <Tag className="h-3 w-3 shrink-0" />
+                      Up to {pct}% OFF
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
             <HelperTooltip side="bottom" textKey="productQualityBadge">
-              <div className="absolute top-6 left-6 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
+              <div className="absolute top-6 right-6 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
                 <ICONS.Check className="w-4 h-4" />
                 {t('premiumGrade')}
               </div>
@@ -585,11 +610,46 @@ export default function ProductDetailView({
                 (a.storePhone && a.storePhone === store.id),
             );
             const isExpanded = expandedStoreId === store.id;
+
+            // Resolve price: availability entry → store's own price field → product price
+            const resolvedPrice: number | undefined = (() => {
+              if (availability?.sellingPrice && availability.sellingPrice > 0) return availability.sellingPrice;
+              const sp = (store as any).sellingPrice ?? (store as any).price;
+              if (sp && sp > 0) return Number(sp);
+              if (product.price > 0) return product.price;
+              return undefined;
+            })();
+
+            // Resolve discount: look up this store's OWN discount from the per-seller map.
+            // sellerDiscounts is keyed by seller UID or phone — built in fetchMarketplaceProducts
+            // from each individual product doc's effectiveDiscountPct.
+            // We never use the merged effectiveDiscountPct (which is the max across ALL sellers)
+            // and we never read availability.discountPct (which can be stale/incorrect).
+            const resolvedDiscountPct: number = (() => {
+              const map = product.sellerDiscounts ?? {};
+              // Try store's own userId first (most reliable)
+              const uid = String((store as any).userId ?? '');
+              if (uid && map[uid]) return map[uid];
+              // Then by phone
+              if (storePhone && map[storePhone]) return map[storePhone];
+              // Then by store.id (could be a phone or UID depending on collection)
+              if (store.id && map[store.id]) return map[store.id];
+              return 0;
+            })();
+
+            const hasStoreOffer = resolvedDiscountPct > 0;
+            const { finalPrice: resolvedFinalPrice } =
+              calcDiscount(resolvedPrice ?? 0, resolvedDiscountPct);
+
             return (
               <div
                 key={store.id}
                 className={`rounded-2xl border-2 transition-all cursor-pointer overflow-hidden ${
-                  isExpanded ? 'border-primary bg-white shadow-ambient' : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
+                  isExpanded
+                    ? 'border-primary bg-white shadow-ambient'
+                    : hasStoreOffer
+                      ? 'border-green-400 bg-green-50/20 hover:border-green-500'
+                      : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
                 }`}
               >
                 {/* Always-visible summary row */}
@@ -606,7 +666,14 @@ export default function ProductDetailView({
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="block font-bold text-on-surface text-sm md:text-base leading-snug break-words md:truncate">{store.name}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-on-surface text-sm md:text-base leading-snug break-words">{store.name}</span>
+                        {hasStoreOffer && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-green-600 px-2 py-0.5 text-[9px] font-black text-white shadow-sm shrink-0">
+                            <Tag className="h-2.5 w-2.5" />{resolvedDiscountPct}% OFF
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 md:mt-0.5">
                         <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 whitespace-nowrap">
                           <ICONS.Location className="w-3 h-3 shrink-0" />{(store as any).distanceLabel || store.distance || t('nearby')}
@@ -629,35 +696,55 @@ export default function ProductDetailView({
                             </span>
                           );
                         })()}
-                        {/* Stock badge + price flow inline with metadata on mobile so they never squeeze the name */}
+                        {/* Stock badge + price — mobile */}
                         <span className="flex items-center gap-2 md:hidden">
-                          {availability?.sellingPrice && availability.sellingPrice > 0 && (
-                            <span className="text-sm font-bold text-secondary whitespace-nowrap">
-                              ₹{availability.sellingPrice.toLocaleString('en-IN')}
+                          {resolvedPrice && (
+                            hasStoreOffer ? (
+                              <span className="flex items-baseline gap-1 whitespace-nowrap">
+                                <span className="text-sm font-bold text-green-700">₹{resolvedFinalPrice.toLocaleString('en-IN')}</span>
+                                <span className="text-[10px] text-on-surface-variant line-through">₹{resolvedPrice.toLocaleString('en-IN')}</span>
+                              </span>
+                            ) : (
+                              <span className="text-sm font-bold text-secondary whitespace-nowrap">
+                                ₹{resolvedPrice.toLocaleString('en-IN')}
+                              </span>
+                            )
+                          )}
+                          {availability?.stockLevel && (
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${
+                              availability.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                            }`}>
+                              {availability.stockLevel}
                             </span>
                           )}
-                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap ${
-                            availability?.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                          }`}>
-                            {availability?.stockLevel}
-                          </span>
                         </span>
                       </div>
                     </div>
-                    {/* Desktop-only right cluster (price / stock badge / chevron) — unchanged desktop layout */}
+                    {/* Desktop-only right cluster (price / discount / stock / chevron) */}
                     <div className="hidden md:flex items-center gap-2 shrink-0">
-                      {availability?.sellingPrice && availability.sellingPrice > 0 && (
-                        <span className="text-sm font-bold text-secondary">
-                          ₹{availability.sellingPrice.toLocaleString('en-IN')}
-                        </span>
+                      {resolvedPrice && (
+                        hasStoreOffer ? (
+                          <span className="flex flex-col items-end">
+                            <span className="flex items-center gap-1.5">
+                              <span className="text-sm font-bold text-green-700">₹{resolvedFinalPrice.toLocaleString('en-IN')}</span>
+                            </span>
+                            <span className="text-[10px] text-on-surface-variant line-through">₹{resolvedPrice.toLocaleString('en-IN')}</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm font-bold text-secondary">
+                            ₹{resolvedPrice.toLocaleString('en-IN')}
+                          </span>
+                        )
                       )}
-                      <HelperTooltip side="left" textKey="productStockStatus">
-                        <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full cursor-help ${
-                          availability?.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                        }`}>
-                          {availability?.stockLevel}
-                        </span>
-                      </HelperTooltip>
+                      {availability?.stockLevel && (
+                        <HelperTooltip side="left" textKey="productStockStatus">
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full cursor-help ${
+                            availability.stockLevel === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {availability.stockLevel}
+                          </span>
+                        </HelperTooltip>
+                      )}
                       <ICONS.ChevronRight className={`w-4 h-4 text-outline transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                     </div>
                   </button>
@@ -706,6 +793,32 @@ export default function ProductDetailView({
                       className="overflow-hidden"
                     >
                       <div className="px-4 pb-4 flex flex-col gap-3 border-t border-surface-container">
+                        {/* Discount breakdown — shown when seller has an active discount */}
+                        {hasStoreOffer && resolvedPrice && (() => {
+                          const { finalPrice, discountAmt } = calcDiscount(resolvedPrice, resolvedDiscountPct);
+                          return (
+                            <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-on-surface-variant">Original price</span>
+                                <span className="text-xs font-medium text-on-surface-variant line-through">₹{resolvedPrice.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-on-surface-variant">Discount</span>
+                                <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-black text-white">
+                                  {resolvedDiscountPct}% OFF
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between border-t border-green-200 pt-1.5">
+                                <span className="text-sm font-bold text-green-700">Final price</span>
+                                <span className="text-lg font-black text-green-700">₹{finalPrice.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-green-600">You save</span>
+                                <span className="text-xs font-bold text-green-600">₹{discountAmt.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         <div className="pt-3 flex flex-wrap gap-1">
                           {(store.stock || []).map(item => (
                             <span key={item} className="px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant text-[9px] font-black uppercase tracking-widest border border-surface-container-highest">
@@ -831,27 +944,55 @@ export default function ProductDetailView({
         </div>
 
         {/* Price + quantity + CTA */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t border-surface-container">
+        {(() => {
+          const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
+          const hasOffer = maxPct > 0;
+          const basePrice = product.lowestPrice && product.lowestPrice < product.price
+            ? product.lowestPrice
+            : product.price;
+          const { finalPrice, discountAmt } = calcDiscount(basePrice, maxPct);
+
+          return (
+        <div className={`flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'}`}>
           <HelperTooltip side="top" textKey="marketPriceInfo">
-            <div className="flex items-end gap-3 cursor-help">
-              {product.lowestPrice && product.lowestPrice < product.price ? (
+            <div className="flex flex-col gap-1.5 cursor-help">
+              {hasOffer ? (
+                /* ── Offer price block ── */
                 <>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-extrabold text-green-700 tracking-tight">₹{finalPrice.toLocaleString('en-IN')}</span>
+                    <span className="text-lg text-outline line-through">₹{basePrice.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-1 text-sm font-black text-white shadow-sm shadow-green-600/30">
+                      <Tag className="h-3.5 w-3.5 shrink-0" />
+                      Save ₹{discountAmt.toLocaleString('en-IN')} ({maxPct}% OFF)
+                    </span>
+                    {product.lowestPrice && product.lowestPrice < product.price && (
+                      <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Lowest nearby</span>
+                    )}
+                  </div>
+                </>
+              ) : product.lowestPrice && product.lowestPrice < product.price ? (
+                /* ── Lowest price (no discount) ── */
+                <div className="flex items-end gap-3">
                   <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.lowestPrice.toLocaleString('en-IN')}</span>
                   <div className="flex flex-col mb-1">
                     <span className="text-sm text-outline line-through">₹{product.price.toLocaleString('en-IN')}</span>
                     <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Lowest nearby</span>
                   </div>
-                </>
+                </div>
               ) : (
-                <>
+                /* ── Regular price ── */
+                <div className="flex items-end gap-3">
                   <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.price}</span>
                   {product.oldPrice && (
                     <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
                   )}
-                </>
-              )}
-              {product.oldPrice && (
-                <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
+                  {product.oldPrice && (
+                    <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
+                  )}
+                </div>
               )}
             </div>
           </HelperTooltip>
@@ -871,6 +1012,8 @@ export default function ProductDetailView({
             </button>
           </div>
         </div>
+          );
+        })()}
       </div>
 
       {/* Product Insights */}

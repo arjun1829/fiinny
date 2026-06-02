@@ -7,6 +7,8 @@ import { MarketplaceProduct } from '../../types/product';
 import { Hub } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
+import { Tag } from 'lucide-react';
+import { calcDiscount } from '../utils/discount';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -317,11 +319,18 @@ export default function HomeView({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          {products.length > 0 ? products.slice(0, 10).map((product) => (
+          {products.length > 0 ? products.slice(0, 10).map((product) => {
+            const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
+            const hasOffer = maxPct > 0;
+            const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
+            const savings = Math.round(product.price - discountedPrice);
+            return (
             <motion.div
               key={product.id}
               whileHover={{ y: -4 }}
-              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-surface-container flex flex-col group cursor-pointer"
+              className={`bg-white rounded-2xl overflow-hidden shadow-sm flex flex-col group cursor-pointer border ${
+                hasOffer ? 'border-green-400 shadow-green-100' : 'border-surface-container'
+              }`}
               onClick={() => onProductClick(product.id)}
             >
               <div className="aspect-square relative overflow-hidden bg-surface-container-low">
@@ -330,13 +339,19 @@ export default function HomeView({
                   alt={product.name}
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
                 />
-                <div className="absolute top-2 left-2" onClick={(e) => e.stopPropagation()}>
-                  <HelperTooltip side="bottom" textKey="stockBadge">
-                    <span className="bg-primary-container/90 text-on-primary-container backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-sm cursor-help">
-                      {product.stock}
-                    </span>
-                  </HelperTooltip>
-                </div>
+                {/* Corner offer ribbon */}
+                {hasOffer && (
+                  <div className="absolute top-0 left-0 w-20 h-20 overflow-hidden pointer-events-none">
+                    <div
+                      className="absolute bg-green-500 shadow text-white text-center"
+                      style={{ width: 110, top: 17, left: -28, transform: 'rotate(-45deg)', padding: '4px 0' }}
+                    >
+                      <span className="flex items-center justify-center gap-0.5 text-[9px] font-black tracking-wide">
+                        <Tag className="h-2 w-2 shrink-0" />{maxPct}% OFF
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {(product.averageRating ?? 0) > 0 && (
                   <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
                     <span className="text-amber-400">★</span>
@@ -345,19 +360,35 @@ export default function HomeView({
                   </span>
                 )}
               </div>
-              <div className="p-3 flex flex-col flex-1">
+              <div className={`p-3 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
                 <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>
-                <div className="mt-auto flex items-baseline gap-1.5">
-                  <span className="text-base font-bold text-secondary">₹{product.price}</span>
-                  {product.oldPrice && product.oldPrice > product.price && (
-                    <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
-                  )}
-                </div>
+                {hasOffer ? (
+                  <div className="mt-auto">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-base font-black text-green-700">₹{discountedPrice.toLocaleString('en-IN')}</span>
+                      <span className="text-[11px] text-outline line-through">₹{product.price.toLocaleString('en-IN')}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 mt-1 rounded-md bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">
+                      <Tag className="h-2 w-2 shrink-0" />Save ₹{savings}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-auto flex items-baseline gap-1.5">
+                    <span className="text-base font-bold text-secondary">₹{product.price}</span>
+                    {product.oldPrice && product.oldPrice > product.price && (
+                      <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
+                    )}
+                  </div>
+                )}
                 <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                   <HelperTooltip side="top" textKey="marketAddToCart">
                     <button
                       onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
-                      className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                      className={`w-full border-2 text-xs font-bold py-1.5 rounded-lg transition-colors ${
+                        hasOffer
+                          ? 'border-green-600 text-green-700 hover:bg-green-600 hover:text-white'
+                          : 'border-primary text-primary hover:bg-primary hover:text-white'
+                      }`}
                     >
                       {t('addToCart')}
                     </button>
@@ -365,7 +396,8 @@ export default function HomeView({
                 </div>
               </div>
             </motion.div>
-          )) : (
+            );
+          }) : (
             <div className="col-span-full py-10 text-center bg-surface-container-low rounded-3xl border border-dashed border-surface-container">
               <p className="text-on-surface-variant font-medium">{t('noTrending')}</p>
             </div>

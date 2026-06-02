@@ -65,9 +65,21 @@ function initials(name: string): string {
   return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 }
 
+function toSocialUrl(href: string, label: string): string {
+  if (href.startsWith("http")) return href;
+  // WhatsApp: user enters a phone number — convert to wa.me deep link
+  if (label === "WhatsApp") {
+    const digits = href.replace(/\D/g, "");
+    // Prepend 91 if it looks like a 10-digit Indian number
+    const e164 = digits.length === 10 ? `91${digits}` : digits;
+    return `https://wa.me/${e164}`;
+  }
+  return `https://${href}`;
+}
+
 function SocialBadge({ href, icon: Icon, label, colorClass }: { href: string; icon: any; label: string; colorClass: string }) {
   if (!href) return null;
-  const url = href.startsWith("http") ? href : `https://${href}`;
+  const url = toSocialUrl(href, label);
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-80 ${colorClass}`}>

@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, serverTimestamp, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, updateDoc, serverTimestamp, query, where, doc } from 'firebase/firestore';
 import { db } from './firebase';
 
 export type Review = {
@@ -9,6 +9,7 @@ export type Review = {
   rating: number;
   reviewText: string;
   createdAt: any;
+  updatedAt?: any;
 };
 
 export async function addProductReview(catalogId: string, reviewerPhone: string, reviewerName: string, rating: number, reviewText: string) {
@@ -24,6 +25,24 @@ export async function addProductReview(catalogId: string, reviewerPhone: string,
     reviewText,
     createdAt: serverTimestamp()
   });
+}
+
+export async function updateProductReview(reviewId: string, rating: number, reviewText: string) {
+  const reviewRef = doc(db, 'productReviews', reviewId);
+  await updateDoc(reviewRef, {
+    rating,
+    reviewText,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function getUserProductReview(catalogId: string, reviewerPhone: string): Promise<Review | null> {
+  const reviewsRef = collection(db, 'productReviews');
+  const q = query(reviewsRef, where('catalogId', '==', catalogId), where('reviewerPhone', '==', reviewerPhone));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data(), targetId: d.data().catalogId } as Review;
 }
 
 export async function getProductReviews(catalogId: string): Promise<Review[]> {
@@ -51,6 +70,24 @@ export async function addStoreReview(storePhone: string, reviewerPhone: string, 
     reviewText,
     createdAt: serverTimestamp()
   });
+}
+
+export async function updateStoreReview(reviewId: string, rating: number, reviewText: string) {
+  const reviewRef = doc(db, 'storeReviews', reviewId);
+  await updateDoc(reviewRef, {
+    rating,
+    reviewText,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function getUserStoreReview(storePhone: string, reviewerPhone: string): Promise<Review | null> {
+  const reviewsRef = collection(db, 'storeReviews');
+  const q = query(reviewsRef, where('storePhone', '==', storePhone), where('reviewerPhone', '==', reviewerPhone));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data(), targetId: d.data().storePhone } as Review;
 }
 
 export async function getStoreReviews(storePhone: string): Promise<Review[]> {

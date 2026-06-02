@@ -27,7 +27,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl px-3 py-4 pb-24 sm:px-4 md:px-8 md:py-8 md:pb-10">{children}</main>
+        <main className="w-full px-3 py-4 pb-24 sm:px-5 md:px-6 md:py-6 md:pb-10">{children}</main>
       </div>
     </div>
   );
