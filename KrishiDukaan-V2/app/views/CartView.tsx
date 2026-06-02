@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
@@ -445,42 +445,171 @@ export default function CartView({
   const { t } = useI18n();
   const [saveAddress, setSaveAddress] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteListenerRef = useRef<any>(null);
 
   const readyItems = items.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
 
-  const handleUseLocation = async () => {
-    if (!navigator.geolocation) return;
+  // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
+  // extended to also fill the cart's Area / District fields. Maps a Google place /
+  // geocoder result onto the existing Delivery Address inputs.
+  const applyPlaceToFields = useCallback((place: {
+    formatted_address?: string;
+    address_components?: { long_name: string; short_name: string; types: string[] }[];
+  }) => {
+    const parts = place?.address_components || [];
+    const pick = (type: string) =>
+      parts.find((p) => p.types?.includes(type) && p.long_name)?.long_name || "";
+
+    // City — same priority order as the Dashboard Profile parser.
+    let city = "";
+    for (const want of ["locality", "postal_town", "sublocality_level_1", "administrative_area_level_2", "neighborhood"]) {
+      const v = pick(want);
+      if (v) { city = v; break; }
+    }
+    const district = pick("administrative_area_level_2") || pick("administrative_area_level_3");
+    const state = pick("administrative_area_level_1");
+    const pincode = pick("postal_code");
+
+    // Area / Locality — prefer the most PRECISE part so the delivery address is
+    // exact (street-level), not just the neighborhood. Build "street number +
+    // route", fall back to premise/sublocality, then the formatted address's
+    // leading segments (everything before the city), then neighborhood.
+    const streetNumber = pick("street_number");
+    const route = pick("route");
+    const premise = pick("premise") || pick("subpremise");
+    const sublocality = pick("sublocality_level_1") || pick("sublocality") || pick("neighborhood");
+
+    let areaValue = [streetNumber, route].filter(Boolean).join(" ").trim();
+    if (!areaValue && premise) areaValue = premise;
+    if (!areaValue && place.formatted_address) {
+      // Take the formatted address up to (but excluding) the city to keep precise
+      // street/locality detail.
+      const fa = place.formatted_address;
+      const cutAt = city ? fa.indexOf(city) : -1;
+      areaValue = (cutAt > 0 ? fa.slice(0, cutAt) : fa.split(",")[0]).replace(/,\s*$/, "").trim();
+    }
+    if (!areaValue) areaValue = sublocality;
+
+    if (areaValue) onCustomerFieldChange("addressArea", areaValue);
+    if (city) onCustomerFieldChange("addressCity", city);
+    if (district) onCustomerFieldChange("addressDistrict", district);
+    if (state) onCustomerFieldChange("addressState", state);
+    if (pincode) onCustomerFieldChange("addressPincode", pincode);
+  }, [onCustomerFieldChange]);
+
+  // Use Current Location — fetch a fresh GPS fix, then reverse-geocode via the
+  // app's same-origin /api/geocode/reverse route. That route runs the Google
+  // Geocoding call SERVER-SIDE (no browser referer restriction) with an OSM
+  // fallback, so it returns structured address components reliably even when the
+  // in-browser Google JS Geocoder is blocked. Fills the existing fields directly.
+  const ADDRESS_ERROR = "Unable to fetch current location. Please enter address manually.";
+
+  const handleUseLocation = () => {
+    setLocationError(null);
+    if (!navigator.geolocation) {
+      setLocationError(ADDRESS_ERROR);
+      return;
+    }
     setLocating(true);
+
+    const reverseGeocode = async (lat: number, lng: number) => {
+      try {
+        const res = await fetch(`/api/geocode/reverse?lat=${lat}&lng=${lng}`);
+        const data = await res.json();
+        const c = data?.components;
+        if (c && (c.area || c.city || c.district || c.state || c.pincode)) {
+          if (c.area) onCustomerFieldChange("addressArea", c.area);
+          if (c.city) onCustomerFieldChange("addressCity", c.city);
+          if (c.district) onCustomerFieldChange("addressDistrict", c.district);
+          if (c.state) onCustomerFieldChange("addressState", c.state);
+          if (c.pincode) onCustomerFieldChange("addressPincode", c.pincode);
+        } else if (typeof data?.formatted_address === "string" && data.formatted_address.trim()) {
+          // Last resort: drop the readable address into Area so it isn't empty.
+          onCustomerFieldChange("addressArea", data.formatted_address.trim());
+        } else {
+          setLocationError(ADDRESS_ERROR);
+        }
+      } catch {
+        setLocationError(ADDRESS_ERROR);
+      } finally {
+        setLocating(false);
+      }
+    };
+
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        try {
-          const key = mapsApiKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
-          const res = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${key}`
+      (pos) => void reverseGeocode(pos.coords.latitude, pos.coords.longitude),
+      (err) => {
+        // High-accuracy can time out on first request — retry once at low accuracy.
+        if (err.code === err.TIMEOUT) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => void reverseGeocode(pos.coords.latitude, pos.coords.longitude),
+            () => { setLocating(false); setLocationError(ADDRESS_ERROR); },
+            { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
           );
-          const data = await res.json();
-          const comps: any[] = data.results?.[0]?.address_components || [];
-          const get = (type: string) =>
-            comps.find((c: any) => c.types.includes(type))?.long_name || "";
-          onCustomerFieldChange("addressArea", get("sublocality_level_1") || get("neighborhood") || get("locality"));
-          onCustomerFieldChange("addressCity", get("locality") || get("administrative_area_level_2"));
-          onCustomerFieldChange("addressDistrict", get("administrative_area_level_2") || get("administrative_area_level_3"));
-          onCustomerFieldChange("addressState", get("administrative_area_level_1"));
-          onCustomerFieldChange("addressPincode", get("postal_code"));
-        } catch {
-          // fallback: just fill coordinates
-          onCustomerFieldChange("addressArea", `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        } finally {
+        } else {
           setLocating(false);
+          setLocationError(ADDRESS_ERROR);
         }
       },
-      () => setLocating(false),
-      { timeout: 8000 }
+      // maximumAge: 0 → force a fresh, accurate GPS fix (no stale cached position).
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   };
+
+  // Attach Google Maps Places Autocomplete to the Area / Locality input — the
+  // same engine used in Dashboard → Profile Edit. Loads the Maps JS (places lib)
+  // if not already present, then binds the input.
+  useEffect(() => {
+    const apiKey = mapsApiKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey || !addressInputRef.current) return;
+
+    let cancelled = false;
+
+    const setupAutocomplete = () => {
+      if (cancelled || !addressInputRef.current || !(window as any).google?.maps?.places) return;
+      if (autocompleteListenerRef.current && (window as any).google?.maps?.event) {
+        (window as any).google.maps.event.removeListener(autocompleteListenerRef.current);
+      }
+      const ac = new (window as any).google.maps.places.Autocomplete(addressInputRef.current, {
+        fields: ["formatted_address", "geometry", "address_components"],
+        types: ["establishment", "geocode"],
+      });
+      autocompleteListenerRef.current = ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        if (place) applyPlaceToFields(place);
+      });
+    };
+
+    const attachWhenReady = () => setTimeout(setupAutocomplete, 50);
+
+    const scriptId = "google-maps-places-script";
+    const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if ((window as any).google?.maps?.places) {
+      attachWhenReady();
+    } else if (existing) {
+      if (existing.dataset.loaded === "true") attachWhenReady();
+      else existing.addEventListener("load", attachWhenReady, { once: true });
+    } else {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+      script.async = true; script.defer = true;
+      script.onload = () => { script.dataset.loaded = "true"; attachWhenReady(); };
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+      if (autocompleteListenerRef.current && (window as any).google?.maps?.event) {
+        (window as any).google.maps.event.removeListener(autocompleteListenerRef.current);
+      }
+      autocompleteListenerRef.current = null;
+    };
+  }, [mapsApiKey, applyPlaceToFields]);
 
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
@@ -617,10 +746,15 @@ export default function CartView({
                   {locating ? "Locating…" : "Use My Location"}
                 </button>
               </div>
+              {locationError && (
+                <p className="text-[11px] font-semibold text-amber-700 -mt-0.5">{locationError}</p>
+              )}
               <input
+                ref={addressInputRef}
                 value={addressArea}
-                onChange={(e) => onCustomerFieldChange("addressArea", e.target.value)}
+                onChange={(e) => { onCustomerFieldChange("addressArea", e.target.value); setLocationError(null); }}
                 placeholder="Area / Locality"
+                autoComplete="off"
                 className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm w-full"
               />
               <div className="grid grid-cols-2 gap-2">

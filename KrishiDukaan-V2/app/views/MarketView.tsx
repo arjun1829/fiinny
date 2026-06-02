@@ -369,7 +369,7 @@ export default function MarketView({
                     <HelperTooltip side="bottom" textKey="stockBadge">
                       <span className="bg-primary-container/90 backdrop-blur-md text-on-primary-container text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm cursor-help">
                         {t('inStock')}
-                      </span>
+                    </span>
                     </HelperTooltip>
                   </div>
                   {product.category && product.category !== 'general' && (
