@@ -19,7 +19,9 @@ export type CartItem = {
   sellerName?: string;
   name: string;
   image: string;
-  price: number;
+  price: number;          // final price after discount
+  originalPrice?: number; // pre-discount price (undefined when no discount)
+  discountPct?: number;   // active discount % (0 or undefined = no discount)
   qty: number;
   sellMode: "online_delivery" | "offline_store_only" | "pending";
 };
@@ -27,9 +29,11 @@ export type CartItem = {
 export type OrderItem = {
   productId: string;
   name: string;
-  price: number;
+  price: number;          // final price per unit (after discount)
+  originalPrice?: number; // pre-discount price per unit
+  discountPct?: number;   // discount % applied
   qty: number;
-  lineTotal: number;
+  lineTotal: number;      // price * qty (discounted)
 };
 
 export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";

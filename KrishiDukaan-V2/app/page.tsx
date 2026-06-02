@@ -33,6 +33,7 @@ import { LatLng } from './utils/haversine';
 import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } from './utils/geolocation';
 import { computeStoreDistances } from './utils/nearby';
 import type { CartItem } from '../types/order';
+import { calcDiscount } from './utils/discount';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
@@ -706,6 +707,11 @@ export default function App() {
   };
 
   const addToCart = (product: MarketplaceProduct) => {
+    // Use the best available discount (maxDiscountPct) as a preview for the pending item.
+    // The price will be updated to the specific store's price when the user selects a store.
+    const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
+    const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
+
     setCartItems((prev) => {
       const found = prev.find((i) => i.productId === product.id && i.sellMode === "pending");
       if (found) {
@@ -723,7 +729,9 @@ export default function App() {
           sellerType: "retailer" as const,
           name: product.name,
           image: product.image,
-          price: product.price,
+          price: maxPct > 0 ? discountedPrice : product.price,
+          originalPrice: maxPct > 0 ? product.price : undefined,
+          discountPct: maxPct > 0 ? maxPct : undefined,
           qty: 1,
           sellMode: "pending" as const,
         },
@@ -795,12 +803,16 @@ export default function App() {
     setCheckoutMessage(null);
 
     try {
-      // Step 1: Create Razorpay order on server
+      // Step 1: Create Razorpay order on server (server verifies prices — never trust client amount)
       const orderRes = await fetch("/api/payment/create-cart-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: cartSubtotal,
+          items: readyItems.map((i) => ({
+            productId: i.productId,
+            sellerId:  i.sellerId,
+            qty:       i.qty,
+          })),
           userId: user.uid,
           note: `Cart: ${readyItems.length} item(s)`,
         }),
@@ -897,9 +909,21 @@ export default function App() {
       const availability = product.availability?.find(
         (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
       );
-      const storePrice = availability?.sellingPrice && availability.sellingPrice > 0
+      const originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
         ? availability.sellingPrice
         : product.price;
+
+      // Resolve this store's specific discount from sellerDiscounts map
+      const storeDiscountPct: number =
+        (sellerId && product.sellerDiscounts?.[sellerId])
+          ? product.sellerDiscounts[sellerId]
+          : (storePhone && product.sellerDiscounts?.[storePhone])
+            ? product.sellerDiscounts[storePhone]
+            : (store.id && product.sellerDiscounts?.[store.id])
+              ? product.sellerDiscounts[store.id]
+              : 0;
+      const { finalPrice: storePrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+
       // Remove any existing pending item for this product (prevents duplicate productId issue)
       const withoutPending = prev.filter(
         (i) => !(i.productId === product.id && i.sellMode === "pending")
@@ -914,6 +938,8 @@ export default function App() {
           name: product.name,
           image: product.image,
           price: storePrice,
+          originalPrice: storeDiscountPct > 0 ? originalStorePrice : undefined,
+          discountPct: storeDiscountPct > 0 ? storeDiscountPct : undefined,
           qty: 1,
           sellMode: "online_delivery" as const,
         },
@@ -1078,22 +1104,48 @@ export default function App() {
             onCustomerFieldChange={(field, value) =>
               setCheckoutInfo((prev) => ({ ...prev, [field]: value }))
             }
-            onQtyChange={(productId, qty) =>
+            onQtyChange={(itemKey, qty) =>
               setCartItems((prev) =>
-                prev.map((item) => (item.productId === productId ? { ...item, qty } : item))
+                prev.map((item) => (`${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? { ...item, qty } : item))
               )
             }
-            onRemove={(productId) =>
-              setCartItems((prev) => prev.filter((item) => item.productId === productId ? false : true))
+            onRemove={(itemKey) =>
+              setCartItems((prev) => prev.filter((item) => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? false : true))
             }
-            onAssignStore={(productId, sellerId, sellerType, sellerName, storePrice) =>
-              setCartItems((prev) =>
-                prev.map((item) =>
-                  item.productId === productId && (item.sellMode === "pending" || item.sellMode === "online_delivery")
-                    ? { ...item, sellerId, sellerType, sellerName, sellMode: "online_delivery" as const, ...(storePrice ? { price: storePrice } : {}) }
+            onAssignStore={(itemKey, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) =>
+              setCartItems((prev) => {
+                const pendingItem = prev.find(item => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey);
+                if (!pendingItem) return prev;
+
+                const existingItem = prev.find(item => item.productId === pendingItem.productId && item.sellerId === sellerId && item.sellMode === "online_delivery" && `${item.productId}_${item.sellerId}_${item.sellMode}` !== itemKey);
+
+                if (existingItem) {
+                  return prev
+                    .map(item => {
+                      if (item === existingItem) {
+                        return { ...item, qty: item.qty + pendingItem.qty };
+                      }
+                      if (item === pendingItem) {
+                        return null;
+                      }
+                      return item;
+                    })
+                    .filter(Boolean) as CartItem[];
+                }
+
+                return prev.map((item) =>
+                  `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                    ? {
+                        ...item,
+                        sellerId, sellerType, sellerName,
+                        sellMode: "online_delivery" as const,
+                        ...(storePrice != null ? { price: storePrice } : {}),
+                        ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
+                        ...(originalPrice != null ? { originalPrice } : { originalPrice: undefined }),
+                      }
                     : item
-                )
-              )
+                );
+              })
             }
             onCheckout={placeOrders}
             onSaveAddress={async () => {

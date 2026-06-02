@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
+import { Pencil, Tag, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 import type { ManufacturerProductRow } from "../_types/inventory";
 import { EditProductModal } from "./edit-product-modal";
+import { DiscountPanel } from "./discount-panel";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 
@@ -70,6 +71,7 @@ function ToggleBtn({
 export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: Props) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<ManufacturerProductRow | null>(null);
+  const [discountRow, setDiscountRow] = useState<ManufacturerProductRow | null>(null);
 
   if (!rows.length) {
     return (
@@ -167,14 +169,54 @@ export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: 
 
                     <td className="whitespace-nowrap px-3 py-3 text-on-surface-variant md:px-4 text-xs">{updatedLabel}</td>
 
-                    {/* Edit */}
+                    {/* Actions: Edit + Discount */}
                     <td className="px-3 py-3 md:px-4">
-                      <button
-                        onClick={() => setEditing(r)}
-                        className="flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-                      >
-                        <Pencil className="h-3 w-3" /> {t('editBtn')}
-                      </button>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => setEditing(r)}
+                            className="flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+                          >
+                            <Pencil className="h-3 w-3" /> {t('editBtn')}
+                          </button>
+                          <button
+                            onClick={() => setDiscountRow((prev) => prev?.productId === r.productId ? null : r)}
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all",
+                              r.effectiveDiscountPct > 0
+                                ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
+                                : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+                            )}
+                          >
+                            <Tag className="h-3 w-3" />
+                            {r.effectiveDiscountPct > 0 ? `${r.effectiveDiscountPct}% OFF` : "Discount"}
+                          </button>
+                        </div>
+                        {discountRow?.productId === r.productId && r.inventoryId && (
+                          <div className="w-72">
+                            <DiscountPanel
+                              inventoryId={r.inventoryId}
+                              productId={r.productId}
+                              originalProductId={r.originalProductId}
+                              sellingPrice={r.price}
+                              discountEnabled={r.discountEnabled}
+                              discountPct={r.discountPct}
+                              discountStartDate={r.discountStartDate}
+                              discountEndDate={r.discountEndDate}
+                              isActive={r.isActive}
+                              onSaved={async () => {
+                                setDiscountRow(null);
+                                onRefresh();
+                              }}
+                            />
+                          </div>
+                        )}
+                        {discountRow?.productId === r.productId && !r.inventoryId && (
+                          <p className="text-xs text-on-surface-variant">
+                            No inventory record yet — add stock first to enable discounts.
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

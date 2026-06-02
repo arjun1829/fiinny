@@ -40,6 +40,7 @@ export type MarketplaceProduct = {
     storeName?: string;    // retailer's shop name for display
     stockLevel: string;
     sellingPrice?: number;
+    discountPct?: number;  // active discount percentage for this seller (0 if none)
   }[];
 
   /** Lowest selling price across all stores that stock this product */
@@ -57,4 +58,16 @@ export type MarketplaceProduct = {
   applicationDesc?: string;
   dosage?: string;
   bestForCrops?: string[];
+
+  /** Discount — mirrored from inventory on discount save */
+  effectiveDiscountPct?: number; // this product/seller's active discount (0 if none)
+  maxDiscountPct?: number;       // max across all sellers of this product (on original doc only)
+
+  /**
+   * Per-seller discount map built by fetchMarketplaceProducts.
+   * Keys are seller UID or phone, values are their active discount %.
+   * Use this in ProductDetailView to show each store's own discount.
+   * Never use the merged effectiveDiscountPct for per-store display.
+   */
+  sellerDiscounts?: Record<string, number>;
 };

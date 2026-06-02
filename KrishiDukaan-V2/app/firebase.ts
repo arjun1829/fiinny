@@ -336,6 +336,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
         dosage: data.dosage ? String(data.dosage) : undefined,
         bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
+        // Discount fields — written by updateDiscountRecord when a seller sets a discount
+        effectiveDiscountPct: typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0,
+        maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
       } as MarketplaceProduct;
     });
 
@@ -353,12 +356,25 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         product.source !== 'retailer_inventory_copy',
     );
 
+    // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
+    // This is built separately from availability so per-store discounts are never mixed up.
+    const sellerDiscountsByKey = new Map<string, Record<string, number>>();
+    const recordSellerDiscount = (key: string, uid: string | undefined, phone: string | undefined, pct: number) => {
+      if (!pct || pct <= 0) return;
+      const map = sellerDiscountsByKey.get(key) ?? {};
+      if (uid) map[uid] = pct;
+      if (phone) map[phone] = pct;
+      sellerDiscountsByKey.set(key, map);
+    };
+
     // Deduplicate by name: if two products share the same name (case-insensitive),
     // keep the manufacturer_inventory card as canonical and merge the retailer's
     // store info into its availability array so farmers see one card with all sources.
     const byName = new Map<string, MarketplaceProduct>();
     for (const p of raw) {
       const key = p.name.toLowerCase().trim();
+      // Record this seller's OWN discount (not the merged max)
+      recordSellerDiscount(key, (p as any).ownerId, p.retailerPhone, p.effectiveDiscountPct ?? 0);
       // Record this source id under the dedup key for rating aggregation later
       const ids = idsByKey.get(key) ?? [];
       ids.push(p.id);
@@ -401,7 +417,17 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         });
       }
 
-      byName.set(key, { ...canonical, availability: av.length > 0 ? av : undefined });
+      // Carry the highest discount across both cards into the merged result
+      const mergedMaxDiscount = Math.max(
+        canonical.maxDiscountPct ?? canonical.effectiveDiscountPct ?? 0,
+        secondary.maxDiscountPct ?? secondary.effectiveDiscountPct ?? 0,
+      );
+      byName.set(key, {
+        ...canonical,
+        availability: av.length > 0 ? av : undefined,
+        maxDiscountPct: mergedMaxDiscount,
+        effectiveDiscountPct: mergedMaxDiscount,
+      });
     }
 
     // Merge each retailer copy's price into the canonical product's availability
@@ -425,8 +451,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           (copyStoreId && a.storeId === copyStoreId) ||
           (copyPhone && a.storePhone === copyPhone),
       );
+      const copyDiscountPct = copy.effectiveDiscountPct ?? 0;
+      // Record this copy's OWN discount in the per-seller map (keyed by their own uid/phone)
+      recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
+
       if (existing) {
         existing.sellingPrice = copy.price;
+        // Do NOT copy discount into availability entries — use sellerDiscounts map instead
       } else {
         av.push({
           storeId: copyStoreId,
@@ -436,7 +467,12 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           sellingPrice: copy.price,
         });
       }
-      byName.set(key, { ...canonical, availability: av });
+      const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
+      byName.set(key, {
+        ...canonical,
+        availability: av,
+        maxDiscountPct: newMax,
+      });
     }
 
     // Compute lowestPrice + ratings across all merged store/variant sources for each product
@@ -455,7 +491,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const averageRating = count > 0 ? sum / count : p.averageRating;
       const totalReviews = count > 0 ? count : p.totalReviews;
 
-      return { ...p, lowestPrice, averageRating, totalReviews };
+      const sellerDiscounts = sellerDiscountsByKey.get(key) ?? {};
+      return { ...p, lowestPrice, averageRating, totalReviews, sellerDiscounts };
     });
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
@@ -1098,15 +1135,30 @@ export async function createOrdersFromCart(params: {
 
   for (const [key, groupItems] of Array.from(groups.entries())) {
     const [sellerType, sellerId] = key.split(":") as [SellerType, string];
-    const normalizedItems = groupItems.map((item) => ({
-      productId: item.productId,
-      name: item.name,
-      price: item.price,
-      qty: item.qty,
-      lineTotal: Number((item.price * item.qty).toFixed(2)),
-    }));
+    const normalizedItems = groupItems.map((item) => {
+      const lineTotal = Number((item.price * item.qty).toFixed(2));
+      const base: Record<string, unknown> = {
+        productId: item.productId,
+        name: item.name,
+        price: item.price,
+        qty: item.qty,
+        lineTotal,
+      };
+      if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
+        base.originalPrice = item.originalPrice;
+        base.discountPct   = item.discountPct;
+      }
+      return base;
+    });
+
     const subtotal = Number(
-      normalizedItems.reduce((sum, row) => sum + row.lineTotal, 0).toFixed(2)
+      normalizedItems.reduce((sum, row) => sum + (row.lineTotal as number), 0).toFixed(2)
+    );
+    const totalSavings = Number(
+      groupItems.reduce((sum, item) => {
+        if (!item.discountPct || !item.originalPrice) return sum;
+        return sum + (item.originalPrice - item.price) * item.qty;
+      }, 0).toFixed(2)
     );
 
     const ref = await addDoc(collection(db, "orders"), {
@@ -1118,6 +1170,7 @@ export async function createOrdersFromCart(params: {
       sellerType,
       items: normalizedItems,
       subtotal,
+      ...(totalSavings > 0 ? { totalSavings } : {}),
       deliveryMode: "delivery",
       status: "placed",
       ...(payment ? { payment } : {}),

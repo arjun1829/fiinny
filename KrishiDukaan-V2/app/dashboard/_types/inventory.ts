@@ -56,7 +56,20 @@ export interface InventoryDoc {
   assignedByManufacturer?: boolean;
   manufacturerProductId?: string;
   retailerDocId?: string;
+
+  // Discount fields
+  discountEnabled?:   boolean;
+  discountPct?:       number;        // 0–99
+  discountStartDate?: Timestamp | null;
+  discountEndDate?:   Timestamp | null;
 }
+
+export type DiscountUpdateInput = {
+  discountEnabled: boolean;
+  discountPct: number;
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+};
 
 export type StockStatus = "out_of_stock" | "low_stock" | "in_stock";
 
@@ -78,6 +91,14 @@ export interface InventoryRow {
   source?: string;
   /** UID or placeholder retailerDocId */
   ownerId?: string;
+  originalProductId?: string | null;
+
+  // Discount fields
+  discountEnabled: boolean;
+  discountPct: number;
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+  effectiveDiscountPct: number;
 }
 
 /** Row for the manufacturer's catalogue table. */
@@ -96,6 +117,7 @@ export interface ManufacturerProductRow {
   source: string;
   isActive: boolean;
   updatedAt: Date | null;
+  originalProductId?: string | null;
 
   /** Optional Product Insights fields */
   nitrogen?: string;
@@ -104,6 +126,13 @@ export interface ManufacturerProductRow {
   applicationDesc?: string;
   dosage?: string;
   bestForCrops?: string[];
+
+  // Discount fields
+  discountEnabled: boolean;
+  discountPct: number;
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+  effectiveDiscountPct: number;
 }
 
 export function deriveStockStatus(
