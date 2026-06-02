@@ -34,6 +34,8 @@ interface ProductDetailViewProps {
   onProductClick?: (id: string) => void;
   onViewSellerAll?: (storeName: string) => void;
   onViewBrand?: (manufacturerId: string) => void;
+  /** Open Market filtered by category — used by the Similar Products "View All" CTA. */
+  onCategoryClick?: (categoryId: string) => void;
   storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
   onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
@@ -330,6 +332,82 @@ function ManufacturerBrandSection({
   );
 }
 
+// ─── Similar Products Section ─────────────────────────────────────────────────
+
+function SimilarProductsSection({
+  products,
+  currentProduct,
+  onProductClick,
+  onCategoryClick,
+}: {
+  products: MarketplaceProduct[];
+  currentProduct: MarketplaceProduct;
+  onProductClick?: (id: string) => void;
+  onCategoryClick?: (categoryId: string) => void;
+}) {
+  const { t } = useI18n();
+
+  // Same-category, exclude the current product. No extra API — pure in-memory filter
+  // over the products the marketplace already loaded.
+  const similar = useMemo(() => {
+    if (!currentProduct.category) return [];
+    return products
+      .filter((p) => p.id !== currentProduct.id && p.category === currentProduct.category)
+      .slice(0, 12);
+  }, [products, currentProduct.id, currentProduct.category]);
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-4">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold text-on-surface">{t('similarProducts')}</h2>
+          <p className="text-xs text-on-surface-variant mt-0.5">{t('similarProductsSubtitle')}</p>
+        </div>
+        {similar.length > 0 && onCategoryClick && currentProduct.category && (
+          <button
+            onClick={() => onCategoryClick(currentProduct.category)}
+            className="shrink-0 text-xs font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+          >
+            {t('viewAll')} <ICONS.ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {similar.length > 0 ? (
+        <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+          {similar.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onProductClick?.(p.id)}
+              className="shrink-0 w-44 text-left cursor-pointer rounded-2xl border border-surface-container bg-white shadow-sm hover:shadow-md hover:border-primary/30 transition-all hover:scale-[1.02] overflow-hidden"
+            >
+              <div className="aspect-square overflow-hidden bg-surface-container-low">
+                <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+              </div>
+              <div className="p-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{p.category}</span>
+                <p className="font-bold text-on-surface text-sm truncate leading-tight">{p.name}</p>
+                {(p.averageRating ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-on-surface-variant">
+                    <span className="text-amber-500">★</span>
+                    {p.averageRating!.toFixed(1)}
+                    {p.totalReviews ? <span className="text-outline">({p.totalReviews})</span> : null}
+                  </span>
+                )}
+                <span className="text-secondary font-extrabold text-sm">₹{p.price.toLocaleString('en-IN')}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-surface-container bg-surface-container-low px-6 py-8 text-center">
+          <p className="text-sm text-on-surface-variant font-medium">{t('noSimilarProducts')}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export default function ProductDetailView({
@@ -341,6 +419,7 @@ export default function ProductDetailView({
   onProductClick,
   onViewSellerAll,
   onViewBrand,
+  onCategoryClick,
   storesWithDistance = [],
   onAddToCart,
   onAddToCartFromStore,
@@ -1267,6 +1346,18 @@ export default function ProductDetailView({
           onProductClick={onProductClick}
         />
       )}
+
+      {/*
+        Similar Products — same-category items from the products already loaded into the
+        view. No extra fetch: reuses the in-memory `products` prop the marketplace already
+        provides. Empty-state copy is shown when no other products exist in this category.
+      */}
+      <SimilarProductsSection
+        products={products}
+        currentProduct={product}
+        onProductClick={onProductClick}
+        onCategoryClick={onCategoryClick}
+      />
     </div>
   );
 }

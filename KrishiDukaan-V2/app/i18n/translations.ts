@@ -298,6 +298,9 @@ export const translations = {
     cropGrapes: 'Grapes',
     moreFrom: 'More from',
     otherProductsBy: 'Other products listed by this seller',
+    similarProducts: 'Similar Products',
+    similarProductsSubtitle: 'Other products in the same category',
+    noSimilarProducts: 'No similar products available.',
 
     // ─── Dashboard Layout & Navigation ───
     dashVerifyingAccess: 'Verifying access...',
@@ -1966,6 +1969,9 @@ export const translations = {
     cropGrapes: 'द्राक्षे',
     moreFrom: 'अधिक — ',
     otherProductsBy: 'या विक्रेत्याची इतर उत्पादने',
+    similarProducts: 'समान उत्पादने',
+    similarProductsSubtitle: 'त्याच श्रेणीतील इतर उत्पादने',
+    noSimilarProducts: 'समान उत्पादने उपलब्ध नाहीत.',
 
     // ─── Dashboard Layout & Navigation ───
     dashVerifyingAccess: 'प्रवेश तपासत आहे...',
@@ -3635,6 +3641,9 @@ export const translations = {
     cropGrapes: 'अंगूर',
     moreFrom: 'और —',
     otherProductsBy: 'इस विक्रेता के अन्य उत्पाद',
+    similarProducts: 'समान उत्पाद',
+    similarProductsSubtitle: 'उसी श्रेणी के अन्य उत्पाद',
+    noSimilarProducts: 'कोई समान उत्पाद उपलब्ध नहीं है.',
 
     // ─── Dashboard Layout & Navigation ───
     dashVerifyingAccess: 'पहुँच जाँच रही है...',

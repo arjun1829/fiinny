@@ -1106,6 +1106,11 @@ export default function App() {
           onViewBrand={(manufacturerId) => {
             navigate('brand', { manufacturerId });
           }}
+          onCategoryClick={(cat) => {
+            setProductSearch('');
+            setSelectedCategory(cat);
+            navigate('market');
+          }}
           onAddToCart={addToCart}
           onAddToCartFromStore={handleAddToCartFromStore}
           onBuyNow={handleBuyNow}
