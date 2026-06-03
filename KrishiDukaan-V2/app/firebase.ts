@@ -333,6 +333,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         source: data.source ? String(data.source) : undefined,
         averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
         totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
+        categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
+          ? data.categoryInfo as Record<string, string | string[]>
+          : undefined,
+        // Legacy fertilizer flat fields — kept for backward compat
         nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
         phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
         potassium: data.potassium ? String(data.potassium) : undefined,

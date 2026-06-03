@@ -8,15 +8,14 @@ import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufact
 import { updateInventoryRecord } from "../_lib/inventory-firestore";
 import type { InventoryRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
+import {
+  PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
+  type ProductCategory, effectiveCategoryInfo,
+} from "../_lib/category-info";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
-  "Seeds", "Fertilizers", "Pesticides", "Herbicides", "Fungicides",
-  "Tools", "Irrigation", "Soil Nutrients", "Growth Promoters",
-  "Equipment", "Animal Feed", "Organic Products", "Bio Pesticides",
-  "Micro Nutrients", "Others",
-] as const;
+const CATEGORIES = PRODUCT_CATEGORIES;
 
 const UNIT_TYPES = [
   { value: "g",      label: "gm",     display: "gm" },
@@ -105,6 +104,66 @@ function rowToVariants(row: InventoryRow): Variant[] {
       ? String(v.stock)
       : (i === 0 && row.stockQuantity > 0 ? String(row.stockQuantity) : ""),
   }));
+}
+
+// ─── Dynamic Category Info Section ────────────────────────────────────────────
+
+function ModalCategoryInfoSection({
+  category, values, onChange, disabled, open, onToggle,
+}: {
+  category: string;
+  values: Record<string, string>;
+  onChange: (key: string, val: string) => void;
+  disabled: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const activeCat: ProductCategory = isStandardCategory(category) ? category : "Other";
+  const fields = CATEGORY_FIELDS[activeCat];
+  if (!fields.length) return null;
+
+  const inputCls = "w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs";
+
+  return (
+    <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-between text-sm font-semibold text-on-surface w-full"
+      >
+        <span className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" />
+          {activeCat} Info
+          <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-3 border-t border-outline-variant/20 pt-4">
+          {fields.map(({ key, label, type, placeholder }) => (
+            <label key={key} className="flex flex-col gap-1 text-xs">
+              <span className="font-medium text-on-surface">{label}</span>
+              {type === "textarea" ? (
+                <textarea rows={2} disabled={disabled} placeholder={placeholder}
+                  className={`${inputCls} resize-none`}
+                  value={values[key] ?? ""}
+                  onChange={(e) => onChange(key, e.target.value)} />
+              ) : (
+                <input type="text" disabled={disabled} placeholder={placeholder}
+                  className={inputCls}
+                  value={values[key] ?? ""}
+                  onChange={(e) => onChange(key, e.target.value)} />
+              )}
+              {CHIPS_FIELDS.has(key) && (
+                <span className="text-[10px] text-on-surface-variant">Separate multiple values with commas</span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Variant Row ──────────────────────────────────────────────────────────────
@@ -325,7 +384,9 @@ export function EditProductModal({ row, onClose, onSaved }: {
 }) {
   const { t } = useI18n();
   const [name, setName]               = useState(row.productName);
-  const [category, setCategory]       = useState(row.category);
+  // For "Other": category stores the actual custom name; isStandardCategory check determines display
+  const [category, setCategory]       = useState<string>(() => isStandardCategory(row.category) ? row.category : "Other");
+  const [customCategory, setCustomCategory] = useState(() => isStandardCategory(row.category) ? "" : row.category);
   const [description, setDescription] = useState(row.description);
   const [variants, setVariants]       = useState<Variant[]>(rowToVariants(row));
   const [images, setImages]           = useState<ImgSlot[]>(rowToImages(row));
@@ -333,14 +394,24 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [toggling, setToggling]       = useState(false);
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // Optional Product Insights fields
-  const [nitrogen, setNitrogen]               = useState(row.nitrogen || "");
-  const [phosphorus, setPhosphorus]           = useState(row.phosphorus || "");
-  const [potassium, setPotassium]             = useState(row.potassium || "");
-  const [applicationDesc, setApplicationDesc] = useState(row.applicationDesc || "");
-  const [dosage, setDosage]                   = useState(row.dosage || "");
-  const [bestForCrops, setBestForCrops]       = useState(row.bestForCrops?.join(", ") || "");
-  const [showAdditionalData, setShowAdditionalData] = useState(false);
+  // Category-specific info — initialise from categoryInfo or fall back to legacy flat fields
+  const [categoryInfo, setCategoryInfo] = useState<Record<string, string>>(() => {
+    const rawData = row as unknown as Record<string, unknown>;
+    const ci = effectiveCategoryInfo(rawData);
+    if (!ci) return {};
+    const flat: Record<string, string> = {};
+    Object.entries(ci).forEach(([k, v]) => {
+      flat[k] = Array.isArray(v) ? v.join(", ") : String(v);
+    });
+    return flat;
+  });
+  const [showAdditionalData, setShowAdditionalData] = useState(() => {
+    const rawData = row as unknown as Record<string, unknown>;
+    return !!effectiveCategoryInfo(rawData);
+  });
+
+  const setCatField = (key: string, val: string) =>
+    setCategoryInfo((prev) => ({ ...prev, [key]: val }));
 
   // Close on Escape
   useEffect(() => {
@@ -383,22 +454,38 @@ export function EditProductModal({ row, onClose, onSaved }: {
       return;
     }
     const imageUrls = images.map((s) => s.url.trim()).filter(Boolean);
+
+    // Resolve the saved category value
+    const savedCategory = category === "Other"
+      ? (customCategory.trim() || "Other")
+      : category;
+
+    // Build categoryInfo — parse chips fields
+    const activeCat: ProductCategory = isStandardCategory(savedCategory) ? savedCategory : "Other";
+    const fields = CATEGORY_FIELDS[activeCat];
+    const savedCategoryInfo: Record<string, string | string[]> = {};
+    fields.forEach(({ key }) => {
+      const raw = (categoryInfo[key] ?? "").trim();
+      if (!raw) return;
+      savedCategoryInfo[key] = CHIPS_FIELDS.has(key)
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : raw;
+    });
+
     setSaving(true);
     setMessage(null);
     try {
       await updateManufacturerProduct(row.productId, {
-        name, category, description,
+        name, category: savedCategory, description,
         unit: parsedVariants[0].unit,
         price: parsedVariants[0].price,
         variants: parsedVariants,
         image: imageUrls[0] ?? "",
         images: imageUrls,
-        nitrogen: nitrogen.trim() || "",
-        phosphorus: phosphorus.trim() || "",
-        potassium: potassium.trim() || "",
-        applicationDesc: applicationDesc.trim() || "",
-        dosage: dosage.trim() || "",
-        bestForCrops: bestForCrops.trim() ? bestForCrops.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
+        // Clear legacy flat fields so old data doesn't conflict with categoryInfo
+        nitrogen: "", phosphorus: "", potassium: "",
+        applicationDesc: "", dosage: "", bestForCrops: [],
       });
 
       // Update inventory: use first variant's stock; fall back to existing stockQuantity.
@@ -499,13 +586,21 @@ export function EditProductModal({ row, onClose, onSaved }: {
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
             </label>
 
-            <label className="flex flex-col gap-1.5 text-sm">
+            <div className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-on-surface">{t('categoryLabel')}</span>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}
+              <select value={category}
+                onChange={(e) => { setCategory(e.target.value); setCategoryInfo({}); }}
                 className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
-            </label>
+              {category === "Other" && (
+                <input type="text"
+                  placeholder="Enter custom category name"
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 text-sm" />
+              )}
+            </div>
 
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-on-surface flex items-center gap-1.5">
@@ -517,108 +612,15 @@ export function EditProductModal({ row, onClose, onSaved }: {
             </label>
           </div>
 
-          {/* Collapsible: Additional Data */}
-          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
-            <button
-              type="button"
-              onClick={() => setShowAdditionalData(!showAdditionalData)}
-              className="flex items-center justify-between text-sm font-semibold text-on-surface w-full"
-            >
-              <span className="flex items-center gap-2">
-                <Layers className="h-4 w-4 text-primary" /> {t('additionalDataLabel')} (Optional)
-              </span>
-              <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${showAdditionalData ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showAdditionalData && (
-              <div className="flex flex-col gap-4 mt-2 border-t border-outline-variant/20 pt-4">
-                {/* Composition: Nitrogen, Phosphorus, Potassium */}
-                <div>
-                  <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-2">{t('composition')}</span>
-                  <div className="grid grid-cols-3 gap-3">
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="font-medium text-on-surface">{t('nitrogenN')}</span>
-                      <input
-                        type="text"
-                        disabled={saving}
-                        placeholder="e.g. 19%"
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                        value={nitrogen}
-                        onChange={(e) => setNitrogen(e.target.value)}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="font-medium text-on-surface">{t('phosphorusP')}</span>
-                      <input
-                        type="text"
-                        disabled={saving}
-                        placeholder="e.g. 19%"
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                        value={phosphorus}
-                        onChange={(e) => setPhosphorus(e.target.value)}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="font-medium text-on-surface">{t('potassiumK')}</span>
-                      <input
-                        type="text"
-                        disabled={saving}
-                        placeholder="e.g. 19%"
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                        value={potassium}
-                        onChange={(e) => setPotassium(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {/* Application Details */}
-                <div className="border-t border-outline-variant/20 pt-4 flex flex-col gap-3">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wider block">{t('application')}</span>
-                  
-                  <label className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-on-surface text-xs">{t('application') || 'Application'}</span>
-                    <textarea
-                      disabled={saving}
-                      rows={2}
-                      placeholder="e.g. Suitable for foliar spray and fertigation..."
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs resize-none"
-                      value={applicationDesc}
-                      onChange={(e) => setApplicationDesc(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="font-medium text-on-surface">{t('recommendedDosage')}</span>
-                    <input
-                      type="text"
-                      disabled={saving}
-                      placeholder="e.g. 3-5 gm / Litre"
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                      value={dosage}
-                      onChange={(e) => setDosage(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                {/* Best for Crops */}
-                <div className="border-t border-outline-variant/20 pt-4">
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="font-bold text-primary uppercase tracking-wider block mb-1">{t('bestForCrops')}</span>
-                    <span className="text-[10px] text-on-surface-variant font-normal mb-1">{t('formBestForCropsHint')}</span>
-                    <input
-                      type="text"
-                      disabled={saving}
-                      placeholder="e.g. Tomatoes, Wheat, Sugarcane, Grapes"
-                      className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                      value={bestForCrops}
-                      onChange={(e) => setBestForCrops(e.target.value)}
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Dynamic category-specific fields */}
+          <ModalCategoryInfoSection
+            category={category === "Other" ? (customCategory.trim() || "Other") : category}
+            values={categoryInfo}
+            onChange={setCatField}
+            disabled={saving}
+            open={showAdditionalData}
+            onToggle={() => setShowAdditionalData((v) => !v)}
+          />
 
           {/* ── Variants ──────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">

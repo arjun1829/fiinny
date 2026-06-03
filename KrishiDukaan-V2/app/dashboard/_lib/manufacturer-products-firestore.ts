@@ -39,6 +39,9 @@ export type ManufacturerProductInput = {
   description: string;
   image?: string;
   images?: string[];
+  /** Category-specific structured info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer fields — still accepted for backward compat. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
@@ -106,6 +109,8 @@ export async function createManufacturerProduct(
     source: "manufacturer_inventory",
     createdAt: now,
     updatedAt: now,
+    categoryInfo: input.categoryInfo ?? null,
+    // Legacy fertilizer flat fields — preserved for existing product reads
     nitrogen: input.nitrogen?.trim() || null,
     phosphorus: input.phosphorus?.trim() || null,
     potassium: input.potassium?.trim() || null,
@@ -242,6 +247,7 @@ export async function updateManufacturerProduct(
   if (input.description !== undefined) patch.description = input.description.trim();
   if (input.image !== undefined)       patch.image       = (input.image ?? "").trim();
   if (input.images !== undefined)      patch.images      = input.images;
+  if (input.categoryInfo !== undefined)    patch.categoryInfo    = input.categoryInfo ?? null;
   if (input.nitrogen !== undefined)        patch.nitrogen        = input.nitrogen ? input.nitrogen.trim() : null;
   if (input.phosphorus !== undefined)      patch.phosphorus      = input.phosphorus ? input.phosphorus.trim() : null;
   if (input.potassium !== undefined)       patch.potassium       = input.potassium ? input.potassium.trim() : null;
@@ -295,6 +301,9 @@ export async function searchProductsByName(term: string): Promise<Array<{
         manufacturerProductId: String(r.manufacturerProductId ?? ""),
         originalProductId: String(r.originalProductId ?? ""),
         score: rankProduct(r),
+        categoryInfo: (r.categoryInfo && typeof r.categoryInfo === "object" && !Array.isArray(r.categoryInfo))
+          ? r.categoryInfo as Record<string, string | string[]>
+          : undefined,
         nitrogen: r.nitrogen ? String(r.nitrogen) : "",
         phosphorus: r.phosphorus ? String(r.phosphorus) : "",
         potassium: r.potassium ? String(r.potassium) : "",

@@ -31,7 +31,9 @@ export interface ProductDoc {
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
 
-  /** Optional Product Insights fields */
+  /** Category-specific structured information (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields — backward compat only. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
@@ -146,7 +148,10 @@ export interface InventoryRow {
   bulkDiscountEnabled: boolean;
   bulkDiscountTiers: BulkDiscountTier[];
 
-  // ── Optional Product Insights (edited via the shared modal) ──────────────────
+  // ── Category-specific info ────────────────────────────────────────────────────
+  /** Structured category info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;

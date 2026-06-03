@@ -97,7 +97,10 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
       data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
     isOnline: data.isOnline === true || data.sellMode === "online_delivery",
 
-    // Optional Product Insights fields
+    categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
+      ? data.categoryInfo as Record<string, string | string[]>
+      : undefined,
+    // Legacy fertilizer flat fields — kept for backward compat
     nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
     phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
     potassium: data.potassium ? String(data.potassium) : undefined,
@@ -335,6 +338,7 @@ export async function fetchRetailerInventoryRows(
           ? (inv.discountFixedAmt ?? 0) : 0,
         bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
         bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
+        categoryInfo: p.categoryInfo,
         nitrogen: p.nitrogen ?? "",
         phosphorus: p.phosphorus ?? "",
         potassium: p.potassium ?? "",
@@ -428,6 +432,7 @@ export async function fetchManufacturerCatalogueRows(
       discountStartDate: timestampToDate(inv?.discountStartDate),
       discountEndDate:   timestampToDate(inv?.discountEndDate),
       effectiveDiscountPct: inv ? getActiveDiscountPct(inv) : 0,
+      categoryInfo: p.categoryInfo,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",
@@ -498,6 +503,9 @@ export type AddProductInventoryInput = {
   storeName?: string;
   sellMode: "online_delivery" | "offline_store_only";
   existingProductId?: string;
+  /** Category-specific structured info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
@@ -580,7 +588,8 @@ export async function createProductAndInventory(
     isOnline: sellMode === "online_delivery",
     originalProductId: input.existingProductId || null,
 
-    // Optional Product Insights fields
+    categoryInfo: input.categoryInfo ?? null,
+    // Legacy fertilizer flat fields — preserved for backward compat reads
     nitrogen: input.nitrogen?.trim() || null,
     phosphorus: input.phosphorus?.trim() || null,
     potassium: input.potassium?.trim() || null,

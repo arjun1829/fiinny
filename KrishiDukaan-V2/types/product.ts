@@ -54,7 +54,18 @@ export type MarketplaceProduct = {
   benefits?: string[];
   application?: string;
 
-  /** Optional Product Insights fields */
+  /**
+   * Category-specific structured information (new schema).
+   * Keys and value types are defined in app/dashboard/_lib/category-info.ts.
+   * String values for most fields; string[] for chips fields (bestForCrops, bestRegions, etc.).
+   */
+  categoryInfo?: Record<string, string | string[]>;
+
+  /**
+   * @deprecated Legacy flat fertilizer insight fields — kept for backward compat
+   * with documents written before the categoryInfo refactor.
+   * New writes use categoryInfo instead.
+   */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
