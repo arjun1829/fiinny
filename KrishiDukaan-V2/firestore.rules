@@ -308,8 +308,12 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.createdBy == request.auth.uid ||
-        // Allow claiming assigned product if it matches the user's retailerDocId (from invite)
-        (resource.data.source == 'manufacturer_assigned' && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
+        phoneMatches(resource.data.retailerDocId) ||
+        // Allow claiming assigned product if it matches the user's retailerDocId (from invite or admin assignment)
+        ((resource.data.source == 'manufacturer_assigned' || resource.data.source == 'admin_assigned') && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
         // Allow any retailer to add their store to the product's availability array
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability']) ||
@@ -320,7 +324,9 @@ service cloud.firestore {
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.manufacturerId == request.auth.uid
+        resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.manufacturerId)
       ));
     }
 
@@ -392,6 +398,9 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
         // retailerDocId can be stored as 10-digit or E164 — match both formats
         phoneMatches(resource.data.retailerDocId) ||
         // Allow if retailerPhone is set (post-backfill) and matches caller
@@ -401,6 +410,8 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthed() && discountFieldsValid() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
         // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
         (phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid) ||
         // Also allow if retailerPhone already matches (re-running backfill)
@@ -408,7 +419,9 @@ service cloud.firestore {
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.retailerId == request.auth.uid
+        resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId)
       ));
     }
 

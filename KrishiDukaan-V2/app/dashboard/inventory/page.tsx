@@ -234,7 +234,7 @@ export default function InventoryPage() {
 
       // Fetch inventory based on role
       if (resolvedRole === "manufacturer") {
-        const rows = await fetchManufacturerCatalogueRows(uid);
+        const rows = await fetchManufacturerCatalogueRows(uid, rPhone);
         setCatalogueRows(rows);
         setRetailerRows([]);
       } else {
