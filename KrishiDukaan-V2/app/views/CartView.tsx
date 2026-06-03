@@ -29,7 +29,7 @@ type CartViewProps = {
   onQtyChange: (itemKey: string, qty: number) => void;
   onRemove: (itemKey: string) => void;
   onAssignStore: (itemKey: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
-  onCheckout: () => Promise<void>;
+  onCheckout: (grandTotal: number) => Promise<void>;
   onRazorpayCheckout?: (amount: number, saveAddress: boolean) => void;
   onSaveAddress?: (address: string) => Promise<void>;
   onGoLogin: () => void;
@@ -671,8 +671,13 @@ export default function CartView({
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
 
-  const { totalCharge: deliveryCharge, bySellerCharge, bySellerWeight, loading: estimatingDelivery } =
-    useDeliveryEstimates(readyItems);
+  // ── Delivery estimate ─────────────────────────────────────────────────────
+  const {
+    totalCharge: deliveryCharge,
+    bySellerWeight,
+    loading: estimatingDelivery,
+  } = useDeliveryEstimates(readyItems);
+
   const grandTotal = subtotal + deliveryCharge;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
@@ -1082,12 +1087,12 @@ export default function CartView({
             {/* Pay & Place Order */}
             <div className="flex flex-col gap-2">
               <button
-                disabled={loading || !canCheckout}
+                disabled={loading || !canCheckout || estimatingDelivery}
                 onClick={() => {
                   if (saveAddress && onSaveAddress) {
-                    onSaveAddress(addressArea); // Trigger save via prop before checkout
+                    onSaveAddress(addressArea);
                   }
-                  void onCheckout();
+                  void onCheckout(grandTotal);
                 }}
                 className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
               >
@@ -1097,7 +1102,7 @@ export default function CartView({
                     Processing Payment…
                   </>
                 ) : canCheckout ? (
-                  <><CreditCard className="w-4 h-4" /> Pay ₹{subtotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
+                  <><CreditCard className="w-4 h-4" /> Pay ₹{grandTotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
                 ) : (
                   t('cartSelectStoresToOrder')
                 )}

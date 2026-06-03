@@ -783,7 +783,7 @@ export default function App() {
     setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
   };
 
-  const placeOrders = async () => {
+  const placeOrders = async (grandTotal?: number) => {
     if (!user || userRole !== "customer") {
       setCheckoutMessage("Please login with a customer account.");
       return;
@@ -807,26 +807,52 @@ export default function App() {
       return;
     }
 
+    // grandTotal includes delivery charges computed by CartView's useDeliveryEstimates hook.
+    // Fall back to product subtotal if grandTotal wasn't passed (shouldn't happen).
+    const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
+    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
+
+    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGrandTotal:", clientGrandTotal);
+    console.log("[Checkout] readyItems:", readyItems.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantUnit: i.variantUnit, sellerPhone: i.sellerPhone })));
+
     setCheckoutLoading(true);
     setCheckoutMessage(null);
 
     try {
-      // Step 1: Create Razorpay order on server (server verifies prices — never trust client amount)
+      // Step 1: Create Razorpay order on server.
+      // We send clientGrandTotal (includes delivery) so the server uses it as the
+      // Razorpay amount when its own inventory lookup can't find a matching price.
       const orderRes = await fetch("/api/payment/create-cart-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: readyItems.map((i) => ({
-            productId: i.productId,
-            sellerId:  i.sellerId,
-            qty:       i.qty,
+            productId:   i.productId,
+            sellerId:    i.sellerId,
+            sellerPhone: i.sellerPhone,
+            qty:         i.qty,
           })),
-          userId: user.uid,
+          userId:          user.uid,
+          clientSubtotal,
+          clientDelivery,
+          clientGrandTotal,
           note: `Cart: ${readyItems.length} item(s)`,
         }),
       });
-      if (!orderRes.ok) throw new Error("Could not initiate payment. Please try again.");
+
+      if (!orderRes.ok) {
+        let errMsg = "Could not initiate payment. Please try again.";
+        try {
+          const errBody = await orderRes.json();
+          console.error("[Checkout] create-cart-order API error:", orderRes.status, errBody);
+          if (errBody?.error) errMsg = errBody.error;
+        } catch { /* ignore parse error */ }
+        throw new Error(errMsg);
+      }
+
       const rzpOrder = await orderRes.json();
+      console.log("[Checkout] rzpOrder:", { id: rzpOrder.id, amount: rzpOrder.amount, serverTotal: rzpOrder.serverTotal });
 
       // Step 2: Open Razorpay modal
       const rzp = new (window as any).Razorpay({
