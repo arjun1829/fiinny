@@ -147,14 +147,33 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
 async function fetchProductsByOwner(
   ownerId: string,
   ownerType: "manufacturer" | "retailer",
+  phone?: string,
 ): Promise<ProductDoc[]> {
-  const q = query(
-    collection(db, "products"),
-    where("ownerId", "==", ownerId),
-    where("ownerType", "==", ownerType),
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
+  const queries = [
+    getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", ownerId),
+      where("ownerType", "==", ownerType),
+    ))
+  ];
+  if (phone) {
+    queries.push(getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", phone),
+      where("ownerType", "==", ownerType),
+    )));
+  }
+
+  const snaps = await Promise.all(queries);
+  const productMap = new Map<string, ProductDoc>();
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const p = mapProduct(d.id, d.data() as Record<string, unknown>);
+      productMap.set(p.id, p);
+    });
+  });
+
+  return Array.from(productMap.values());
 }
 
 /**
@@ -187,6 +206,8 @@ async function fetchInventoryForRetailer(
   if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
   Array.from(phoneKeys).forEach((phone) => {
     queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("retailerId", "==", phone))));
   });
 
   const snaps = await Promise.all(queries);
@@ -207,17 +228,24 @@ async function fetchInventoryForRetailer(
  * and legacy docs where only manufacturerId was set are captured. Each query is
  * individually validated by the `inventory` Firestore rule.
  */
-async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
+async function fetchInventoryForManufacturer(uid: string, phone?: string): Promise<Map<string, InventoryDoc>> {
   const map = new Map<string, InventoryDoc>();
 
-  const [snap1, snap2] = await Promise.all([
+  const queries = [
     getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
     getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
-  ]);
+  ];
+  if (phone) {
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", phone))));
+  }
 
-  [...snap1.docs, ...snap2.docs].forEach((d) => {
-    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-    if (!map.has(inv.productId)) map.set(inv.productId, inv);
+  const snaps = await Promise.all(queries);
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+      if (!map.has(inv.productId)) map.set(inv.productId, inv);
+    });
   });
 
   return map;
@@ -299,6 +327,9 @@ export async function fetchRetailerInventoryRows(
   const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
+    if (p.isActive === false && (p.source === "admin_assigned" || p.source === "manufacturer_assigned")) {
+      return [];
+    }
     const inv = inventoryMap.get(p.id);
     if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
@@ -381,12 +412,13 @@ export async function acceptAssignedProduct(
  */
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
+  phone?: string,
 ): Promise<ManufacturerProductRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "manufacturer");
+  const products = await fetchProductsByOwner(ownerId, "manufacturer", phone);
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
-  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId, phone);
 
   const rows: ManufacturerProductRow[] = products.map((p) => {
     const raw = p as any;

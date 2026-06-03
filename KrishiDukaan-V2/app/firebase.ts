@@ -349,7 +349,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
 
     // Retailer copies hold each store's selling price — collect separately before filtering
     const retailerCopies = allMapped.filter(
-      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned',
+      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned' || p.source === 'admin_assigned',
     );
 
     const raw = allMapped.filter(
@@ -358,7 +358,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         product.image &&
         Number.isFinite(product.price) &&
         product.source !== 'manufacturer_assigned' &&
-        product.source !== 'retailer_inventory_copy',
+        product.source !== 'retailer_inventory_copy' &&
+        product.source !== 'admin_assigned',
     );
 
     // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }

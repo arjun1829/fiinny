@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, Box, Layers, CreditCard, ShieldCheck, TrendingUp, Store, AlertTriangle } from "lucide-react";
-import { fetchAllUsers, fetchMarketplaceProducts, fetchHubs } from "../firebase";
+import { fetchAllUsers, fetchAllProductsForAdmin, fetchHubs } from "../firebase";
 
 function StatCard({ label, value, icon: Icon, color, onClick }: { label: string; value: string | number; icon: any; color: string; onClick?: () => void }) {
   return (
@@ -36,13 +36,19 @@ export default function AdminPage() {
   const loadData = () => {
     setLoading(true);
     setError(null);
-    Promise.all([fetchAllUsers(), fetchMarketplaceProducts(), fetchHubs()])
+    Promise.all([fetchAllUsers(), fetchAllProductsForAdmin(), fetchHubs()])
       .then(([users, products, hubs]) => {
         const retailers = users.filter(u => u.role === "retailer").length;
         const manufacturers = users.filter(u => u.role === "manufacturer").length;
         const admins = users.filter(u => u.role === "admin").length;
         const paid = users.filter(u => u.isPaid).length;
-        setStats({ total: users.length, retailers, manufacturers, admins, paid, products: products.length, hubs: hubs.length });
+
+        // Filter out copies and group by name (same as Products tab)
+        const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
+        const catalogProducts = products.filter(p => !COPY_SOURCES.has((p as any).source));
+        const uniqueNames = new Set(catalogProducts.map(p => p.name.toLowerCase().trim()));
+
+        setStats({ total: users.length, retailers, manufacturers, admins, paid, products: uniqueNames.size, hubs: hubs.length });
         setRecentUsers([...users].sort((a, b) => {
           const aT = a.createdAt?.seconds || 0;
           const bT = b.createdAt?.seconds || 0;
