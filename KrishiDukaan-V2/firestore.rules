@@ -365,13 +365,22 @@ service cloud.firestore {
     // ─── Discount field validation helper ───────────────────────────────────
     // Returns true when the incoming write does not set invalid discount values.
     // discountPct must be 0–99; dates must be absent or timestamps.
+    // Also validates new fields: discountType, discountFixedAmt, bulk tiers.
     function discountFieldsValid() {
       let d = request.resource.data;
       return (
         // discountPct: absent, or a number in [0, 99]
         (!('discountPct' in d) || (d.discountPct is number && d.discountPct >= 0 && d.discountPct <= 99)) &&
+        // discountFixedAmt: absent, or a non-negative number
+        (!('discountFixedAmt' in d) || (d.discountFixedAmt is number && d.discountFixedAmt >= 0)) &&
+        // discountType: absent, or one of the valid values
+        (!('discountType' in d) || d.discountType in ['percentage', 'fixed_amount']) &&
         // discountEnabled: absent or bool
         (!('discountEnabled' in d) || d.discountEnabled is bool) &&
+        // bulkDiscountEnabled: absent or bool
+        (!('bulkDiscountEnabled' in d) || d.bulkDiscountEnabled is bool) &&
+        // bulkDiscountTiers: absent or list
+        (!('bulkDiscountTiers' in d) || d.bulkDiscountTiers is list) &&
         // date fields: absent, null, or timestamp
         (!('discountStartDate' in d) || d.discountStartDate == null || d.discountStartDate is timestamp) &&
         (!('discountEndDate'   in d) || d.discountEndDate   == null || d.discountEndDate   is timestamp)

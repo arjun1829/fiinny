@@ -60,16 +60,31 @@ export interface InventoryDoc {
 
   // Discount fields
   discountEnabled?:   boolean;
-  discountPct?:       number;        // 0–99
+  discountType?:      "percentage" | "fixed_amount";
+  discountPct?:       number;        // 0–99 (used when type=percentage)
+  discountFixedAmt?:  number;        // rupee amount (used when type=fixed_amount)
   discountStartDate?: Timestamp | null;
   discountEndDate?:   Timestamp | null;
+  // Bulk/quantity-based discounts
+  bulkDiscountEnabled?: boolean;
+  bulkDiscountTiers?:   BulkDiscountTier[];
 }
+
+/** One tier in a bulk/quantity-based discount ladder. */
+export type BulkDiscountTier = {
+  minQty: number;    // minimum quantity to trigger this tier
+  discountPct: number; // percentage off at this tier (0–99)
+};
 
 export type DiscountUpdateInput = {
   discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
   discountPct: number;
+  discountFixedAmt: number;       // used when discountType === "fixed_amount"
   discountStartDate: Date | null;
   discountEndDate: Date | null;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
 };
 
 export type StockStatus = "out_of_stock" | "low_stock" | "in_stock";
@@ -96,10 +111,16 @@ export interface InventoryRow {
 
   // Discount fields
   discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
   discountPct: number;
+  discountFixedAmt: number;
   discountStartDate: Date | null;
   discountEndDate: Date | null;
   effectiveDiscountPct: number;
+  effectiveDiscountAmt: number;  // resolved rupee amount to deduct
+  // Bulk discount fields
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
   /** All package variants for this product */
   variants?: { unit: string; price: number; stock?: number }[];
 }
@@ -132,10 +153,15 @@ export interface ManufacturerProductRow {
 
   // Discount fields
   discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
   discountPct: number;
+  discountFixedAmt: number;
   discountStartDate: Date | null;
   discountEndDate: Date | null;
   effectiveDiscountPct: number;
+  effectiveDiscountAmt: number;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
 }
 
 export function deriveStockStatus(

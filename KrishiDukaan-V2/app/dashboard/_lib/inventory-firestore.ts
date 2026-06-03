@@ -18,6 +18,7 @@ import {
 
 import { db } from "../../firebase";
 import type {
+  BulkDiscountTier,
   DiscountUpdateInput,
   InventoryDoc,
   InventoryRow,
@@ -25,7 +26,7 @@ import type {
   ProductDoc,
 } from "../_types/inventory";
 import { deriveStockStatus } from "../_types/inventory";
-import { calcDiscount, getActiveDiscountPct } from "../../utils/discount";
+import { calcDiscount, getActiveDiscountPct, getActiveDiscountAmt } from "../../utils/discount";
 import {
   addSeatListingToBatch,
   canAssignSeat,
@@ -124,9 +125,16 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
       : undefined,
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : undefined,
     discountEnabled:   data.discountEnabled === true,
+    discountType:      data.discountType === "fixed_amount" ? "fixed_amount" : "percentage",
     discountPct:       toNum(data.discountPct, 0),
+    discountFixedAmt:  toNum(data.discountFixedAmt, 0),
     discountStartDate: (data.discountStartDate as Timestamp) ?? null,
     discountEndDate:   (data.discountEndDate as Timestamp) ?? null,
+    bulkDiscountEnabled: data.bulkDiscountEnabled === true,
+    bulkDiscountTiers: Array.isArray(data.bulkDiscountTiers)
+      ? (data.bulkDiscountTiers as { minQty: number; discountPct: number }[])
+          .filter(t => typeof t.minQty === "number" && typeof t.discountPct === "number")
+      : [],
   };
 }
 
@@ -313,10 +321,16 @@ export async function fetchRetailerInventoryRows(
         ownerId: p.ownerId,
         originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
         discountEnabled:   inv.discountEnabled ?? false,
+        discountType:      inv.discountType ?? "percentage",
         discountPct:       inv.discountPct ?? 0,
+        discountFixedAmt:  inv.discountFixedAmt ?? 0,
         discountStartDate: timestampToDate(inv.discountStartDate),
         discountEndDate:   timestampToDate(inv.discountEndDate),
         effectiveDiscountPct: getActiveDiscountPct(inv),
+        effectiveDiscountAmt: (inv.discountType === "fixed_amount" && inv.discountEnabled)
+          ? (inv.discountFixedAmt ?? 0) : 0,
+        bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
+        bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
         variants: p.variants,
       },
     ];
@@ -400,10 +414,16 @@ export async function fetchManufacturerCatalogueRows(
       dosage: p.dosage ?? "",
       bestForCrops: p.bestForCrops ?? [],
       discountEnabled:   inv?.discountEnabled ?? false,
+      discountType:      inv?.discountType ?? "percentage",
       discountPct:       inv?.discountPct ?? 0,
+      discountFixedAmt:  inv?.discountFixedAmt ?? 0,
       discountStartDate: timestampToDate(inv?.discountStartDate),
       discountEndDate:   timestampToDate(inv?.discountEndDate),
       effectiveDiscountPct: inv ? getActiveDiscountPct(inv) : 0,
+      effectiveDiscountAmt: (inv?.discountType === "fixed_amount" && inv?.discountEnabled)
+        ? (inv?.discountFixedAmt ?? 0) : 0,
+      bulkDiscountEnabled: inv?.bulkDiscountEnabled ?? false,
+      bulkDiscountTiers: inv?.bulkDiscountTiers ?? [],
     };
   });
 
@@ -915,8 +935,12 @@ export async function updateDiscountRecord(
   patch: DiscountUpdateInput,
   originalProductId?: string | null,
 ): Promise<void> {
-  if (patch.discountPct < 0 || patch.discountPct > 99) {
+  // Validate base discount
+  if (patch.discountType === "percentage" && (patch.discountPct < 0 || patch.discountPct > 99)) {
     throw new Error("Discount percentage must be between 0 and 99.");
+  }
+  if (patch.discountType === "fixed_amount" && patch.discountFixedAmt < 0) {
+    throw new Error("Fixed discount amount cannot be negative.");
   }
   if (
     patch.discountStartDate &&
@@ -926,11 +950,28 @@ export async function updateDiscountRecord(
     throw new Error("End date must be after start date.");
   }
 
+  // Validate bulk tiers
+  if (patch.bulkDiscountEnabled && patch.bulkDiscountTiers.length > 0) {
+    const sortedTiers = [...patch.bulkDiscountTiers].sort((a, b) => a.minQty - b.minQty);
+    for (const tier of sortedTiers) {
+      if (tier.minQty < 1) throw new Error("Bulk tier minimum quantity must be at least 1.");
+      if (tier.discountPct <= 0 || tier.discountPct > 99) {
+        throw new Error("Bulk tier discount must be between 1% and 99%.");
+      }
+    }
+    // No overlapping (duplicate minQty values)
+    const qtys = sortedTiers.map(t => t.minQty);
+    if (new Set(qtys).size !== qtys.length) {
+      throw new Error("Bulk discount tiers cannot have duplicate minimum quantities.");
+    }
+  }
+
   const startTs = patch.discountStartDate ? Timestamp.fromDate(patch.discountStartDate) : null;
   const endTs   = patch.discountEndDate   ? Timestamp.fromDate(patch.discountEndDate)   : null;
 
   const effectivePct = getActiveDiscountPct({
     discountEnabled:   patch.discountEnabled,
+    discountType:      patch.discountType,
     discountPct:       patch.discountPct,
     discountStartDate: startTs,
     discountEndDate:   endTs,
@@ -939,11 +980,20 @@ export async function updateDiscountRecord(
   const now = serverTimestamp();
   const batch = writeBatch(db);
 
+  // Sanitize bulk tiers for Firestore (plain objects only)
+  const sanitizedTiers = patch.bulkDiscountEnabled
+    ? patch.bulkDiscountTiers.map(t => ({ minQty: t.minQty, discountPct: t.discountPct }))
+    : [];
+
   batch.update(doc(db, "inventory", inventoryId), {
-    discountEnabled:   patch.discountEnabled,
-    discountPct:       patch.discountPct,
-    discountStartDate: startTs,
-    discountEndDate:   endTs,
+    discountEnabled:       patch.discountEnabled,
+    discountType:          patch.discountType,
+    discountPct:           patch.discountType === "percentage" ? patch.discountPct : 0,
+    discountFixedAmt:      patch.discountType === "fixed_amount" ? patch.discountFixedAmt : 0,
+    discountStartDate:     startTs,
+    discountEndDate:       endTs,
+    bulkDiscountEnabled:   patch.bulkDiscountEnabled,
+    bulkDiscountTiers:     sanitizedTiers,
     updatedAt: now,
   });
 
@@ -955,7 +1005,6 @@ export async function updateDiscountRecord(
   await batch.commit();
 
   // Sync discountPct into the availability[] entry on the root product (fire-and-forget).
-  // This is how the product detail page reads per-seller discounts.
   if (originalProductId) {
     syncAvailabilityDiscount(originalProductId, productId, effectivePct).catch(() => {});
   }
@@ -1094,10 +1143,14 @@ export type AdminDiscountRow = {
   ownerType: string;
   sellingPrice: number;
   discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
   discountPct: number;
+  discountFixedAmt: number;
   discountStartDate: Date | null;
   discountEndDate: Date | null;
   effectiveDiscountPct: number;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
   updatedAt: Date | null;
 };
 
@@ -1125,10 +1178,14 @@ export async function fetchAllDiscounts(): Promise<AdminDiscountRow[]> {
       ownerType: String(data.ownerType ?? "retailer"),
       sellingPrice: inv.sellingPrice,
       discountEnabled: inv.discountEnabled ?? false,
+      discountType: inv.discountType ?? "percentage",
       discountPct: inv.discountPct ?? 0,
+      discountFixedAmt: inv.discountFixedAmt ?? 0,
       discountStartDate: timestampToDate(inv.discountStartDate),
       discountEndDate: timestampToDate(inv.discountEndDate),
       effectiveDiscountPct: getActiveDiscountPct(inv),
+      bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
+      bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
       updatedAt: timestampToDate(inv.updatedAt),
     };
   });

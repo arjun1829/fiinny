@@ -206,9 +206,13 @@ function RowActions({
             originalProductId={row.originalProductId}
             sellingPrice={row.sellingPrice}
             discountEnabled={row.discountEnabled}
+            discountType={row.discountType ?? "percentage"}
             discountPct={row.discountPct}
+            discountFixedAmt={row.discountFixedAmt ?? 0}
             discountStartDate={row.discountStartDate}
             discountEndDate={row.discountEndDate}
+            bulkDiscountEnabled={row.bulkDiscountEnabled ?? false}
+            bulkDiscountTiers={row.bulkDiscountTiers ?? []}
             isActive={row.isActive}
             onSaved={async () => {
               setDiscountOpen(false);
