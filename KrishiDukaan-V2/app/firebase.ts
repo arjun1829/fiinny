@@ -2168,10 +2168,18 @@ export async function adminRemoveAssignment(
  */
 export async function adminUpdateAssignmentPricing(
   copyProductId: string,
-  patch: { sellingPrice: number; stockQuantity: number },
+  patch: { sellingPrice: number; stockQuantity: number; variants?: { unit: string; price: number; stock?: number }[] },
 ): Promise<void> {
   const now = serverTimestamp();
-  const inStock = patch.stockQuantity > 0;
+
+  let sellingPrice = patch.sellingPrice;
+  let stockQuantity = patch.stockQuantity;
+  if (patch.variants && patch.variants.length > 0) {
+    sellingPrice = patch.variants[0].price;
+    stockQuantity = typeof patch.variants[0].stock === 'number' ? patch.variants[0].stock : 0;
+  }
+
+  const inStock = stockQuantity > 0;
   const stockLabel = inStock ? 'In Stock' : 'Out of Stock';
 
   const pRef = doc(db, 'products', copyProductId);
@@ -2179,28 +2187,32 @@ export async function adminUpdateAssignmentPricing(
   const data = (pSnap.exists() ? pSnap.data() : {}) as Record<string, any>;
   const av = Array.isArray(data.availability) && data.availability.length
     ? data.availability.map((a: any, i: number) =>
-        i === 0 ? { ...a, sellingPrice: patch.sellingPrice, stockLevel: stockLabel } : a)
+        i === 0 ? { ...a, sellingPrice: sellingPrice, stockLevel: stockLabel } : a)
     : [{
         storeId: data.ownerId ?? data.retailerId ?? null,
         storePhone: data.retailerPhone ?? data.ownerPhone ?? null,
         storeName: data.store ?? null,
         stockLevel: stockLabel,
-        sellingPrice: patch.sellingPrice,
+        sellingPrice: sellingPrice,
       }];
 
-  await updateDoc(pRef, {
-    price: patch.sellingPrice,
+  const updatePayload: Record<string, any> = {
+    price: sellingPrice,
     stock: stockLabel,
     availability: av,
     updatedAt: now,
-  });
+  };
+  if (patch.variants) {
+    updatePayload.variants = patch.variants;
+  }
+  await updateDoc(pRef, updatePayload);
 
   const invSnap = await getDocs(query(collection(db, 'inventory'), where('productId', '==', copyProductId)));
   if (!invSnap.empty) {
     const batch = writeBatch(db);
     invSnap.forEach(d => batch.update(d.ref, {
-      sellingPrice: patch.sellingPrice,
-      stockQuantity: patch.stockQuantity,
+      sellingPrice: sellingPrice,
+      stockQuantity: stockQuantity,
       isAvailable: inStock,
       updatedAt: now,
     }));

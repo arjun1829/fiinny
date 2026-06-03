@@ -217,6 +217,7 @@ export default function AdminProductsPage() {
           active: c.isActive !== false,
           price: String(iv?.sellingPrice ?? c.price ?? ""),
           stock: String(iv?.stockQuantity ?? ""),
+          variants: c.variants || [],
         };
       }));
     } finally { setAssignmentsLoading(false); }
@@ -225,12 +226,27 @@ export default function AdminProductsPage() {
   const setRowField = (copyId: string, field: "price" | "stock", val: string) =>
     setAssignmentRows(prev => prev.map(r => r.copyId === copyId ? { ...r, [field]: val } : r));
 
+  const setRowVariantField = (copyId: string, variantIndex: number, field: "price" | "stock", val: string) => {
+    setAssignmentRows(prev => prev.map(r => {
+      if (r.copyId !== copyId) return r;
+      const nextVariants = [...(r.variants || [])];
+      if (nextVariants[variantIndex]) {
+        nextVariants[variantIndex] = {
+          ...nextVariants[variantIndex],
+          [field]: field === "price" ? (Number(val) || 0) : (Number(val) || 0)
+        };
+      }
+      return { ...r, variants: nextVariants };
+    }));
+  };
+
   const saveAssignmentRow = async (row: typeof assignmentRows[number]) => {
     setSavingRow(row.copyId); setRowMsg(null);
     try {
       await adminUpdateAssignmentPricing(row.copyId, {
         sellingPrice: Number(row.price) || 0,
         stockQuantity: Number(row.stock) || 0,
+        variants: row.variants,
       });
       await load();
       setRowMsg(`Saved ${row.store}.`);
@@ -882,24 +898,53 @@ export default function AdminProductsPage() {
                       {removingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                     </button>
                   </div>
-                  <div className="flex items-end gap-2">
-                    <label className="flex flex-col gap-1 text-xs flex-1">
-                      <span className="font-medium text-on-surface-variant">Price (₹)</span>
-                      <input type="number" min={0} value={row.price}
-                        onChange={e => setRowField(row.copyId, "price", e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs flex-1">
-                      <span className="font-medium text-on-surface-variant">Stock Qty</span>
-                      <input type="number" min={0} value={row.stock}
-                        onChange={e => setRowField(row.copyId, "stock", e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                    </label>
-                    <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
-                      className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
-                      {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                    </button>
-                  </div>
+                  {row.variants && row.variants.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Variants Pricing & Stock:</p>
+                      {row.variants.map((v: any, vIdx: number) => (
+                        <div key={vIdx} className="flex items-center gap-2 bg-surface-container-low/50 p-2 rounded-xl border border-outline-variant/20">
+                          <span className="text-xs font-semibold text-on-surface w-20 truncate">{v.unit}</span>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Price:</span>
+                            <input type="number" min={0} value={v.price}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "price", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs outline-none focus:border-primary" />
+                          </label>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Stock:</span>
+                            <input type="number" min={0} value={v.stock !== undefined ? v.stock : ""}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "stock", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs text-center outline-none focus:border-primary" />
+                          </label>
+                        </div>
+                      ))}
+                      <div className="flex justify-end pt-1">
+                        <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                          className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                          {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Variants"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-end gap-2">
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Price (₹)</span>
+                        <input type="number" min={0} value={row.price}
+                          onChange={e => setRowField(row.copyId, "price", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Stock Qty</span>
+                        <input type="number" min={0} value={row.stock}
+                          onChange={e => setRowField(row.copyId, "stock", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                        className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                        {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
