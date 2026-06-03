@@ -158,19 +158,6 @@ export interface InventoryRow {
   applicationDesc?: string;
   dosage?: string;
   bestForCrops?: string[];
-
-  // Discount fields
-  discountEnabled: boolean;
-  discountType: "percentage" | "fixed_amount";
-  discountPct: number;
-  discountFixedAmt: number;
-  discountStartDate: Date | null;
-  discountEndDate: Date | null;
-  effectiveDiscountPct: number;
-  effectiveDiscountAmt: number;
-  bulkDiscountEnabled: boolean;
-  bulkDiscountTiers: BulkDiscountTier[];
-}
 }
 
 /**

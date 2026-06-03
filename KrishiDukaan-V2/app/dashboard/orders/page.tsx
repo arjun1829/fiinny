@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
+import { FeatureLocked } from "../_components/feature-locked";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
 import { generateInvoicePDF } from "../../utils/invoice-generator";
@@ -346,21 +347,7 @@ export default function OrdersPage() {
           {t('signInForOrders')}
         </p>
       ) : onlineDelivery === false ? (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-16 text-center">
-          <div className="rounded-full bg-surface-container p-5">
-            <Truck className="h-9 w-9 text-on-surface-variant/40" />
-          </div>
-          <div>
-            <p className="text-base font-semibold text-on-surface">{t('onlineDeliveryNotEnabled')}</p>
-            <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
-              {t('enableOnlineDeliveryHint')}
-            </p>
-          </div>
-          <Link href="/dashboard/profile?tab=settings"
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            {t('goToSettingsBtn')}
-          </Link>
-        </div>
+        <FeatureLocked />
       ) : loading ? (
         <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

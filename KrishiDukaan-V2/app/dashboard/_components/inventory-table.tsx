@@ -267,6 +267,237 @@ function ActionsCell({
   );
 }
 
+// ─── Mobile Product Card ─────────────────────────────────────────────────────
+// Shown on small screens instead of the desktop table.
+// Top area: tap to open Edit modal.
+// Bottom action row (own products): Edit · Discount · Delete
+
+function MobileProductCard({
+  row,
+  onEdit,
+  onToggleDiscount,
+  discountOpen,
+  onToggleActive,
+  onDelete,
+  userId,
+  onUpdated,
+}: {
+  row: InventoryRow;
+  onEdit: () => void;
+  onToggleDiscount: () => void;
+  discountOpen: boolean;
+  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
+  onDelete?: (productId: string, inventoryId: string) => Promise<void>;
+  userId?: string;
+  onUpdated: () => Promise<void> | void;
+}) {
+  const { t } = useI18n();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]           = useState(false);
+  const [deleteErr, setDeleteErr]         = useState<string | null>(null);
+
+  const isPending  = !!userId && row.assignedByManufacturer && row.ownerId !== userId;
+  const isInactive = !row.isActive;
+  const isOwn      = !row.assignedByManufacturer;
+
+  const statusColor =
+    row.status === "out_of_stock"
+      ? "bg-harvest/15 text-harvest"
+      : row.status === "low_stock"
+        ? "bg-secondary-container/80 text-on-secondary-container"
+        : "bg-primary/10 text-primary";
+
+  const handleDelete = async () => {
+    if (!onDelete || !row.inventoryId) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      await onDelete(row.productId, row.inventoryId);
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : "Failed.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  return (
+    <div className={cn(
+      "rounded-2xl border bg-white shadow-sm overflow-hidden",
+      isInactive ? "opacity-60 border-outline-variant/20" : "border-outline-variant/30",
+    )}>
+      {/* ── Product info — tap to open Edit modal ──────────────────────────── */}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="w-full text-left p-4 active:bg-surface-container-low/40 transition-colors"
+      >
+        <div className="flex items-start gap-3">
+          {/* Thumbnail */}
+          {row.image ? (
+            <img
+              src={row.image}
+              alt=""
+              className="h-14 w-14 rounded-xl object-cover shrink-0 border border-outline-variant/20"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className="h-14 w-14 rounded-xl bg-surface-container shrink-0 flex items-center justify-center text-on-surface-variant/30 text-lg">
+              ?
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            {/* Name + status + pencil hint */}
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-on-surface text-sm leading-snug truncate pr-2">
+                {row.productName}
+              </p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={cn(
+                  "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  isInactive ? "bg-surface-container text-on-surface-variant" : statusColor,
+                )}>
+                  {isInactive ? "Inactive" : stockStatusLabel(row.status)}
+                </span>
+                {!isPending && isOwn && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant/60 pointer-events-none"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Category */}
+            <p className="text-xs text-on-surface-variant mt-0.5">{row.category}</p>
+
+            {/* Variants pill */}
+            {row.variants && row.variants.length > 1 && (
+              <p className="text-[10px] text-primary font-semibold mt-0.5">
+                {row.variants.length} variants
+              </p>
+            )}
+
+            {/* Stats row */}
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <span className="text-xs text-on-surface-variant">
+                Stock: <span className="font-semibold text-on-surface">{row.stockQuantity}</span>
+              </span>
+              <span className="text-xs text-on-surface-variant">
+                Price: <span className="font-semibold text-on-surface">₹{row.sellingPrice.toFixed(0)}</span>
+              </span>
+              {row.effectiveDiscountPct > 0 && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">
+                  <Tag className="h-2.5 w-2.5" /> {row.effectiveDiscountPct}% OFF
+                </span>
+              )}
+            </div>
+
+            {/* Source badge */}
+            <div className="flex items-center gap-2 mt-2">
+              <span className={cn(
+                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                row.assignedByManufacturer ? "bg-on-surface/8 text-on-surface-variant" : "bg-primary/10 text-primary",
+              )}>
+                {row.assignedByManufacturer ? "Manufacturer Assigned" : "Own Catalogue"}
+              </span>
+              {isPending && (
+                <span className="text-[10px] text-amber-700 font-semibold">Tap to accept</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </button>
+
+      {/* ── Action buttons row — own products only ──────────────────────────── */}
+      {isOwn && (
+        <div className="border-t border-outline-variant/15 px-3 py-2.5 flex flex-wrap items-center gap-2">
+          {/* Edit */}
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+          >
+            <Pencil className="h-3 w-3" /> {t('editBtn')}
+          </button>
+
+          {/* Discount */}
+          {row.inventoryId && (
+            <button
+              type="button"
+              onClick={onToggleDiscount}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
+                discountOpen || row.effectiveDiscountPct > 0
+                  ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
+                  : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+              )}
+            >
+              <Tag className="h-3 w-3" />
+              {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
+            </button>
+          )}
+
+          {/* Delete */}
+          {onDelete && (
+            confirmDelete ? (
+              <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                <span className="text-xs font-medium text-red-700">Delete?</span>
+                <button
+                  type="button" disabled={deleting} onClick={handleDelete}
+                  className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+                >
+                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  {deleting ? "…" : "Confirm"}
+                </button>
+                <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)} className="text-xs font-medium text-red-600 px-1 hover:underline">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting}
+                className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1.5 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            )
+          )}
+
+          {deleteErr && <p className="w-full text-[10px] text-red-600">{deleteErr}</p>}
+        </div>
+      )}
+
+      {/* ── Inline Discount Panel ────────────────────────────────────────────── */}
+      {discountOpen && row.inventoryId && isOwn && (
+        <div className="border-t border-outline-variant/15 p-4">
+          <DiscountPanel
+            inventoryId={row.inventoryId}
+            productId={row.productId}
+            originalProductId={row.originalProductId}
+            sellingPrice={row.sellingPrice}
+            discountEnabled={row.discountEnabled}
+            discountType={row.discountType}
+            discountPct={row.discountPct}
+            discountFixedAmt={row.discountFixedAmt}
+            discountStartDate={row.discountStartDate}
+            discountEndDate={row.discountEndDate}
+            bulkDiscountEnabled={row.bulkDiscountEnabled}
+            bulkDiscountTiers={row.bulkDiscountTiers}
+            isActive={row.isActive}
+            onSaved={async () => { onToggleDiscount(); await onUpdated(); }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Shared Inventory Table ─────────────────────────────────────────────────
 
 export function InventoryTable({
@@ -325,10 +556,14 @@ export function InventoryTable({
     }
   };
 
+  const emptyMsg = role === "manufacturer"
+    ? t('noCatalogueYet')
+    : "No inventory yet. Tap + Add Product to get started.";
+
   if (!rows.length) {
     return (
       <div className="rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 px-4 py-12 text-center text-sm text-on-surface-variant">
-        {role === "manufacturer" ? t('noCatalogueYet') : "No inventory yet. Add a product or wait for a manufacturer to assign one."}
+        {emptyMsg}
       </div>
     );
   }
@@ -339,7 +574,25 @@ export function InventoryTable({
         <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
+      {/* ── Mobile card list (< md breakpoint) ─────────────────────────────── */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {rows.map((r) => (
+          <MobileProductCard
+            key={r.productId}
+            row={r}
+            userId={userId}
+            onEdit={() => setEditing(r)}
+            onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
+            discountOpen={discountId === r.productId}
+            onToggleActive={onToggleActive}
+            onDelete={onDelete}
+            onUpdated={onUpdated}
+          />
+        ))}
+      </div>
+
+      {/* ── Desktop table (≥ md breakpoint) ────────────────────────────────── */}
+      <div className="hidden md:block overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
@@ -477,9 +730,13 @@ export function InventoryTable({
                               originalProductId={r.originalProductId}
                               sellingPrice={r.sellingPrice}
                               discountEnabled={r.discountEnabled}
+                              discountType={r.discountType}
                               discountPct={r.discountPct}
+                              discountFixedAmt={r.discountFixedAmt}
                               discountStartDate={r.discountStartDate}
                               discountEndDate={r.discountEndDate}
+                              bulkDiscountEnabled={r.bulkDiscountEnabled}
+                              bulkDiscountTiers={r.bulkDiscountTiers}
                               isActive={r.isActive}
                               onSaved={async () => { setDiscountId(null); await onUpdated(); }}
                             />

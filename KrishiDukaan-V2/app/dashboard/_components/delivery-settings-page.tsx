@@ -15,6 +15,7 @@ import {
 import type { WeightSlab, CoverageType } from "../_types/delivery-settings";
 import { INDIAN_STATES } from "../_types/delivery-settings";
 import { PageHeader } from "./page-header";
+import { FeatureLocked } from "./feature-locked";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -305,7 +306,10 @@ export function DeliverySettingsPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // Section 1: online delivery
+  // Profile-level gate — set from profile.onlineDelivery on load
+  const [profileOnlineDelivery, setProfileOnlineDelivery] = useState<boolean | null>(null);
+
+  // Section 1: online delivery (form toggle within the page)
   const [onlineEnabled, setOnlineEnabled] = useState(false);
 
   // Section 2: weight slabs
@@ -324,6 +328,8 @@ export function DeliverySettingsPage() {
         const profile = await getUserProfile(user.uid);
         const phone = String((profile as any)?.phone ?? "").trim();
         const role = profile?.role === "manufacturer" ? "manufacturer" : "retailer";
+        const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
+        setProfileOnlineDelivery(hasOnlineDelivery);
         setSellerPhone(phone || null);
         setOwnerType(role);
 
@@ -425,6 +431,18 @@ export function DeliverySettingsPage() {
     );
   }
 
+  if (profileOnlineDelivery === false) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="Delivery Settings"
+          description="Configure online delivery, charge slabs, and coverage for your products."
+        />
+        <FeatureLocked />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -473,6 +491,19 @@ export function DeliverySettingsPage() {
           </div>
         )}
       </Section>
+
+      {/* ── Locked state when online delivery is off ── */}
+      {!onlineEnabled && (
+        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-12 text-center">
+          <Truck className="h-8 w-8 text-on-surface-variant/30 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-on-surface">Enable Online Delivery to configure Delivery Settings</p>
+          <p className="text-xs text-on-surface-variant mt-1 max-w-sm mx-auto">
+            Turn on Online Delivery above to set up your delivery charges and coverage area.
+          </p>
+        </div>
+      )}
+
+      {onlineEnabled && <>
 
       {/* ── Section 2: Delivery Charge Slabs ── */}
       <Section
@@ -623,6 +654,8 @@ export function DeliverySettingsPage() {
           )}
         </button>
       </div>
+
+      </>}
     </div>
   );
 }

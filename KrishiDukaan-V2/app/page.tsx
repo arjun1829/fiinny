@@ -345,7 +345,7 @@ export default function App() {
           setInviteAccept({ status: 'already_accepted' });
         } else {
           setInviteAccept({ status: 'success' });
-          setTimeout(() => { window.location.href = '/dashboard/profile'; }, 1800);
+          setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
         }
       })
       .catch(() =>
@@ -476,7 +476,7 @@ export default function App() {
       // Keep invite code in state so the auto-accept effect can claim it after redirect
       navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
-      window.location.href = '/dashboard/profile';
+      window.location.href = '/dashboard';
     } else {
       navigate('home', { replace: true });
     }
@@ -495,7 +495,7 @@ export default function App() {
           productCount: profileData.productCount || 0,
         });
         if (profileData.role === 'retailer' || profileData.role === 'manufacturer') {
-          window.location.href = '/dashboard/profile';
+          window.location.href = '/dashboard';
           return;
         }
       } else {

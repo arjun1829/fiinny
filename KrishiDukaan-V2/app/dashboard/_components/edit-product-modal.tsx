@@ -526,10 +526,10 @@ export function EditProductModal({ row, onClose, onSaved }: {
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-surface shadow-2xl">
+      <div className="fixed inset-y-0 right-0 z-[61] flex w-full max-w-xl flex-col bg-surface shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4">
           <div>
