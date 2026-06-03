@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import {
   getProductReviews,
   getStoreReviews,
@@ -168,6 +169,18 @@ export function ReviewSection({
     );
   }
 
+  const totalReviews = reviews.length;
+  const ratingCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  let sum = 0;
+  reviews.forEach(r => {
+    const rounded = Math.round(r.rating) as 1 | 2 | 3 | 4 | 5;
+    if (rounded >= 1 && rounded <= 5) {
+      ratingCounts[rounded]++;
+    }
+    sum += r.rating;
+  });
+  const avgRating = totalReviews > 0 ? (sum / totalReviews).toFixed(1) : '0.0';
+
   return (
     <section className="bg-white rounded-3xl border border-surface-container shadow-sm p-6 md:p-8 flex flex-col gap-6 mt-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-surface-container-low pb-4">
@@ -302,7 +315,55 @@ export function ReviewSection({
       )}
 
       {reviews.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="flex flex-col gap-6">
+          {/* Rating Overview */}
+          <div className="flex flex-col md:flex-row gap-8 bg-surface-container-lowest p-6 rounded-3xl border border-surface-container">
+            <div className="flex flex-col items-center justify-center shrink-0 w-32">
+              <span className="text-5xl font-black text-on-surface">{avgRating}</span>
+              <div className="flex items-center my-2 gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star
+                    key={s}
+                    className={`w-4 h-4 ${
+                      s <= Math.round(Number(avgRating))
+                        ? 'fill-amber-400 text-amber-400'
+                        : 'text-surface-container-highest fill-surface-container-low'
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-widest">
+                {totalReviews} {totalReviews === 1 ? 'Review' : 'Reviews'}
+              </span>
+            </div>
+            
+            <div className="flex-1 flex flex-col gap-2 justify-center border-l-0 md:border-l md:border-surface-container pl-0 md:pl-8">
+              {[5, 4, 3, 2, 1].map((stars) => {
+                const count = ratingCounts[stars as keyof typeof ratingCounts];
+                const percent = totalReviews > 0 ? (count / totalReviews) * 100 : 0;
+                return (
+                  <div key={stars} className="flex items-center gap-3">
+                    <span className="text-xs font-bold w-10 flex items-center justify-end gap-1 text-on-surface-variant">
+                      {stars} <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    </span>
+                    <div className="flex-1 h-2.5 bg-surface-container rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percent}%` }}
+                        transition={{ duration: 1, ease: 'easeOut' }}
+                        className="h-full bg-amber-400 rounded-full" 
+                      />
+                    </div>
+                    <span className="text-xs font-semibold text-on-surface-variant w-8 text-right">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
           {reviews.map(review => (
             <div key={review.id} className={`border p-5 rounded-2xl hover:border-primary/30 transition-colors group ${review.reviewerPhone === userPhone ? 'bg-primary/5 border-primary/20' : 'bg-surface-container-lowest border-surface-container'}`}>
               <div className="flex items-start justify-between mb-3">
@@ -353,6 +414,7 @@ export function ReviewSection({
               )}
             </div>
           ))}
+        </div>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-10 px-4 bg-surface-container-lowest rounded-2xl border border-dashed border-surface-container text-center">
