@@ -4,24 +4,25 @@ import { useEffect, useState } from "react";
 import { fetchOrdersForCustomer } from "../firebase";
 import type { OrderDoc } from "../../types/order";
 import { useI18n } from "../i18n/I18nContext";
+import { generateInvoicePDF } from "../utils/invoice-generator";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
-const STATUS_ORDER = ["placed", "accepted", "out_for_delivery", "delivered"] as const;
+// Visible timeline — 3 steps (accepted is legacy, handled as processing label)
+const STATUS_ORDER = ["placed", "out_for_delivery", "delivered"] as const;
 
 const TIMELINE_STEP_KEYS: { key: string; labelKey: string }[] = [
   { key: "placed",           labelKey: "orderStatusPlaced" },
-  { key: "accepted",         labelKey: "orderStatusAccepted" },
   { key: "out_for_delivery", labelKey: "orderTimelineOutForDelivery" },
   { key: "delivered",        labelKey: "orderStatusDelivered" },
 ];
 
 const STATUS_BADGE_KEY: Record<string, string> = {
-  placed: "orderStatusPlaced",
-  accepted: "orderStatusAccepted",
+  placed:           "orderStatusPlaced",
+  accepted:         "orderStatusAccepted",   // legacy orders — show as Accepted
   out_for_delivery: "orderStatusOutForDelivery",
-  delivered: "orderStatusDelivered",
-  rejected: "orderStatusRejected",
+  delivered:        "orderStatusDelivered",
+  rejected:         "orderStatusRejected",
 };
 
 function formatDate(createdAt: unknown): string {
@@ -43,7 +44,10 @@ function OrderTimeline({ status, t }: { status: string; t: Translate }) {
     );
   }
 
-  const currentIdx = STATUS_ORDER.indexOf(status as (typeof STATUS_ORDER)[number]);
+  // Map legacy "accepted" to the "out_for_delivery" step index so the timeline
+  // shows progress correctly without needing a separate Accepted step.
+  const resolvedStatus = status === "accepted" ? "out_for_delivery" : status;
+  const currentIdx = STATUS_ORDER.indexOf(resolvedStatus as (typeof STATUS_ORDER)[number]);
 
   return (
     <div className="flex items-start gap-0">
@@ -131,9 +135,14 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
                 <p className="text-xs text-on-surface-variant mt-0.5">{t('orderFrom', { name: order.sellerName })}</p>
               )}
             </div>
-            <div className="text-right shrink-0">
-              <p className="font-black text-secondary text-base">₹{Number(order.subtotal || 0).toFixed(2)}</p>
-              <span className={`inline-block mt-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+            <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+              <p className="font-black text-secondary text-base">
+                ₹{Number(order.grandTotal ?? order.subtotal ?? 0).toFixed(2)}
+              </p>
+              {(order.deliveryCharge ?? 0) > 0 && (
+                <p className="text-[10px] text-on-surface-variant">incl. ₹{order.deliveryCharge} delivery</p>
+              )}
+              <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
                 order.status === "delivered"        ? "bg-green-100 text-green-700" :
                 order.status === "rejected"         ? "bg-red-100 text-red-700" :
                 order.status === "out_for_delivery" ? "bg-blue-100 text-blue-700" :
@@ -142,6 +151,17 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
               }`}>
                 {STATUS_BADGE_KEY[order.status] ? (t as Translate)(STATUS_BADGE_KEY[order.status]!) : order.status.replace(/_/g, " ")}
               </span>
+              {/* Download Invoice — available for all orders */}
+              <button
+                type="button"
+                onClick={() => generateInvoicePDF(order)}
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-primary border border-primary/30 px-2.5 py-1 rounded-lg hover:bg-primary/5 transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Invoice
+              </button>
             </div>
           </div>
 
@@ -149,7 +169,15 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
           <div className="border-t border-surface-container pt-3 pb-4 space-y-1.5">
             {(order.items || []).map((item) => (
               <div key={`${order.id}-${item.productId}`} className="flex justify-between text-sm">
-                <span className="text-on-surface">{item.name} × {item.qty}</span>
+                <span className="text-on-surface">
+                  {item.name}
+                  {item.variantUnit && (
+                    <span className="ml-1 text-[10px] font-semibold text-primary bg-primary/8 px-1.5 py-0.5 rounded-full">
+                      {item.variantUnit}
+                    </span>
+                  )}
+                  {" "}× {item.qty}
+                </span>
                 <span className="font-semibold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(2)}</span>
               </div>
             ))}

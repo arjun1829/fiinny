@@ -17,6 +17,7 @@ export type ProfileFormValues = {
   website: string;
   logoUrl: string;
   bannerUrl: string;
+  gstin: string;
 };
 
 export type RetailerProfileExtras = {
@@ -146,6 +147,7 @@ export async function loadProfileState(
     email: authEmail || "",
     line1: "", city: "", state: "", pincode: "",
     website: "", logoUrl: "", bannerUrl: "",
+    gstin: "",
   };
 
   if (!snap.exists()) {
@@ -175,6 +177,7 @@ export async function loadProfileState(
         website:   String(data.website ?? ""),
         logoUrl:   String(data.logo ?? ""),
         bannerUrl: String(data.banner ?? ""),
+        gstin: String(data.gstin ?? ""),
       },
       geo: parseGeo(data),
       retailerExtras: null,
@@ -196,6 +199,7 @@ export async function loadProfileState(
       website:   String(data.website ?? ""),
       logoUrl:   String(data.logo ?? ""),
       bannerUrl: String(data.banner ?? ""),
+      gstin: String(data.gstin ?? ""),
     },
     geo: parseGeo(data),
     retailerExtras: {
@@ -247,6 +251,7 @@ export async function saveManufacturerProfile(
       website:      form.website.trim(),
       logo:         form.logoUrl.trim(),
       banner:       form.bannerUrl.trim(),
+      gstin:        form.gstin.trim() || null,
       geo,
       address: {
         line1:   form.line1.trim(),
@@ -300,6 +305,7 @@ export async function saveRetailerProfile(
       website:   form.website.trim(),
       logo:      form.logoUrl.trim(),
       banner:    form.bannerUrl.trim(),
+      gstin:     form.gstin.trim() || null,
       address: {
         line1:   form.line1.trim(),
         city:    form.city.trim(),

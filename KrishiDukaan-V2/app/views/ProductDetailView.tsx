@@ -34,9 +34,11 @@ interface ProductDetailViewProps {
   onProductClick?: (id: string) => void;
   onViewSellerAll?: (storeName: string) => void;
   onViewBrand?: (manufacturerId: string) => void;
+  /** Open Market filtered by category — used by the Similar Products "View All" CTA. */
+  onCategoryClick?: (categoryId: string) => void;
   storesWithDistance?: StoreWithDistance[];
-  onAddToCart?: (product: MarketplaceProduct) => void;
-  onAddToCartFromStore?: (product: MarketplaceProduct, store: any) => void;
+  onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
+  onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
   onBuyNow?: (product: MarketplaceProduct) => void;
 }
 
@@ -330,6 +332,82 @@ function ManufacturerBrandSection({
   );
 }
 
+// ─── Similar Products Section ─────────────────────────────────────────────────
+
+function SimilarProductsSection({
+  products,
+  currentProduct,
+  onProductClick,
+  onCategoryClick,
+}: {
+  products: MarketplaceProduct[];
+  currentProduct: MarketplaceProduct;
+  onProductClick?: (id: string) => void;
+  onCategoryClick?: (categoryId: string) => void;
+}) {
+  const { t } = useI18n();
+
+  // Same-category, exclude the current product. No extra API — pure in-memory filter
+  // over the products the marketplace already loaded.
+  const similar = useMemo(() => {
+    if (!currentProduct.category) return [];
+    return products
+      .filter((p) => p.id !== currentProduct.id && p.category === currentProduct.category)
+      .slice(0, 12);
+  }, [products, currentProduct.id, currentProduct.category]);
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-4">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold text-on-surface">{t('similarProducts')}</h2>
+          <p className="text-xs text-on-surface-variant mt-0.5">{t('similarProductsSubtitle')}</p>
+        </div>
+        {similar.length > 0 && onCategoryClick && currentProduct.category && (
+          <button
+            onClick={() => onCategoryClick(currentProduct.category)}
+            className="shrink-0 text-xs font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+          >
+            {t('viewAll')} <ICONS.ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {similar.length > 0 ? (
+        <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+          {similar.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onProductClick?.(p.id)}
+              className="shrink-0 w-44 text-left cursor-pointer rounded-2xl border border-surface-container bg-white shadow-sm hover:shadow-md hover:border-primary/30 transition-all hover:scale-[1.02] overflow-hidden"
+            >
+              <div className="aspect-square overflow-hidden bg-surface-container-low">
+                <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+              </div>
+              <div className="p-3 flex flex-col gap-0.5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{p.category}</span>
+                <p className="font-bold text-on-surface text-sm truncate leading-tight">{p.name}</p>
+                {(p.averageRating ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-on-surface-variant">
+                    <span className="text-amber-500">★</span>
+                    {p.averageRating!.toFixed(1)}
+                    {p.totalReviews ? <span className="text-outline">({p.totalReviews})</span> : null}
+                  </span>
+                )}
+                <span className="text-secondary font-extrabold text-sm">₹{p.price.toLocaleString('en-IN')}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-surface-container bg-surface-container-low px-6 py-8 text-center">
+          <p className="text-sm text-on-surface-variant font-medium">{t('noSimilarProducts')}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main View ────────────────────────────────────────────────────────────────
 
 export default function ProductDetailView({
@@ -341,6 +419,7 @@ export default function ProductDetailView({
   onProductClick,
   onViewSellerAll,
   onViewBrand,
+  onCategoryClick,
   storesWithDistance = [],
   onAddToCart,
   onAddToCartFromStore,
@@ -351,6 +430,13 @@ export default function ProductDetailView({
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
+
+  // Variant selection — default to the first variant (or the product itself if no variants)
+  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
+  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
+  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
+  const displayStock = selectedVariant?.stock;
   // Live store ratings keyed by phone — reflects new reviews instantly without a full refetch.
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
@@ -373,6 +459,7 @@ export default function ProductDetailView({
       const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
       setActiveImage(imgs[0]);
       setSelectedOrderStoreId(null);
+      setSelectedVariantIdx(0);
     }
   }, [product.id]);
 
@@ -762,8 +849,11 @@ export default function ProductDetailView({
                       {t('mapShort')}
                     </button>
                   </HelperTooltip>
-                  {onAddToCartFromStore && (
-                    storeOnlineMap[(store as any).phone] ? (
+                  {onAddToCartFromStore && (() => {
+                    const phone = (store as any).phone as string | undefined;
+                    const canOrder = !!phone && storeOnlineMap[phone] === true;
+                    if (!canOrder) return null;
+                    return (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -778,8 +868,8 @@ export default function ProductDetailView({
                         <ICONS.AddToCart className="w-3.5 h-3.5" />
                         {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
                       </button>
-                    ) : null
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* Expanded details */}
@@ -865,8 +955,9 @@ export default function ProductDetailView({
               </div>
             );
           }) : (
-            <div className="p-4 rounded-2xl border-2 border-dashed border-surface-container text-center text-on-surface-variant text-sm">
-              {t('onlyHomeDelivery')}
+            <div className="p-5 rounded-2xl border-2 border-dashed border-surface-container flex flex-col items-center gap-2 text-center">
+              <span className="text-sm font-semibold text-on-surface">Currently unavailable</span>
+              <span className="text-xs text-on-surface-variant">This product is not listed at any store right now.</span>
             </div>
           )}
 
@@ -891,11 +982,18 @@ export default function ProductDetailView({
             if (!selectedStore) return null;
             const selectedStorePhone = (selectedStore as any).phone as string | undefined;
             const selectedAvailability = product.availability?.find(
-              (a) => a.storeId === selectedStore.id || (selectedStorePhone && (a.storePhone === selectedStorePhone || a.storeId === selectedStorePhone))
+              (a) =>
+                a.storeId === selectedStore.id ||
+                (selectedStorePhone && a.storePhone === selectedStorePhone) ||
+                (selectedStorePhone && a.storeId === selectedStorePhone),
             );
-            const displayPrice = selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
-              ? selectedAvailability.sellingPrice
-              : product.price;
+            // Use the retailer's exact sellingPrice from their inventory listing.
+            // Fall back to product.price (manufacturer list price) only when no
+            // availability record exists — never use product.lowestPrice here.
+            const displayPrice =
+              selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
+                ? selectedAvailability.sellingPrice
+                : product.price;
             return (
               <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -905,7 +1003,7 @@ export default function ProductDetailView({
                 </div>
                 <button
                   onClick={() => {
-                    onAddToCartFromStore?.(product, selectedStore);
+                    onAddToCartFromStore?.(product, selectedStore, displayPrice, selectedVariant ?? undefined);
                     setSelectedOrderStoreId(null);
                   }}
                   className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
@@ -942,6 +1040,51 @@ export default function ProductDetailView({
             {product.description} {t('productDescSuffix')}
           </p>
         </div>
+
+        {/* Variant selector */}
+        {productVariants && productVariants.length > 1 && (
+          <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              Package Size
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {productVariants.map((v, i) => {
+                const isSelected = selectedVariantIdx === i;
+                const outOfStock = v.stock !== undefined && v.stock === 0;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={outOfStock}
+                    onClick={() => setSelectedVariantIdx(i)}
+                    className={`rounded-xl border-2 px-4 py-2 text-sm font-bold transition-all flex flex-col items-center min-w-[72px] ${
+                      isSelected
+                        ? "border-primary bg-primary text-white shadow-md"
+                        : outOfStock
+                          ? "border-outline-variant/30 bg-surface-container text-on-surface-variant/40 cursor-not-allowed"
+                          : "border-outline-variant/40 bg-white text-on-surface hover:border-primary hover:text-primary"
+                    }`}
+                  >
+                    <span>{v.unit}</span>
+                    <span className={`text-xs font-extrabold mt-0.5 ${isSelected ? "text-white/90" : "text-secondary"}`}>
+                      ₹{v.price.toLocaleString("en-IN")}
+                    </span>
+                    {outOfStock && (
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-red-400 mt-0.5">
+                        Out of stock
+                      </span>
+                    )}
+                    {!outOfStock && v.stock !== undefined && v.stock <= 10 && (
+                      <span className={`text-[9px] font-bold uppercase tracking-wide mt-0.5 ${isSelected ? "text-white/80" : "text-amber-600"}`}>
+                        Only {v.stock} left
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Price + quantity + CTA */}
         {(() => {
@@ -985,31 +1128,48 @@ export default function ProductDetailView({
               ) : (
                 /* ── Regular price ── */
                 <div className="flex items-end gap-3">
-                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{product.price}</span>
-                  {product.oldPrice && (
+                  <span className="text-4xl font-extrabold text-secondary tracking-tight">₹{displayPrice.toLocaleString('en-IN')}</span>
+                  {!selectedVariant && product.oldPrice && (
                     <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
                   )}
-                  {product.oldPrice && (
+                  {!selectedVariant && product.oldPrice && (
                     <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
                   )}
                 </div>
+              )}
+              {displayStock !== undefined && displayStock > 0 && displayStock <= 20 && (
+                <span className="mb-1 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                  {displayStock} in stock
+                </span>
               )}
             </div>
           </HelperTooltip>
 
           <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
-            <button
-              onClick={() => onAddToCart?.(product)}
-              className="h-12 px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-2"
-            >
-              <ICONS.AddToCart className="w-5 h-5" /> {t('addToCart')}
-            </button>
-            <button
-              onClick={() => onBuyNow ? onBuyNow(product) : onAddToCart?.(product)}
-              className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
-            >
-              Buy Now
-            </button>
+            {displayStores.length === 0 ? (
+              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+                Currently unavailable
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => onAddToCart?.(product, selectedVariant ?? undefined)}
+                  disabled={displayStock === 0}
+                  className="h-12 px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ICONS.AddToCart className="w-5 h-5" />
+                  {displayStock === 0 ? "Out of Stock" : t('addToCart')}
+                </button>
+                {onBuyNow && displayStock !== 0 && (
+                  <button
+                    onClick={() => onBuyNow(product)}
+                    className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+                  >
+                    Buy Now
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
           );
@@ -1186,6 +1346,18 @@ export default function ProductDetailView({
           onProductClick={onProductClick}
         />
       )}
+
+      {/*
+        Similar Products — same-category items from the products already loaded into the
+        view. No extra fetch: reuses the in-memory `products` prop the marketplace already
+        provides. Empty-state copy is shown when no other products exist in this category.
+      */}
+      <SimilarProductsSection
+        products={products}
+        currentProduct={product}
+        onProductClick={onProductClick}
+        onCategoryClick={onCategoryClick}
+      />
     </div>
   );
 }

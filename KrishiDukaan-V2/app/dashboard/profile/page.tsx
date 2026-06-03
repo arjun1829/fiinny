@@ -34,7 +34,7 @@ declare global { interface Window { google?: any; } }
 const initialForm: ProfileFormValues = {
   businessName: "", ownerName: "", phone: "", secondaryPhone: "", email: "",
   line1: "", city: "", state: "", pincode: "",
-  website: "", logoUrl: "", bannerUrl: "",
+  website: "", logoUrl: "", bannerUrl: "", gstin: "",
 };
 
 type SocialLinks = { instagram: string; facebook: string; whatsapp: string; youtube: string };
@@ -492,13 +492,31 @@ function ProfilePageInner() {
 
     try {
       const col = userRole === "manufacturer" ? "manufacturers" : "retailers";
-      const profileDocId = (userRole === "manufacturer" && mfrDocId) ? mfrDocId : uid!;
 
       // Resolve phone for public doc key
       const idxSnap = await getDoc(doc(db, "uidIndex", uid));
       const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
 
-      // Save social links, tagline, onlineDelivery alongside profile
+      // Resolve the correct publicly-readable Firestore doc ID.
+      // Manufacturers: mfrDocId is already phone-keyed.
+      // Retailers: resolve via users/{phone}.retailerDocId (same path as saveRetailerProfile).
+      //   Using uid here would write onlineDelivery to retailers/{uid}, but
+      //   fetchStoreOnlineDelivery reads retailers/{phone} — causing the Order button to never appear.
+      let profileDocId: string;
+      if (userRole === "manufacturer") {
+        profileDocId = mfrDocId || uid!;
+      } else {
+        let rDocId = "";
+        if (phone) {
+          try {
+            const userSnap = await getDoc(doc(db, "users", phone));
+            if (userSnap.exists()) rDocId = String(userSnap.data()?.retailerDocId ?? "").trim();
+          } catch { /* ignore — fall through to phone fallback */ }
+        }
+        profileDocId = rDocId || phone || uid!;
+      }
+
+      // Save social links, tagline, onlineDelivery to the correct publicly-readable doc
       await setDoc(doc(db, col, profileDocId), {
         socialLinks: social,
         tagline,
@@ -886,6 +904,14 @@ function ProfilePageInner() {
                 </span>
                 <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
                   className={inputCls} placeholder={t('emailPlaceholder')} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-on-surface">
+                  {t('gstinLabel')}
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional — shown on invoices)</span>
+                </span>
+                <input type="text" value={form.gstin ?? ""} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                  className={inputCls} placeholder="e.g. 27AAAAA0000A1Z5" maxLength={15} />
               </label>
             </div>
           </section>

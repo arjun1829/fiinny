@@ -466,6 +466,16 @@ service cloud.firestore {
       allow create: if true;
       allow read, write: if isAdmin();
     }
+    
+       // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
+    // Seller-level delivery config (online toggle, weight slabs, coverage).
+    // Public read so customers/checkout can verify delivery area.
+    // Write restricted to the owning seller (phone match) or admin.
+    match /deliverySettings/{sellerPhone} {
+      allow read: if true;
+      allow create, update: if isAuthed() && (myPhone() == sellerPhone || isAdmin());
+      allow delete: if isAdmin();
+    }
 
     // ─── companyPages ────────────────────────────────────────────────────────
     // Brand pages created by manufacturers. Public read, owner or admin write.
