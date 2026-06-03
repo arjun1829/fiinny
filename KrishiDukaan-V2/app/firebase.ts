@@ -306,7 +306,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
     // variant (manufacturer/retailer copy) still contributes to the merged card's rating.
     const idsByKey = new Map<string, string[]>();
 
-    const allMapped = snapshot.docs.map((item) => {
+    const allMapped = snapshot.docs
+      .filter((item) => item.data().isActive !== false)
+      .map((item) => {
       const data = item.data();
       return {
         id: item.id,
@@ -1008,6 +1010,7 @@ export async function fetchManufacturerProducts(manufacturerId: string): Promise
     const results: MarketplaceProduct[] = [];
     for (const snap of [byOwnerId, byManufacturerId]) {
       for (const d of snap.docs) {
+        if (d.data().isActive === false) continue;
         if (!seen.has(d.id)) {
           seen.add(d.id);
           results.push({ id: d.id, ...d.data() } as MarketplaceProduct);
@@ -1025,7 +1028,9 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
   try {
     const q = query(collection(db, 'products'), where('retailerId', '==', retailerId));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    return snapshot.docs
+      .filter(doc => doc.data().isActive !== false)
+      .map(doc => ({
       id: doc.id,
       ...doc.data()
     } as MarketplaceProduct));
