@@ -22,7 +22,6 @@ import type {
   DiscountUpdateInput,
   InventoryDoc,
   InventoryRow,
-  ManufacturerProductRow,
   ProductDoc,
 } from "../_types/inventory";
 import { deriveStockStatus } from "../_types/inventory";
@@ -310,16 +309,21 @@ export async function fetchRetailerInventoryRows(
         productName: p.name,
         category: p.category,
         unit: p.unit,
+        description: p.description ?? "",
+        image: p.image ?? "",
+        images: Array.isArray(raw.images) ? (raw.images as string[]) : (p.image ? [p.image] : []),
+        variants: p.variants ?? [{ unit: p.unit, price: inv.sellingPrice }],
+        price: p.price ?? inv.sellingPrice,
         stockQuantity: inv.stockQuantity,
         sellingPrice: inv.sellingPrice,
         reorderThreshold: inv.reorderThreshold,
         status,
         isActive: p.isActive,
         assignedByManufacturer: inv.assignedByManufacturer === true,
-        updatedAt: timestampToDate(inv.updatedAt),
-        source: p.source,
+        source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
         originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+        updatedAt: timestampToDate(inv.updatedAt),
         discountEnabled:   inv.discountEnabled ?? false,
         discountType:      inv.discountType ?? "percentage",
         discountPct:       inv.discountPct ?? 0,
@@ -331,7 +335,12 @@ export async function fetchRetailerInventoryRows(
           ? (inv.discountFixedAmt ?? 0) : 0,
         bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
         bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
-        variants: p.variants,
+        nitrogen: p.nitrogen ?? "",
+        phosphorus: p.phosphorus ?? "",
+        potassium: p.potassium ?? "",
+        applicationDesc: p.applicationDesc ?? "",
+        dosage: p.dosage ?? "",
+        bestForCrops: p.bestForCrops ?? [],
       },
     ];
   });
@@ -377,36 +386,48 @@ export async function acceptAssignedProduct(
  * Fetch catalogue rows for a MANUFACTURER (active + inactive — management UI).
  *
  * Queries `products` where ownerId == uid AND ownerType == "manufacturer".
- * Returns ManufacturerProductRow[] (no stock/inventory data).
+ * Returns the unified InventoryRow[] (joined with inventory for stock/discount).
  */
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
-): Promise<ManufacturerProductRow[]> {
+): Promise<InventoryRow[]> {
   const products = await fetchProductsByOwner(ownerId, "manufacturer");
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
   const inventoryMap = await fetchInventoryForManufacturer(ownerId);
 
-  const rows: ManufacturerProductRow[] = products.map((p) => {
+  const rows: InventoryRow[] = products.map((p) => {
     const raw = p as any;
     const inv = inventoryMap.get(p.id);
+    const stockQuantity = inv?.stockQuantity ?? (typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0);
+    const reorderThreshold = inv?.reorderThreshold ?? 0;
     return {
       productId: p.id,
-      inventoryId: inv?.id,
+      inventoryId: inv?.id ?? "",
       productName: p.name,
       category: p.category,
       unit: p.unit,
-      price: p.price,
       description: p.description ?? "",
       image: p.image ?? "",
       images: Array.isArray(raw.images) ? raw.images : (p.image ? [p.image] : []),
       variants: Array.isArray(raw.variants) ? raw.variants : [{ unit: p.unit, price: p.price }],
-      stockQuantity: inv?.stockQuantity ?? (typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0),
-      source: p.source ?? "manufacturer_inventory",
+      price: p.price,
+      sellingPrice: inv?.sellingPrice ?? p.price,
+      stockQuantity,
+      reorderThreshold,
+      status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
-      updatedAt: timestampToDate(p.updatedAt),
+      assignedByManufacturer: false,
+      source: p.source ?? "manufacturer_inventory",
+      ownerId: p.ownerId,
       originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+      updatedAt: timestampToDate(p.updatedAt),
+      discountEnabled:   inv?.discountEnabled ?? false,
+      discountPct:       inv?.discountPct ?? 0,
+      discountStartDate: timestampToDate(inv?.discountStartDate),
+      discountEndDate:   timestampToDate(inv?.discountEndDate),
+      effectiveDiscountPct: inv ? getActiveDiscountPct(inv) : 0,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",

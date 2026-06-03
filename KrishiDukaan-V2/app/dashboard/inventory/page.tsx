@@ -6,8 +6,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { InventoryHealthCards } from "../_components/inventory-health-cards";
-import { InventoryManagementTable } from "../_components/inventory-management-table";
-import { ManufacturerCatalogueTable } from "../_components/manufacturer-catalogue-table";
+import { InventoryTable } from "../_components/inventory-table";
 import { AddProductInventoryForm } from "../_components/add-product-inventory-form";
 import { BulkProductUpload } from "../_components/bulk-product-upload";
 import {
@@ -27,7 +26,7 @@ import {
   autoAcceptPendingInvitesForPhone,
   fetchLinkedRetailerDocIds,
 } from "../../lib/invite/invite-acceptance-service";
-import type { InventoryRow, ManufacturerProductRow } from "../_types/inventory";
+import type { InventoryRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
 import { CheckCircle2, KeyRound, Loader2, PlusCircle, Search, X, Zap } from "lucide-react";
@@ -214,9 +213,8 @@ export default function InventoryPage() {
   const [role, setRole] = useState<UserRole>("retailer");
   const [seatStats, setSeatStats] = useState<SeatStats>(DEFAULT_STATS);
 
-  // Inventory state
-  const [retailerRows, setRetailerRows] = useState<InventoryRow[]>([]);
-  const [catalogueRows, setCatalogueRows] = useState<ManufacturerProductRow[]>([]);
+  // Inventory state — single unified row list for both roles
+  const [rows, setRows] = useState<InventoryRow[]>([]);
   const [search, setSearch] = useState("");
 
   const [magicStatus, setMagicStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -232,11 +230,9 @@ export default function InventoryPage() {
       ]);
       setSeatStats(computeSeatStats(subs, listings));
 
-      // Fetch inventory based on role
+      // Fetch inventory based on role — both produce the unified InventoryRow[]
       if (resolvedRole === "manufacturer") {
-        const rows = await fetchManufacturerCatalogueRows(uid);
-        setCatalogueRows(rows);
-        setRetailerRows([]);
+        setRows(await fetchManufacturerCatalogueRows(uid));
       } else {
         // Find ALL linked retailerDocIds to be safe (if backfill failed but invite is active)
         const linkedIds = await fetchLinkedRetailerDocIds(uid);
@@ -275,13 +271,11 @@ export default function InventoryPage() {
         });
         const allRetailerRows = Array.from(deduped.values());
         allRetailerRows.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-        setRetailerRows(allRetailerRows);
-        setCatalogueRows([]);
+        setRows(allRetailerRows);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load inventory.");
-      setRetailerRows([]);
-      setCatalogueRows([]);
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -294,8 +288,7 @@ export default function InventoryPage() {
         setUserId(null);
         setProfile(null);
         setSeatStats(DEFAULT_STATS);
-        setRetailerRows([]);
-        setCatalogueRows([]);
+        setRows([]);
         setLoading(false);
         return;
       }
@@ -353,7 +346,7 @@ export default function InventoryPage() {
     return () => unsub();
   }, [load, urlInviteCode]);
 
-  const health = useMemo(() => computeHealth(retailerRows), [retailerRows]);
+  const health = useMemo(() => computeHealth(rows), [rows]);
 
   const refresh = useCallback(async () => {
     if (userId) {
@@ -362,8 +355,8 @@ export default function InventoryPage() {
     }
   }, [userId, role, load]);
 
-  // ─── Manufacturer toggle (seat-aware) ────────────────────────────────────────
-  const handleMfrToggleActive = useCallback(async (
+  // ─── Toggle active (seat-aware, role-aware) ──────────────────────────────────
+  const handleToggleActive = useCallback(async (
     productId: string,
     inventoryId: string | undefined,
     isActive: boolean,
@@ -372,27 +365,13 @@ export default function InventoryPage() {
     if (isActive) {
       await deactivateProduct(productId, userId, inventoryId);
     } else {
-      await activateProduct(productId, userId, "manufacturer", inventoryId);
+      await activateProduct(productId, userId, role, inventoryId);
     }
     await refresh();
-  }, [userId, refresh]);
+  }, [userId, role, refresh]);
 
-  // ─── Retailer toggle + delete (seat-aware) ───────────────────────────────────
-  const handleRetailerToggleActive = useCallback(async (
-    productId: string,
-    inventoryId: string,
-    isActive: boolean,
-  ) => {
-    if (!userId) return;
-    if (isActive) {
-      await deactivateProduct(productId, userId, inventoryId);
-    } else {
-      await activateProduct(productId, userId, "retailer", inventoryId);
-    }
-    await refresh();
-  }, [userId, refresh]);
-
-  const handleRetailerDelete = useCallback(async (
+  // ─── Delete (own products, both roles) ───────────────────────────────────────
+  const handleDelete = useCallback(async (
     productId: string,
     inventoryId: string,
   ) => {
@@ -506,21 +485,16 @@ export default function InventoryPage() {
             <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
-          ) : isManufacturer ? (
-            <ManufacturerCatalogueTable
-              rows={catalogueRows}
-              onRefresh={refresh}
-              onToggleActive={handleMfrToggleActive}
-            />
           ) : (
-            <InventoryManagementTable
-              rows={retailerRows.filter(r =>
+            <InventoryTable
+              role={role}
+              userId={userId}
+              rows={rows.filter(r =>
                 !search || r.productName.toLowerCase().includes(search.toLowerCase())
               )}
               onUpdated={refresh}
-              userId={userId}
-              onToggleActive={handleRetailerToggleActive}
-              onDelete={handleRetailerDelete}
+              onToggleActive={handleToggleActive}
+              onDelete={handleDelete}
             />
           )}
         </div>

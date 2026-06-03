@@ -6,7 +6,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord } from "../_lib/inventory-firestore";
-import type { ManufacturerProductRow } from "../_types/inventory";
+import type { InventoryRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ function parseUnitToVariant(unit: string): Pick<Variant, "unitType" | "sizeAmoun
   return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: unit };
 }
 
-function rowToVariants(row: ManufacturerProductRow): Variant[] {
+function rowToVariants(row: InventoryRow): Variant[] {
   const src = row.variants.length ? row.variants : [{ unit: row.unit, price: row.price }];
   return src.map((v, i) => ({
     ...parseUnitToVariant(v.unit),
@@ -229,7 +229,7 @@ function VariantRow({ v, i, disabled, isOnly, setV, removeV }: {
   );
 }
 
-function rowToImages(row: ManufacturerProductRow): ImgSlot[] {
+function rowToImages(row: InventoryRow): ImgSlot[] {
   const urls = row.images.length ? row.images : (row.image ? [row.image] : []);
   return Array.from({ length: MAX_IMAGES }, (_, i) => ({
     mode: "url" as const,
@@ -319,7 +319,7 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 export function EditProductModal({ row, onClose, onSaved }: {
-  row: ManufacturerProductRow;
+  row: InventoryRow;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -402,13 +402,14 @@ export function EditProductModal({ row, onClose, onSaved }: {
       });
 
       // Update inventory: use first variant's stock; fall back to existing stockQuantity.
+      // Preserve the existing reorder threshold so retailer low-stock alerts aren't wiped.
       const firstVariantStock = parsedVariants[0]?.stock;
       const stockQty = firstVariantStock !== undefined ? firstVariantStock : Number(variants[0]?.stock ?? "");
       if (row.inventoryId && Number.isFinite(stockQty) && stockQty >= 0) {
         await updateInventoryRecord(row.inventoryId, {
           stockQuantity: stockQty,
           sellingPrice: parsedVariants[0].price,
-          reorderThreshold: 0,
+          reorderThreshold: row.reorderThreshold ?? 0,
         });
       }
 

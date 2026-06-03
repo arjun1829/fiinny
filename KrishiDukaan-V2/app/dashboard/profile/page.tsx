@@ -516,8 +516,19 @@ function ProfilePageInner() {
         profileDocId = rDocId || phone || uid!;
       }
 
-      // Save social links, tagline, onlineDelivery to the correct publicly-readable doc
+      // Save social links, tagline, onlineDelivery to the role-specific collection
       await setDoc(doc(db, col, profileDocId), {
+        socialLinks: social,
+        tagline,
+        onlineDelivery,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Mirror to profiles/{phone} so the unified public profile is always in sync.
+      // saveManufacturerProfile/saveRetailerProfile already mirror structural fields;
+      // this write adds the frequently-updated display fields.
+      const profilesMirrorId = phone || uid;
+      await setDoc(doc(db, "profiles", profilesMirrorId), {
         socialLinks: social,
         tagline,
         onlineDelivery,
@@ -581,6 +592,9 @@ function ProfilePageInner() {
       await setDoc(doc(db, col, profileDocId), { onlineDelivery: newValue, updatedAt: serverTimestamp() }, { merge: true });
       const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
       await setDoc(userTarget, { onlineDelivery: newValue, updatedAt: serverTimestamp() }, { merge: true });
+      // Keep profiles/{phone} in sync so public profile reads get the current value
+      const profilesId = phone || uid;
+      await setDoc(doc(db, "profiles", profilesId), { onlineDelivery: newValue, updatedAt: serverTimestamp() }, { merge: true });
     } catch {
       setOnlineDelivery(!newValue);
     }

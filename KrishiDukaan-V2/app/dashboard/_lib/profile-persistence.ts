@@ -229,36 +229,40 @@ export async function saveManufacturerProfile(
   geo: GeoPoint,
   existingCreatedAt: unknown | null,
 ): Promise<void> {
-  const trimmedEmail = form.email.trim();
-  const phone = await phoneFromUid(uid);
+  const trimmedEmail   = form.email.trim();
+  const trimmedPhone   = form.phone.trim();
+  const phone          = await phoneFromUid(uid);
   const manufacturerDocId = phone || uid;
 
   // Read existing doc to check for slug (only generate once — slugs must be stable)
-  const existingSnap = await getDoc(doc(db, "manufacturers", manufacturerDocId));
-  const existingSlug = existingSnap.exists() ? String(existingSnap.data().slug ?? "") : "";
-  const slug = existingSlug || generateSlug(form.businessName.trim(), form.phone.trim() || phone || uid);
+  const existingSnap  = await getDoc(doc(db, "manufacturers", manufacturerDocId));
+  const existingSlug  = existingSnap.exists() ? String(existingSnap.data().slug ?? "") : "";
+  const slug          = existingSlug || generateSlug(form.businessName.trim(), trimmedPhone || phone || uid);
 
+  const addressPayload = {
+    line1:   form.line1.trim(),
+    city:    form.city.trim(),
+    state:   form.state.trim(),
+    pincode: form.pincode.trim(),
+  };
+
+  // 1. Write full profile to the role-specific collection (source of operational truth).
   await setDoc(
     doc(db, "manufacturers", manufacturerDocId),
     {
       uid,
       manufacturerId: uid,
-      businessName: form.businessName.trim(),
-      ownerName:    form.ownerName.trim(),
-      phone:        form.phone.trim() || phone || "",
+      businessName:   form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      phone:          trimmedPhone || phone || "",
       secondaryPhone: form.secondaryPhone.trim(),
-      email:        trimmedEmail,
-      website:      form.website.trim(),
-      logo:         form.logoUrl.trim(),
-      banner:       form.bannerUrl.trim(),
-      gstin:        form.gstin.trim() || null,
+      email:          trimmedEmail,
+      website:        form.website.trim(),
+      logo:           form.logoUrl.trim(),
+      banner:         form.bannerUrl.trim(),
+      gstin:          form.gstin.trim() || null,
       geo,
-      address: {
-        line1:   form.line1.trim(),
-        city:    form.city.trim(),
-        state:   form.state.trim(),
-        pincode: form.pincode.trim(),
-      },
+      address:        addressPayload,
       slug,
       createdAt: existingCreatedAt ?? serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -266,16 +270,44 @@ export async function saveManufacturerProfile(
     { merge: true },
   );
 
-  // Sync fields needed for profile-completeness check to users/{phone}.
-  // Layout reads users/{phone} and checks businessName + phone + city.
+  // 2. Mirror the full public snapshot to profiles/{phone}.
+  //    This is the unified read source for product pages, store cards, and
+  //    any consumer that needs display info without knowing the role.
+  const profileDocId = phone || uid;
+  await setDoc(
+    doc(db, "profiles", profileDocId),
+    {
+      phone:          trimmedPhone || phone || "",
+      role:           "manufacturer",
+      // Dual-name fields so reads work regardless of which key they expect
+      businessName:   form.businessName.trim(),
+      shopName:       form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      secondaryPhone: form.secondaryPhone.trim() || null,
+      email:          trimmedEmail || null,
+      website:        form.website.trim() || null,
+      logo:           form.logoUrl.trim() || null,
+      banner:         form.bannerUrl.trim() || null,
+      gstin:          form.gstin.trim() || null,
+      address:        addressPayload,
+      city:           form.city.trim(),
+      state:          form.state.trim(),
+      geo,
+      updatedAt:      serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // 3. Sync the minimum fields needed by the dashboard layout's profile-completeness
+  //    check to users/{phone} — that check reads businessName + phone + city.
   const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
   await setDoc(
     userTarget,
     {
       businessName: form.businessName.trim(),
-      city: form.city.trim(),
+      city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
-      updatedAt: serverTimestamp(),
+      updatedAt:    serverTimestamp(),
     },
     { merge: true },
   );
@@ -288,51 +320,84 @@ export async function saveRetailerProfile(
   extras: RetailerProfileExtras,
 ): Promise<void> {
   const trimmedEmail = form.email.trim();
-  const retailerDocId = await retailerDocIdFromUid(uid);
-  const retailerRef = doc(db, "retailers", retailerDocId || uid);
+  const trimmedPhone = form.phone.trim();
 
+  // Resolve both the UID-indexed phone and the legacy retailerDocId
+  const rPhone       = await phoneFromUid(uid);
+  const retailerDocId = await retailerDocIdFromUid(uid);
+  const retailerRef  = doc(db, "retailers", retailerDocId || uid);
+
+  const addressPayload = {
+    line1:   form.line1.trim(),
+    city:    form.city.trim(),
+    state:   form.state.trim(),
+    pincode: form.pincode.trim(),
+  };
+
+  // 1. Write full profile to retailers/{docId} (source of operational truth).
   await setDoc(
     retailerRef,
     {
-      userId: uid,
+      userId:    uid,
       retailerId: uid,
-      role: "retailer",
+      role:      "retailer",
       shopName:  form.businessName.trim(),
       ownerName: form.ownerName.trim(),
       email:     trimmedEmail,
-      phone:     form.phone.trim(),
+      phone:     trimmedPhone,
       secondaryPhone: form.secondaryPhone.trim(),
       website:   form.website.trim(),
       logo:      form.logoUrl.trim(),
       banner:    form.bannerUrl.trim(),
       gstin:     form.gstin.trim() || null,
-      address: {
-        line1:   form.line1.trim(),
-        city:    form.city.trim(),
-        state:   form.state.trim(),
-        pincode: form.pincode.trim(),
-      },
+      address:   addressPayload,
       geo,
-      onboardingType:  extras.onboardingType || "dashboard",
-      manufacturerId:  extras.manufacturerId || null,
-      createdAt:       extras.createdAt || serverTimestamp(),
-      updatedAt:       serverTimestamp(),
-      active:          true,
+      onboardingType:     extras.onboardingType || "dashboard",
+      manufacturerId:     extras.manufacturerId || null,
+      createdAt:          extras.createdAt || serverTimestamp(),
+      updatedAt:          serverTimestamp(),
+      active:             true,
       subscriptionStatus: extras.subscriptionStatus,
     },
     { merge: true },
   );
 
-  // Sync fields needed for profile-completeness check to users/{phone}.
-  const rPhone = await phoneFromUid(uid);
+  // 2. Mirror the full public snapshot to profiles/{phone}.
+  //    Product pages and the retailer public profile section read from this.
+  const profileDocId = rPhone || retailerDocId || uid;
+  await setDoc(
+    doc(db, "profiles", profileDocId),
+    {
+      phone:          trimmedPhone || rPhone || "",
+      role:           "retailer",
+      // Dual-name fields so reads work regardless of which key they expect
+      businessName:   form.businessName.trim(),
+      shopName:       form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      secondaryPhone: form.secondaryPhone.trim() || null,
+      email:          trimmedEmail || null,
+      website:        form.website.trim() || null,
+      logo:           form.logoUrl.trim() || null,
+      banner:         form.bannerUrl.trim() || null,
+      gstin:          form.gstin.trim() || null,
+      address:        addressPayload,
+      city:           form.city.trim(),
+      state:          form.state.trim(),
+      geo,
+      updatedAt:      serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // 3. Sync the minimum fields needed by the dashboard layout's profile-completeness check.
   const rTarget = rPhone ? doc(db, "users", rPhone) : doc(db, "users", uid);
   await setDoc(
     rTarget,
     {
       businessName: form.businessName.trim(),
-      city: form.city.trim(),
+      city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
-      updatedAt: serverTimestamp(),
+      updatedAt:    serverTimestamp(),
     },
     { merge: true },
   );
