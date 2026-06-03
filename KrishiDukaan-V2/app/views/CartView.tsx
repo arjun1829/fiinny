@@ -373,12 +373,15 @@ function StorePickerInline({
   stores,
   onSelect,
   currentSellerId,
+  variantUnit,
   t,
 }: {
   product: MarketplaceProduct;
   stores: StoreWithDistance[];
   onSelect: (sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   currentSellerId?: string;
+  /** Selected variant unit from the cart item (e.g. "500ml") — used to resolve the correct variant price */
+  variantUnit?: string;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { loading, onlineStores, offlineStores } = useStoreAvailability(product, stores);
@@ -437,10 +440,26 @@ function StorePickerInline({
                   ? product.sellerDiscounts[store.id]
                   : 0;
 
-          // Resolve price: availability entry → product price
-          const rawPrice = availability?.sellingPrice && availability.sellingPrice > 0
-            ? availability.sellingPrice
-            : product.price;
+          // Resolve the variant's list price if the cart item has a selected variant.
+          // This ensures "Change Store" uses the correct variant price (e.g. 500ml price)
+          // instead of always falling back to the base product.price.
+          const matchedVariant = variantUnit && product.variants?.length
+            ? product.variants.find((v) => v.unit === variantUnit)
+            : null;
+          const variantBasePrice = matchedVariant ? matchedVariant.price : product.price;
+
+          // Determine if this variant is the "base" variant (the one whose price matches
+          // product.price). Only for the base variant do we trust the store's
+          // availability.sellingPrice — non-base variants don't have per-store pricing.
+          const isBaseVariant = !matchedVariant || matchedVariant.price === product.price;
+
+          // Resolve price: for the base variant, use the store's own sellingPrice;
+          // for non-base variants, use the variant's list price.
+          const rawPrice = isBaseVariant
+            ? (availability?.sellingPrice && availability.sellingPrice > 0
+                ? availability.sellingPrice
+                : variantBasePrice)
+            : variantBasePrice;
           const { finalPrice: discountedPrice } = calcDiscount(rawPrice, storeDiscountPct);
           const displayPrice = storeDiscountPct > 0 ? discountedPrice : rawPrice;
           const hasDiscount = storeDiscountPct > 0;
@@ -621,6 +640,7 @@ function CartItemCard({
             stores={stores}
             t={t}
             currentSellerId={isPending ? undefined : item.sellerId}
+            variantUnit={item.variantUnit}
             onSelect={(sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
               onAssignStore(`${item.productId}_${item.sellerId}_${item.sellMode}`, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
               setShowPicker(false);
@@ -670,6 +690,10 @@ export default function CartView({
   const readyItems = items.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
+
+  const { totalCharge: deliveryCharge, bySellerWeight, loading: estimatingDelivery } =
+    useDeliveryEstimates(readyItems);
+  const grandTotal = subtotal + (canCheckout ? deliveryCharge : 0);
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
