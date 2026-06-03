@@ -3,7 +3,9 @@ import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { calcDiscount } from '../utils/discount';
-import { Tag } from 'lucide-react';
+import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
+import type { BulkDiscountTier } from '../dashboard/_types/inventory';
+import { Tag, Layers } from 'lucide-react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance } from '../utils/nearby';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
@@ -40,6 +42,96 @@ interface ProductDetailViewProps {
   onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
   onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
   onBuyNow?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
+}
+
+// ─── Bulk Discount Tiers Section (lazy-loaded per store) ─────────────────────
+
+function BulkTiersSection({
+  storePhone,
+  productId,
+  basePrice,
+}: {
+  storePhone: string;
+  productId: string;
+  basePrice: number;
+}) {
+  const [tiers, setTiers] = useState<BulkDiscountTier[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!storePhone || !productId) return;
+    let cancelled = false;
+
+    async function fetchTiers() {
+      try {
+        const { getDocs, query, collection, where } = await import("firebase/firestore");
+        const { db: fdb } = await import("../firebase");
+
+        // Find inventory by ownerPhone + (productId or originalProductId)
+        const [snap1, snap2] = await Promise.all([
+          getDocs(query(
+            collection(fdb, "inventory"),
+            where("ownerPhone", "==", storePhone),
+            where("productId", "==", productId),
+          )),
+          getDocs(query(
+            collection(fdb, "inventory"),
+            where("ownerPhone", "==", storePhone),
+            where("originalProductId", "==", productId),
+          )),
+        ]);
+
+        const docs = [...snap1.docs, ...snap2.docs];
+        for (const d of docs) {
+          const data = d.data() as Record<string, unknown>;
+          if (data.bulkDiscountEnabled && Array.isArray(data.bulkDiscountTiers) && data.bulkDiscountTiers.length) {
+            if (!cancelled) setTiers(
+              (data.bulkDiscountTiers as { minQty: number; discountPct: number }[])
+                .sort((a, b) => a.minQty - b.minQty)
+            );
+            break;
+          }
+        }
+      } catch { /* non-critical */ }
+      if (!cancelled) setLoaded(true);
+    }
+
+    fetchTiers();
+    return () => { cancelled = true; };
+  }, [storePhone, productId]);
+
+  if (!loaded || tiers.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-secondary/20 bg-secondary/5 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-secondary/10">
+        <Layers className="h-3.5 w-3.5 text-secondary shrink-0" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-secondary">
+          Bulk Discount Tiers
+        </p>
+      </div>
+      <div className="divide-y divide-secondary/10">
+        {tiers.map((t, i) => {
+          const { finalPrice, discountAmt } = calcDiscount(basePrice, t.discountPct);
+          return (
+            <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+              <span className="text-on-surface-variant">Buy {t.minQty}+ units</span>
+              <div className="flex items-center gap-2">
+                <span className="text-on-surface-variant line-through text-[10px]">₹{fmtPrice(basePrice)}</span>
+                <span className="font-bold text-green-700">₹{fmtPrice(finalPrice)}</span>
+                <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-black text-white">
+                  {t.discountPct}% OFF
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-on-surface-variant px-3 py-2">
+        Add more units to your cart to unlock bigger savings.
+      </p>
+    </div>
+  );
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -1036,6 +1128,15 @@ export default function ProductDetailView({
                             </div>
                           );
                         })()}
+
+                        {/* Bulk discount tiers — lazy loaded */}
+                        {storePhone && (
+                          <BulkTiersSection
+                            storePhone={storePhone}
+                            productId={product.id}
+                            basePrice={resolvedPrice ?? product.price}
+                          />
+                        )}
                         <div className="pt-3 flex flex-wrap gap-1">
                           {(store.stock || []).map(item => (
                             <span key={item} className="px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant text-[9px] font-black uppercase tracking-widest border border-surface-container-highest">

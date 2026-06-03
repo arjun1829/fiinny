@@ -691,9 +691,9 @@ export default function CartView({
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
 
-  const { totalCharge: deliveryCharge, bySellerWeight, loading: estimatingDelivery } =
+  const { totalCharge: deliveryCharge, bySellerCharge, bySellerWeight, loading: estimatingDelivery } =
     useDeliveryEstimates(readyItems);
-  const grandTotal = subtotal + (canCheckout ? deliveryCharge : 0);
+  const grandTotal = subtotal + deliveryCharge;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /

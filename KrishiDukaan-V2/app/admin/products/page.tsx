@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Upload, Link2, Loader2, Check, Store, Users } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../../firebase";
-import { fetchMarketplaceProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct } from "../../firebase";
+import { storage, auth, fetchAllProductsForAdmin, fetchAllSellerProducts, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing, fetchAllUsers } from "../../firebase";
 import type { MarketplaceProduct } from "../../../types/product";
+import { cn } from "../../dashboard/_lib/cn";
+import { PackSizesEditor, variantsToRows, parseVariantsForSave, emptyVariant, type Variant } from "../_components/pack-sizes-editor";
 
 const CATEGORIES = ["seeds", "fertilizers", "pesticides", "irrigation", "tools", "general"];
 const MAX_IMAGES = 5;
@@ -15,7 +16,7 @@ type ImageSlot = { mode: "url" | "upload"; url: string; uploading: boolean; erro
 const newSlot = (): ImageSlot => ({ mode: "url", url: "", uploading: false, error: "" });
 
 const EMPTY_FORM = {
-  name: "", fullName: "", price: "", category: "seeds",
+  name: "", fullName: "", category: "seeds",
   description: "", stock: "In Stock", store: "", distance: "Nearby",
 };
 
@@ -102,12 +103,14 @@ function ImageCard({ slot, index, onChange, onClear }: {
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  const [rawProducts, setRawProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [variants, setVariants] = useState<Variant[]>([emptyVariant()]);
   const [images, setImages] = useState<ImageSlot[]>([newSlot()]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -115,28 +118,158 @@ export default function AdminProductsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Assign to seller
+  const [assignTarget, setAssignTarget] = useState<MarketplaceProduct | null>(null);
+  const [sellers, setSellers] = useState<{ id: string; name: string; phone: string; role: string; city: string; isPreCreated: boolean }[]>([]);
+  const [sellersLoaded, setSellersLoaded] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState("");
+  const [assigningSeller, setAssigningSeller] = useState<string | null>(null);
+  const [assignErr, setAssignErr] = useState<string | null>(null);
+  const [assignOk, setAssignOk] = useState<string | null>(null);
+
+  const loadSellers = async () => {
+    if (sellersLoaded) return;
+    const users = await fetchAllUsers();
+    setSellers(
+      users
+        .filter(u => u.role === "retailer" || u.role === "manufacturer")
+        .map(u => ({
+          id: u.id,
+          name: u.shopName || u.businessName || u.name || u.phone || u.id,
+          phone: u.phone || u.id,
+          role: u.role,
+          city: u.city || "",
+          isPreCreated: !!u.preCreatedByAdmin && !u.uid,
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name))
+    );
+    setSellersLoaded(true);
+  };
+
+  const handleAssignToSeller = async (seller: { id: string; name: string; phone: string; role: string }) => {
+    if (!assignTarget) return;
+    setAssigningSeller(seller.id);
+    setAssignErr(null);
+    setAssignOk(null);
+    try {
+      const adminUid = auth.currentUser?.uid ?? "admin";
+      const role = seller.role === "manufacturer" ? "manufacturer" : "retailer";
+      const res = await adminAssignProductToSeller(
+        assignTarget.id, assignTarget.name, seller.phone, seller.name, role, adminUid,
+      );
+      if (res.alreadyAssigned) setAssignErr(`"${assignTarget.name}" is already assigned to ${seller.name}.`);
+      else setAssignOk(`Assigned to ${seller.name}`);
+    } catch (e) {
+      setAssignErr(e instanceof Error ? e.message : "Assignment failed.");
+    } finally { setAssigningSeller(null); }
+  };
+
   const load = () => {
     setLoading(true);
-    fetchMarketplaceProducts().then(setProducts).finally(() => setLoading(false));
+    Promise.all([fetchAllProductsForAdmin(), fetchAllSellerProducts().catch(() => [])])
+      .then(([prods, raw]) => { setProducts(prods); setRawProducts(raw); })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
+  // Map of base product id → active admin-assigned seller copies.
+  const assignmentsByOriginal = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const d of rawProducts) {
+      if (d.source !== "admin_assigned" || d.isActive === false) continue;
+      const key = String(d.originalProductId || "");
+      if (!key) continue;
+      const arr = m.get(key) ?? [];
+      arr.push(d);
+      m.set(key, arr);
+    }
+    return m;
+  }, [rawProducts]);
+
+  // ── Assignments viewer (which sellers carry a product) ──
+  const [viewAssignmentsFor, setViewAssignmentsFor] = useState<MarketplaceProduct | null>(null);
+  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string }[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [savingRow, setSavingRow] = useState<string | null>(null);
+  const [removingRow, setRemovingRow] = useState<string | null>(null);
+  const [rowMsg, setRowMsg] = useState<string | null>(null);
+
+  const openAssignments = async (p: MarketplaceProduct) => {
+    setViewAssignmentsFor(p);
+    setAssignmentRows([]);
+    setRowMsg(null);
+    setAssignmentsLoading(true);
+    try {
+      const copies = assignmentsByOriginal.get(p.id) ?? [];
+      const inv = await fetchInventoryForProducts(copies.map(c => c.id)).catch(() => ({}));
+      setAssignmentRows(copies.map(c => {
+        const iv = (inv as any)[c.id];
+        return {
+          copyId: c.id,
+          store: c.store || c.ownerId || "—",
+          phone: c.ownerId || c.ownerPhone || c.retailerPhone || "",
+          role: c.ownerType || "retailer",
+          active: c.isActive !== false,
+          price: String(iv?.sellingPrice ?? c.price ?? ""),
+          stock: String(iv?.stockQuantity ?? ""),
+        };
+      }));
+    } finally { setAssignmentsLoading(false); }
+  };
+
+  const setRowField = (copyId: string, field: "price" | "stock", val: string) =>
+    setAssignmentRows(prev => prev.map(r => r.copyId === copyId ? { ...r, [field]: val } : r));
+
+  const saveAssignmentRow = async (row: typeof assignmentRows[number]) => {
+    setSavingRow(row.copyId); setRowMsg(null);
+    try {
+      await adminUpdateAssignmentPricing(row.copyId, {
+        sellingPrice: Number(row.price) || 0,
+        stockQuantity: Number(row.stock) || 0,
+      });
+      await load();
+      setRowMsg(`Saved ${row.store}.`);
+    } catch (e) {
+      setRowMsg(e instanceof Error ? e.message : "Save failed.");
+    } finally { setSavingRow(null); }
+  };
+
+  const removeAssignmentRow = async (row: typeof assignmentRows[number]) => {
+    if (!viewAssignmentsFor) return;
+    if (!window.confirm(`Remove "${viewAssignmentsFor.name}" from ${row.store}?`)) return;
+    setRemovingRow(row.copyId); setRowMsg(null);
+    try {
+      const adminUid = auth.currentUser?.uid ?? "admin";
+      await adminRemoveAssignment(row.copyId, viewAssignmentsFor.name, row.phone, adminUid);
+      setAssignmentRows(prev => prev.filter(r => r.copyId !== row.copyId));
+      await load();
+      setRowMsg(`Removed ${row.store}.`);
+    } catch (e) {
+      setRowMsg(e instanceof Error ? e.message : "Remove failed.");
+    } finally { setRemovingRow(null); }
+  };
+
+  // Seller-owned copies are surfaced via the "Assigned" column on their base
+  // product, so exclude them from the main catalog list to avoid duplicate rows.
+  const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
   const filtered = products.filter(p => {
+    if (COPY_SOURCES.has((p as any).source)) return false;
     const q = search.toLowerCase();
     const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
     const matchCat = catFilter === "all" || p.category === catFilter;
     return matchSearch && matchCat;
   });
 
-  const resetForm = () => { setForm(EMPTY_FORM); setImages([newSlot()]); setEditId(null); setFormError(null); };
+  const resetForm = () => { setForm(EMPTY_FORM); setVariants([emptyVariant()]); setImages([newSlot()]); setEditId(null); setFormError(null); };
 
   const openAdd = () => { resetForm(); setShowForm(true); };
   const openEdit = (p: MarketplaceProduct) => {
     setForm({
-      name: p.name, fullName: p.fullName || "", price: String(p.price), category: p.category,
+      name: p.name, fullName: p.fullName || "", category: p.category,
       description: p.description, stock: p.stock, store: p.store, distance: p.distance,
     });
+    setVariants(variantsToRows((p as any).variants, { unit: (p as any).unit, price: p.price }));
     const urls: string[] = (p as any).images?.length ? (p as any).images : (p.image ? [p.image] : []);
     setImages(urls.length ? urls.map(u => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()]);
     setEditId(p.id);
@@ -151,7 +284,9 @@ export default function AdminProductsPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.price) { setFormError("Name and price are required."); return; }
+    if (!form.name) { setFormError("Product name is required."); return; }
+    const parsed = parseVariantsForSave(variants);
+    if (!parsed.ok) { setFormError(parsed.error); return; }
     if (images.some(s => s.uploading)) { setFormError("Wait for image uploads to finish."); return; }
     const imageUrls = images.map(s => s.url.trim()).filter(Boolean);
     if (!imageUrls.length) { setFormError("At least one image is required."); return; }
@@ -160,7 +295,8 @@ export default function AdminProductsPage() {
     try {
       const payload = {
         name: form.name.trim(), fullName: form.fullName.trim() || form.name.trim(),
-        price: Number(form.price), category: form.category, description: form.description.trim(),
+        price: parsed.variants[0].price, unit: parsed.variants[0].unit, variants: parsed.variants,
+        category: form.category, description: form.description.trim(),
         image: imageUrls[0], images: imageUrls,
         stock: form.stock, store: form.store.trim(), distance: form.distance.trim(),
       };
@@ -242,6 +378,7 @@ export default function AdminProductsPage() {
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Images</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Stock</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Store</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Assigned</th>
                   <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Actions</th>
                 </tr>
               </thead>
@@ -291,7 +428,22 @@ export default function AdminProductsPage() {
                       </td>
                       <td className="px-5 py-3 text-xs text-on-surface-variant">{p.store}</td>
                       <td className="px-5 py-3">
+                        {(() => {
+                          const n = (assignmentsByOriginal.get(p.id) ?? []).length;
+                          return n > 0 ? (
+                            <button onClick={() => openAssignments(p)}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 px-2.5 py-1 text-xs font-bold text-secondary hover:bg-secondary/20 transition-colors">
+                              <Users className="h-3.5 w-3.5" /> {n} seller{n !== 1 ? "s" : ""}
+                            </button>
+                          ) : <span className="text-xs text-on-surface-variant/50">—</span>;
+                        })()}
+                      </td>
+                      <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => { setAssignTarget(p); setAssignErr(null); setAssignOk(null); setSellerSearch(""); loadSellers(); }}
+                            className="p-1.5 rounded-lg hover:bg-secondary/10 text-on-surface-variant hover:text-secondary transition-colors" title="Assign to seller">
+                            <Link2 className="h-4 w-4" />
+                          </button>
                           <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
                             <Pencil className="h-4 w-4" />
                           </button>
@@ -305,7 +457,7 @@ export default function AdminProductsPage() {
                   );
                 })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -339,9 +491,20 @@ export default function AdminProductsPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-[11px] text-on-surface-variant">{p.store || "—"}</p>
-                      <p className="text-[11px] text-on-surface-variant">{imgs.length} image{imgs.length !== 1 ? "s" : ""}</p>
+                      {(() => {
+                        const n = (assignmentsByOriginal.get(p.id) ?? []).length;
+                        return n > 0 ? (
+                          <button onClick={() => openAssignments(p)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-secondary">
+                            <Users className="h-3 w-3" /> {n} seller{n !== 1 ? "s" : ""}
+                          </button>
+                        ) : <p className="text-[11px] text-on-surface-variant">{imgs.length} image{imgs.length !== 1 ? "s" : ""}</p>;
+                      })()}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => { setAssignTarget(p); setAssignErr(null); setAssignOk(null); setSellerSearch(""); loadSellers(); }}
+                        className="rounded-lg border border-secondary/30 px-2.5 py-1.5 text-[11px] font-medium text-secondary hover:bg-secondary/5 transition-colors">
+                        Assign
+                      </button>
                       <button onClick={() => openEdit(p)} className="rounded-lg border border-outline-variant/30 px-2.5 py-1.5 text-[11px] font-medium text-on-surface hover:bg-surface-container transition-colors">
                         Edit
                       </button>
@@ -378,13 +541,12 @@ export default function AdminProductsPage() {
               {[
                 { label: "Product Name *", key: "name", placeholder: "e.g. Organic Urea" },
                 { label: "Full Name", key: "fullName", placeholder: "Extended product name" },
-                { label: "Price (₹) *", key: "price", placeholder: "e.g. 450", type: "number" },
                 { label: "Store Name", key: "store", placeholder: "e.g. Sharma Agro Store" },
                 { label: "Distance", key: "distance", placeholder: "e.g. 2.3 km" },
-              ].map(({ label, key, placeholder, type }) => (
+              ].map(({ label, key, placeholder }) => (
                 <div key={key}>
                   <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">{label}</label>
-                  <input type={type || "text"} value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                  <input type="text" value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                     placeholder={placeholder}
                     className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
@@ -398,8 +560,11 @@ export default function AdminProductsPage() {
                 </select>
               </div>
 
+              {/* Pack sizes & prices */}
+              <PackSizesEditor variants={variants} onChange={setVariants} disabled={saving} />
+
               <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Stock Status</label>
+                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Overall Stock Status</label>
                 <select value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
                   className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none">
                   {["In Stock", "Low Stock", "Out of Stock"].map(s => <option key={s} value={s}>{s}</option>)}
@@ -471,6 +636,167 @@ export default function AdminProductsPage() {
                   <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting…</>
                 ) : "Delete"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Assign to Seller Modal ─────────────────────────────────────────── */}
+      {assignTarget && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-on-surface/40 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-md flex flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl max-h-[90dvh]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-outline-variant/20 px-5 py-4 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link2 className="h-5 w-5 text-secondary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-on-surface truncate">Assign Product</p>
+                  <p className="text-xs text-on-surface-variant truncate">{assignTarget.name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setAssignTarget(null); setAssignErr(null); setAssignOk(null); }}
+                className="p-2 rounded-xl hover:bg-surface-container shrink-0"><X className="h-5 w-5" /></button>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 pt-4 pb-2 shrink-0">
+              {assignErr && (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 font-medium">{assignErr}</div>
+              )}
+              {assignOk && (
+                <div className="mb-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
+                  <Check className="h-3.5 w-3.5 shrink-0" />{assignOk}
+                </div>
+              )}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-outline" />
+                <input type="text" placeholder="Search by name or phone…"
+                  value={sellerSearch} onChange={e => setSellerSearch(e.target.value)}
+                  className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low pl-9 pr-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
+
+            {/* Seller list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-outline-variant/10 px-2 pb-4">
+              {!sellersLoaded ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : sellers.filter(s => {
+                  const q = sellerSearch.toLowerCase();
+                  return !q || s.name.toLowerCase().includes(q) || s.phone.includes(q);
+                }).length === 0 ? (
+                <p className="text-sm text-center text-on-surface-variant py-10">
+                  No sellers found. Create one in <strong>Users &amp; Roles</strong> first.
+                </p>
+              ) : sellers
+                  .filter(s => {
+                    const q = sellerSearch.toLowerCase();
+                    return !q || s.name.toLowerCase().includes(q) || s.phone.includes(q);
+                  })
+                  .map(s => (
+                  <div key={s.id} className="flex items-center gap-3 px-3 py-3 hover:bg-surface-container-low rounded-xl transition-colors">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full shrink-0",
+                      s.role === "manufacturer" ? "bg-blue-500" : "bg-green-500",
+                    )} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-semibold text-on-surface truncate">{s.name}</p>
+                        {s.isPreCreated && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-amber-100 text-amber-700 shrink-0">OTP pending</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant font-mono">{s.phone}</p>
+                      {s.city && <p className="text-[10px] text-on-surface-variant">{s.city}</p>}
+                    </div>
+                    <span className={cn(
+                      "shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase",
+                      s.role === "manufacturer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700",
+                    )}>{s.role}</span>
+                    <button
+                      type="button"
+                      disabled={assigningSeller === s.id}
+                      onClick={() => handleAssignToSeller(s)}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all"
+                    >
+                      {assigningSeller === s.id
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Assigning…</>
+                        : <><Link2 className="h-3.5 w-3.5" /> Assign</>
+                      }
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Assignments Viewer (who carries this product) ──────────────────── */}
+      {viewAssignmentsFor && (
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-outline-variant/20 px-5 py-4 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Store className="h-5 w-5 text-secondary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-on-surface truncate">Assigned sellers</p>
+                  <p className="text-xs text-on-surface-variant truncate">{viewAssignmentsFor.name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setViewAssignmentsFor(null)}
+                className="p-2 rounded-xl hover:bg-surface-container shrink-0"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {rowMsg && (
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs font-medium text-on-surface-variant">{rowMsg}</div>
+              )}
+              {assignmentsLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : assignmentRows.length === 0 ? (
+                <p className="text-sm text-center text-on-surface-variant py-10">Not assigned to any seller yet.</p>
+              ) : assignmentRows.map(row => (
+                <div key={row.copyId} className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-on-surface truncate">{row.store}</p>
+                        <span className={cn(
+                          "shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase",
+                          row.role === "manufacturer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700",
+                        )}>{row.role}</span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant font-mono">{row.phone}</p>
+                    </div>
+                    <button type="button" onClick={() => removeAssignmentRow(row)} disabled={removingRow === row.copyId}
+                      className="shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50" title="Remove assignment">
+                      {removingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <label className="flex flex-col gap-1 text-xs flex-1">
+                      <span className="font-medium text-on-surface-variant">Price (₹)</span>
+                      <input type="number" min={0} value={row.price}
+                        onChange={e => setRowField(row.copyId, "price", e.target.value)}
+                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs flex-1">
+                      <span className="font-medium text-on-surface-variant">Stock Qty</span>
+                      <input type="number" min={0} value={row.stock}
+                        onChange={e => setRowField(row.copyId, "stock", e.target.value)}
+                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                    </label>
+                    <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                      className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                      {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
