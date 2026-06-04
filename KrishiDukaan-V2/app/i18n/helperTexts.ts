@@ -595,6 +595,14 @@ export const HELPER_TEXTS = {
       hi: 'आपके ऑनलाइन-डिलीवरी उत्पादों के लिए किसानों द्वारा दिए गए ऑर्डर। यहाँ से पुष्टि करें, पैक करें और भेजें।',
     },
   },
+  dashMyOrders: {
+    title: { en: 'My placed orders', mr: 'माझे ऑर्डर', hi: 'मेरे ऑर्डर' },
+    body: {
+      en: 'Orders you placed as a buyer from the marketplace. Track delivery status and download invoices here.',
+      mr: 'बाजारपेठेतून खरेदीदार म्हणून तुम्ही दिलेल्या ऑर्डर. इथे डिलिव्हरी स्थिती ट्रॅक करा आणि इनव्हॉइस डाउनलोड करा.',
+      hi: 'मार्केटप्लेस से खरीदार के रूप में आपके द्वारा दिए गए ऑर्डर। यहाँ डिलीवरी स्थिति ट्रैक करें और इनवॉइस डाउनलोड करें।',
+    },
+  },
   dashReviews: {
     title: { en: 'Reviews', mr: 'पुनरावलोकने', hi: 'समीक्षाएँ' },
     body: {

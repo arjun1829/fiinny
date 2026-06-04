@@ -5,6 +5,7 @@ import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
   Instagram, Facebook, MessageCircle, Youtube, MapPin, Package,
   ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
+  SlidersHorizontal, Calendar, RotateCcw,
 } from "lucide-react";
 import {
   fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile,
@@ -81,6 +82,17 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [filterRole, setFilterRole] = useState("all");
+
+  // Advanced filters
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [filterActive, setFilterActive] = useState<"all" | "active" | "inactive">("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterHasSubscription, setFilterHasSubscription] = useState<"all" | "yes" | "no">("all");
+  const [filterMinProducts, setFilterMinProducts] = useState("");
+  const [filterMaxProducts, setFilterMaxProducts] = useState("");
+  const [filterCity, setFilterCity] = useState("");
+  const [filterState, setFilterState] = useState("");
 
   const [editTarget, setEditTarget] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -238,13 +250,6 @@ export default function AdminUsersPage() {
     };
   }, [showCreate]);
 
-  const filtered = users.filter(u => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || [u.name, u.email, u.role, u.id, u.phone].join(" ").toLowerCase().includes(q);
-    const matchRole = filterRole === "all" || (filterRole === "customer" ? (!u.role || u.role === "customer") : u.role === filterRole);
-    return matchSearch && matchRole;
-  });
-
   const promoteCandidates = users.filter(u =>
     u.role !== "admin" &&
     (!promoteSearch || [u.name, u.email].join(" ").toLowerCase().includes(promoteSearch.toLowerCase()))
@@ -266,6 +271,78 @@ export default function AdminUsersPage() {
     }
     return m;
   }, [users, allProducts]);
+
+  // Utility: format a Firestore timestamp or date string nicely
+  const fmtDate = (val: any): string => {
+    if (!val) return "—";
+    let d: Date | null = null;
+    if (typeof val.toDate === "function") d = val.toDate();
+    else if (val instanceof Date) d = val;
+    else if (typeof val === "string" || typeof val === "number") d = new Date(val);
+    if (!d || isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const resetAdvanced = () => {
+    setFilterActive("all");
+    setFilterHasSubscription("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+    setFilterMinProducts("");
+    setFilterMaxProducts("");
+    setFilterCity("");
+    setFilterState("");
+  };
+
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || [u.name, u.email, u.role, u.id, u.phone, u.city, u.state, u.shopName, u.businessName].join(" ").toLowerCase().includes(q);
+    const matchRole = filterRole === "all" || (filterRole === "customer" ? (!u.role || u.role === "customer") : u.role === filterRole);
+
+    // Advanced filters
+    const matchActive =
+      filterActive === "all" ? true :
+      filterActive === "active" ? !!u.isPaid :
+      !u.isPaid;
+
+    const matchSubscription =
+      filterHasSubscription === "all" ? true :
+      filterHasSubscription === "yes" ? (!!u.subscriptionStatus && u.subscriptionStatus !== "" && u.subscriptionStatus !== "free") :
+      (!u.subscriptionStatus || u.subscriptionStatus === "" || u.subscriptionStatus === "free");
+
+    // Date filtering — createdAt can be a Firestore Timestamp or a JS Date
+    const getTs = (val: any): number | null => {
+      if (!val) return null;
+      if (typeof val.toDate === "function") return val.toDate().getTime();
+      if (val instanceof Date) return val.getTime();
+      if (typeof val === "string" || typeof val === "number") return new Date(val).getTime();
+      return null;
+    };
+    const uCreatedAt = getTs(u.createdAt);
+    const matchDateFrom = !filterDateFrom ? true : (uCreatedAt !== null ? uCreatedAt >= new Date(filterDateFrom).getTime() : false);
+    const matchDateTo   = !filterDateTo   ? true : (uCreatedAt !== null ? uCreatedAt <= new Date(filterDateTo).getTime() + 86399999 : false);
+
+    const pc = (productCounts.get(u.id) ?? 0);
+    const matchMinProd = filterMinProducts === "" ? true : pc >= Number(filterMinProducts);
+    const matchMaxProd = filterMaxProducts === "" ? true : pc <= Number(filterMaxProducts);
+
+    const matchCity  = !filterCity.trim()  ? true : (u.city  || "").toLowerCase().includes(filterCity.trim().toLowerCase());
+    const matchState = !filterState.trim() ? true : (u.state || "").toLowerCase().includes(filterState.trim().toLowerCase());
+
+    return matchSearch && matchRole && matchActive && matchSubscription && matchDateFrom && matchDateTo && matchMinProd && matchMaxProd && matchCity && matchState;
+  });
+
+  // Count how many advanced filters are active
+  const activeAdvancedCount = [
+    filterActive !== "all",
+    filterHasSubscription !== "all",
+    !!filterDateFrom,
+    !!filterDateTo,
+    filterMinProducts !== "",
+    filterMaxProducts !== "",
+    !!filterCity.trim(),
+    !!filterState.trim(),
+  ].filter(Boolean).length;
 
   // Products shown in the slide-over for the selected user (deduped).
   const panelProducts = useMemo<UserProduct[]>(
@@ -636,12 +713,132 @@ export default function AdminUsersPage() {
         ))}
       </div>
 
-      <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-2.5">
-        <Search className="h-4 w-4 text-outline shrink-0" />
-        <input type="text" placeholder="Search by name, email, phone or role…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant" />
+      <div className="flex gap-2">
+        <div className="flex flex-1 items-center gap-3 bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-2.5">
+          <Search className="h-4 w-4 text-outline shrink-0" />
+          <input type="text" placeholder="Search name, email, phone, city…" value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant" />
+          {search && (
+            <button type="button" onClick={() => setSearch("")} className="text-outline hover:text-on-surface">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(v => !v)}
+          className={`relative flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all shrink-0 ${
+            showAdvanced || activeAdvancedCount > 0
+              ? "bg-primary text-white border-primary shadow-sm"
+              : "bg-surface-container-low border-outline-variant text-on-surface-variant hover:bg-surface-container"
+          }`}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          <span className="hidden sm:inline">Filters</span>
+          {activeAdvancedCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-white">
+              {activeAdvancedCount}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* Advanced Filters Panel */}
+      {showAdvanced && (
+        <div className="rounded-2xl border border-outline-variant/50 bg-surface-container-lowest p-4 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black uppercase tracking-widest text-on-surface-variant flex items-center gap-1.5">
+              <SlidersHorizontal className="h-3.5 w-3.5" /> Advanced Filters
+            </p>
+            {activeAdvancedCount > 0 && (
+              <button type="button" onClick={resetAdvanced}
+                className="flex items-center gap-1 text-xs font-semibold text-primary hover:opacity-80">
+                <RotateCcw className="h-3 w-3" /> Reset all
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* Active Status */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">Subscription Status</label>
+              <select value={filterActive} onChange={e => setFilterActive(e.target.value as any)}
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none">
+                <option value="all">All</option>
+                <option value="active">Active / Paid</option>
+                <option value="inactive">Free / Inactive</option>
+              </select>
+            </div>
+
+            {/* Has Subscription */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">Has Subscription</label>
+              <select value={filterHasSubscription} onChange={e => setFilterHasSubscription(e.target.value as any)}
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none">
+                <option value="all">All</option>
+                <option value="yes">Has Subscription</option>
+                <option value="no">No Subscription</option>
+              </select>
+            </div>
+
+            {/* City */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">City</label>
+              <input type="text" value={filterCity} onChange={e => setFilterCity(e.target.value)}
+                placeholder="e.g. Pune"
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+            </div>
+
+            {/* State */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">State</label>
+              <input type="text" value={filterState} onChange={e => setFilterState(e.target.value)}
+                placeholder="e.g. Maharashtra"
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+            </div>
+
+            {/* Min Products */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">Min Products</label>
+              <input type="number" min="0" value={filterMinProducts} onChange={e => setFilterMinProducts(e.target.value)}
+                placeholder="0"
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+            </div>
+
+            {/* Max Products */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-on-surface-variant">Max Products</label>
+              <input type="number" min="0" value={filterMaxProducts} onChange={e => setFilterMaxProducts(e.target.value)}
+                placeholder="Any"
+                className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+            </div>
+          </div>
+
+          {/* Date Range */}
+          <div className="border-t border-outline-variant/20 pt-3">
+            <p className="text-xs font-semibold text-on-surface-variant mb-2 flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" /> Registered Between
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-on-surface-variant">From</label>
+                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-on-surface-variant">To</label>
+                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-surface-container-low border border-outline-variant/20 px-3 py-2 text-xs text-on-surface-variant">
+            Showing <span className="font-bold text-on-surface">{filtered.length}</span> of <span className="font-bold text-on-surface">{users.length}</span> users
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex h-60 items-center justify-center">
@@ -662,6 +859,7 @@ export default function AdminUsersPage() {
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Subscription</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Products</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Seats</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Joined</th>
                   <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Action</th>
                 </tr>
               </thead>
@@ -701,6 +899,9 @@ export default function AdminUsersPage() {
                       })()}
                     </td>
                     <td className="px-5 py-3 text-sm text-on-surface">{u.totalSeats ?? "—"}</td>
+                    <td className="px-5 py-3">
+                      <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
+                    </td>
                     <td className="px-5 py-3 text-right">
                       <button type="button" onClick={() => openEdit(u)}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
@@ -710,7 +911,7 @@ export default function AdminUsersPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-on-surface-variant">No users found.</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-on-surface-variant">No users found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -745,6 +946,11 @@ export default function AdminUsersPage() {
                   )}
                   {(u.totalSeats ?? 0) > 0 && (
                     <span className="text-[11px] text-on-surface-variant">{u.totalSeats} seats</span>
+                  )}
+                  {u.createdAt && (
+                    <span className="text-[11px] text-on-surface-variant flex items-center gap-0.5">
+                      <Calendar className="h-2.5 w-2.5" />{fmtDate(u.createdAt)}
+                    </span>
                   )}
                 </div>
               </div>
