@@ -784,8 +784,8 @@ export default function App() {
   };
 
   const placeOrders = async () => {
-    if (!user || userRole !== "customer") {
-      setCheckoutMessage("Please login with a customer account.");
+    if (!user) {
+      setCheckoutMessage("Please login to place an order.");
       return;
     }
     if (!cartItems.length) {
@@ -1120,7 +1120,7 @@ export default function App() {
           <CartView
             items={cartItems}
             isLoggedIn={Boolean(user)}
-            isCustomer={userRole === "customer"}
+            isCustomer={Boolean(user)}
             customerName={checkoutInfo.customerName}
             customerPhone={checkoutInfo.customerPhone}
             addressArea={checkoutInfo.addressArea}
