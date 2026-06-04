@@ -944,7 +944,16 @@ export default function ProductDetailView({
                   </HelperTooltip>
                   {onAddToCartFromStore && (() => {
                     const phone = (store as any).phone as string | undefined;
-                    const canOrder = !!phone && storeOnlineMap[phone] === true && product.sellMode !== "offline_store_only";
+                    // Account-level: seller has online delivery enabled.
+                    // Product-level: this specific listing's isOnline flag (from availability entry).
+                    // Legacy entries without isOnline default to true — account-level check is sufficient.
+                    const availEntry = product.availability?.find(
+                      (a) =>
+                        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+                        a.storeId === store.id,
+                    );
+                    const productLevelOnline = availEntry?.isOnline !== false;
+                    const canOrder = !!phone && storeOnlineMap[phone] === true && productLevelOnline;
                     if (!canOrder) return null;
                     return (
                       <button

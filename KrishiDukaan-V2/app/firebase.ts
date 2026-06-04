@@ -366,7 +366,6 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
     );
 
     // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
-    // This is built separately from availability so per-store discounts are never mixed up.
     const sellerDiscountsByKey = new Map<string, Record<string, number>>();
     const recordSellerDiscount = (key: string, uid: string | undefined, phone: string | undefined, pct: number) => {
       if (!pct || pct <= 0) return;
@@ -376,15 +375,22 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       sellerDiscountsByKey.set(key, map);
     };
 
+    // Per-key tracker: is ANY seller listing online for this product?
+    // Used to compute the merged card's sellMode/isOnline without letting one
+    // offline listing contaminate all sellers.
+    const anyOnlineByKey = new Map<string, boolean>();
+    const markOnline = (key: string, isOnline: boolean) => {
+      if (isOnline) anyOnlineByKey.set(key, true);
+    };
+
     // Deduplicate by name: if two products share the same name (case-insensitive),
     // keep the manufacturer_inventory card as canonical and merge the retailer's
     // store info into its availability array so farmers see one card with all sources.
     const byName = new Map<string, MarketplaceProduct>();
     for (const p of raw) {
       const key = p.name.toLowerCase().trim();
-      // Record this seller's OWN discount (not the merged max)
       recordSellerDiscount(key, (p as any).ownerId, p.retailerPhone, p.effectiveDiscountPct ?? 0);
-      // Record this source id under the dedup key for rating aggregation later
+      markOnline(key, p.isOnline === true);
       const ids = idsByKey.get(key) ?? [];
       ids.push(p.id);
       idsByKey.set(key, ids);
@@ -409,7 +415,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         if (!dup) av.push(entry);
       }
 
-      // Also register the secondary product itself as an availability source
+      // Register the secondary product itself as an availability source,
+      // carrying its per-seller isOnline so ProductDetailView can check it.
       const secondaryStoreId = (secondary as any).ownerId || secondary.retailerId || '';
       const secondaryPhone = secondary.retailerPhone;
       const alreadyPresent = av.some(
@@ -423,10 +430,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: secondary.store || undefined,
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
+          isOnline: secondary.isOnline,
         });
       }
 
-      // Carry the highest discount across both cards into the merged result
       const mergedMaxDiscount = Math.max(
         canonical.maxDiscountPct ?? canonical.effectiveDiscountPct ?? 0,
         secondary.maxDiscountPct ?? secondary.effectiveDiscountPct ?? 0,
@@ -446,13 +453,14 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const canonical = byName.get(key);
       if (!canonical) continue;
 
-      // A copy may also carry its own reviews — record its id for rating aggregation
       const copyIds = idsByKey.get(key) ?? [];
       if (!copyIds.includes(copy.id)) { copyIds.push(copy.id); idsByKey.set(key, copyIds); }
 
       const copyStoreId = (copy as any).ownerId || copy.retailerId || '';
       const copyPhone = copy.retailerPhone;
       if (!copyStoreId && !copyPhone) continue;
+
+      markOnline(key, copy.isOnline === true);
 
       const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
       const existing = av.find(
@@ -461,12 +469,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           (copyPhone && a.storePhone === copyPhone),
       );
       const copyDiscountPct = copy.effectiveDiscountPct ?? 0;
-      // Record this copy's OWN discount in the per-seller map (keyed by their own uid/phone)
       recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
 
       if (existing) {
         existing.sellingPrice = copy.price;
-        // Do NOT copy discount into availability entries — use sellerDiscounts map instead
+        // Carry the copy's isOnline into the existing entry so ProductDetailView
+        // can use it for per-seller ordering eligibility.
+        if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -474,24 +483,22 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: copy.store || undefined,
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
+          isOnline: copy.isOnline,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
-      byName.set(key, {
-        ...canonical,
-        availability: av,
-        maxDiscountPct: newMax,
-      });
+      byName.set(key, { ...canonical, availability: av, maxDiscountPct: newMax });
     }
 
-    // Compute lowestPrice + ratings across all merged store/variant sources for each product
+    // Compute lowestPrice + ratings + corrected sellMode across all merged sources.
+    // CRITICAL: sellMode/isOnline on the merged card reflects ANY seller being online.
+    // A single offline listing must never suppress the Order button for online sellers.
     return Array.from(byName.entries()).map(([key, p]) => {
       const prices = (p.availability ?? [])
         .map((a) => a.sellingPrice)
         .filter((v): v is number => typeof v === 'number' && v > 0);
       const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
 
-      // Aggregate reviews across every source id that merged into this card
       let sum = 0, count = 0;
       for (const id of (idsByKey.get(key) ?? [p.id])) {
         const agg = ratingAgg.get(id);
@@ -501,7 +508,21 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const totalReviews = count > 0 ? count : p.totalReviews;
 
       const sellerDiscounts = sellerDiscountsByKey.get(key) ?? {};
-      return { ...p, lowestPrice, averageRating, totalReviews, sellerDiscounts };
+
+      // Recompute isOnline/sellMode: true if ANY seller listing is online.
+      const mergedOnline = anyOnlineByKey.get(key) ?? false;
+      const mergedSellMode: "online_delivery" | "offline_store_only" =
+        mergedOnline ? "online_delivery" : "offline_store_only";
+
+      return {
+        ...p,
+        isOnline: mergedOnline,
+        sellMode: mergedSellMode,
+        lowestPrice,
+        averageRating,
+        totalReviews,
+        sellerDiscounts,
+      };
     });
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);

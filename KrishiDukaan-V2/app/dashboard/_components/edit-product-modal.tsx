@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown } from "lucide-react";
+import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
@@ -16,6 +16,9 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORIES = PRODUCT_CATEGORIES;
+
+const GST_RATES = [0, 5, 12, 18, 28] as const;
+type GstRate = typeof GST_RATES[number];
 
 const UNIT_TYPES = [
   { value: "g",      label: "gm",     display: "gm" },
@@ -393,6 +396,8 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [saving, setSaving]           = useState(false);
   const [toggling, setToggling]       = useState(false);
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [gstApplicable, setGstApplicable] = useState<boolean>(row.gstApplicable ?? false);
+  const [gstRate, setGstRate]             = useState<GstRate>(row.gstRate ?? 0);
 
   // Category-specific info — initialise from categoryInfo or fall back to legacy flat fields
   const [categoryInfo, setCategoryInfo] = useState<Record<string, string>>(() => {
@@ -483,6 +488,8 @@ export function EditProductModal({ row, onClose, onSaved }: {
         image: imageUrls[0] ?? "",
         images: imageUrls,
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
+        gstApplicable,
+        gstRate: gstApplicable ? gstRate : 0,
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
@@ -655,6 +662,65 @@ export function EditProductModal({ row, onClose, onSaved }: {
                   onChange={(p) => setImg(i, p)} onClear={() => clearImg(i)} />
               ))}
             </div>
+          </div>
+
+          {/* ── GST ────────────────────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Receipt className="h-4 w-4 text-primary" /> GST Configuration
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
+              </div>
+              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                {([true, false] as const).map((v) => (
+                  <button key={String(v)} type="button" disabled={saving}
+                    onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                      gstApplicable === v
+                        ? "bg-primary text-white"
+                        : "text-on-surface-variant hover:bg-surface-container"
+                    }`}
+                  >
+                    {v ? "Yes" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {gstApplicable && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
+                <div className="flex flex-wrap gap-2">
+                  {GST_RATES.map((rate) => (
+                    <button key={rate} type="button" disabled={saving}
+                      onClick={() => setGstRate(rate)}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                        gstRate === rate
+                          ? "border-primary bg-primary text-white shadow-sm"
+                          : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      {rate}%
+                    </button>
+                  ))}
+                </div>
+                {gstApplicable && gstRate === 0 && (
+                  <p className="text-xs text-amber-700 flex items-center gap-1">
+                    0% GST selected — confirm this product is exempt or zero-rated.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {gstApplicable && gstRate > 0 && (
+              <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+                GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+              </div>
+            )}
           </div>
         </div>
 

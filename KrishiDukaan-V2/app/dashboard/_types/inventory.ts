@@ -31,6 +31,10 @@ export interface ProductDoc {
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
 
+  /** GST fields */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+
   /** Category-specific structured information (new schema). */
   categoryInfo?: Record<string, string | string[]>;
   /** @deprecated Legacy fertilizer flat fields — backward compat only. */
@@ -127,6 +131,10 @@ export interface InventoryRow {
 
   // ── Delivery mode ─────────────────────────────────────────────────────────
   sellMode: "online_delivery" | "offline_store_only";
+
+  // ── GST ───────────────────────────────────────────────────────────────────
+  gstApplicable: boolean;
+  gstRate: 0 | 5 | 12 | 18 | 28;
 
   // ── Lifecycle / ownership ───────────────────────────────────────────────────
   isActive: boolean;

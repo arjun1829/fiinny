@@ -9,17 +9,20 @@ import { useRouter } from "next/navigation";
 import {
   Instagram, Facebook, Youtube, MessageCircle, Loader2, LocateFixed, MapPin, Save,
   Pencil, Truck, X, TrendingUp, ExternalLink, Building2, Globe, Image as ImageIcon,
-  Upload, Camera,
+  Upload, Camera, Receipt, AlertTriangle,
 } from "lucide-react";
 import { auth, db, storage, requestRoleUpgrade } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { HelperIcon } from "../../../components/helpers";
 import {
+  enableOnlineDeliveryWithGst,
   fetchDashboardUserRole,
+  isValidGstinFormat,
   loadProfileState,
   resolveManufacturerDocId,
   saveManufacturerProfile,
   saveRetailerProfile,
+  updateGstNumber,
   type DashboardProfileRole,
   type ProfileFormValues,
   type RetailerProfileExtras,
@@ -64,6 +67,9 @@ function extractAddressFields(place: {
 function initials(name: string): string {
   return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 }
+
+/** Alias so existing call sites in this file don't change. */
+const isValidGstin = isValidGstinFormat;
 
 function toSocialUrl(href: string, label: string): string {
   if (href.startsWith("http")) return href;
@@ -172,6 +178,12 @@ function ProfilePageInner() {
   const [editMode,  setEditMode]  = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // GST inline flow state
+  const [gstFlowMode,   setGstFlowMode]   = useState<"pending-enable" | "update" | null>(null);
+  const [pendingGstin,  setPendingGstin]  = useState("");
+  const [gstSaving,     setGstSaving]     = useState(false);
+  const [gstInputError, setGstInputError] = useState<string | null>(null);
 
   const [mapLinkInput,     setMapLinkInput]     = useState("");
   const [resolvingMapLink, setResolvingMapLink] = useState(false);
@@ -465,6 +477,65 @@ function ProfilePageInner() {
       setUploadingBanner(false);
     }
   };
+
+  // ── GST inline flow handlers ──────────────────────────────────────────────────
+
+  const handleSaveGstAndEnable = useCallback(async () => {
+    const trimmed = pendingGstin.trim().toUpperCase();
+    if (!trimmed) {
+      setGstInputError("GST Number is required to enable Online Delivery.");
+      return;
+    }
+    if (!isValidGstin(trimmed)) {
+      setGstInputError("Invalid GST format — expected 15 characters, e.g. 27AAAAA0000A1Z5.");
+      return;
+    }
+    if (!uid || !userRole) return;
+    setGstSaving(true);
+    setGstInputError(null);
+    try {
+      await enableOnlineDeliveryWithGst(uid, userRole, trimmed);
+      setForm((p) => ({ ...p, gstin: trimmed }));
+      setOnlineDelivery(true);
+      setGstFlowMode(null);
+      setPendingGstin("");
+    } catch (e) {
+      setGstInputError(e instanceof Error ? e.message : "Failed to save. Please try again.");
+    } finally {
+      setGstSaving(false);
+    }
+  }, [pendingGstin, uid, userRole]);
+
+  const handleUpdateGst = useCallback(async () => {
+    const trimmed = pendingGstin.trim().toUpperCase();
+    if (!trimmed) {
+      setGstInputError("GST Number cannot be removed while Online Delivery is active.");
+      return;
+    }
+    if (!isValidGstin(trimmed)) {
+      setGstInputError("Invalid GST format — expected 15 characters, e.g. 27AAAAA0000A1Z5.");
+      return;
+    }
+    if (!uid || !userRole) return;
+    setGstSaving(true);
+    setGstInputError(null);
+    try {
+      await updateGstNumber(uid, userRole, trimmed);
+      setForm((p) => ({ ...p, gstin: trimmed }));
+      setGstFlowMode(null);
+      setPendingGstin("");
+    } catch (e) {
+      setGstInputError(e instanceof Error ? e.message : "Failed to save. Please try again.");
+    } finally {
+      setGstSaving(false);
+    }
+  }, [pendingGstin, uid, userRole]);
+
+  const cancelGstFlow = useCallback(() => {
+    setGstFlowMode(null);
+    setPendingGstin("");
+    setGstInputError(null);
+  }, []);
 
   // ── Save profile + settings together ──────────────────────────────────────────
 
@@ -762,10 +833,215 @@ function ProfilePageInner() {
           </section>
         )}
 
-        {/* Online Delivery — main toggle, controls delivery activation */}
-        <div className="mb-6">
-          <OnlineDeliveryToggle value={onlineDelivery} onChange={setOnlineDelivery} />
-        </div>
+        {/* ── Online Delivery + GST — coupled inline workflow ── */}
+        <section className="mb-6 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient overflow-hidden">
+
+          {/* Toggle row */}
+          <div className="p-5">
+            <h2 className="mb-1 text-sm font-semibold text-on-surface flex items-center gap-2">
+              <Truck className="h-4 w-4" /> {t('onlineDelivery')}
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="dashSettings" ariaLabel="Online delivery help" />
+            </h2>
+            <p className="mb-4 text-xs text-on-surface-variant">{t('onlineDeliveryDesc')}</p>
+            <label className="flex items-center gap-3 cursor-pointer w-fit">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={onlineDelivery}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPendingGstin(form.gstin || "");
+                      setGstFlowMode("pending-enable");
+                      setGstInputError(null);
+                    } else {
+                      cancelGstFlow();
+                      setOnlineDelivery(false);
+                    }
+                  }}
+                />
+                <div className={`h-6 w-11 rounded-full transition-colors ${onlineDelivery ? "bg-primary" : "bg-surface-container-highest"}`} />
+                <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`} />
+              </div>
+              <span className="text-sm font-medium text-on-surface">{onlineDelivery ? t('enabledLabel') : t('disabledLabel')}</span>
+            </label>
+            {gstFlowMode === "pending-enable" && (
+              <p className="mt-2 text-xs font-medium text-amber-700">
+                Enter your GST Number below to complete enabling Online Delivery.
+              </p>
+            )}
+          </div>
+
+          {/* GST entry panel — enable flow (delivery is OFF, awaiting GST) */}
+          {gstFlowMode === "pending-enable" && (
+            <div className="border-t border-amber-200 bg-amber-50/60 px-5 pb-5 pt-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-amber-700 shrink-0" />
+                <p className="text-sm font-semibold text-on-surface">GST Number Required</p>
+              </div>
+              <p className="text-xs text-on-surface-variant">
+                Your GSTIN is required for Online Delivery, invoicing, and GST compliance. It will be stored on your account.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={pendingGstin}
+                    onChange={(e) => { setPendingGstin(e.target.value.toUpperCase()); setGstInputError(null); }}
+                    maxLength={15}
+                    placeholder="e.g. 27AAAAA0000A1Z5"
+                    className={`w-full rounded-xl border bg-white px-3 py-2.5 font-mono text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 pr-9 ${
+                      pendingGstin
+                        ? isValidGstin(pendingGstin)
+                          ? "border-green-400 focus:border-green-500"
+                          : "border-red-300 focus:border-red-400"
+                        : "border-outline-variant/40 focus:border-primary"
+                    }`}
+                  />
+                  {pendingGstin && (
+                    <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold ${
+                      isValidGstin(pendingGstin) ? "text-green-500" : "text-red-400"
+                    }`}>
+                      {isValidGstin(pendingGstin) ? "✓" : "✕"}
+                    </span>
+                  )}
+                </div>
+                {gstInputError && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {gstInputError}
+                  </p>
+                )}
+                {pendingGstin && !isValidGstin(pendingGstin) && !gstInputError && (
+                  <p className="text-xs text-on-surface-variant">
+                    Must be 15 characters — state code + PAN + entity type + check digit.
+                  </p>
+                )}
+                {isValidGstin(pendingGstin) && (
+                  <p className="text-xs text-green-700 font-medium">Valid GST Number ✓</p>
+                )}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSaveGstAndEnable}
+                  disabled={gstSaving || !isValidGstin(pendingGstin)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all"
+                >
+                  {gstSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {gstSaving ? "Saving…" : "Save & Enable Delivery"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelGstFlow}
+                  disabled={gstSaving}
+                  className="inline-flex items-center rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* GST summary row — delivery is ON and no active edit */}
+          {onlineDelivery && gstFlowMode === null && (
+            <div className="border-t border-outline-variant/20 px-5 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Receipt className="h-4 w-4 text-on-surface-variant shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">GST Number</p>
+                  {isValidGstin(form.gstin) ? (
+                    <p className="text-sm font-mono font-semibold text-on-surface tracking-widest truncate">
+                      {form.gstin.toUpperCase()}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-700 font-medium">Missing — add your GSTIN</p>
+                  )}
+                </div>
+                {isValidGstin(form.gstin) ? (
+                  <span className="shrink-0 inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">✓ Registered</span>
+                ) : (
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                    <AlertTriangle className="h-3 w-3" /> Incomplete
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => { setPendingGstin(form.gstin || ""); setGstFlowMode("update"); setGstInputError(null); }}
+                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+              >
+                <Pencil className="h-3 w-3" /> {form.gstin ? "Update" : "Add"}
+              </button>
+            </div>
+          )}
+
+          {/* GST update panel — delivery is ON, user clicked Update */}
+          {gstFlowMode === "update" && (
+            <div className="border-t border-outline-variant/20 bg-surface-container-low/40 px-5 pb-5 pt-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-primary shrink-0" />
+                <p className="text-sm font-semibold text-on-surface">Update GST Number</p>
+              </div>
+              <p className="text-xs text-on-surface-variant">
+                GST Number cannot be removed while Online Delivery is active.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={pendingGstin}
+                    onChange={(e) => { setPendingGstin(e.target.value.toUpperCase()); setGstInputError(null); }}
+                    maxLength={15}
+                    placeholder="e.g. 27AAAAA0000A1Z5"
+                    className={`w-full rounded-xl border bg-white px-3 py-2.5 font-mono text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 pr-9 ${
+                      pendingGstin
+                        ? isValidGstin(pendingGstin)
+                          ? "border-green-400 focus:border-green-500"
+                          : "border-red-300 focus:border-red-400"
+                        : "border-outline-variant/40 focus:border-primary"
+                    }`}
+                  />
+                  {pendingGstin && (
+                    <span className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold ${
+                      isValidGstin(pendingGstin) ? "text-green-500" : "text-red-400"
+                    }`}>
+                      {isValidGstin(pendingGstin) ? "✓" : "✕"}
+                    </span>
+                  )}
+                </div>
+                {gstInputError && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {gstInputError}
+                  </p>
+                )}
+                {isValidGstin(pendingGstin) && (
+                  <p className="text-xs text-green-700 font-medium">Valid GST Number ✓</p>
+                )}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleUpdateGst}
+                  disabled={gstSaving || !isValidGstin(pendingGstin)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all"
+                >
+                  {gstSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {gstSaving ? "Saving…" : "Save GST Number"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelGstFlow}
+                  disabled={gstSaving}
+                  className="inline-flex items-center rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Upgrade to Manufacturer — retailers only */}
         {userRole === "retailer" && (
@@ -886,10 +1162,37 @@ function ProfilePageInner() {
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
                   {t('gstinLabel')}
-                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional — shown on invoices)</span>
+                  <span className="ml-1 font-normal text-on-surface-variant text-xs">(required for Online Delivery)</span>
                 </span>
-                <input type="text" value={form.gstin ?? ""} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                  className={inputCls} placeholder="e.g. 27AAAAA0000A1Z5" maxLength={15} />
+                <div className="relative">
+                  <input type="text" value={form.gstin ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setForm((p) => ({ ...p, gstin: val }));
+                      if (isValidGstin(val)) setGstInputError(null);
+                    }}
+                    className={`${inputCls} pr-8 ${
+                      form.gstin
+                        ? isValidGstin(form.gstin)
+                          ? "border-green-400 focus:border-green-500"
+                          : "border-red-300 focus:border-red-400"
+                        : ""
+                    }`}
+                    placeholder="e.g. 27AAAAA0000A1Z5" maxLength={15} />
+                  {form.gstin && (
+                    <span className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm font-bold ${
+                      isValidGstin(form.gstin) ? "text-green-500" : "text-red-400"
+                    }`}>
+                      {isValidGstin(form.gstin) ? "✓" : "✕"}
+                    </span>
+                  )}
+                </div>
+                {form.gstin && !isValidGstin(form.gstin) && (
+                  <p className="text-xs text-red-500">Invalid GST format — must be 15 characters (e.g. 27AAAAA0000A1Z5).</p>
+                )}
+                {form.gstin && isValidGstin(form.gstin) && (
+                  <p className="text-xs text-green-600">Valid GST Number — Online Delivery can be enabled.</p>
+                )}
               </label>
             </div>
           </section>
@@ -1084,12 +1387,28 @@ function ProfilePageInner() {
               <p className="text-xs text-on-surface-variant">{t('onlineDeliveryDesc')}</p>
               <label className="flex items-center gap-3 cursor-pointer w-fit">
                 <div className="relative">
-                  <input type="checkbox" className="sr-only" checked={onlineDelivery} onChange={(e) => setOnlineDelivery(e.target.checked)} />
+                  <input type="checkbox" className="sr-only" checked={onlineDelivery}
+                    onChange={(e) => {
+                      const enabling = e.target.checked;
+                      if (enabling && !isValidGstin(form.gstin)) {
+                        setGstInputError("A valid GST Number is required to enable Online Delivery.");
+                        return;
+                      }
+                      setGstInputError(null);
+                      setOnlineDelivery(enabling);
+                    }}
+                  />
                   <div className={`h-6 w-11 rounded-full transition-colors ${onlineDelivery ? "bg-primary" : "bg-surface-container-highest"}`} />
                   <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`} />
                 </div>
                 <span className="text-sm font-medium text-on-surface">{onlineDelivery ? t('enabledLabel') : t('disabledLabel')}</span>
               </label>
+              {gstInputError && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  {gstInputError} Add your GST Number in the Business Info section above.
+                </div>
+              )}
             </div>
           </section>
 

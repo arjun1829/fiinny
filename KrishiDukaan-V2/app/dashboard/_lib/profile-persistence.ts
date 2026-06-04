@@ -35,6 +35,13 @@ export type LoadedProfileState = {
   manufacturerCreatedAt: unknown | null;
 };
 
+/** Validates the Indian 15-character GSTIN format. */
+export function isValidGstinFormat(gstin: string): boolean {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
+    gstin.trim().toUpperCase(),
+  );
+}
+
 // Resolve Firebase Auth UID → normalized phone via uidIndex.
 // Returns null if the index entry doesn't exist yet.
 async function phoneFromUid(uid: string): Promise<string | null> {
@@ -246,6 +253,9 @@ export async function saveManufacturerProfile(
     pincode: form.pincode.trim(),
   };
 
+  const gstNumber      = form.gstin.trim() || null;
+  const gstRegistered  = isValidGstinFormat(gstNumber ?? "");
+
   // 1. Write full profile to the role-specific collection (source of operational truth).
   await setDoc(
     doc(db, "manufacturers", manufacturerDocId),
@@ -260,7 +270,8 @@ export async function saveManufacturerProfile(
       website:        form.website.trim(),
       logo:           form.logoUrl.trim(),
       banner:         form.bannerUrl.trim(),
-      gstin:          form.gstin.trim() || null,
+      gstin:          gstNumber,
+      gstRegistered,
       geo,
       address:        addressPayload,
       slug,
@@ -288,7 +299,8 @@ export async function saveManufacturerProfile(
       website:        form.website.trim() || null,
       logo:           form.logoUrl.trim() || null,
       banner:         form.bannerUrl.trim() || null,
-      gstin:          form.gstin.trim() || null,
+      gstin:          gstNumber,
+      gstRegistered,
       address:        addressPayload,
       city:           form.city.trim(),
       state:          form.state.trim(),
@@ -334,6 +346,9 @@ export async function saveRetailerProfile(
     pincode: form.pincode.trim(),
   };
 
+  const gstNumber     = form.gstin.trim() || null;
+  const gstRegistered = isValidGstinFormat(gstNumber ?? "");
+
   // 1. Write full profile to retailers/{docId} (source of operational truth).
   await setDoc(
     retailerRef,
@@ -349,7 +364,8 @@ export async function saveRetailerProfile(
       website:   form.website.trim(),
       logo:      form.logoUrl.trim(),
       banner:    form.bannerUrl.trim(),
-      gstin:     form.gstin.trim() || null,
+      gstin:     gstNumber,
+      gstRegistered,
       address:   addressPayload,
       geo,
       onboardingType:     extras.onboardingType || "dashboard",
@@ -379,7 +395,8 @@ export async function saveRetailerProfile(
       website:        form.website.trim() || null,
       logo:           form.logoUrl.trim() || null,
       banner:         form.bannerUrl.trim() || null,
-      gstin:          form.gstin.trim() || null,
+      gstin:          gstNumber,
+      gstRegistered,
       address:        addressPayload,
       city:           form.city.trim(),
       state:          form.state.trim(),
@@ -401,4 +418,67 @@ export async function saveRetailerProfile(
     },
     { merge: true },
   );
+}
+
+// ─── GST + Online Delivery atomic writes ──────────────────────────────────────
+
+/**
+ * Validates GST, then atomically saves the GST number and enables online delivery
+ * across all three relevant Firestore collections.
+ */
+export async function enableOnlineDeliveryWithGst(
+  uid: string,
+  role: "retailer" | "manufacturer",
+  gstin: string,
+): Promise<void> {
+  const gstNumber = gstin.trim().toUpperCase();
+  const gstRegistered = isValidGstinFormat(gstNumber);
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { gstin: gstNumber, gstRegistered, onlineDelivery: true, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
+}
+
+/**
+ * Updates the GST number on an account where Online Delivery is already enabled.
+ * GST cannot be cleared (set to empty) while delivery is active — callers must
+ * validate that the supplied gstin is non-empty and valid before calling.
+ */
+export async function updateGstNumber(
+  uid: string,
+  role: "retailer" | "manufacturer",
+  gstin: string,
+): Promise<void> {
+  const gstNumber = gstin.trim().toUpperCase() || null;
+  const gstRegistered = gstNumber ? isValidGstinFormat(gstNumber) : false;
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { gstin: gstNumber, gstRegistered, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
 }

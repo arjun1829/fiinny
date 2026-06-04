@@ -935,6 +935,21 @@ export default function App() {
       setCheckoutMessage("This store is missing seller info and cannot be ordered from online.");
       return;
     }
+
+    // Per-seller product-level check: this specific store's listing may have delivery off
+    // even if the merged card is marked online (because another seller is online).
+    const sellerPhone: string | undefined = (store as any).phone || undefined;
+    const availEntry = product.availability?.find(
+      (a) =>
+        (sellerId && a.storeId === sellerId) ||
+        (sellerPhone && (a.storePhone === sellerPhone || a.storeId === sellerPhone)),
+    );
+    if (availEntry && availEntry.isOnline === false) {
+      setToastMsg("This product is not available for online ordering from this store.");
+      setToastType("error");
+      return;
+    }
+
     const sellerType: "retailer" | "manufacturer" =
       (store as any).retailerId ? "retailer" : "manufacturer";
     const variantUnit = variant?.unit;

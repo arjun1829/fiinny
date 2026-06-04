@@ -108,6 +108,11 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
     variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
+    // GST fields
+    gstApplicable: data.gstApplicable === true,
+    gstRate: ([0, 5, 12, 18, 28] as const).includes(data.gstRate as 0 | 5 | 12 | 18 | 28)
+      ? (data.gstRate as 0 | 5 | 12 | 18 | 28)
+      : 0,
   };
 }
 
@@ -323,6 +328,8 @@ export async function fetchRetailerInventoryRows(
         status,
         isActive: p.isActive,
         sellMode: p.sellMode ?? "online_delivery",
+        gstApplicable: p.gstApplicable ?? false,
+        gstRate: p.gstRate ?? 0,
         assignedByManufacturer: inv.assignedByManufacturer === true,
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
@@ -424,6 +431,8 @@ export async function fetchManufacturerCatalogueRows(
       status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
       sellMode: p.sellMode ?? "online_delivery",
+      gstApplicable: p.gstApplicable ?? false,
+      gstRate: p.gstRate ?? 0,
       assignedByManufacturer: false,
       source: p.source ?? "manufacturer_inventory",
       ownerId: p.ownerId,
@@ -502,6 +511,9 @@ export type AddProductInventoryInput = {
   existingProductId?: string;
   /** Category-specific structured info (new schema). */
   categoryInfo?: Record<string, string | string[]>;
+  /** GST configuration for this product. */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
   /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
@@ -586,6 +598,9 @@ export async function createProductAndInventory(
     originalProductId: input.existingProductId || null,
 
     categoryInfo: input.categoryInfo ?? null,
+    // GST fields
+    gstApplicable: input.gstApplicable ?? false,
+    gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
     // Legacy fertilizer flat fields — preserved for backward compat reads
     nitrogen: input.nitrogen?.trim() || null,
     phosphorus: input.phosphorus?.trim() || null,

@@ -41,6 +41,9 @@ export type MarketplaceProduct = {
     stockLevel: string;
     sellingPrice?: number;
     discountPct?: number;  // active discount percentage for this seller (0 if none)
+    /** Product-level online delivery flag for this specific seller's listing.
+     *  undefined means "unknown/legacy" — fall back to account-level storeOnlineMap check. */
+    isOnline?: boolean;
   }[];
 
   /** Lowest selling price across all stores that stock this product */
