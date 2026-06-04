@@ -944,7 +944,7 @@ export default function ProductDetailView({
                   </HelperTooltip>
                   {onAddToCartFromStore && (() => {
                     const phone = (store as any).phone as string | undefined;
-                    const canOrder = !!phone && storeOnlineMap[phone] === true;
+                    const canOrder = !!phone && storeOnlineMap[phone] === true && product.sellMode !== "offline_store_only";
                     if (!canOrder) return null;
                     return (
                       <button
@@ -1248,7 +1248,11 @@ export default function ProductDetailView({
           </HelperTooltip>
 
           <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
-            {displayStores.length === 0 ? (
+            {product.sellMode === "offline_store_only" ? (
+              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+                In-Store Only
+              </span>
+            ) : displayStores.length === 0 ? (
               <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
                 Currently unavailable
               </span>

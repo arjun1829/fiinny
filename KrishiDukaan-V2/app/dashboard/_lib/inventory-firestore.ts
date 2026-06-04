@@ -94,8 +94,8 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     retailerId: data.retailerId ? String(data.retailerId) : undefined,
     store: String(data.store ?? ""),
     sellMode:
-      data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
-    isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+      data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
+    isOnline: data.sellMode !== "offline_store_only",
 
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
@@ -322,6 +322,7 @@ export async function fetchRetailerInventoryRows(
         reorderThreshold: inv.reorderThreshold,
         status,
         isActive: p.isActive,
+        sellMode: p.sellMode ?? "online_delivery",
         assignedByManufacturer: inv.assignedByManufacturer === true,
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
@@ -422,6 +423,7 @@ export async function fetchManufacturerCatalogueRows(
       reorderThreshold,
       status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
+      sellMode: p.sellMode ?? "online_delivery",
       assignedByManufacturer: false,
       source: p.source ?? "manufacturer_inventory",
       ownerId: p.ownerId,
@@ -814,6 +816,17 @@ export async function updateInventoryRecord(
       console.warn("[updateInventoryRecord] Mirror sync failed:", e);
     }
   })();
+}
+
+export async function updateProductSellMode(
+  productId: string,
+  sellMode: "online_delivery" | "offline_store_only",
+): Promise<void> {
+  await updateDoc(doc(db, "products", productId), {
+    sellMode,
+    isOnline: sellMode === "online_delivery",
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // ─── Product lifecycle operations ─────────────────────────────────────────────

@@ -3,7 +3,6 @@ import {
   getDoc,
   setDoc,
   serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import type { DeliverySettings, WeightSlab, CoverageType } from "../_types/delivery-settings";
@@ -50,7 +49,6 @@ export async function saveDeliverySettings(
     states: string[];
     weightSlabs: WeightSlab[];
   },
-  ownerType: "retailer" | "manufacturer",
 ): Promise<void> {
   const now = serverTimestamp();
 
@@ -68,35 +66,6 @@ export async function saveDeliverySettings(
     { merge: true },
   );
 
-  // 2. Mirror onlineDelivery to the public-facing seller doc for backward compat.
-  //    fetchStoreOnlineDelivery reads from retailers/{phone} or manufacturers/{phone}.
-  const sellerCollection = ownerType === "manufacturer" ? "manufacturers" : "retailers";
-  try {
-    const sellerRef = doc(db, sellerCollection, sellerPhone);
-    const sellerSnap = await getDoc(sellerRef);
-    if (sellerSnap.exists()) {
-      await updateDoc(sellerRef, {
-        onlineDelivery: settings.onlineDeliveryEnabled,
-        updatedAt: now,
-      });
-    }
-  } catch {
-    // Silent: seller doc may not exist yet; deliverySettings is authoritative.
-  }
-
-  // 3. Also keep users/{phone} in sync (sidebar reads this).
-  try {
-    const userRef = doc(db, "users", sellerPhone);
-    const userSnap = await getDoc(userRef);
-    if (userSnap.exists()) {
-      await updateDoc(userRef, {
-        onlineDelivery: settings.onlineDeliveryEnabled,
-        updatedAt: now,
-      });
-    }
-  } catch {
-    // Silent
-  }
 }
 
 /**

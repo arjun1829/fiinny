@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Loader2, Pencil, Power, PowerOff, Save, Tag, Trash2,
+  AlertTriangle, CheckCircle2, Loader2, Pencil, Power, PowerOff, Save, Tag, Trash2, Truck,
 } from "lucide-react";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
-import { updateInventoryRecord, acceptAssignedProduct } from "../_lib/inventory-firestore";
+import { updateInventoryRecord, acceptAssignedProduct, updateProductSellMode } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 import { EditProductModal } from "./edit-product-modal";
@@ -165,10 +165,60 @@ function StatusCell({
   );
 }
 
+// ─── Sell-mode toggle ────────────────────────────────────────────────────────
+
+function SellModeToggleButton({
+  row,
+  onUpdated,
+}: {
+  row: InventoryRow;
+  onUpdated: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const isOnline = row.sellMode === "online_delivery";
+
+  const handleToggle = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const next = isOnline ? "offline_store_only" : "online_delivery";
+      await updateProductSellMode(row.productId, next);
+      await onUpdated();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <button
+        type="button"
+        onClick={handleToggle}
+        disabled={busy}
+        title={isOnline ? "Disable Online Delivery" : "Enable Online Delivery"}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-50",
+          isOnline
+            ? "border-primary/30 bg-primary/8 text-primary hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+        )}
+      >
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
+        {isOnline ? "Delivery On" : "Delivery Off"}
+      </button>
+      {err && <p className="text-[10px] text-red-600 max-w-[120px]">{err}</p>}
+    </div>
+  );
+}
+
 // ─── Actions cell ───────────────────────────────────────────────────────────
 
 function ActionsCell({
-  row, dirty, saving, onSave, onEdit, onToggleDiscount, onDelete,
+  row, dirty, saving, onSave, onEdit, onToggleDiscount, onDelete, onUpdated,
 }: {
   row: InventoryRow;
   dirty: boolean;
@@ -177,6 +227,7 @@ function ActionsCell({
   onEdit: () => void;
   onToggleDiscount: () => void;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
+  onUpdated: () => Promise<void> | void;
 }) {
   const { t } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -236,6 +287,8 @@ function ActionsCell({
             {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
           </button>
         )}
+
+        {isOwn && <SellModeToggleButton row={row} onUpdated={onUpdated} />}
 
         {isOwn && onDelete && (
           confirmDelete ? (
@@ -439,6 +492,9 @@ function MobileProductCard({
               {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
             </button>
           )}
+
+          {/* Online Delivery toggle */}
+          <SellModeToggleButton row={row} onUpdated={onUpdated} />
 
           {/* Delete */}
           {onDelete && (
@@ -714,6 +770,7 @@ export function InventoryTable({
                         onEdit={() => setEditing(r)}
                         onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
                         onDelete={onDelete}
+                        onUpdated={onUpdated}
                       />
                       {savedId === r.inventoryId && (
                         <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary">

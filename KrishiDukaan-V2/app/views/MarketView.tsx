@@ -583,8 +583,8 @@ export default function MarketView({
                       )}
                     </div>
                   )}
-                  {/* Cart CTA — changes state once item is in cart */}
-                  {(() => {
+                  {/* Cart CTA — hidden for in-store-only products */}
+                  {product.sellMode !== "offline_store_only" && (() => {
                     const inCart = cartItems.some((ci) => ci.productId === product.id);
                     if (inCart) {
                       return (

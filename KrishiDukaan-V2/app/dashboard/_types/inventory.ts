@@ -125,6 +125,9 @@ export interface InventoryRow {
   reorderThreshold: number;
   status: StockStatus;
 
+  // ── Delivery mode ─────────────────────────────────────────────────────────
+  sellMode: "online_delivery" | "offline_store_only";
+
   // ── Lifecycle / ownership ───────────────────────────────────────────────────
   isActive: boolean;
   assignedByManufacturer: boolean;

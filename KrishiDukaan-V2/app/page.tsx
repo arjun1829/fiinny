@@ -709,6 +709,11 @@ export default function App() {
   };
 
   const addToCart = (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     // Use the best available discount (maxDiscountPct) as a preview for the pending item.
     // The price will be updated to the specific store's price when the user selects a store.
     const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
@@ -916,6 +921,11 @@ export default function App() {
 
 
   const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number, variant?: { unit: string; price: number; stock?: number }) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     const sellerId: string =
       (store as any).retailerId ||
       (store as any).userId ||
@@ -999,6 +1009,11 @@ export default function App() {
 
   // Buy Now: add to cart (auto-select first online store if available) + go to cart
   const handleBuyNow = useCallback((product: MarketplaceProduct) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     // Find first online-delivery store for this product
     const onlineStore = storesWithDistance.find((store) => {
       const storePhone = (store as any).phone as string | undefined;
