@@ -327,9 +327,9 @@ export async function fetchRetailerInventoryRows(
   const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
-    if (p.isActive === false && (p.source === "admin_assigned" || p.source === "manufacturer_assigned")) {
-      return [];
-    }
+    // NOTE: We intentionally keep inactive assigned products in the list so the
+    // retailer can see them and toggle them back to active if needed.
+    // (Previously these were filtered out, making re-activation impossible.)
     const inv = inventoryMap.get(p.id);
     if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
@@ -952,6 +952,28 @@ export async function activateProduct(
       } catch {}
     })();
   }
+}
+
+/**
+ * Toggle active/inactive for products that were ASSIGNED to a retailer by an
+ * admin or manufacturer. These products do NOT consume/release the retailer's
+ * own seat listing — the seat is owned by the assigning party. We simply flip
+ * `isActive` on the product doc and `isAvailable` on the inventory doc.
+ *
+ * @param productId   - The product document ID
+ * @param inventoryId - The inventory document ID
+ * @param makeActive  - true = activate, false = deactivate
+ */
+export async function toggleAssignedProductActive(
+  productId: string,
+  inventoryId: string,
+  makeActive: boolean,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: makeActive, updatedAt: now });
+  batch.update(doc(db, "inventory", inventoryId), { isAvailable: makeActive, updatedAt: now });
+  await batch.commit();
 }
 
 // ─── Discount operations ──────────────────────────────────────────────────────

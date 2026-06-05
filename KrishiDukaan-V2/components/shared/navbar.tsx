@@ -519,6 +519,14 @@ export function Navbar({
                       {t('dashboard')}
                     </button>
                   )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard/my-orders'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
                   {userRole === 'customer' && (
                     <>
                       <button
@@ -619,6 +627,17 @@ export function Navbar({
                       className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
                     >
                       {t('dashboard')}
+                    </button>
+                  )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        router.push('/dashboard/my-orders');
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myOrders')}
                     </button>
                   )}
                   {userRole === 'customer' && (
