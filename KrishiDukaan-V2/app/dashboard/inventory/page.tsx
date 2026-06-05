@@ -16,6 +16,7 @@ import {
   activateProduct,
   deactivateProduct,
   deleteProduct,
+  deleteAssignedProductFromRetailer,
   toggleAssignedProductActive,
 } from "../_lib/inventory-firestore";
 import {
@@ -402,6 +403,28 @@ export default function InventoryPage() {
   const handleRetailerDelete = useCallback(async (
     productId: string,
     inventoryId: string,
+    isAssigned?: boolean,
+  ) => {
+    if (!userId) return;
+    if (isAssigned) {
+      // For assigned products: release the manufacturer's seat, clean up availability[]
+      await deleteAssignedProductFromRetailer(
+        productId,
+        inventoryId,
+        profile?.retailerDocId ?? null,
+        profile?.phone ?? null,
+      );
+    } else {
+      // Own products: release retailer's own seat listing and delete
+      await deleteProduct(productId, userId, inventoryId);
+    }
+    await refresh();
+  }, [userId, profile, refresh]);
+
+  // ─── Manufacturer delete (own catalogue products) ─────────────────────────────
+  const handleMfrDelete = useCallback(async (
+    productId: string,
+    inventoryId: string | undefined,
   ) => {
     if (!userId) return;
     await deleteProduct(productId, userId, inventoryId);
@@ -518,6 +541,7 @@ export default function InventoryPage() {
               rows={catalogueRows}
               onRefresh={refresh}
               onToggleActive={handleMfrToggleActive}
+              onDelete={handleMfrDelete}
             />
           ) : (
             <InventoryManagementTable

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Tag, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Tag, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import type { ManufacturerProductRow } from "../_types/inventory";
 import { EditProductModal } from "./edit-product-modal";
 import { DiscountPanel } from "./discount-panel";
@@ -12,6 +12,7 @@ type Props = {
   rows: ManufacturerProductRow[];
   onRefresh: () => void;
   onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean) => Promise<void>;
+  onDelete?: (productId: string, inventoryId: string | undefined) => Promise<void>;
 };
 
 function sourceCls(source: string): string {
@@ -68,10 +69,27 @@ function ToggleBtn({
   );
 }
 
-export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: Props) {
+export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive, onDelete }: Props) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<ManufacturerProductRow | null>(null);
   const [discountRow, setDiscountRow] = useState<ManufacturerProductRow | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async (row: ManufacturerProductRow) => {
+    if (!onDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(row.productId, row.inventoryId);
+      setConfirmDeleteId(null);
+      onRefresh();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete.");
+      setDeleting(false);
+    }
+  };
 
   if (!rows.length) {
     return (
@@ -169,7 +187,7 @@ export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: 
 
                     <td className="whitespace-nowrap px-3 py-3 text-on-surface-variant md:px-4 text-xs">{updatedLabel}</td>
 
-                    {/* Actions: Edit + Discount */}
+                    {/* Actions: Edit + Discount + Delete */}
                     <td className="px-3 py-3 md:px-4">
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -191,7 +209,46 @@ export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: 
                             <Tag className="h-3 w-3" />
                             {r.effectiveDiscountPct > 0 ? `${r.effectiveDiscountPct}% OFF` : "Discount"}
                           </button>
+                          {/* Delete button */}
+                          {onDelete && (
+                            confirmDeleteId === r.productId ? (
+                              <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+                                <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                                <span className="text-xs font-medium text-red-700">Delete?</span>
+                                <button
+                                  type="button"
+                                  disabled={deleting}
+                                  onClick={() => handleDelete(r)}
+                                  className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+                                >
+                                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                                  {deleting ? "Deleting…" : "Confirm"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={deleting}
+                                  onClick={() => { setConfirmDeleteId(null); setDeleteError(null); }}
+                                  className="text-xs font-medium text-red-600 px-1 hover:underline"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => { setConfirmDeleteId(r.productId); setDeleteError(null); }}
+                                disabled={deleting}
+                                title="Delete this product from your catalogue"
+                                className="flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-all disabled:opacity-50"
+                              >
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </button>
+                            )
+                          )}
                         </div>
+                        {deleteError && confirmDeleteId === r.productId && (
+                          <p className="text-[10px] text-red-600 font-medium">{deleteError}</p>
+                        )}
                         {discountRow?.productId === r.productId && r.inventoryId && (
                           <div className="w-72">
                             <DiscountPanel

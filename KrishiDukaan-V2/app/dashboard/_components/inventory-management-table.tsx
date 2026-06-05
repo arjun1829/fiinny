@@ -32,7 +32,7 @@ type InventoryManagementTableProps = {
   userId?: string;
   onUpdated: () => Promise<void>;
   onToggleActive?: (productId: string, inventoryId: string, isActive: boolean, isAssigned?: boolean) => Promise<void>;
-  onDelete?: (productId: string, inventoryId: string) => Promise<void>;
+  onDelete?: (productId: string, inventoryId: string, isAssigned?: boolean) => Promise<void>;
 };
 
 function RowActions({
@@ -45,7 +45,7 @@ function RowActions({
   row: InventoryRow;
   userId?: string;
   onToggleActive?: (productId: string, inventoryId: string, isActive: boolean, isAssigned?: boolean) => Promise<void>;
-  onDelete?: (productId: string, inventoryId: string) => Promise<void>;
+  onDelete?: (productId: string, inventoryId: string, isAssigned?: boolean) => Promise<void>;
   onUpdated: () => Promise<void>;
 }) {
   const [toggling, setToggling] = useState(false);
@@ -89,7 +89,7 @@ function RowActions({
     setDeleting(true);
     setRowError(null);
     try {
-      await onDelete(row.productId, row.inventoryId);
+      await onDelete(row.productId, row.inventoryId, row.assignedByManufacturer);
     } catch (e) {
       setRowError(e instanceof Error ? e.message : "Failed.");
       setDeleting(false);
@@ -158,11 +158,13 @@ function RowActions({
               </button>
             ) : null}
 
-            {onDelete && !row.assignedByManufacturer ? (
+            {onDelete ? (
               confirmDelete ? (
                 <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
                   <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-                  <span className="text-xs font-medium text-red-700">Delete?</span>
+                  <span className="text-xs font-medium text-red-700">
+                    {row.assignedByManufacturer ? "Remove?" : "Delete?"}
+                  </span>
                   <button
                     type="button"
                     disabled={deleting}
@@ -170,7 +172,7 @@ function RowActions({
                     className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
                   >
                     {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                    {deleting ? "Deleting…" : "Confirm"}
+                    {deleting ? "Removing…" : "Confirm"}
                   </button>
                   <button
                     type="button"
@@ -186,10 +188,11 @@ function RowActions({
                   type="button"
                   onClick={() => setConfirmDelete(true)}
                   disabled={toggling || deleting}
+                  title={row.assignedByManufacturer ? "Remove this assigned product from your store" : "Delete this product"}
                   className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Delete
+                  {row.assignedByManufacturer ? "Remove" : "Delete"}
                 </button>
               )
             ) : null}

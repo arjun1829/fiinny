@@ -1,4 +1,5 @@
 import {
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -1137,6 +1138,81 @@ async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
  * Hard-deletes a product and its inventory record (if given).
  * Also releases any active seat listing.
  */
+/**
+ * Deletes an assigned product from a retailer's inventory.
+ * Called when a retailer deletes a manufacturer-assigned product.
+ * Atomically:
+ *  1. Hard-deletes the retailer's product copy.
+ *  2. Hard-deletes all inventory records for that copy.
+ *  3. Releases the manufacturer's seat listing for this assignment.
+ * Fire-and-forget:
+ *  4. Removes the retailer's store from the manufacturer product's availability[].
+ *  5. Cleans up subcollection mirror docs.
+ */
+export async function deleteAssignedProductFromRetailer(
+  retailerProductId: string,
+  inventoryId: string,
+  retailerDocId?: string | null,
+  retailerPhone?: string | null,
+): Promise<void> {
+  // Fetch seat listing + all inventory docs in parallel before the batch
+  const [listingSnap, invSnap] = await Promise.all([
+    getDocs(query(
+      collection(db, "retailerSeatListings"),
+      where("productId", "==", retailerProductId),
+      where("status", "==", "active"),
+    )),
+    getDocs(query(
+      collection(db, "inventory"),
+      where("productId", "==", retailerProductId),
+    )),
+  ]);
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+
+  // 1. Hard-delete the product copy
+  batch.delete(doc(db, "products", retailerProductId));
+
+  // 2. Hard-delete all inventory records
+  invSnap.docs.forEach(d => batch.delete(d.ref));
+
+  // 3. Release the manufacturer's seat listing
+  listingSnap.docs.forEach(d => batch.update(d.ref, { status: "released", releasedAt: now }));
+
+  await batch.commit();
+
+  // 4. Remove retailer's store from manufacturer product's availability[] (non-critical)
+  const manufacturerProductId = listingSnap.docs[0]?.data()?.manufacturerProductId as string | undefined;
+  if (manufacturerProductId && retailerDocId) {
+    try {
+      const mfgSnap = await getDoc(doc(db, "products", manufacturerProductId));
+      if (mfgSnap.exists()) {
+        const avArr = Array.isArray(mfgSnap.data().availability) ? mfgSnap.data().availability : [];
+        const entryToRemove = avArr.find((e: Record<string, unknown>) => e.storeId === retailerDocId);
+        if (entryToRemove) {
+          await updateDoc(doc(db, "products", manufacturerProductId), {
+            availability: arrayRemove(entryToRemove),
+          });
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // 5. Clean up subcollection mirror docs (fire-and-forget)
+  if (retailerPhone) {
+    (async () => {
+      try {
+        const { deleteDoc: dDoc, doc: wDoc } = await import("firebase/firestore");
+        await Promise.all([
+          ...invSnap.docs.map(d => dDoc(wDoc(db, `retailers/${retailerPhone}/inventory/${d.id}`)).catch(() => {})),
+          dDoc(wDoc(db, `retailers/${retailerPhone}/products/${retailerProductId}`)).catch(() => {}),
+        ]);
+      } catch { /* non-critical */ }
+    })();
+  }
+}
+
 export async function deleteProduct(
   productId: string,
   ownerId: string,
