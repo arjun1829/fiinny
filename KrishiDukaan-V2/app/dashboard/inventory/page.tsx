@@ -16,6 +16,7 @@ import {
   activateProduct,
   deactivateProduct,
   deleteProduct,
+  toggleAssignedProductActive,
 } from "../_lib/inventory-firestore";
 import {
   fetchSubscriptions,
@@ -382,12 +383,18 @@ export default function InventoryPage() {
     productId: string,
     inventoryId: string,
     isActive: boolean,
+    isAssigned?: boolean,
   ) => {
     if (!userId) return;
-    if (isActive) {
-      await deactivateProduct(productId, userId, inventoryId);
+    if (isAssigned) {
+      // Assigned products don't consume the retailer's own seats — just flip visibility.
+      await toggleAssignedProductActive(productId, inventoryId, !isActive);
     } else {
-      await activateProduct(productId, userId, "retailer", inventoryId);
+      if (isActive) {
+        await deactivateProduct(productId, userId, inventoryId);
+      } else {
+        await activateProduct(productId, userId, "retailer", inventoryId);
+      }
     }
     await refresh();
   }, [userId, refresh]);
