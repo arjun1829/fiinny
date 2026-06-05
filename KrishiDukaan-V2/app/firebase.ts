@@ -340,6 +340,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         isOnline: data.sellMode !== "offline_store_only",
         availability: data.availability || undefined,
         source: data.source ? String(data.source) : undefined,
+        gstApplicable: data.gstApplicable === true,
+        gstRate: [0, 5, 12, 18, 28].includes(Number(data.gstRate))
+          ? (Number(data.gstRate) as 0 | 5 | 12 | 18 | 28)
+          : undefined,
         averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
         totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
         categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
@@ -1310,6 +1314,8 @@ export async function createOrdersFromCart(params: {
 
     const normalizedItems = groupItems.map((item) => {
       const lineTotal = Number((item.price * item.qty).toFixed(2));
+      const gstApplicable = item.gstApplicable === true && !!item.gstRate;
+      const gstAmount = gstApplicable ? Number((item.price * (item.gstRate as number) / 100).toFixed(2)) : 0;
       const base: Record<string, unknown> = {
         productId: item.productId,
         name: item.name,
@@ -1317,6 +1323,7 @@ export async function createOrdersFromCart(params: {
         qty: item.qty,
         lineTotal,
         ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
+        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount } : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;
@@ -1328,10 +1335,22 @@ export async function createOrdersFromCart(params: {
     const subtotal = Number(
       normalizedItems.reduce((sum, row) => sum + (row.lineTotal as number), 0).toFixed(2)
     );
+    const mrpSubtotal = Number(
+      groupItems.reduce((sum, item) => {
+        const mrp = (item.originalPrice && item.originalPrice > 0) ? item.originalPrice : item.price;
+        return sum + mrp * item.qty;
+      }, 0).toFixed(2)
+    );
     const totalSavings = Number(
       groupItems.reduce((sum, item) => {
         if (!item.discountPct || !item.originalPrice) return sum;
         return sum + (item.originalPrice - item.price) * item.qty;
+      }, 0).toFixed(2)
+    );
+    const totalGst = Number(
+      normalizedItems.reduce((sum, row) => {
+        const gstAmt = (row.gstAmount as number | undefined) ?? 0;
+        return sum + gstAmt * (row.qty as number);
       }, 0).toFixed(2)
     );
 
@@ -1350,7 +1369,7 @@ export async function createOrdersFromCart(params: {
       fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
     ]);
 
-    const grandTotal = Number((subtotal + deliveryCharge).toFixed(2));
+    const grandTotal = Number((subtotal + deliveryCharge + totalGst).toFixed(2));
     const sellerName = groupItems[0]?.sellerName ?? "";
 
     // Derive invoiceNumber from the document ref ID (generated before addDoc)
@@ -1367,8 +1386,10 @@ export async function createOrdersFromCart(params: {
       ...(sellerName ? { sellerName } : {}),
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
+      mrpSubtotal,
       subtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
+      ...(totalGst > 0 ? { totalGst } : {}),
       deliveryCharge,
       grandTotal,
       totalWeightKg,

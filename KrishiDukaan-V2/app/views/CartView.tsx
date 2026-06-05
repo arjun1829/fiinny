@@ -699,7 +699,18 @@ export default function CartView({
     loading: estimatingDelivery,
   } = useDeliveryEstimates(readyItems);
 
-  const grandTotal = subtotal + deliveryCharge;
+  // ── Order totals ──────────────────────────────────────────────────────────
+  const mrpSubtotal = readyItems.reduce((sum, item) => {
+    const mrp = (item.originalPrice && item.originalPrice > 0) ? item.originalPrice : item.price;
+    return sum + mrp * item.qty;
+  }, 0);
+  const discountedSubtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const totalDiscounts = mrpSubtotal - discountedSubtotal;
+  const totalGst = readyItems.reduce((sum, item) => {
+    if (!item.gstApplicable || !item.gstRate) return sum;
+    return sum + item.price * item.qty * item.gstRate / 100;
+  }, 0);
+  const grandTotal = discountedSubtotal + deliveryCharge + totalGst;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -934,22 +945,46 @@ export default function CartView({
       {/* Checkout section */}
       <div className="mt-8 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
 
-        {/* Order summary — product subtotal + delivery + grand total */}
+        {/* Order summary */}
         <div className="flex flex-col gap-2">
+
+          {/* Subtotal (MRP) */}
           <div className="flex items-center justify-between text-sm text-on-surface-variant">
             <span className="inline-flex items-center gap-1.5">
-              {t('cartSubtotal')}
+              Subtotal (MRP)
               {readyItems.length > 0 && readyItems.length < items.length && (
                 <span className="text-xs font-medium">
                   ({t('cartItemsOf', { ready: readyItems.length, total: items.length })})
                 </span>
               )}
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel={`${t('cartSubtotal')} help`} />
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel="Subtotal help" />
             </span>
-            <span className="font-semibold text-on-surface">₹{subtotal.toLocaleString("en-IN")}</span>
+            <span className="font-semibold text-on-surface">
+              ₹{mrpSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
 
-          {/* Delivery charge row */}
+          {/* Product Discounts — only when discounts exist */}
+          {totalDiscounts > 0 && (
+            <div className="flex items-center justify-between text-sm text-green-700">
+              <span>Product Discounts</span>
+              <span className="font-semibold">
+                -₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Discounted Subtotal — only when there are discounts */}
+          {totalDiscounts > 0 && (
+            <div className="flex items-center justify-between text-sm border-t border-outline-variant/10 pt-1.5">
+              <span className="font-semibold text-on-surface">Discounted Subtotal</span>
+              <span className="font-semibold text-on-surface">
+                ₹{discountedSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Delivery Charges */}
           {canCheckout && (
             <div className="flex items-center justify-between text-sm text-on-surface-variant">
               <span className="inline-flex items-center gap-1.5">
@@ -959,7 +994,9 @@ export default function CartView({
                 )}
               </span>
               <span className={`font-semibold ${deliveryCharge > 0 ? "text-on-surface" : "text-green-700"}`}>
-                {estimatingDelivery ? "—" : deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString("en-IN")}` : "Free"}
+                {estimatingDelivery ? "—" : deliveryCharge > 0
+                  ? `₹${deliveryCharge.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "Free"}
               </span>
             </div>
           )}
@@ -968,35 +1005,38 @@ export default function CartView({
           {canCheckout && !estimatingDelivery && Object.values(bySellerWeight).some((w) => w > 0) && (
             <p className="text-[10px] text-on-surface-variant">
               Est. weight:{" "}
-              {Object.values(bySellerWeight)
-                .reduce((s, w) => s + w, 0)
-                .toFixed(2)}{" "}
-              kg
+              {Object.values(bySellerWeight).reduce((s, w) => s + w, 0).toFixed(2)} kg
             </p>
           )}
 
-          {/* Grand total */}
+          {/* Total GST — only when any item has GST */}
+          {canCheckout && totalGst > 0 && (
+            <div className="flex items-center justify-between text-sm text-on-surface-variant">
+              <span className="inline-flex items-center gap-1">
+                Total GST
+              </span>
+              <span className="font-semibold text-on-surface">
+                ₹{totalGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Grand Total */}
           <div className="flex items-center justify-between border-t border-outline-variant/20 pt-2 mt-1">
             <span className="text-base font-bold text-on-surface">Grand Total</span>
             <span className="text-xl font-black text-secondary">
-              ₹{grandTotal.toLocaleString("en-IN")}
+              ₹{grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-        {/* Total savings line — shown only when at least one item has a discount */}
-        {(() => {
-          const totalSavings = readyItems.reduce((sum, item) => {
-            if (!item.discountPct || !item.originalPrice) return sum;
-            return sum + (item.originalPrice - item.price) * item.qty;
-          }, 0);
-          if (totalSavings <= 0) return null;
-          return (
-            <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
-              <span>Total Savings</span>
-              <span>-₹{totalSavings.toLocaleString("en-IN")}</span>
-            </div>
-          );
-        })()}
+
+        {/* Total Savings — celebratory row below grand total */}
+        {totalDiscounts > 0 && (
+          <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
+            <span>Total Savings</span>
+            <span>-₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        )}
 
         {pendingItems.length > 0 && canCheckout && (
           <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">

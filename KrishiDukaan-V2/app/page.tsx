@@ -746,6 +746,7 @@ export default function App() {
           qty: 1,
           sellMode: "pending" as const,
           ...(variantUnit ? { variantUnit } : {}),
+          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
         },
       ];
     });
@@ -1014,6 +1015,7 @@ export default function App() {
           qty: 1,
           sellMode: "online_delivery" as const,
           ...(variantUnit ? { variantUnit } : {}),
+          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
         },
       ];
     });

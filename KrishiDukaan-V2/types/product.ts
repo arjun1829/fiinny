@@ -28,6 +28,10 @@ export type MarketplaceProduct = {
   /** Market display & Delivery fields */
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
+
+  /** GST configuration — set by the manufacturer/owner, applies to all sellers of this product */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
   
   /** Legacy display fields — present on older documents only */
   stock?: string;
