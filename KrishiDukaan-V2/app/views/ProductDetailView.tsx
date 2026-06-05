@@ -954,6 +954,14 @@ export default function ProductDetailView({
                     );
                     const productLevelOnline = availEntry?.isOnline !== false;
                     const canOrder = !!phone && storeOnlineMap[phone] === true && productLevelOnline;
+                    console.log("[ProductDetailView] per-store canOrder", {
+                      storeId: store.id,
+                      storePhone: phone,
+                      accountLevelOnline: phone ? storeOnlineMap[phone] : undefined,
+                      availEntryIsOnline: availEntry?.isOnline,
+                      productLevelOnline,
+                      canOrder,
+                    });
                     if (!canOrder) return null;
                     return (
                       <button

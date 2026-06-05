@@ -385,6 +385,7 @@ export default function HomeView({
                     )}
                   </div>
                 )}
+                {(() => { console.log("[HomeView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
                 {product.sellMode !== "offline_store_only" && (
                   <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                     <HelperTooltip side="top" textKey="marketAddToCart">

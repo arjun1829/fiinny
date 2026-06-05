@@ -584,6 +584,7 @@ export default function MarketView({
                     </div>
                   )}
                   {/* Cart CTA — hidden for in-store-only products */}
+                  {(() => { console.log("[MarketView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
                   {product.sellMode !== "offline_store_only" && (() => {
                     const inCart = cartItems.some((ci) => ci.productId === product.id);
                     if (inCart) {

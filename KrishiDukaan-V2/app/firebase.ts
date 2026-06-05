@@ -310,6 +310,15 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       .filter((item) => item.data().isActive !== false)
       .map((item) => {
       const data = item.data();
+      console.log("[fetchMarketplaceProducts] doc read:", {
+        id: item.id,
+        name: String(data.name || ''),
+        source: String(data.source || ''),
+        ownerId: String(data.ownerId || ''),
+        ownerType: String(data.ownerType || ''),
+        isOnline: data.isOnline,
+        sellMode: data.sellMode,
+      });
       return {
         id: item.id,
         name: String(data.name || ''),
@@ -351,18 +360,19 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       } as MarketplaceProduct;
     });
 
-    // Retailer copies hold each store's selling price — collect separately before filtering
-    const retailerCopies = allMapped.filter(
-      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned',
-    );
+    // Retailer copies hold each store's selling price — collect separately before filtering.
+    // admin_assigned copies are also per-seller and must NOT contribute to the canonical
+    // raw dedup pool — they carry a stale isOnline inherited from the original at creation
+    // time and would permanently keep anyOnlineByKey=true even after the original goes offline.
+    const COPY_SOURCES = new Set(['retailer_inventory_copy', 'manufacturer_assigned', 'admin_assigned']);
+    const retailerCopies = allMapped.filter((p) => COPY_SOURCES.has(p.source ?? ''));
 
     const raw = allMapped.filter(
       (product) =>
         product.name &&
         product.image &&
         Number.isFinite(product.price) &&
-        product.source !== 'manufacturer_assigned' &&
-        product.source !== 'retailer_inventory_copy',
+        !COPY_SOURCES.has(product.source ?? ''),
     );
 
     // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
@@ -514,10 +524,53 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const mergedSellMode: "online_delivery" | "offline_store_only" =
         mergedOnline ? "online_delivery" : "offline_store_only";
 
+      // Ensure the canonical product's own seller always has an availability entry.
+      // Without this, ProductDetailView finds availEntry=undefined and falls back to
+      // account-level alone — the product-level isOnline toggle has no effect for
+      // single-seller products or manufacturer products with no retailer copies.
+      const canonOwnerId = (p as any).ownerId as string | undefined;
+      const canonPhone = ((p as any).manufacturerPhone as string | undefined) || p.retailerPhone;
+      const currentAv = p.availability ?? [];
+      const hasCanonEntry =
+        !canonOwnerId && !canonPhone
+          ? true
+          : currentAv.some(
+              (a) =>
+                (canonOwnerId && (a.storeId === canonOwnerId || a.storePhone === canonOwnerId)) ||
+                (canonPhone && (a.storePhone === canonPhone || a.storeId === canonPhone)),
+            );
+      const finalAvailability: NonNullable<MarketplaceProduct['availability']> = hasCanonEntry
+        ? currentAv
+        : [
+            ...currentAv,
+            {
+              storeId: canonOwnerId || '',
+              storePhone: canonPhone,
+              storeName: p.store || undefined,
+              stockLevel: p.stock || 'In Stock',
+              sellingPrice: p.price,
+              // Use the canonical's own isOnline (before merged OR correction),
+              // so ProductDetailView shows the correct per-seller Order button.
+              isOnline: p.isOnline,
+            },
+          ];
+
+      console.log("[fetchMarketplaceProducts]", {
+        name: p.name,
+        id: p.id,
+        source: p.source,
+        ownerId: canonOwnerId,
+        rawIsOnline: p.isOnline,
+        mergedOnline,
+        mergedSellMode,
+        availabilityIsOnline: finalAvailability.map((a) => ({ storeId: a.storeId, storePhone: a.storePhone, isOnline: a.isOnline })),
+      });
+
       return {
         ...p,
         isOnline: mergedOnline,
         sellMode: mergedSellMode,
+        availability: finalAvailability.length > 0 ? finalAvailability : undefined,
         lowestPrice,
         averageRating,
         totalReviews,
@@ -2106,6 +2159,7 @@ export async function adminAssignProductToSeller(
       storeName: sellerName,
       stockLevel: 'In Stock',
       sellingPrice: Number(src.price ?? 0),
+      isOnline: src.isOnline === true || src.sellMode === 'online_delivery',
     }],
     assignedByAdmin: adminUid,
     assignedAt: now,

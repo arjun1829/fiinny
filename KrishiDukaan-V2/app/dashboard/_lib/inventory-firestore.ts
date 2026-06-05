@@ -619,6 +619,7 @@ export async function createProductAndInventory(
         storeName: (input.storeName ?? "").trim() || null,
         stockLevel: "In Stock",
         sellingPrice: input.sellingPrice,
+        isOnline: sellMode === "online_delivery",
       }),
     });
   }
@@ -837,11 +838,30 @@ export async function updateProductSellMode(
   productId: string,
   sellMode: "online_delivery" | "offline_store_only",
 ): Promise<void> {
-  await updateDoc(doc(db, "products", productId), {
-    sellMode,
-    isOnline: sellMode === "online_delivery",
-    updatedAt: serverTimestamp(),
-  });
+  const isOnline = sellMode === "online_delivery";
+  const patch = { sellMode, isOnline, updatedAt: serverTimestamp() };
+
+  console.log("[updateProductSellMode]", { productId, sellMode, isOnline });
+
+  // Update the primary product document
+  await updateDoc(doc(db, "products", productId), patch);
+
+  // Cascade to manufacturer-assigned copies: when a manufacturer toggles delivery,
+  // their assigned retailer copies must reflect the same state. Retailers cannot
+  // toggle assigned products themselves, so this is the only update path.
+  const copiesSnap = await getDocs(
+    query(
+      collection(db, "products"),
+      where("manufacturerProductId", "==", productId),
+      where("source", "==", "manufacturer_assigned"),
+    ),
+  );
+  if (copiesSnap.docs.length > 0) {
+    console.log("[updateProductSellMode] cascading to", copiesSnap.docs.length, "manufacturer_assigned copies");
+    const batch = writeBatch(db);
+    copiesSnap.docs.forEach((d) => batch.update(d.ref, patch));
+    await batch.commit();
+  }
 }
 
 // ─── Product lifecycle operations ─────────────────────────────────────────────
