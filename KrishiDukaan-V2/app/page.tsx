@@ -31,7 +31,7 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { MarketplaceProduct } from '../types/product';
 import { LatLng } from './utils/haversine';
 import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } from './utils/geolocation';
-import { computeStoreDistances } from './utils/nearby';
+import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { calcDiscount } from './utils/discount';
 
@@ -1223,8 +1223,13 @@ export default function App() {
             stores={mapFilterProductId
               ? (() => {
                   const prod = mergedProducts.find(p => p.id === mapFilterProductId);
-                  const ids = new Set((prod?.availability ?? []).map(a => a.storeId));
-                  return ids.size ? searchedStores.filter(s => ids.has(s.id)) : searchedStores;
+                  const availability = prod?.availability;
+                  if (!availability || availability.length === 0) return searchedStores;
+                  // Match stores the same robust way ProductDetailView does (by id, phone,
+                  // userId or retailerId) so admin-assigned copies — whose availability.storeId
+                  // is the seller's phone — resolve to the store even when store.id isn't the phone.
+                  const matched = searchedStores.filter(s => storeStocksProduct(s, availability));
+                  return matched.length ? matched : searchedStores;
                 })()
               : searchedStores
             }

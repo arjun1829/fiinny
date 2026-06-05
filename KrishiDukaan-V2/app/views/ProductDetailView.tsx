@@ -7,7 +7,7 @@ import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount
 import type { BulkDiscountTier } from '../dashboard/_types/inventory';
 import { Tag, Layers } from 'lucide-react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
-import { StoreWithDistance } from '../utils/nearby';
+import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
@@ -915,6 +915,13 @@ export default function ProductDetailView({
             />
           </div>
 
+          {/* Store list — desktop only gets a capped height with internal scroll so a
+              long list (>5–6 stores) doesn't create whitespace beside the image. Mobile
+              keeps its natural flow (no cap).
+              NOTE: this is a *block* container using space-y-3 (NOT flex). A flex column
+              would let the cards shrink to fit the max-height and visually compress them;
+              block layout keeps every card at its natural size and just scrolls. */}
+          <div className="space-y-3 md:max-h-[560px] md:overflow-y-auto md:pr-2 store-scrollbar">
           {displayStores.length > 0 ? displayStores.map(store => {
             const storePhone = (store as any).phone as string | undefined;
             const availability = product.availability?.find(
@@ -1188,6 +1195,7 @@ export default function ProductDetailView({
               <span className="text-xs text-on-surface-variant">This product is not listed at any store right now.</span>
             </div>
           )}
+          </div>
 
           {/* Delivery option — temporarily hidden (restore by uncommenting) */}
           {/*
