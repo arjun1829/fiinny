@@ -2140,15 +2140,22 @@ export async function adminRemoveAssignment(
   adminUid: string,
 ): Promise<void> {
   const now = serverTimestamp();
-  const batch = writeBatch(db);
-  batch.update(doc(db, 'products', copyProductId), { isActive: false, updatedAt: now });
 
+  // Fetch all inventory records for this product copy before we start the batch
   const invSnap = await getDocs(query(
     collection(db, 'inventory'),
     where('productId', '==', copyProductId),
   ));
-  invSnap.forEach(d => batch.update(d.ref, { isAvailable: false, updatedAt: now }));
 
+  const batch = writeBatch(db);
+
+  // Hard-delete the product copy — removes it from the seller's inventory dashboard
+  batch.delete(doc(db, 'products', copyProductId));
+
+  // Hard-delete every inventory record linked to this product copy
+  invSnap.forEach(d => batch.delete(d.ref));
+
+  // Log the admin action
   batch.set(doc(collection(db, 'adminLogs')), {
     action: 'admin_remove_assignment',
     copyProductId,
@@ -2158,8 +2165,26 @@ export async function adminRemoveAssignment(
     performedBy: adminUid,
     createdAt: now,
   });
+
   await batch.commit();
+
+  // Fire-and-forget: also delete subcollection mirror docs keyed by seller phone
+  (async () => {
+    try {
+      const { deleteDoc, doc: wDoc } = await import('firebase/firestore');
+      // Delete from retailers/{sellerPhone}/inventory/{inventoryId} for each inventory doc
+      const deleteOps: Promise<void>[] = [];
+      if (sellerPhone) {
+        invSnap.docs.forEach(d => {
+          deleteOps.push(deleteDoc(wDoc(db, `retailers/${sellerPhone}/inventory/${d.id}`)).catch(() => {}));
+        });
+        deleteOps.push(deleteDoc(wDoc(db, `retailers/${sellerPhone}/products/${copyProductId}`)).catch(() => {}));
+      }
+      await Promise.all(deleteOps);
+    } catch { /* non-critical */ }
+  })();
 }
+
 
 /**
  * Updates a single seller's assignment pricing/stock from the admin Products tab.

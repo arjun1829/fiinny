@@ -242,39 +242,52 @@ export async function assignProductToRetailer(
 
 /**
  * Releases a product assignment.
- * Sets the seat listing to "released" and deactivates the retailer's product copy.
+ * Hard-deletes the retailer's product copy and inventory record(s), and releases
+ * the seat listing. This ensures the product is fully removed from the retailer's
+ * inventory dashboard (not just deactivated/hidden).
  */
 export async function removeProductAssignment(seatListingId: string): Promise<void> {
   const listingSnap = await getDoc(doc(db, SEAT_LISTINGS, seatListingId));
   if (!listingSnap.exists()) throw new Error("Seat listing not found.");
   const data = listingSnap.data() as Record<string, unknown>;
 
+  const retailerProductId = String(data.productId ?? "");
+  const retailerDocId     = String(data.retailerDocId ?? "");
+
+  // Fetch inventory records before the batch
+  const invSnap = retailerProductId
+    ? await getDocs(query(collection(db, "inventory"), where("productId", "==", retailerProductId)))
+    : null;
+
   const now = serverTimestamp();
   const batch = writeBatch(db);
+
+  // Release the seat listing
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
-  const retailerProductId  = String(data.productId ?? "");
-  const retailerDocId      = String(data.retailerDocId ?? "");
-  const retailerId         = String(data.retailerId ?? "");
   if (retailerProductId) {
-    batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
+    // Hard-delete the product copy — fully removes it from the retailer's inventory
+    batch.delete(doc(db, "products", retailerProductId));
+
+    // Hard-delete all inventory records for this product copy
+    invSnap?.docs.forEach(d => batch.delete(d.ref));
   }
 
   await batch.commit();
 
   // Remove the retailer's public store from the manufacturer product's availability array.
-  // retailerDocId is the stable public store document used in availability[].
   const availabilityStoreId = retailerDocId;
   if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
-      const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
+      // Product was just deleted, so get manufacturerProductId from the listing data
+      const mfgProductId = (data.manufacturerProductId as string)
+        || (copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "");
       if (mfgProductId) {
         const mfgSnap = await getDoc(doc(db, "products", mfgProductId));
         if (mfgSnap.exists()) {
           const mfgData = mfgSnap.data() as Record<string, unknown>;
           const avArr = Array.isArray(mfgData.availability) ? mfgData.availability : [];
-          // Find the exact entry to remove (may be old shape without storePhone/storeName)
           const entryToRemove = avArr.find((e: Record<string, unknown>) => e.storeId === availabilityStoreId);
           if (entryToRemove) {
             await updateDoc(doc(db, "products", mfgProductId), {
@@ -285,7 +298,27 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
       }
     } catch { /* non-critical — product may already be deleted */ }
   }
+
+  // Fire-and-forget: clean up subcollection mirror docs
+  if (invSnap && invSnap.docs.length > 0) {
+    (async () => {
+      try {
+        const retailerPhone = String(data.retailerPhone ?? data.retailerDocId ?? "");
+        if (!retailerPhone) return;
+        const { deleteDoc: dDoc, doc: wDoc } = await import("firebase/firestore");
+        const ops: Promise<void>[] = [];
+        invSnap.docs.forEach(d => {
+          ops.push(dDoc(wDoc(db, `retailers/${retailerPhone}/inventory/${d.id}`)).catch(() => {}));
+        });
+        if (retailerProductId) {
+          ops.push(dDoc(wDoc(db, `retailers/${retailerPhone}/products/${retailerProductId}`)).catch(() => {}));
+        }
+        await Promise.all(ops);
+      } catch { /* non-critical */ }
+    })();
+  }
 }
+
 
 /** All assignments made by a manufacturer (all statuses). */
 export async function fetchAssignmentsForManufacturer(
