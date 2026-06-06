@@ -1052,7 +1052,7 @@ export default function CartView({
           </p>
         )}
 
-        {isLoggedIn && isCustomer ? (
+        {isLoggedIn ? (
           <div className="mt-5 grid gap-3">
             {/* Name */}
             <input
@@ -1173,10 +1173,6 @@ export default function CartView({
                 <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
               </div>
             </div>
-          </div>
-        ) : isLoggedIn && !isCustomer ? (
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800">
-            Orders can only be placed from a customer account. Please log in with your customer account.
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">
