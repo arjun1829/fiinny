@@ -867,6 +867,25 @@ export async function updateProductSellMode(
 // ─── Product lifecycle operations ─────────────────────────────────────────────
 
 /**
+ * Toggles isActive for a manufacturer-assigned product without touching seat listings.
+ * Retailers don't own subscriptions for assigned products, so the normal
+ * activate/deactivate seat-check flow must be bypassed.
+ */
+export async function toggleAssignedProductActive(
+  productId: string,
+  inventoryId: string | undefined,
+  isActive: boolean,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive, updatedAt: now });
+  if (inventoryId) {
+    batch.update(doc(db, "inventory", inventoryId), { isAvailable: isActive, updatedAt: now });
+  }
+  await batch.commit();
+}
+
+/**
  * Deactivates a product: sets isActive=false, releases any active seat listing.
  * The product record stays in Firestore — it can be reactivated later.
  * Pass inventoryId to also set isAvailable=false on the inventory doc.
@@ -1162,10 +1181,33 @@ export async function deleteProduct(
   inventoryId?: string,
   ownerPhone?: string,
 ): Promise<void> {
+  // First look for a seat listing owned by this user (own products).
   const allListings = await fetchSeatListingsForOwner(ownerId);
-  const listing = allListings.find(
+  let listing = allListings.find(
     (l) => l.productId === productId && l.status === "active",
   );
+
+  // For manufacturer-assigned products the seat listing is owned by the
+  // manufacturer, not the retailer. If we found nothing above, check whether
+  // this product is a manufacturer-assigned copy and, if so, locate the
+  // listing under the manufacturer's ownerId so we can release it.
+  if (!listing) {
+    try {
+      const productSnap = await getDoc(doc(db, "products", productId));
+      if (productSnap.exists()) {
+        const pData = productSnap.data() as Record<string, unknown>;
+        const mfgId = pData.source === "manufacturer_assigned"
+          ? String(pData.manufacturerId ?? "")
+          : "";
+        if (mfgId) {
+          const mfgListings = await fetchSeatListingsForOwner(mfgId);
+          listing = mfgListings.find(
+            (l) => l.productId === productId && l.status === "active",
+          );
+        }
+      }
+    } catch { /* non-critical; seat release is best-effort */ }
+  }
   const now = serverTimestamp();
   const batch = writeBatch(db);
   batch.delete(doc(db, "products", productId));

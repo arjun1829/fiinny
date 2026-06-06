@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
-import { updateInventoryRecord, acceptAssignedProduct, updateProductSellMode } from "../_lib/inventory-firestore";
+import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 import { EditProductModal } from "./edit-product-modal";
@@ -22,9 +22,9 @@ type InventoryTableProps = {
   userId?: string;
   disabled?: boolean;
   onUpdated: () => Promise<void> | void;
-  /** Activate/deactivate an OWN product (seat-aware). */
-  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
-  /** Hard-delete an OWN product. */
+  /** Activate/deactivate a product. isAssigned=true bypasses seat management. */
+  onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean, isAssigned?: boolean) => Promise<void>;
+  /** Delete own product or remove an assigned product. */
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
 };
 
@@ -82,34 +82,19 @@ function StatusCell({
 }: {
   row: InventoryRow;
   userId?: string;
-  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
+  onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean, isAssigned?: boolean) => Promise<void>;
   onUpdated: () => Promise<void> | void;
 }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // A row is "pending acceptance" when it's assigned but not yet owned by the caller.
-  const isPending = !!userId && row.assignedByManufacturer && row.ownerId !== userId;
-
-  const handleAccept = async () => {
-    if (!userId || !row.inventoryId) return;
-    setBusy(true); setErr(null);
-    try {
-      await acceptAssignedProduct(row.productId, row.inventoryId, userId);
-      await onUpdated();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to accept.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleToggle = async () => {
-    if (!onToggleActive || !row.inventoryId) return;
+    if (!onToggleActive) return;
     setBusy(true); setErr(null);
     try {
-      await onToggleActive(row.productId, row.inventoryId, row.isActive);
+      const isAssigned = row.assignedByManufacturer || row.source === "manufacturer_assigned";
+      await onToggleActive(row.productId, row.inventoryId || undefined, row.isActive, isAssigned);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed.");
     } finally {
@@ -117,24 +102,7 @@ function StatusCell({
     }
   };
 
-  if (isPending) {
-    return (
-      <div className="flex flex-col gap-0.5">
-        <button
-          type="button" onClick={handleAccept} disabled={busy}
-          className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-          {busy ? "Accepting…" : "Accept"}
-        </button>
-        {err && <p className="text-[10px] text-red-600 max-w-[120px]">{err}</p>}
-      </div>
-    );
-  }
-
-  // Assigned-but-accepted products can't be activated/deactivated by the retailer
-  // (the manufacturer controls the listing). Show a static badge.
-  if (row.assignedByManufacturer || !onToggleActive) {
+  if (!onToggleActive) {
     return (
       <span className={cn(
         "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold",
@@ -165,7 +133,7 @@ function StatusCell({
   );
 }
 
-// ─── Sell-mode toggle ────────────────────────────────────────────────────────
+// ─── Sell-mode toggle switch ─────────────────────────────────────────────────
 
 function SellModeToggleButton({
   row,
@@ -195,22 +163,31 @@ function SellModeToggleButton({
 
   return (
     <div className="flex flex-col gap-0.5">
-      <button
-        type="button"
-        onClick={handleToggle}
-        disabled={busy}
-        title={isOnline ? "Disable Online Delivery" : "Enable Online Delivery"}
-        className={cn(
-          "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-50",
-          isOnline
-            ? "border-primary/30 bg-primary/8 text-primary hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-            : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
-        )}
-      >
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}
-        {isOnline ? "Delivery On" : "Delivery Off"}
-      </button>
-      {err && <p className="text-[10px] text-red-600 max-w-[120px]">{err}</p>}
+      <label className={cn("flex items-center gap-2 cursor-pointer", busy && "opacity-60 pointer-events-none")}>
+        <Truck className="h-3.5 w-3.5 text-on-surface-variant shrink-0" />
+        <span className="text-xs text-on-surface-variant whitespace-nowrap">Online Delivery</span>
+        <div className="relative shrink-0">
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={isOnline}
+            disabled={busy}
+            onChange={handleToggle}
+            aria-label="Online Delivery"
+          />
+          <div className={cn(
+            "h-6 w-11 rounded-full transition-colors duration-200",
+            isOnline ? "bg-primary" : "bg-surface-container-highest",
+          )} />
+          <div className={cn(
+            "absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200",
+            isOnline ? "translate-x-5" : "translate-x-0",
+          )}>
+            {busy && <Loader2 className="h-3 w-3 animate-spin text-outline absolute inset-1" />}
+          </div>
+        </div>
+      </label>
+      {err && <p className="text-[10px] text-red-600 max-w-[140px]">{err}</p>}
     </div>
   );
 }
@@ -234,9 +211,10 @@ function ActionsCell({
   const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Retailers cannot edit/delete/discount a manufacturer-assigned product —
-  // they only control their own stock/price (inline) for it.
+  // Only own products allow editing product content (name/images/specs).
+  // Assigned products allow discount, delivery toggle, and removal.
   const isOwn = !row.assignedByManufacturer;
+  const isAssigned = row.assignedByManufacturer || row.source === "manufacturer_assigned";
 
   const handleDelete = async () => {
     if (!onDelete || !row.inventoryId) return;
@@ -264,6 +242,7 @@ function ActionsCell({
           </button>
         )}
 
+        {/* Edit — own products only (name, images, specs) */}
         {isOwn && (
           <button
             type="button" onClick={onEdit}
@@ -273,28 +252,29 @@ function ActionsCell({
           </button>
         )}
 
-        {isOwn && (
-          <button
-            type="button" onClick={onToggleDiscount}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
-              row.effectiveDiscountPct > 0
-                ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
-                : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
-            )}
-          >
-            <Tag className="h-3 w-3" />
-            {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
-          </button>
-        )}
+        {/* Discount — own and assigned products */}
+        <button
+          type="button" onClick={onToggleDiscount}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
+            row.effectiveDiscountPct > 0
+              ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
+              : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+          )}
+        >
+          <Tag className="h-3 w-3" />
+          {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
+        </button>
 
-        {isOwn && <SellModeToggleButton row={row} onUpdated={onUpdated} />}
+        {/* Online Delivery toggle — own and assigned products */}
+        <SellModeToggleButton row={row} onUpdated={onUpdated} />
 
-        {isOwn && onDelete && (
+        {/* Delete (own) / Remove (assigned) */}
+        {onDelete && (
           confirmDelete ? (
             <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
               <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-              <span className="text-xs font-medium text-red-700">Delete?</span>
+              <span className="text-xs font-medium text-red-700">{isAssigned ? "Remove?" : "Delete?"}</span>
               <button
                 type="button" disabled={deleting} onClick={handleDelete}
                 className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
@@ -311,7 +291,7 @@ function ActionsCell({
               type="button" onClick={() => setConfirmDelete(true)} disabled={deleting}
               className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1.5 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
+              <Trash2 className="h-3.5 w-3.5" /> {isAssigned ? "Remove" : "Delete"}
             </button>
           )
         )}
@@ -349,7 +329,6 @@ function MobileProductCard({
   const [deleting, setDeleting]           = useState(false);
   const [deleteErr, setDeleteErr]         = useState<string | null>(null);
 
-  const isPending  = !!userId && row.assignedByManufacturer && row.ownerId !== userId;
   const isInactive = !row.isActive;
   const isOwn      = !row.assignedByManufacturer;
 
@@ -412,10 +391,11 @@ function MobileProductCard({
                 )}>
                   {isInactive ? "Inactive" : stockStatusLabel(row.status)}
                 </span>
-                {!isPending && isOwn && (
+                {isOwn && (
                   <span
                     aria-hidden="true"
                     className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant/60 pointer-events-none"
+                    title="Tap to edit"
                   >
                     <Pencil className="h-3 w-3" />
                   </span>
@@ -456,18 +436,15 @@ function MobileProductCard({
               )}>
                 {row.assignedByManufacturer ? "Manufacturer Assigned" : "Own Catalogue"}
               </span>
-              {isPending && (
-                <span className="text-[10px] text-amber-700 font-semibold">Tap to accept</span>
-              )}
             </div>
           </div>
         </div>
       </button>
 
-      {/* ── Action buttons row — own products only ──────────────────────────── */}
-      {isOwn && (
-        <div className="border-t border-outline-variant/15 px-3 py-2.5 flex flex-wrap items-center gap-2">
-          {/* Edit */}
+      {/* ── Action buttons row — own and assigned products ──────────────────── */}
+      <div className="border-t border-outline-variant/15 px-3 py-2.5 flex flex-wrap items-center gap-2">
+        {/* Edit — own products only (name, images, specs) */}
+        {isOwn && (
           <button
             type="button"
             onClick={onEdit}
@@ -475,62 +452,62 @@ function MobileProductCard({
           >
             <Pencil className="h-3 w-3" /> {t('editBtn')}
           </button>
+        )}
 
-          {/* Discount */}
-          {row.inventoryId && (
+        {/* Discount — own and assigned */}
+        {row.inventoryId && (
+          <button
+            type="button"
+            onClick={onToggleDiscount}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
+              discountOpen || row.effectiveDiscountPct > 0
+                ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
+                : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+            )}
+          >
+            <Tag className="h-3 w-3" />
+            {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
+          </button>
+        )}
+
+        {/* Online Delivery toggle — own and assigned */}
+        <SellModeToggleButton row={row} onUpdated={onUpdated} />
+
+        {/* Delete (own) / Remove (assigned) */}
+        {onDelete && (
+          confirmDelete ? (
+            <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
+              <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+              <span className="text-xs font-medium text-red-700">{isOwn ? "Delete?" : "Remove?"}</span>
+              <button
+                type="button" disabled={deleting} onClick={handleDelete}
+                className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
+              >
+                {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                {deleting ? "…" : "Confirm"}
+              </button>
+              <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)} className="text-xs font-medium text-red-600 px-1 hover:underline">
+                Cancel
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={onToggleDiscount}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
-                discountOpen || row.effectiveDiscountPct > 0
-                  ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100"
-                  : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5",
-              )}
+              onClick={() => setConfirmDelete(true)}
+              disabled={deleting}
+              className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1.5 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
             >
-              <Tag className="h-3 w-3" />
-              {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
+              <Trash2 className="h-3.5 w-3.5" /> {isOwn ? "Delete" : "Remove"}
             </button>
-          )}
+          )
+        )}
 
-          {/* Online Delivery toggle */}
-          <SellModeToggleButton row={row} onUpdated={onUpdated} />
+        {deleteErr && <p className="w-full text-[10px] text-red-600">{deleteErr}</p>}
+      </div>
 
-          {/* Delete */}
-          {onDelete && (
-            confirmDelete ? (
-              <div className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
-                <span className="text-xs font-medium text-red-700">Delete?</span>
-                <button
-                  type="button" disabled={deleting} onClick={handleDelete}
-                  className="rounded-lg bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1"
-                >
-                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                  {deleting ? "…" : "Confirm"}
-                </button>
-                <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)} className="text-xs font-medium text-red-600 px-1 hover:underline">
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                disabled={deleting}
-                className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2 py-1.5 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </button>
-            )
-          )}
-
-          {deleteErr && <p className="w-full text-[10px] text-red-600">{deleteErr}</p>}
-        </div>
-      )}
-
-      {/* ── Inline Discount Panel ────────────────────────────────────────────── */}
-      {discountOpen && row.inventoryId && isOwn && (
+      {/* ── Inline Discount Panel — own and assigned ─────────────────────────── */}
+      {discountOpen && row.inventoryId && (
         <div className="border-t border-outline-variant/15 p-4">
           <DiscountPanel
             inventoryId={row.inventoryId}
@@ -777,8 +754,8 @@ export function InventoryTable({
                           <CheckCircle2 className="h-3.5 w-3.5" /> Saved
                         </span>
                       )}
-                      {/* Inline discount panel */}
-                      {discountId === r.productId && !r.assignedByManufacturer && (
+                      {/* Inline discount panel — own and assigned products */}
+                      {discountId === r.productId && (
                         r.inventoryId ? (
                           <div className="mt-2 w-72">
                             <DiscountPanel

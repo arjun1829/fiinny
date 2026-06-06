@@ -143,8 +143,9 @@ export async function acceptManufacturerInvite(params: {
       console.log(`[acceptInvite] Updating invite doc ${row.id} to active for phone ${currentPhone}`);
       transaction.update(ref, {
         status: "active",
-        retailerId: params.uid, // Legacy support, though we rely on retailerPhone now
-        retailerPhone: currentPhoneRaw, // Keep the raw +91 format in DB for consistency if preferred, or just normalize
+        onboardingStatus: "active",
+        retailerId: params.uid,
+        retailerPhone: currentPhoneRaw,
         claimable: false,
         updatedAt: serverTimestamp(),
       });
@@ -266,10 +267,8 @@ export async function autoAcceptPendingInvitesForPhone(uid: string): Promise<boo
       console.log(`[autoAccept] Activating invite ${d.id} for phone ${data.retailerPhone} -> uid ${uid}`);
       await updateDoc(d.ref, {
         status: "active",
+        onboardingStatus: "active",
         retailerId: uid,
-        // Explicitly write retailerPhone in E164 so the Firestore rule
-        // `request.resource.data.retailerPhone == myPhone()` always matches,
-        // regardless of what format was stored at invite-creation time.
         retailerPhone: e164Phone,
         claimable: false,
         updatedAt: serverTimestamp(),

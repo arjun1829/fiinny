@@ -91,6 +91,7 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
       autocompleteListenerRef.current = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
+        if (place.name) setShopName(place.name);
         if (place.address_components?.length) {
           const f = extractAddressFields(place as Parameters<typeof extractAddressFields>[0]);
           if (f.line1)   setLine1(f.line1);

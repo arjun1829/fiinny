@@ -296,8 +296,7 @@ export function AddRetailerModal({
       autocompleteListenerRef.current = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
-        // Only auto-fill shop name if the user hasn't typed one yet
-        if (place.name && !shopName.trim()) setShopName(place.name);
+        if (place.name) setShopName(place.name);
         if (place.address_components?.length) {
           const fields = extractAddressFields(
             place as Parameters<typeof extractAddressFields>[0],
