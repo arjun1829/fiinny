@@ -41,6 +41,13 @@ export type MarketplaceProduct = {
     stockLevel: string;
     sellingPrice?: number;
     discountPct?: number;  // active discount percentage for this seller (0 if none)
+    /**
+     * This store's OWN per-package-size prices, mirrored from the seller's product copy.
+     * `sellingPrice` above is the base (variants[0]) price; this array carries every
+     * package size the store actually configured so the Product Detail view can show
+     * the correct price per selected variant and hide stores that don't stock a size.
+     */
+    variants?: { unit: string; price: number; stock?: number }[];
   }[];
 
   /** Lowest selling price across all stores that stock this product */
