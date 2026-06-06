@@ -1154,16 +1154,26 @@ function ProfilePageInner() {
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">{t('phoneLabelDash')}</span>
-                <input required type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  className={inputCls} placeholder={t('phonePlaceholder')} />
+                <input required type="tel" inputMode="numeric" maxLength={10}
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                  className={inputCls} placeholder="10-digit mobile number" />
+                {form.phone.length > 0 && form.phone.length < 10 && (
+                  <p className="text-xs text-red-600">Enter exactly 10 digits ({form.phone.length}/10)</p>
+                )}
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
                   Secondary Mobile
                   <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional)</span>
                 </span>
-                <input type="tel" value={form.secondaryPhone} onChange={(e) => setForm((p) => ({ ...p, secondaryPhone: e.target.value }))}
-                  className={inputCls} placeholder="+91 98765 43210" />
+                <input type="tel" inputMode="numeric" maxLength={10}
+                  value={form.secondaryPhone}
+                  onChange={(e) => setForm((p) => ({ ...p, secondaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                  className={inputCls} placeholder="10-digit mobile number" />
+                {form.secondaryPhone.length > 0 && form.secondaryPhone.length < 10 && (
+                  <p className="text-xs text-red-600">Enter exactly 10 digits ({form.secondaryPhone.length}/10)</p>
+                )}
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">

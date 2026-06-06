@@ -17,6 +17,7 @@ import {
   AlertCircle,
   IndianRupee,
   Download,
+  Lock,
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -242,6 +243,7 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [sellerType, setSellerType] = useState<"retailer" | "manufacturer" | null>(null);
+  const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
@@ -273,6 +275,8 @@ export default function OrdersPage() {
       }
       const profile = await getUserProfile(user.uid);
       const role = profile?.role;
+      const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
+      setOnlineDelivery(hasOnlineDelivery);
       if (role === "retailer" || role === "manufacturer") {
         setUid(user.uid);
         setSellerType(role);
@@ -281,7 +285,11 @@ export default function OrdersPage() {
           phone: String((profile as any)?.phone ?? ""),
           gstin: String((profile as any)?.gstin ?? ""),
         });
-        await load(user.uid, role);
+        if (hasOnlineDelivery) {
+          await load(user.uid, role);
+        } else {
+          setLoading(false);
+        }
       } else {
         setUid(null);
         setSellerType(null);
@@ -338,6 +346,24 @@ export default function OrdersPage() {
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           {t('signInForOrders')}
         </p>
+      ) : onlineDelivery === false ? (
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-16 text-center">
+          <div className="rounded-full bg-surface-container p-5">
+            <Lock className="h-9 w-9 text-on-surface-variant/40" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-on-surface">Online Delivery is currently disabled.</p>
+            <p className="mt-1.5 text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
+              Enable Online Delivery from your Profile to view and manage orders.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/profile"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-all"
+          >
+            Go to Profile
+          </Link>
+        </div>
       ) : loading ? (
         <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
