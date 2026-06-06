@@ -177,9 +177,11 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 ? pathname === "/dashboard"
                 : pathname.startsWith(href);
             const tourKey = hrefToTourKey(href);
-            const isOrdersLocked = href === "/dashboard/orders" && !onlineDelivery;
+            const isLocked =
+              (href === "/dashboard/orders" || href === "/dashboard/delivery") &&
+              !onlineDelivery;
 
-            if (isOrdersLocked) {
+            if (isLocked) {
               return (
                 <Link
                   key={href}

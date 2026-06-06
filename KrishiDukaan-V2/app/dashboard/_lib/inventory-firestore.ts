@@ -1,5 +1,4 @@
 import {
-  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -23,7 +22,6 @@ import type {
   DiscountUpdateInput,
   InventoryDoc,
   InventoryRow,
-  ManufacturerProductRow,
   ProductDoc,
 } from "../_types/inventory";
 import { deriveStockStatus } from "../_types/inventory";
@@ -96,10 +94,13 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     retailerId: data.retailerId ? String(data.retailerId) : undefined,
     store: String(data.store ?? ""),
     sellMode:
-      data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
-    isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+      data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
+    isOnline: data.sellMode !== "offline_store_only",
 
-    // Optional Product Insights fields
+    categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
+      ? data.categoryInfo as Record<string, string | string[]>
+      : undefined,
+    // Legacy fertilizer flat fields — kept for backward compat
     nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
     phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
     potassium: data.potassium ? String(data.potassium) : undefined,
@@ -107,6 +108,11 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
     variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
+    // GST fields
+    gstApplicable: data.gstApplicable === true,
+    gstRate: ([0, 5, 12, 18, 28] as const).includes(data.gstRate as 0 | 5 | 12 | 18 | 28)
+      ? (data.gstRate as 0 | 5 | 12 | 18 | 28)
+      : 0,
   };
 }
 
@@ -148,33 +154,14 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
 async function fetchProductsByOwner(
   ownerId: string,
   ownerType: "manufacturer" | "retailer",
-  phone?: string,
 ): Promise<ProductDoc[]> {
-  const queries = [
-    getDocs(query(
-      collection(db, "products"),
-      where("ownerId", "==", ownerId),
-      where("ownerType", "==", ownerType),
-    ))
-  ];
-  if (phone) {
-    queries.push(getDocs(query(
-      collection(db, "products"),
-      where("ownerId", "==", phone),
-      where("ownerType", "==", ownerType),
-    )));
-  }
-
-  const snaps = await Promise.all(queries);
-  const productMap = new Map<string, ProductDoc>();
-  snaps.forEach((snap) => {
-    snap.docs.forEach((d) => {
-      const p = mapProduct(d.id, d.data() as Record<string, unknown>);
-      productMap.set(p.id, p);
-    });
-  });
-
-  return Array.from(productMap.values());
+  const q = query(
+    collection(db, "products"),
+    where("ownerId", "==", ownerId),
+    where("ownerType", "==", ownerType),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
 }
 
 /**
@@ -207,8 +194,6 @@ async function fetchInventoryForRetailer(
   if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
   Array.from(phoneKeys).forEach((phone) => {
     queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
-    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
-    queries.push(getDocs(query(collection(db, "inventory"), where("retailerId", "==", phone))));
   });
 
   const snaps = await Promise.all(queries);
@@ -229,24 +214,17 @@ async function fetchInventoryForRetailer(
  * and legacy docs where only manufacturerId was set are captured. Each query is
  * individually validated by the `inventory` Firestore rule.
  */
-async function fetchInventoryForManufacturer(uid: string, phone?: string): Promise<Map<string, InventoryDoc>> {
+async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
   const map = new Map<string, InventoryDoc>();
 
-  const queries = [
+  const [snap1, snap2] = await Promise.all([
     getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
     getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
-  ];
-  if (phone) {
-    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
-    queries.push(getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", phone))));
-  }
+  ]);
 
-  const snaps = await Promise.all(queries);
-  snaps.forEach((snap) => {
-    snap.docs.forEach((d) => {
-      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-      if (!map.has(inv.productId)) map.set(inv.productId, inv);
-    });
+  [...snap1.docs, ...snap2.docs].forEach((d) => {
+    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+    if (!map.has(inv.productId)) map.set(inv.productId, inv);
   });
 
   return map;
@@ -328,9 +306,6 @@ export async function fetchRetailerInventoryRows(
   const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
-    // NOTE: We intentionally keep inactive assigned products in the list so the
-    // retailer can see them and toggle them back to active if needed.
-    // (Previously these were filtered out, making re-activation impossible.)
     const inv = inventoryMap.get(p.id);
     if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
@@ -342,16 +317,24 @@ export async function fetchRetailerInventoryRows(
         productName: p.name,
         category: p.category,
         unit: p.unit,
+        description: p.description ?? "",
+        image: p.image ?? "",
+        images: Array.isArray(raw.images) ? (raw.images as string[]) : (p.image ? [p.image] : []),
+        variants: p.variants ?? [{ unit: p.unit, price: inv.sellingPrice }],
+        price: p.price ?? inv.sellingPrice,
         stockQuantity: inv.stockQuantity,
         sellingPrice: inv.sellingPrice,
         reorderThreshold: inv.reorderThreshold,
         status,
         isActive: p.isActive,
+        sellMode: p.sellMode ?? "online_delivery",
+        gstApplicable: p.gstApplicable ?? false,
+        gstRate: p.gstRate ?? 0,
         assignedByManufacturer: inv.assignedByManufacturer === true,
-        updatedAt: timestampToDate(inv.updatedAt),
-        source: p.source,
+        source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
         originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+        updatedAt: timestampToDate(inv.updatedAt),
         discountEnabled:   inv.discountEnabled ?? false,
         discountType:      inv.discountType ?? "percentage",
         discountPct:       inv.discountPct ?? 0,
@@ -363,7 +346,13 @@ export async function fetchRetailerInventoryRows(
           ? (inv.discountFixedAmt ?? 0) : 0,
         bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
         bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
-        variants: p.variants,
+        categoryInfo: p.categoryInfo,
+        nitrogen: p.nitrogen ?? "",
+        phosphorus: p.phosphorus ?? "",
+        potassium: p.potassium ?? "",
+        applicationDesc: p.applicationDesc ?? "",
+        dosage: p.dosage ?? "",
+        bestForCrops: p.bestForCrops ?? [],
       },
     ];
   });
@@ -409,37 +398,47 @@ export async function acceptAssignedProduct(
  * Fetch catalogue rows for a MANUFACTURER (active + inactive — management UI).
  *
  * Queries `products` where ownerId == uid AND ownerType == "manufacturer".
- * Returns ManufacturerProductRow[] (no stock/inventory data).
+ * Returns the unified InventoryRow[] (joined with inventory for stock/discount).
  */
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
-  phone?: string,
-): Promise<ManufacturerProductRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "manufacturer", phone);
+): Promise<InventoryRow[]> {
+  const products = await fetchProductsByOwner(ownerId, "manufacturer");
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
-  const inventoryMap = await fetchInventoryForManufacturer(ownerId, phone);
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
 
-  const rows: ManufacturerProductRow[] = products.map((p) => {
+  const rows: InventoryRow[] = products.map((p) => {
     const raw = p as any;
     const inv = inventoryMap.get(p.id);
+    const stockQuantity = inv?.stockQuantity ?? (typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0);
+    const reorderThreshold = inv?.reorderThreshold ?? 0;
     return {
       productId: p.id,
-      inventoryId: inv?.id,
+      inventoryId: inv?.id ?? "",
       productName: p.name,
       category: p.category,
       unit: p.unit,
-      price: p.price,
       description: p.description ?? "",
       image: p.image ?? "",
       images: Array.isArray(raw.images) ? raw.images : (p.image ? [p.image] : []),
       variants: Array.isArray(raw.variants) ? raw.variants : [{ unit: p.unit, price: p.price }],
-      stockQuantity: inv?.stockQuantity ?? (typeof raw.stockQuantity === "number" ? raw.stockQuantity : 0),
-      source: p.source ?? "manufacturer_inventory",
+      price: p.price,
+      sellingPrice: inv?.sellingPrice ?? p.price,
+      stockQuantity,
+      reorderThreshold,
+      status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
-      updatedAt: timestampToDate(p.updatedAt),
+      sellMode: p.sellMode ?? "online_delivery",
+      gstApplicable: p.gstApplicable ?? false,
+      gstRate: p.gstRate ?? 0,
+      assignedByManufacturer: false,
+      source: p.source ?? "manufacturer_inventory",
+      ownerId: p.ownerId,
       originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+      updatedAt: timestampToDate(p.updatedAt),
+      categoryInfo: p.categoryInfo,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",
@@ -510,6 +509,12 @@ export type AddProductInventoryInput = {
   storeName?: string;
   sellMode: "online_delivery" | "offline_store_only";
   existingProductId?: string;
+  /** Category-specific structured info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** GST configuration for this product. */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
@@ -592,7 +597,11 @@ export async function createProductAndInventory(
     isOnline: sellMode === "online_delivery",
     originalProductId: input.existingProductId || null,
 
-    // Optional Product Insights fields
+    categoryInfo: input.categoryInfo ?? null,
+    // GST fields
+    gstApplicable: input.gstApplicable ?? false,
+    gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
+    // Legacy fertilizer flat fields — preserved for backward compat reads
     nitrogen: input.nitrogen?.trim() || null,
     phosphorus: input.phosphorus?.trim() || null,
     potassium: input.potassium?.trim() || null,
@@ -610,6 +619,7 @@ export async function createProductAndInventory(
         storeName: (input.storeName ?? "").trim() || null,
         stockLevel: "In Stock",
         sellingPrice: input.sellingPrice,
+        isOnline: sellMode === "online_delivery",
       }),
     });
   }
@@ -824,7 +834,56 @@ export async function updateInventoryRecord(
   })();
 }
 
+export async function updateProductSellMode(
+  productId: string,
+  sellMode: "online_delivery" | "offline_store_only",
+): Promise<void> {
+  const isOnline = sellMode === "online_delivery";
+  const patch = { sellMode, isOnline, updatedAt: serverTimestamp() };
+
+  console.log("[updateProductSellMode]", { productId, sellMode, isOnline });
+
+  // Update the primary product document
+  await updateDoc(doc(db, "products", productId), patch);
+
+  // Cascade to manufacturer-assigned copies: when a manufacturer toggles delivery,
+  // their assigned retailer copies must reflect the same state. Retailers cannot
+  // toggle assigned products themselves, so this is the only update path.
+  const copiesSnap = await getDocs(
+    query(
+      collection(db, "products"),
+      where("manufacturerProductId", "==", productId),
+      where("source", "==", "manufacturer_assigned"),
+    ),
+  );
+  if (copiesSnap.docs.length > 0) {
+    console.log("[updateProductSellMode] cascading to", copiesSnap.docs.length, "manufacturer_assigned copies");
+    const batch = writeBatch(db);
+    copiesSnap.docs.forEach((d) => batch.update(d.ref, patch));
+    await batch.commit();
+  }
+}
+
 // ─── Product lifecycle operations ─────────────────────────────────────────────
+
+/**
+ * Toggles isActive for a manufacturer-assigned product without touching seat listings.
+ * Retailers don't own subscriptions for assigned products, so the normal
+ * activate/deactivate seat-check flow must be bypassed.
+ */
+export async function toggleAssignedProductActive(
+  productId: string,
+  inventoryId: string | undefined,
+  isActive: boolean,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive, updatedAt: now });
+  if (inventoryId) {
+    batch.update(doc(db, "inventory", inventoryId), { isAvailable: isActive, updatedAt: now });
+  }
+  await batch.commit();
+}
 
 /**
  * Deactivates a product: sets isActive=false, releases any active seat listing.
@@ -953,28 +1012,6 @@ export async function activateProduct(
       } catch {}
     })();
   }
-}
-
-/**
- * Toggle active/inactive for products that were ASSIGNED to a retailer by an
- * admin or manufacturer. These products do NOT consume/release the retailer's
- * own seat listing — the seat is owned by the assigning party. We simply flip
- * `isActive` on the product doc and `isAvailable` on the inventory doc.
- *
- * @param productId   - The product document ID
- * @param inventoryId - The inventory document ID
- * @param makeActive  - true = activate, false = deactivate
- */
-export async function toggleAssignedProductActive(
-  productId: string,
-  inventoryId: string,
-  makeActive: boolean,
-): Promise<void> {
-  const now = serverTimestamp();
-  const batch = writeBatch(db);
-  batch.update(doc(db, "products", productId), { isActive: makeActive, updatedAt: now });
-  batch.update(doc(db, "inventory", inventoryId), { isAvailable: makeActive, updatedAt: now });
-  await batch.commit();
 }
 
 // ─── Discount operations ──────────────────────────────────────────────────────
@@ -1138,91 +1175,39 @@ async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
  * Hard-deletes a product and its inventory record (if given).
  * Also releases any active seat listing.
  */
-/**
- * Deletes an assigned product from a retailer's inventory.
- * Called when a retailer deletes a manufacturer-assigned product.
- * Atomically:
- *  1. Hard-deletes the retailer's product copy.
- *  2. Hard-deletes all inventory records for that copy.
- *  3. Releases the manufacturer's seat listing for this assignment.
- * Fire-and-forget:
- *  4. Removes the retailer's store from the manufacturer product's availability[].
- *  5. Cleans up subcollection mirror docs.
- */
-export async function deleteAssignedProductFromRetailer(
-  retailerProductId: string,
-  inventoryId: string,
-  retailerDocId?: string | null,
-  retailerPhone?: string | null,
-): Promise<void> {
-  // Fetch seat listing + all inventory docs in parallel before the batch
-  const [listingSnap, invSnap] = await Promise.all([
-    getDocs(query(
-      collection(db, "retailerSeatListings"),
-      where("productId", "==", retailerProductId),
-      where("status", "==", "active"),
-    )),
-    getDocs(query(
-      collection(db, "inventory"),
-      where("productId", "==", retailerProductId),
-    )),
-  ]);
-
-  const now = serverTimestamp();
-  const batch = writeBatch(db);
-
-  // 1. Hard-delete the product copy
-  batch.delete(doc(db, "products", retailerProductId));
-
-  // 2. Hard-delete all inventory records
-  invSnap.docs.forEach(d => batch.delete(d.ref));
-
-  // 3. Release the manufacturer's seat listing
-  listingSnap.docs.forEach(d => batch.update(d.ref, { status: "released", releasedAt: now }));
-
-  await batch.commit();
-
-  // 4. Remove retailer's store from manufacturer product's availability[] (non-critical)
-  const manufacturerProductId = listingSnap.docs[0]?.data()?.manufacturerProductId as string | undefined;
-  if (manufacturerProductId && retailerDocId) {
-    try {
-      const mfgSnap = await getDoc(doc(db, "products", manufacturerProductId));
-      if (mfgSnap.exists()) {
-        const avArr = Array.isArray(mfgSnap.data().availability) ? mfgSnap.data().availability : [];
-        const entryToRemove = avArr.find((e: Record<string, unknown>) => e.storeId === retailerDocId);
-        if (entryToRemove) {
-          await updateDoc(doc(db, "products", manufacturerProductId), {
-            availability: arrayRemove(entryToRemove),
-          });
-        }
-      }
-    } catch { /* non-critical */ }
-  }
-
-  // 5. Clean up subcollection mirror docs (fire-and-forget)
-  if (retailerPhone) {
-    (async () => {
-      try {
-        const { deleteDoc: dDoc, doc: wDoc } = await import("firebase/firestore");
-        await Promise.all([
-          ...invSnap.docs.map(d => dDoc(wDoc(db, `retailers/${retailerPhone}/inventory/${d.id}`)).catch(() => {})),
-          dDoc(wDoc(db, `retailers/${retailerPhone}/products/${retailerProductId}`)).catch(() => {}),
-        ]);
-      } catch { /* non-critical */ }
-    })();
-  }
-}
-
 export async function deleteProduct(
   productId: string,
   ownerId: string,
   inventoryId?: string,
   ownerPhone?: string,
 ): Promise<void> {
+  // First look for a seat listing owned by this user (own products).
   const allListings = await fetchSeatListingsForOwner(ownerId);
-  const listing = allListings.find(
+  let listing = allListings.find(
     (l) => l.productId === productId && l.status === "active",
   );
+
+  // For manufacturer-assigned products the seat listing is owned by the
+  // manufacturer, not the retailer. If we found nothing above, check whether
+  // this product is a manufacturer-assigned copy and, if so, locate the
+  // listing under the manufacturer's ownerId so we can release it.
+  if (!listing) {
+    try {
+      const productSnap = await getDoc(doc(db, "products", productId));
+      if (productSnap.exists()) {
+        const pData = productSnap.data() as Record<string, unknown>;
+        const mfgId = pData.source === "manufacturer_assigned"
+          ? String(pData.manufacturerId ?? "")
+          : "";
+        if (mfgId) {
+          const mfgListings = await fetchSeatListingsForOwner(mfgId);
+          listing = mfgListings.find(
+            (l) => l.productId === productId && l.status === "active",
+          );
+        }
+      }
+    } catch { /* non-critical; seat release is best-effort */ }
+  }
   const now = serverTimestamp();
   const batch = writeBatch(db);
   batch.delete(doc(db, "products", productId));

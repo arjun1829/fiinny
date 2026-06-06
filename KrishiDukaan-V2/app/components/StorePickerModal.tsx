@@ -68,8 +68,26 @@ export function StorePickerModal({ product, storesWithDistance, onConfirm, onClo
     }).finally(() => setLoading(false));
   }, [product.id]);
 
-  const onlineStores = availableStores.filter((s) => onlineMap[(s as any).phone]);
-  const offlineStores = availableStores.filter((s) => !onlineMap[(s as any).phone]);
+  const onlineStores = availableStores.filter((s) => {
+    const phone = (s as any).phone as string | undefined;
+    if (!onlineMap[phone ?? '']) return false;
+    const availEntry = product.availability?.find(
+      (a) =>
+        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+        a.storeId === s.id,
+    );
+    return availEntry?.isOnline !== false;
+  });
+  const offlineStores = availableStores.filter((s) => {
+    const phone = (s as any).phone as string | undefined;
+    if (!onlineMap[phone ?? '']) return true;
+    const availEntry = product.availability?.find(
+      (a) =>
+        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+        a.storeId === s.id,
+    );
+    return availEntry?.isOnline === false;
+  });
 
   const selectedStore = availableStores.find((s) => s.id === selected);
 

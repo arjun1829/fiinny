@@ -29,7 +29,7 @@ type CartViewProps = {
   onQtyChange: (itemKey: string, qty: number) => void;
   onRemove: (itemKey: string) => void;
   onAssignStore: (itemKey: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
-  onCheckout: () => Promise<void>;
+  onCheckout: (grandTotal: number) => Promise<void>;
   onRazorpayCheckout?: (amount: number, saveAddress: boolean) => void;
   onSaveAddress?: (address: string) => Promise<void>;
   onGoLogin: () => void;
@@ -258,8 +258,29 @@ function useStoreAvailability(product: MarketplaceProduct | undefined, stores: S
     }).finally(() => setLoading(false));
   }, [product?.id]);
 
-  const onlineStores = availableStores.filter((s) => onlineMap[(s as any).phone]);
-  const offlineStores = availableStores.filter((s) => !onlineMap[(s as any).phone]);
+  const onlineStores = availableStores.filter((s) => {
+    const phone = (s as any).phone as string | undefined;
+    if (!onlineMap[phone ?? '']) return false;
+    // Product-level: availability entry isOnline must not be explicitly false
+    const availEntry = product?.availability?.find(
+      (a) =>
+        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+        a.storeId === s.id,
+    );
+    return availEntry?.isOnline !== false;
+  });
+  const offlineStores = availableStores.filter((s) => {
+    const phone = (s as any).phone as string | undefined;
+    // Account-level offline → offline store
+    if (!onlineMap[phone ?? '']) return true;
+    // Product-level explicitly disabled → treat as offline for this product
+    const availEntry = product?.availability?.find(
+      (a) =>
+        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+        a.storeId === s.id,
+    );
+    return availEntry?.isOnline === false;
+  });
 
   return { loading, onlineStores, offlineStores, availableStores };
 }
@@ -373,15 +394,12 @@ function StorePickerInline({
   stores,
   onSelect,
   currentSellerId,
-  variantUnit,
   t,
 }: {
   product: MarketplaceProduct;
   stores: StoreWithDistance[];
   onSelect: (sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   currentSellerId?: string;
-  /** Selected variant unit from the cart item (e.g. "500ml") — used to resolve the correct variant price */
-  variantUnit?: string;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { loading, onlineStores, offlineStores } = useStoreAvailability(product, stores);
@@ -440,26 +458,10 @@ function StorePickerInline({
                   ? product.sellerDiscounts[store.id]
                   : 0;
 
-          // Resolve the variant's list price if the cart item has a selected variant.
-          // This ensures "Change Store" uses the correct variant price (e.g. 500ml price)
-          // instead of always falling back to the base product.price.
-          const matchedVariant = variantUnit && product.variants?.length
-            ? product.variants.find((v) => v.unit === variantUnit)
-            : null;
-          const variantBasePrice = matchedVariant ? matchedVariant.price : product.price;
-
-          // Determine if this variant is the "base" variant (the one whose price matches
-          // product.price). Only for the base variant do we trust the store's
-          // availability.sellingPrice — non-base variants don't have per-store pricing.
-          const isBaseVariant = !matchedVariant || matchedVariant.price === product.price;
-
-          // Resolve price: for the base variant, use the store's own sellingPrice;
-          // for non-base variants, use the variant's list price.
-          const rawPrice = isBaseVariant
-            ? (availability?.sellingPrice && availability.sellingPrice > 0
-                ? availability.sellingPrice
-                : variantBasePrice)
-            : variantBasePrice;
+          // Resolve price: availability entry → product price
+          const rawPrice = availability?.sellingPrice && availability.sellingPrice > 0
+            ? availability.sellingPrice
+            : product.price;
           const { finalPrice: discountedPrice } = calcDiscount(rawPrice, storeDiscountPct);
           const displayPrice = storeDiscountPct > 0 ? discountedPrice : rawPrice;
           const hasDiscount = storeDiscountPct > 0;
@@ -640,7 +642,6 @@ function CartItemCard({
             stores={stores}
             t={t}
             currentSellerId={isPending ? undefined : item.sellerId}
-            variantUnit={item.variantUnit}
             onSelect={(sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
               onAssignStore(`${item.productId}_${item.sellerId}_${item.sellMode}`, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
               setShowPicker(false);
@@ -691,9 +692,25 @@ export default function CartView({
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
 
-  const { totalCharge: deliveryCharge, bySellerWeight, loading: estimatingDelivery } =
-    useDeliveryEstimates(readyItems);
-  const grandTotal = subtotal + (canCheckout ? deliveryCharge : 0);
+  // ── Delivery estimate ─────────────────────────────────────────────────────
+  const {
+    totalCharge: deliveryCharge,
+    bySellerWeight,
+    loading: estimatingDelivery,
+  } = useDeliveryEstimates(readyItems);
+
+  // ── Order totals ──────────────────────────────────────────────────────────
+  const mrpSubtotal = readyItems.reduce((sum, item) => {
+    const mrp = (item.originalPrice && item.originalPrice > 0) ? item.originalPrice : item.price;
+    return sum + mrp * item.qty;
+  }, 0);
+  const discountedSubtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const totalDiscounts = mrpSubtotal - discountedSubtotal;
+  const totalGst = readyItems.reduce((sum, item) => {
+    if (!item.gstApplicable || !item.gstRate) return sum;
+    return sum + item.price * item.qty * item.gstRate / 100;
+  }, 0);
+  const grandTotal = discountedSubtotal + deliveryCharge + totalGst;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -928,22 +945,46 @@ export default function CartView({
       {/* Checkout section */}
       <div className="mt-8 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5">
 
-        {/* Order summary — product subtotal + delivery + grand total */}
+        {/* Order summary */}
         <div className="flex flex-col gap-2">
+
+          {/* Subtotal (MRP) */}
           <div className="flex items-center justify-between text-sm text-on-surface-variant">
             <span className="inline-flex items-center gap-1.5">
-              {t('cartSubtotal')}
+              Subtotal (MRP)
               {readyItems.length > 0 && readyItems.length < items.length && (
                 <span className="text-xs font-medium">
                   ({t('cartItemsOf', { ready: readyItems.length, total: items.length })})
                 </span>
               )}
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel={`${t('cartSubtotal')} help`} />
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel="Subtotal help" />
             </span>
-            <span className="font-semibold text-on-surface">₹{subtotal.toLocaleString("en-IN")}</span>
+            <span className="font-semibold text-on-surface">
+              ₹{mrpSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
 
-          {/* Delivery charge row */}
+          {/* Product Discounts — only when discounts exist */}
+          {totalDiscounts > 0 && (
+            <div className="flex items-center justify-between text-sm text-green-700">
+              <span>Product Discounts</span>
+              <span className="font-semibold">
+                -₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Discounted Subtotal — only when there are discounts */}
+          {totalDiscounts > 0 && (
+            <div className="flex items-center justify-between text-sm border-t border-outline-variant/10 pt-1.5">
+              <span className="font-semibold text-on-surface">Discounted Subtotal</span>
+              <span className="font-semibold text-on-surface">
+                ₹{discountedSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Delivery Charges */}
           {canCheckout && (
             <div className="flex items-center justify-between text-sm text-on-surface-variant">
               <span className="inline-flex items-center gap-1.5">
@@ -953,7 +994,9 @@ export default function CartView({
                 )}
               </span>
               <span className={`font-semibold ${deliveryCharge > 0 ? "text-on-surface" : "text-green-700"}`}>
-                {estimatingDelivery ? "—" : deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString("en-IN")}` : "Free"}
+                {estimatingDelivery ? "—" : deliveryCharge > 0
+                  ? `₹${deliveryCharge.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "Free"}
               </span>
             </div>
           )}
@@ -962,35 +1005,38 @@ export default function CartView({
           {canCheckout && !estimatingDelivery && Object.values(bySellerWeight).some((w) => w > 0) && (
             <p className="text-[10px] text-on-surface-variant">
               Est. weight:{" "}
-              {Object.values(bySellerWeight)
-                .reduce((s, w) => s + w, 0)
-                .toFixed(2)}{" "}
-              kg
+              {Object.values(bySellerWeight).reduce((s, w) => s + w, 0).toFixed(2)} kg
             </p>
           )}
 
-          {/* Grand total */}
+          {/* Total GST — only when any item has GST */}
+          {canCheckout && totalGst > 0 && (
+            <div className="flex items-center justify-between text-sm text-on-surface-variant">
+              <span className="inline-flex items-center gap-1">
+                Total GST
+              </span>
+              <span className="font-semibold text-on-surface">
+                ₹{totalGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Grand Total */}
           <div className="flex items-center justify-between border-t border-outline-variant/20 pt-2 mt-1">
             <span className="text-base font-bold text-on-surface">Grand Total</span>
             <span className="text-xl font-black text-secondary">
-              ₹{grandTotal.toLocaleString("en-IN")}
+              ₹{grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
-        {/* Total savings line — shown only when at least one item has a discount */}
-        {(() => {
-          const totalSavings = readyItems.reduce((sum, item) => {
-            if (!item.discountPct || !item.originalPrice) return sum;
-            return sum + (item.originalPrice - item.price) * item.qty;
-          }, 0);
-          if (totalSavings <= 0) return null;
-          return (
-            <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
-              <span>Total Savings</span>
-              <span>-₹{totalSavings.toLocaleString("en-IN")}</span>
-            </div>
-          );
-        })()}
+
+        {/* Total Savings — celebratory row below grand total */}
+        {totalDiscounts > 0 && (
+          <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
+            <span>Total Savings</span>
+            <span>-₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        )}
 
         {pendingItems.length > 0 && canCheckout && (
           <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
@@ -1102,12 +1148,12 @@ export default function CartView({
             {/* Pay & Place Order */}
             <div className="flex flex-col gap-2">
               <button
-                disabled={loading || !canCheckout}
+                disabled={loading || !canCheckout || estimatingDelivery}
                 onClick={() => {
                   if (saveAddress && onSaveAddress) {
-                    onSaveAddress(addressArea); // Trigger save via prop before checkout
+                    onSaveAddress(addressArea);
                   }
-                  void onCheckout();
+                  void onCheckout(grandTotal);
                 }}
                 className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
               >
@@ -1117,7 +1163,7 @@ export default function CartView({
                     Processing Payment…
                   </>
                 ) : canCheckout ? (
-                  <><CreditCard className="w-4 h-4" /> Pay ₹{subtotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
+                  <><CreditCard className="w-4 h-4" /> Pay ₹{grandTotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
                 ) : (
                   t('cartSelectStoresToOrder')
                 )}
@@ -1127,6 +1173,10 @@ export default function CartView({
                 <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
               </div>
             </div>
+          </div>
+        ) : isLoggedIn && !isCustomer ? (
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800">
+            Orders can only be placed from a customer account. Please log in with your customer account.
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">

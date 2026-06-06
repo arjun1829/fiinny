@@ -35,6 +35,13 @@ export type LoadedProfileState = {
   manufacturerCreatedAt: unknown | null;
 };
 
+/** Validates the Indian 15-character GSTIN format. */
+export function isValidGstinFormat(gstin: string): boolean {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
+    gstin.trim().toUpperCase(),
+  );
+}
+
 // Resolve Firebase Auth UID → normalized phone via uidIndex.
 // Returns null if the index entry doesn't exist yet.
 async function phoneFromUid(uid: string): Promise<string | null> {
@@ -229,36 +236,44 @@ export async function saveManufacturerProfile(
   geo: GeoPoint,
   existingCreatedAt: unknown | null,
 ): Promise<void> {
-  const trimmedEmail = form.email.trim();
-  const phone = await phoneFromUid(uid);
+  const trimmedEmail   = form.email.trim();
+  const trimmedPhone   = form.phone.trim();
+  const phone          = await phoneFromUid(uid);
   const manufacturerDocId = phone || uid;
 
   // Read existing doc to check for slug (only generate once — slugs must be stable)
-  const existingSnap = await getDoc(doc(db, "manufacturers", manufacturerDocId));
-  const existingSlug = existingSnap.exists() ? String(existingSnap.data().slug ?? "") : "";
-  const slug = existingSlug || generateSlug(form.businessName.trim(), form.phone.trim() || phone || uid);
+  const existingSnap  = await getDoc(doc(db, "manufacturers", manufacturerDocId));
+  const existingSlug  = existingSnap.exists() ? String(existingSnap.data().slug ?? "") : "";
+  const slug          = existingSlug || generateSlug(form.businessName.trim(), trimmedPhone || phone || uid);
 
+  const addressPayload = {
+    line1:   form.line1.trim(),
+    city:    form.city.trim(),
+    state:   form.state.trim(),
+    pincode: form.pincode.trim(),
+  };
+
+  const gstNumber      = form.gstin.trim() || null;
+  const gstRegistered  = isValidGstinFormat(gstNumber ?? "");
+
+  // 1. Write full profile to the role-specific collection (source of operational truth).
   await setDoc(
     doc(db, "manufacturers", manufacturerDocId),
     {
       uid,
       manufacturerId: uid,
-      businessName: form.businessName.trim(),
-      ownerName:    form.ownerName.trim(),
-      phone:        form.phone.trim() || phone || "",
+      businessName:   form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      phone:          trimmedPhone || phone || "",
       secondaryPhone: form.secondaryPhone.trim(),
-      email:        trimmedEmail,
-      website:      form.website.trim(),
-      logo:         form.logoUrl.trim(),
-      banner:       form.bannerUrl.trim(),
-      gstin:        form.gstin.trim() || null,
+      email:          trimmedEmail,
+      website:        form.website.trim(),
+      logo:           form.logoUrl.trim(),
+      banner:         form.bannerUrl.trim(),
+      gstin:          gstNumber,
+      gstRegistered,
       geo,
-      address: {
-        line1:   form.line1.trim(),
-        city:    form.city.trim(),
-        state:   form.state.trim(),
-        pincode: form.pincode.trim(),
-      },
+      address:        addressPayload,
       slug,
       createdAt: existingCreatedAt ?? serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -266,16 +281,45 @@ export async function saveManufacturerProfile(
     { merge: true },
   );
 
-  // Sync fields needed for profile-completeness check to users/{phone}.
-  // Layout reads users/{phone} and checks businessName + phone + city.
+  // 2. Mirror the full public snapshot to profiles/{phone}.
+  //    This is the unified read source for product pages, store cards, and
+  //    any consumer that needs display info without knowing the role.
+  const profileDocId = phone || uid;
+  await setDoc(
+    doc(db, "profiles", profileDocId),
+    {
+      phone:          trimmedPhone || phone || "",
+      role:           "manufacturer",
+      // Dual-name fields so reads work regardless of which key they expect
+      businessName:   form.businessName.trim(),
+      shopName:       form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      secondaryPhone: form.secondaryPhone.trim() || null,
+      email:          trimmedEmail || null,
+      website:        form.website.trim() || null,
+      logo:           form.logoUrl.trim() || null,
+      banner:         form.bannerUrl.trim() || null,
+      gstin:          gstNumber,
+      gstRegistered,
+      address:        addressPayload,
+      city:           form.city.trim(),
+      state:          form.state.trim(),
+      geo,
+      updatedAt:      serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // 3. Sync the minimum fields needed by the dashboard layout's profile-completeness
+  //    check to users/{phone} — that check reads businessName + phone + city.
   const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
   await setDoc(
     userTarget,
     {
       businessName: form.businessName.trim(),
-      city: form.city.trim(),
+      city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
-      updatedAt: serverTimestamp(),
+      updatedAt:    serverTimestamp(),
     },
     { merge: true },
   );
@@ -288,52 +332,181 @@ export async function saveRetailerProfile(
   extras: RetailerProfileExtras,
 ): Promise<void> {
   const trimmedEmail = form.email.trim();
-  const retailerDocId = await retailerDocIdFromUid(uid);
-  const retailerRef = doc(db, "retailers", retailerDocId || uid);
+  const trimmedPhone = form.phone.trim();
 
+  // Resolve both the UID-indexed phone and the legacy retailerDocId
+  const rPhone       = await phoneFromUid(uid);
+  const retailerDocId = await retailerDocIdFromUid(uid);
+  const retailerRef  = doc(db, "retailers", retailerDocId || uid);
+
+  const addressPayload = {
+    line1:   form.line1.trim(),
+    city:    form.city.trim(),
+    state:   form.state.trim(),
+    pincode: form.pincode.trim(),
+  };
+
+  const gstNumber     = form.gstin.trim() || null;
+  const gstRegistered = isValidGstinFormat(gstNumber ?? "");
+
+  // 1. Write full profile to retailers/{docId} (source of operational truth).
   await setDoc(
     retailerRef,
     {
-      userId: uid,
+      userId:    uid,
       retailerId: uid,
-      role: "retailer",
+      role:      "retailer",
       shopName:  form.businessName.trim(),
       ownerName: form.ownerName.trim(),
       email:     trimmedEmail,
-      phone:     form.phone.trim(),
+      phone:     trimmedPhone,
       secondaryPhone: form.secondaryPhone.trim(),
       website:   form.website.trim(),
       logo:      form.logoUrl.trim(),
       banner:    form.bannerUrl.trim(),
-      gstin:     form.gstin.trim() || null,
-      address: {
-        line1:   form.line1.trim(),
-        city:    form.city.trim(),
-        state:   form.state.trim(),
-        pincode: form.pincode.trim(),
-      },
+      gstin:     gstNumber,
+      gstRegistered,
+      address:   addressPayload,
       geo,
-      onboardingType:  extras.onboardingType || "dashboard",
-      manufacturerId:  extras.manufacturerId || null,
-      createdAt:       extras.createdAt || serverTimestamp(),
-      updatedAt:       serverTimestamp(),
-      active:          true,
+      onboardingType:     extras.onboardingType || "dashboard",
+      manufacturerId:     extras.manufacturerId || null,
+      createdAt:          extras.createdAt || serverTimestamp(),
+      updatedAt:          serverTimestamp(),
+      active:             true,
       subscriptionStatus: extras.subscriptionStatus,
     },
     { merge: true },
   );
 
-  // Sync fields needed for profile-completeness check to users/{phone}.
-  const rPhone = await phoneFromUid(uid);
+  // 2. Mirror the full public snapshot to profiles/{phone}.
+  //    Product pages and the retailer public profile section read from this.
+  const profileDocId = rPhone || retailerDocId || uid;
+  await setDoc(
+    doc(db, "profiles", profileDocId),
+    {
+      phone:          trimmedPhone || rPhone || "",
+      role:           "retailer",
+      // Dual-name fields so reads work regardless of which key they expect
+      businessName:   form.businessName.trim(),
+      shopName:       form.businessName.trim(),
+      ownerName:      form.ownerName.trim(),
+      secondaryPhone: form.secondaryPhone.trim() || null,
+      email:          trimmedEmail || null,
+      website:        form.website.trim() || null,
+      logo:           form.logoUrl.trim() || null,
+      banner:         form.bannerUrl.trim() || null,
+      gstin:          gstNumber,
+      gstRegistered,
+      address:        addressPayload,
+      city:           form.city.trim(),
+      state:          form.state.trim(),
+      geo,
+      updatedAt:      serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // 3. Sync the minimum fields needed by the dashboard layout's profile-completeness check.
   const rTarget = rPhone ? doc(db, "users", rPhone) : doc(db, "users", uid);
   await setDoc(
     rTarget,
     {
       businessName: form.businessName.trim(),
-      city: form.city.trim(),
+      city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
-      updatedAt: serverTimestamp(),
+      updatedAt:    serverTimestamp(),
     },
     { merge: true },
   );
+}
+
+// ─── GST + Online Delivery atomic writes ──────────────────────────────────────
+
+/**
+ * Validates GST, then atomically saves the GST number and enables online delivery
+ * across all three relevant Firestore collections.
+ */
+export async function enableOnlineDeliveryWithGst(
+  uid: string,
+  role: "retailer" | "manufacturer",
+  gstin: string,
+): Promise<void> {
+  const gstNumber = gstin.trim().toUpperCase();
+  const gstRegistered = isValidGstinFormat(gstNumber);
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { gstin: gstNumber, gstRegistered, onlineDelivery: true, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
+}
+
+/**
+ * Immediately disables online delivery across all three Firestore collections
+ * (role collection, profiles mirror, and users doc). Mirrors the same writes
+ * that enableOnlineDeliveryWithGst makes, but sets onlineDelivery: false.
+ */
+export async function disableOnlineDelivery(
+  uid: string,
+  role: "retailer" | "manufacturer",
+): Promise<void> {
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { onlineDelivery: false, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
+}
+
+/**
+ * Updates the GST number on an account where Online Delivery is already enabled.
+ * GST cannot be cleared (set to empty) while delivery is active — callers must
+ * validate that the supplied gstin is non-empty and valid before calling.
+ */
+export async function updateGstNumber(
+  uid: string,
+  role: "retailer" | "manufacturer",
+  gstin: string,
+): Promise<void> {
+  const gstNumber = gstin.trim().toUpperCase() || null;
+  const gstRegistered = gstNumber ? isValidGstinFormat(gstNumber) : false;
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { gstin: gstNumber, gstRegistered, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
 }

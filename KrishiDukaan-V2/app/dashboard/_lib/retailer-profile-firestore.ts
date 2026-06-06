@@ -28,6 +28,15 @@ export type RetailerPublicProfile = {
   state?: string;
   bio?: string;
   role: string;
+  /** Full business name (manufacturer alias for shopName) */
+  businessName?: string;
+  logo?: string;
+  banner?: string;
+  website?: string;
+  gstin?: string;
+  tagline?: string;
+  onlineDelivery?: boolean;
+  socialLinks?: Record<string, string>;
   averageRating?: number;
   totalReviews?: number;
 };
@@ -64,17 +73,25 @@ export async function fetchRetailerPublicProfile(
     // If profiles doc has a real shop name, use it directly.
     if (profileData && !isGenericName(profileShopName)) {
       return {
-        phone: String(profileData.phone ?? phone),
-        secondaryPhone: profileData.secondaryPhone ? String(profileData.secondaryPhone) : undefined,
-        shopName: profileShopName,
-        ownerName: profileData.ownerName ? String(profileData.ownerName) : undefined,
-        address: profileData.address ? String(profileData.address) : undefined,
-        city: profileData.city ? String(profileData.city) : undefined,
-        state: profileData.state ? String(profileData.state) : undefined,
-        bio: profileData.bio ? String(profileData.bio) : undefined,
-        role: String(profileData.role ?? "retailer"),
-        averageRating: profileData.averageRating,
-        totalReviews: profileData.totalReviews,
+        phone:           String(profileData.phone ?? phone),
+        secondaryPhone:  profileData.secondaryPhone ? String(profileData.secondaryPhone) : undefined,
+        shopName:        profileShopName,
+        businessName:    profileData.businessName ? String(profileData.businessName) : profileShopName,
+        ownerName:       profileData.ownerName   ? String(profileData.ownerName)   : undefined,
+        address:         profileData.address     ? String(profileData.address)     : undefined,
+        city:            profileData.city        ? String(profileData.city)        : undefined,
+        state:           profileData.state       ? String(profileData.state)       : undefined,
+        bio:             profileData.bio         ? String(profileData.bio)         : undefined,
+        role:            String(profileData.role ?? "retailer"),
+        logo:            profileData.logo        ? String(profileData.logo)        : undefined,
+        banner:          profileData.banner      ? String(profileData.banner)      : undefined,
+        website:         profileData.website     ? String(profileData.website)     : undefined,
+        gstin:           profileData.gstin       ? String(profileData.gstin)       : undefined,
+        tagline:         profileData.tagline     ? String(profileData.tagline)     : undefined,
+        onlineDelivery:  typeof profileData.onlineDelivery === "boolean" ? profileData.onlineDelivery : undefined,
+        socialLinks:     profileData.socialLinks as Record<string, string> | undefined,
+        averageRating:   profileData.averageRating,
+        totalReviews:    profileData.totalReviews,
       };
     }
 
@@ -104,20 +121,28 @@ export async function fetchRetailerPublicProfile(
       }
     }
 
-    // Return whatever we have from profiles, even if generic.
+    // Return whatever we have from profiles, even if the shop name is generic.
     if (profileData) {
       return {
-        phone: String(profileData.phone ?? phone),
+        phone:          String(profileData.phone ?? phone),
         secondaryPhone: profileData.secondaryPhone ? String(profileData.secondaryPhone) : undefined,
-        shopName: profileShopName || "Retailer",
-        ownerName: profileData.ownerName ? String(profileData.ownerName) : undefined,
-        address: profileData.address ? String(profileData.address) : undefined,
-        city: profileData.city ? String(profileData.city) : undefined,
-        state: profileData.state ? String(profileData.state) : undefined,
-        bio: profileData.bio ? String(profileData.bio) : undefined,
-        role: String(profileData.role ?? "retailer"),
-        averageRating: profileData.averageRating,
-        totalReviews: profileData.totalReviews,
+        shopName:       profileShopName || "Retailer",
+        businessName:   profileData.businessName ? String(profileData.businessName) : (profileShopName || undefined),
+        ownerName:      profileData.ownerName  ? String(profileData.ownerName)  : undefined,
+        address:        profileData.address    ? String(profileData.address)    : undefined,
+        city:           profileData.city       ? String(profileData.city)       : undefined,
+        state:          profileData.state      ? String(profileData.state)      : undefined,
+        bio:            profileData.bio        ? String(profileData.bio)        : undefined,
+        role:           String(profileData.role ?? "retailer"),
+        logo:           profileData.logo       ? String(profileData.logo)       : undefined,
+        banner:         profileData.banner     ? String(profileData.banner)     : undefined,
+        website:        profileData.website    ? String(profileData.website)    : undefined,
+        gstin:          profileData.gstin      ? String(profileData.gstin)      : undefined,
+        tagline:        profileData.tagline    ? String(profileData.tagline)    : undefined,
+        onlineDelivery: typeof profileData.onlineDelivery === "boolean" ? profileData.onlineDelivery : undefined,
+        socialLinks:    profileData.socialLinks as Record<string, string> | undefined,
+        averageRating:  profileData.averageRating,
+        totalReviews:   profileData.totalReviews,
       };
     }
 

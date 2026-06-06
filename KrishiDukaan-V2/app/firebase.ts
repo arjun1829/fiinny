@@ -310,6 +310,15 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       .filter((item) => item.data().isActive !== false)
       .map((item) => {
       const data = item.data();
+      console.log("[fetchMarketplaceProducts] doc read:", {
+        id: item.id,
+        name: String(data.name || ''),
+        source: String(data.source || ''),
+        ownerId: String(data.ownerId || ''),
+        ownerType: String(data.ownerType || ''),
+        isOnline: data.isOnline,
+        sellMode: data.sellMode,
+      });
       return {
         id: item.id,
         name: String(data.name || ''),
@@ -327,12 +336,20 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         ownerId: data.ownerId ? String(data.ownerId) : undefined,
         manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
         manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
-        sellMode: data.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only",
-        isOnline: data.isOnline === true || data.sellMode === "online_delivery",
+        sellMode: data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
+        isOnline: data.sellMode !== "offline_store_only",
         availability: data.availability || undefined,
         source: data.source ? String(data.source) : undefined,
+        gstApplicable: data.gstApplicable === true,
+        gstRate: [0, 5, 12, 18, 28].includes(Number(data.gstRate))
+          ? (Number(data.gstRate) as 0 | 5 | 12 | 18 | 28)
+          : undefined,
         averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
         totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
+        categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
+          ? data.categoryInfo as Record<string, string | string[]>
+          : undefined,
+        // Legacy fertilizer flat fields — kept for backward compat
         nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
         phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
         potassium: data.potassium ? String(data.potassium) : undefined,
@@ -347,23 +364,22 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       } as MarketplaceProduct;
     });
 
-    // Retailer copies hold each store's selling price — collect separately before filtering
-    const retailerCopies = allMapped.filter(
-      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned' || p.source === 'admin_assigned',
-    );
+    // Retailer copies hold each store's selling price — collect separately before filtering.
+    // admin_assigned copies are also per-seller and must NOT contribute to the canonical
+    // raw dedup pool — they carry a stale isOnline inherited from the original at creation
+    // time and would permanently keep anyOnlineByKey=true even after the original goes offline.
+    const COPY_SOURCES = new Set(['retailer_inventory_copy', 'manufacturer_assigned', 'admin_assigned']);
+    const retailerCopies = allMapped.filter((p) => COPY_SOURCES.has(p.source ?? ''));
 
     const raw = allMapped.filter(
       (product) =>
         product.name &&
         product.image &&
         Number.isFinite(product.price) &&
-        product.source !== 'manufacturer_assigned' &&
-        product.source !== 'retailer_inventory_copy' &&
-        product.source !== 'admin_assigned',
+        !COPY_SOURCES.has(product.source ?? ''),
     );
 
     // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
-    // This is built separately from availability so per-store discounts are never mixed up.
     const sellerDiscountsByKey = new Map<string, Record<string, number>>();
     const recordSellerDiscount = (key: string, uid: string | undefined, phone: string | undefined, pct: number) => {
       if (!pct || pct <= 0) return;
@@ -373,15 +389,22 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       sellerDiscountsByKey.set(key, map);
     };
 
+    // Per-key tracker: is ANY seller listing online for this product?
+    // Used to compute the merged card's sellMode/isOnline without letting one
+    // offline listing contaminate all sellers.
+    const anyOnlineByKey = new Map<string, boolean>();
+    const markOnline = (key: string, isOnline: boolean) => {
+      if (isOnline) anyOnlineByKey.set(key, true);
+    };
+
     // Deduplicate by name: if two products share the same name (case-insensitive),
     // keep the manufacturer_inventory card as canonical and merge the retailer's
     // store info into its availability array so farmers see one card with all sources.
     const byName = new Map<string, MarketplaceProduct>();
     for (const p of raw) {
       const key = p.name.toLowerCase().trim();
-      // Record this seller's OWN discount (not the merged max)
       recordSellerDiscount(key, (p as any).ownerId, p.retailerPhone, p.effectiveDiscountPct ?? 0);
-      // Record this source id under the dedup key for rating aggregation later
+      markOnline(key, p.isOnline === true);
       const ids = idsByKey.get(key) ?? [];
       ids.push(p.id);
       idsByKey.set(key, ids);
@@ -406,7 +429,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         if (!dup) av.push(entry);
       }
 
-      // Also register the secondary product itself as an availability source
+      // Register the secondary product itself as an availability source,
+      // carrying its per-seller isOnline so ProductDetailView can check it.
       const secondaryStoreId = (secondary as any).ownerId || secondary.retailerId || '';
       const secondaryPhone = secondary.retailerPhone;
       const alreadyPresent = av.some(
@@ -420,10 +444,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: secondary.store || undefined,
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
+          isOnline: secondary.isOnline,
         });
       }
 
-      // Carry the highest discount across both cards into the merged result
       const mergedMaxDiscount = Math.max(
         canonical.maxDiscountPct ?? canonical.effectiveDiscountPct ?? 0,
         secondary.maxDiscountPct ?? secondary.effectiveDiscountPct ?? 0,
@@ -443,13 +467,14 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const canonical = byName.get(key);
       if (!canonical) continue;
 
-      // A copy may also carry its own reviews — record its id for rating aggregation
       const copyIds = idsByKey.get(key) ?? [];
       if (!copyIds.includes(copy.id)) { copyIds.push(copy.id); idsByKey.set(key, copyIds); }
 
       const copyStoreId = (copy as any).ownerId || copy.retailerId || '';
       const copyPhone = copy.retailerPhone;
       if (!copyStoreId && !copyPhone) continue;
+
+      markOnline(key, copy.isOnline === true);
 
       const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
       const existing = av.find(
@@ -458,12 +483,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           (copyPhone && a.storePhone === copyPhone),
       );
       const copyDiscountPct = copy.effectiveDiscountPct ?? 0;
-      // Record this copy's OWN discount in the per-seller map (keyed by their own uid/phone)
       recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
 
       if (existing) {
         existing.sellingPrice = copy.price;
-        // Do NOT copy discount into availability entries — use sellerDiscounts map instead
+        // Carry the copy's isOnline into the existing entry so ProductDetailView
+        // can use it for per-seller ordering eligibility.
+        if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -471,24 +497,22 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: copy.store || undefined,
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
+          isOnline: copy.isOnline,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
-      byName.set(key, {
-        ...canonical,
-        availability: av,
-        maxDiscountPct: newMax,
-      });
+      byName.set(key, { ...canonical, availability: av, maxDiscountPct: newMax });
     }
 
-    // Compute lowestPrice + ratings across all merged store/variant sources for each product
+    // Compute lowestPrice + ratings + corrected sellMode across all merged sources.
+    // CRITICAL: sellMode/isOnline on the merged card reflects ANY seller being online.
+    // A single offline listing must never suppress the Order button for online sellers.
     return Array.from(byName.entries()).map(([key, p]) => {
       const prices = (p.availability ?? [])
         .map((a) => a.sellingPrice)
         .filter((v): v is number => typeof v === 'number' && v > 0);
       const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
 
-      // Aggregate reviews across every source id that merged into this card
       let sum = 0, count = 0;
       for (const id of (idsByKey.get(key) ?? [p.id])) {
         const agg = ratingAgg.get(id);
@@ -498,7 +522,64 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       const totalReviews = count > 0 ? count : p.totalReviews;
 
       const sellerDiscounts = sellerDiscountsByKey.get(key) ?? {};
-      return { ...p, lowestPrice, averageRating, totalReviews, sellerDiscounts };
+
+      // Recompute isOnline/sellMode: true if ANY seller listing is online.
+      const mergedOnline = anyOnlineByKey.get(key) ?? false;
+      const mergedSellMode: "online_delivery" | "offline_store_only" =
+        mergedOnline ? "online_delivery" : "offline_store_only";
+
+      // Ensure the canonical product's own seller always has an availability entry.
+      // Without this, ProductDetailView finds availEntry=undefined and falls back to
+      // account-level alone — the product-level isOnline toggle has no effect for
+      // single-seller products or manufacturer products with no retailer copies.
+      const canonOwnerId = (p as any).ownerId as string | undefined;
+      const canonPhone = ((p as any).manufacturerPhone as string | undefined) || p.retailerPhone;
+      const currentAv = p.availability ?? [];
+      const hasCanonEntry =
+        !canonOwnerId && !canonPhone
+          ? true
+          : currentAv.some(
+              (a) =>
+                (canonOwnerId && (a.storeId === canonOwnerId || a.storePhone === canonOwnerId)) ||
+                (canonPhone && (a.storePhone === canonPhone || a.storeId === canonPhone)),
+            );
+      const finalAvailability: NonNullable<MarketplaceProduct['availability']> = hasCanonEntry
+        ? currentAv
+        : [
+            ...currentAv,
+            {
+              storeId: canonOwnerId || '',
+              storePhone: canonPhone,
+              storeName: p.store || undefined,
+              stockLevel: p.stock || 'In Stock',
+              sellingPrice: p.price,
+              // Use the canonical's own isOnline (before merged OR correction),
+              // so ProductDetailView shows the correct per-seller Order button.
+              isOnline: p.isOnline,
+            },
+          ];
+
+      console.log("[fetchMarketplaceProducts]", {
+        name: p.name,
+        id: p.id,
+        source: p.source,
+        ownerId: canonOwnerId,
+        rawIsOnline: p.isOnline,
+        mergedOnline,
+        mergedSellMode,
+        availabilityIsOnline: finalAvailability.map((a) => ({ storeId: a.storeId, storePhone: a.storePhone, isOnline: a.isOnline })),
+      });
+
+      return {
+        ...p,
+        isOnline: mergedOnline,
+        sellMode: mergedSellMode,
+        availability: finalAvailability.length > 0 ? finalAvailability : undefined,
+        lowestPrice,
+        averageRating,
+        totalReviews,
+        sellerDiscounts,
+      };
     });
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
@@ -1233,6 +1314,8 @@ export async function createOrdersFromCart(params: {
 
     const normalizedItems = groupItems.map((item) => {
       const lineTotal = Number((item.price * item.qty).toFixed(2));
+      const gstApplicable = item.gstApplicable === true && !!item.gstRate;
+      const gstAmount = gstApplicable ? Number((item.price * (item.gstRate as number) / 100).toFixed(2)) : 0;
       const base: Record<string, unknown> = {
         productId: item.productId,
         name: item.name,
@@ -1240,6 +1323,7 @@ export async function createOrdersFromCart(params: {
         qty: item.qty,
         lineTotal,
         ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
+        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount } : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;
@@ -1251,10 +1335,22 @@ export async function createOrdersFromCart(params: {
     const subtotal = Number(
       normalizedItems.reduce((sum, row) => sum + (row.lineTotal as number), 0).toFixed(2)
     );
+    const mrpSubtotal = Number(
+      groupItems.reduce((sum, item) => {
+        const mrp = (item.originalPrice && item.originalPrice > 0) ? item.originalPrice : item.price;
+        return sum + mrp * item.qty;
+      }, 0).toFixed(2)
+    );
     const totalSavings = Number(
       groupItems.reduce((sum, item) => {
         if (!item.discountPct || !item.originalPrice) return sum;
         return sum + (item.originalPrice - item.price) * item.qty;
+      }, 0).toFixed(2)
+    );
+    const totalGst = Number(
+      normalizedItems.reduce((sum, row) => {
+        const gstAmt = (row.gstAmount as number | undefined) ?? 0;
+        return sum + gstAmt * (row.qty as number);
       }, 0).toFixed(2)
     );
 
@@ -1273,7 +1369,7 @@ export async function createOrdersFromCart(params: {
       fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
     ]);
 
-    const grandTotal = Number((subtotal + deliveryCharge).toFixed(2));
+    const grandTotal = Number((subtotal + deliveryCharge + totalGst).toFixed(2));
     const sellerName = groupItems[0]?.sellerName ?? "";
 
     // Derive invoiceNumber from the document ref ID (generated before addDoc)
@@ -1290,8 +1386,10 @@ export async function createOrdersFromCart(params: {
       ...(sellerName ? { sellerName } : {}),
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
+      mrpSubtotal,
       subtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
+      ...(totalGst > 0 ? { totalGst } : {}),
       deliveryCharge,
       grandTotal,
       totalWeightKg,
@@ -2082,6 +2180,7 @@ export async function adminAssignProductToSeller(
       storeName: sellerName,
       stockLevel: 'In Stock',
       sellingPrice: Number(src.price ?? 0),
+      isOnline: src.isOnline === true || src.sellMode === 'online_delivery',
     }],
     assignedByAdmin: adminUid,
     assignedAt: now,
@@ -2140,22 +2239,15 @@ export async function adminRemoveAssignment(
   adminUid: string,
 ): Promise<void> {
   const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'products', copyProductId), { isActive: false, updatedAt: now });
 
-  // Fetch all inventory records for this product copy before we start the batch
   const invSnap = await getDocs(query(
     collection(db, 'inventory'),
     where('productId', '==', copyProductId),
   ));
+  invSnap.forEach(d => batch.update(d.ref, { isAvailable: false, updatedAt: now }));
 
-  const batch = writeBatch(db);
-
-  // Hard-delete the product copy — removes it from the seller's inventory dashboard
-  batch.delete(doc(db, 'products', copyProductId));
-
-  // Hard-delete every inventory record linked to this product copy
-  invSnap.forEach(d => batch.delete(d.ref));
-
-  // Log the admin action
   batch.set(doc(collection(db, 'adminLogs')), {
     action: 'admin_remove_assignment',
     copyProductId,
@@ -2165,26 +2257,8 @@ export async function adminRemoveAssignment(
     performedBy: adminUid,
     createdAt: now,
   });
-
   await batch.commit();
-
-  // Fire-and-forget: also delete subcollection mirror docs keyed by seller phone
-  (async () => {
-    try {
-      const { deleteDoc, doc: wDoc } = await import('firebase/firestore');
-      // Delete from retailers/{sellerPhone}/inventory/{inventoryId} for each inventory doc
-      const deleteOps: Promise<void>[] = [];
-      if (sellerPhone) {
-        invSnap.docs.forEach(d => {
-          deleteOps.push(deleteDoc(wDoc(db, `retailers/${sellerPhone}/inventory/${d.id}`)).catch(() => {}));
-        });
-        deleteOps.push(deleteDoc(wDoc(db, `retailers/${sellerPhone}/products/${copyProductId}`)).catch(() => {}));
-      }
-      await Promise.all(deleteOps);
-    } catch { /* non-critical */ }
-  })();
 }
-
 
 /**
  * Updates a single seller's assignment pricing/stock from the admin Products tab.
@@ -2193,18 +2267,10 @@ export async function adminRemoveAssignment(
  */
 export async function adminUpdateAssignmentPricing(
   copyProductId: string,
-  patch: { sellingPrice: number; stockQuantity: number; variants?: { unit: string; price: number; stock?: number }[] },
+  patch: { sellingPrice: number; stockQuantity: number },
 ): Promise<void> {
   const now = serverTimestamp();
-
-  let sellingPrice = patch.sellingPrice;
-  let stockQuantity = patch.stockQuantity;
-  if (patch.variants && patch.variants.length > 0) {
-    sellingPrice = patch.variants[0].price;
-    stockQuantity = typeof patch.variants[0].stock === 'number' ? patch.variants[0].stock : 0;
-  }
-
-  const inStock = stockQuantity > 0;
+  const inStock = patch.stockQuantity > 0;
   const stockLabel = inStock ? 'In Stock' : 'Out of Stock';
 
   const pRef = doc(db, 'products', copyProductId);
@@ -2212,32 +2278,28 @@ export async function adminUpdateAssignmentPricing(
   const data = (pSnap.exists() ? pSnap.data() : {}) as Record<string, any>;
   const av = Array.isArray(data.availability) && data.availability.length
     ? data.availability.map((a: any, i: number) =>
-        i === 0 ? { ...a, sellingPrice: sellingPrice, stockLevel: stockLabel } : a)
+        i === 0 ? { ...a, sellingPrice: patch.sellingPrice, stockLevel: stockLabel } : a)
     : [{
         storeId: data.ownerId ?? data.retailerId ?? null,
         storePhone: data.retailerPhone ?? data.ownerPhone ?? null,
         storeName: data.store ?? null,
         stockLevel: stockLabel,
-        sellingPrice: sellingPrice,
+        sellingPrice: patch.sellingPrice,
       }];
 
-  const updatePayload: Record<string, any> = {
-    price: sellingPrice,
+  await updateDoc(pRef, {
+    price: patch.sellingPrice,
     stock: stockLabel,
     availability: av,
     updatedAt: now,
-  };
-  if (patch.variants) {
-    updatePayload.variants = patch.variants;
-  }
-  await updateDoc(pRef, updatePayload);
+  });
 
   const invSnap = await getDocs(query(collection(db, 'inventory'), where('productId', '==', copyProductId)));
   if (!invSnap.empty) {
     const batch = writeBatch(db);
     invSnap.forEach(d => batch.update(d.ref, {
-      sellingPrice: sellingPrice,
-      stockQuantity: stockQuantity,
+      sellingPrice: patch.sellingPrice,
+      stockQuantity: patch.stockQuantity,
       isAvailable: inStock,
       updatedAt: now,
     }));

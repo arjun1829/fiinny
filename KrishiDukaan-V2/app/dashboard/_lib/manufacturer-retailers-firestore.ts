@@ -841,7 +841,6 @@ export async function activateRetailerOnProductAssignment(
         })
         .map((d) =>
           updateDoc(d.ref, {
-            onboardingStatus: "active",
             assignedSeat: true,
             seatAssignedAt: now,
             updatedAt: now,
@@ -851,7 +850,6 @@ export async function activateRetailerOnProductAssignment(
 
     if (manufacturerPhone && retailerPhone) {
       await syncRetailerMirror(manufacturerPhone, retailerPhone, {
-        onboardingStatus: "active",
         assignedSeat: true,
         seatAssignedAt: now,
       });

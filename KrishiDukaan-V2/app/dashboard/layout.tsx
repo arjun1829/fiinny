@@ -50,9 +50,8 @@ export default function DashboardLayout({
   // Pure function — only calls the stable setProfileIncomplete setter
   const applyCompletion = useCallback((profile: any) => {
     const hasBusinessName = !!String(profile?.businessName ?? "").trim();
-    const hasPhone       = !!String(profile?.phone       ?? "").trim();
-    const hasCity        = !!String(profile?.city        ?? "").trim();
-    setProfileIncomplete(!hasBusinessName || !hasPhone || !hasCity);
+    const hasCity         = !!String(profile?.city         ?? "").trim();
+    setProfileIncomplete(!hasBusinessName || !hasCity);
   }, []);
 
   // Auth guard — runs once on mount
@@ -105,11 +104,10 @@ export default function DashboardLayout({
     }
   }, [pathname, uidState, applyCompletion]);
 
-  // Gate: redirect to profile page when incomplete and not already there
+  // Route-level guard — redirect incomplete profiles back to profile page.
   useEffect(() => {
-    if (loading) return;
-    if (profileIncomplete && pathname !== '/dashboard/profile') {
-      router.replace('/dashboard/profile');
+    if (!loading && profileIncomplete && pathname !== '/dashboard/profile') {
+      router.push('/dashboard/profile');
     }
   }, [loading, profileIncomplete, pathname, router]);
 
@@ -122,21 +120,15 @@ export default function DashboardLayout({
 
   const isOnProfilePage = pathname === '/dashboard/profile';
 
-  const profileBanner = profileIncomplete && !isOnProfilePage ? (
-    <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span className="text-amber-500 text-lg shrink-0">⚠</span>
-        <p className="text-sm font-semibold text-amber-800 leading-snug">
-          Complete your profile to continue.{' '}
-          <span className="font-normal text-amber-700">Business name, contact number, and location are required.</span>
-        </p>
-      </div>
-      <Link
-        href="/dashboard/profile"
-        className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-colors whitespace-nowrap"
-      >
-        Complete Profile →
-      </Link>
+  // Banner shows only on the profile page — on all other pages, the route guard above
+  // redirects the user back here, so they never see the banner elsewhere.
+  const profileBanner = profileIncomplete && isOnProfilePage ? (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center gap-2.5">
+      <span className="text-amber-500 text-lg shrink-0">⚠</span>
+      <p className="text-sm font-semibold text-amber-800 leading-snug">
+        Complete your profile to continue using the dashboard.{' '}
+        <span className="font-normal text-amber-700">Required: Business Name and Location.</span>
+      </p>
     </div>
   ) : null;
 

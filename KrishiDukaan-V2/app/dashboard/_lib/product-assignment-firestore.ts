@@ -242,52 +242,58 @@ export async function assignProductToRetailer(
 
 /**
  * Releases a product assignment.
- * Hard-deletes the retailer's product copy and inventory record(s), and releases
- * the seat listing. This ensures the product is fully removed from the retailer's
- * inventory dashboard (not just deactivated/hidden).
+ * Sets the seat listing to "released" and deactivates the retailer's product copy (if it
+ * still exists — the retailer may have already deleted it, in which case we skip that step
+ * so the batch doesn't fail with a NOT_FOUND error and leave the seat unreleased).
  */
 export async function removeProductAssignment(seatListingId: string): Promise<void> {
   const listingSnap = await getDoc(doc(db, SEAT_LISTINGS, seatListingId));
   if (!listingSnap.exists()) throw new Error("Seat listing not found.");
   const data = listingSnap.data() as Record<string, unknown>;
 
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  // Release the seat — this MUST succeed regardless of product copy state.
+  batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
+
   const retailerProductId = String(data.productId ?? "");
   const retailerDocId     = String(data.retailerDocId ?? "");
 
-  // Fetch inventory records before the batch
-  const invSnap = retailerProductId
-    ? await getDocs(query(collection(db, "inventory"), where("productId", "==", retailerProductId)))
-    : null;
-
-  const now = serverTimestamp();
-  const batch = writeBatch(db);
-
-  // Release the seat listing
-  batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
-
+  // Deactivate the retailer's product copy only if it still exists.
+  // If the retailer already removed it via their inventory, the doc is gone and
+  // batch.update would throw NOT_FOUND, aborting the entire batch and leaving
+  // the seat permanently locked.
   if (retailerProductId) {
-    // Hard-delete the product copy — fully removes it from the retailer's inventory
-    batch.delete(doc(db, "products", retailerProductId));
-
-    // Hard-delete all inventory records for this product copy
-    invSnap?.docs.forEach(d => batch.delete(d.ref));
+    try {
+      const copySnap = await getDoc(doc(db, "products", retailerProductId));
+      if (copySnap.exists()) {
+        batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
+      }
+      // Also deactivate the inventory record for the copy when present.
+      const invSnap = await getDocs(
+        query(collection(db, "inventory"), where("productId", "==", retailerProductId))
+      );
+      invSnap.docs.forEach((d) => {
+        batch.update(d.ref, { isAvailable: false, updatedAt: now });
+      });
+    } catch { /* product already gone — seat release still proceeds */ }
   }
 
   await batch.commit();
 
   // Remove the retailer's public store from the manufacturer product's availability array.
+  // retailerDocId is the stable public store document used in availability[].
   const availabilityStoreId = retailerDocId;
   if (retailerProductId && availabilityStoreId) {
     try {
       const copySnap = await getDoc(doc(db, "products", retailerProductId));
-      // Product was just deleted, so get manufacturerProductId from the listing data
-      const mfgProductId = (data.manufacturerProductId as string)
-        || (copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "");
+      const mfgProductId = copySnap.exists() ? String(copySnap.data()?.manufacturerProductId ?? "") : "";
       if (mfgProductId) {
         const mfgSnap = await getDoc(doc(db, "products", mfgProductId));
         if (mfgSnap.exists()) {
           const mfgData = mfgSnap.data() as Record<string, unknown>;
           const avArr = Array.isArray(mfgData.availability) ? mfgData.availability : [];
+          // Find the exact entry to remove (may be old shape without storePhone/storeName)
           const entryToRemove = avArr.find((e: Record<string, unknown>) => e.storeId === availabilityStoreId);
           if (entryToRemove) {
             await updateDoc(doc(db, "products", mfgProductId), {
@@ -298,27 +304,7 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
       }
     } catch { /* non-critical — product may already be deleted */ }
   }
-
-  // Fire-and-forget: clean up subcollection mirror docs
-  if (invSnap && invSnap.docs.length > 0) {
-    (async () => {
-      try {
-        const retailerPhone = String(data.retailerPhone ?? data.retailerDocId ?? "");
-        if (!retailerPhone) return;
-        const { deleteDoc: dDoc, doc: wDoc } = await import("firebase/firestore");
-        const ops: Promise<void>[] = [];
-        invSnap.docs.forEach(d => {
-          ops.push(dDoc(wDoc(db, `retailers/${retailerPhone}/inventory/${d.id}`)).catch(() => {}));
-        });
-        if (retailerProductId) {
-          ops.push(dDoc(wDoc(db, `retailers/${retailerPhone}/products/${retailerProductId}`)).catch(() => {}));
-        }
-        await Promise.all(ops);
-      } catch { /* non-critical */ }
-    })();
-  }
 }
-
 
 /** All assignments made by a manufacturer (all statuses). */
 export async function fetchAssignmentsForManufacturer(
@@ -589,24 +575,46 @@ export async function bulkAssignProductsToRetailer(
 /** All assignment listings received by a retailer (assigned to them by manufacturers). */
 export async function fetchAssignmentsForRetailer(
   retailerId: string,
+  retailerDocId?: string | null,
 ): Promise<RetailerSeatListing[]> {
-  const q = query(
-    collection(db, SEAT_LISTINGS),
-    where("retailerId", "==", retailerId),
-    where("listingType", "==", "assigned"),
-  );
-  const snap = await getDocs(q);
-  return snap.docs
-    .map((d) => {
+  // Query by Auth UID (post-signup assignments) and optionally also by phone/docId
+  // (pre-signup assignments where retailerId may be null or not yet backfilled).
+  const queries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
+    getDocs(query(
+      collection(db, SEAT_LISTINGS),
+      where("retailerId", "==", retailerId),
+      where("listingType", "==", "assigned"),
+    )),
+  ];
+
+  if (retailerDocId && retailerDocId !== retailerId) {
+    queries.push(getDocs(query(
+      collection(db, SEAT_LISTINGS),
+      where("retailerDocId", "==", retailerDocId),
+      where("listingType", "==", "assigned"),
+    )));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const results: RetailerSeatListing[] = [];
+
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
       const raw = d.data() as Record<string, unknown>;
       const status = raw.status;
-      return {
+      results.push({
         id: d.id,
         ownerId: String(raw.ownerId ?? ""),
         ownerType: (raw.ownerType === "retailer" ? "retailer" : "manufacturer") as "manufacturer" | "retailer",
         manufacturerId: raw.manufacturerId ? String(raw.manufacturerId) : null,
+        manufacturerPhone: raw.manufacturerPhone ? String(raw.manufacturerPhone) : null,
+        ownerPhone: raw.ownerPhone ? String(raw.ownerPhone) : null,
         retailerDocId: raw.retailerDocId ? String(raw.retailerDocId) : null,
         retailerId: raw.retailerId ? String(raw.retailerId) : null,
+        retailerPhone: raw.retailerPhone ? String(raw.retailerPhone) : null,
         productId: String(raw.productId ?? ""),
         manufacturerProductId: raw.manufacturerProductId ? String(raw.manufacturerProductId) : null,
         listingType: "assigned" as const,
@@ -614,7 +622,9 @@ export async function fetchAssignmentsForRetailer(
         assignedAt: raw.assignedAt as RetailerSeatListing["assignedAt"],
         expiresAt: raw.expiresAt as RetailerSeatListing["expiresAt"],
         releasedAt: raw.releasedAt ? (raw.releasedAt as RetailerSeatListing["releasedAt"]) : null,
-      } satisfies RetailerSeatListing;
-    })
-    .sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
+      });
+    }
+  }
+
+  return results.sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
 }

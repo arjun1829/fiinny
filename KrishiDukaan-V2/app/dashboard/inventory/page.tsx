@@ -6,8 +6,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { InventoryHealthCards } from "../_components/inventory-health-cards";
-import { InventoryManagementTable } from "../_components/inventory-management-table";
-import { ManufacturerCatalogueTable } from "../_components/manufacturer-catalogue-table";
+import { InventoryTable } from "../_components/inventory-table";
 import { AddProductInventoryForm } from "../_components/add-product-inventory-form";
 import { BulkProductUpload } from "../_components/bulk-product-upload";
 import {
@@ -16,7 +15,6 @@ import {
   activateProduct,
   deactivateProduct,
   deleteProduct,
-  deleteAssignedProductFromRetailer,
   toggleAssignedProductActive,
 } from "../_lib/inventory-firestore";
 import {
@@ -29,10 +27,10 @@ import {
   autoAcceptPendingInvitesForPhone,
   fetchLinkedRetailerDocIds,
 } from "../../lib/invite/invite-acceptance-service";
-import type { InventoryRow, ManufacturerProductRow } from "../_types/inventory";
+import type { InventoryRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { CheckCircle2, KeyRound, Loader2, PlusCircle, Search, X, Zap } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Plus, PlusCircle, Search, X, Zap } from "lucide-react";
 import Link from "next/link";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 import { useI18n } from "../../i18n/I18nContext";
@@ -214,11 +212,13 @@ export default function InventoryPage() {
 
   const [profile, setProfile] = useState<any>(null);
   const [role, setRole] = useState<UserRole>("retailer");
+  const [accountDeliveryEnabled, setAccountDeliveryEnabled] = useState<boolean | undefined>(undefined);
   const [seatStats, setSeatStats] = useState<SeatStats>(DEFAULT_STATS);
 
-  // Inventory state
-  const [retailerRows, setRetailerRows] = useState<InventoryRow[]>([]);
-  const [catalogueRows, setCatalogueRows] = useState<ManufacturerProductRow[]>([]);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+
+  // Inventory state — single unified row list for both roles
+  const [rows, setRows] = useState<InventoryRow[]>([]);
   const [search, setSearch] = useState("");
 
   const [magicStatus, setMagicStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -234,11 +234,9 @@ export default function InventoryPage() {
       ]);
       setSeatStats(computeSeatStats(subs, listings));
 
-      // Fetch inventory based on role
+      // Fetch inventory based on role — both produce the unified InventoryRow[]
       if (resolvedRole === "manufacturer") {
-        const rows = await fetchManufacturerCatalogueRows(uid, rPhone);
-        setCatalogueRows(rows);
-        setRetailerRows([]);
+        setRows(await fetchManufacturerCatalogueRows(uid));
       } else {
         // Find ALL linked retailerDocIds to be safe (if backfill failed but invite is active)
         const linkedIds = await fetchLinkedRetailerDocIds(uid);
@@ -277,13 +275,11 @@ export default function InventoryPage() {
         });
         const allRetailerRows = Array.from(deduped.values());
         allRetailerRows.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-        setRetailerRows(allRetailerRows);
-        setCatalogueRows([]);
+        setRows(allRetailerRows);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load inventory.");
-      setRetailerRows([]);
-      setCatalogueRows([]);
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -296,8 +292,7 @@ export default function InventoryPage() {
         setUserId(null);
         setProfile(null);
         setSeatStats(DEFAULT_STATS);
-        setRetailerRows([]);
-        setCatalogueRows([]);
+        setRows([]);
         setLoading(false);
         return;
       }
@@ -308,6 +303,7 @@ export default function InventoryPage() {
         const resolvedRole: UserRole =
           profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
         setRole(resolvedRole);
+        setAccountDeliveryEnabled(!!(profileData as any)?.onlineDelivery);
         let rDocId = profileData?.retailerDocId;
 
         if (resolvedRole === "retailer") {
@@ -355,7 +351,7 @@ export default function InventoryPage() {
     return () => unsub();
   }, [load, urlInviteCode]);
 
-  const health = useMemo(() => computeHealth(retailerRows), [retailerRows]);
+  const health = useMemo(() => computeHealth(rows), [rows]);
 
   const refresh = useCallback(async () => {
     if (userId) {
@@ -364,67 +360,30 @@ export default function InventoryPage() {
     }
   }, [userId, role, load]);
 
-  // ─── Manufacturer toggle (seat-aware) ────────────────────────────────────────
-  const handleMfrToggleActive = useCallback(async (
+  // ─── Toggle active (seat-aware, role-aware) ──────────────────────────────────
+  const handleToggleActive = useCallback(async (
     productId: string,
     inventoryId: string | undefined,
     isActive: boolean,
+    isAssigned?: boolean,
   ) => {
     if (!userId) return;
-    if (isActive) {
+    if (isAssigned) {
+      // Assigned products bypass subscription seat management — retailer doesn't
+      // own a seat for these; just flip isActive/isAvailable directly.
+      await toggleAssignedProductActive(productId, inventoryId, !isActive);
+    } else if (isActive) {
       await deactivateProduct(productId, userId, inventoryId);
     } else {
-      await activateProduct(productId, userId, "manufacturer", inventoryId);
+      await activateProduct(productId, userId, role, inventoryId);
     }
     await refresh();
-  }, [userId, refresh]);
+  }, [userId, role, refresh]);
 
-  // ─── Retailer toggle + delete (seat-aware) ───────────────────────────────────
-  const handleRetailerToggleActive = useCallback(async (
+  // ─── Delete (own products, both roles) ───────────────────────────────────────
+  const handleDelete = useCallback(async (
     productId: string,
     inventoryId: string,
-    isActive: boolean,
-    isAssigned?: boolean,
-  ) => {
-    if (!userId) return;
-    if (isAssigned) {
-      // Assigned products don't consume the retailer's own seats — just flip visibility.
-      await toggleAssignedProductActive(productId, inventoryId, !isActive);
-    } else {
-      if (isActive) {
-        await deactivateProduct(productId, userId, inventoryId);
-      } else {
-        await activateProduct(productId, userId, "retailer", inventoryId);
-      }
-    }
-    await refresh();
-  }, [userId, refresh]);
-
-  const handleRetailerDelete = useCallback(async (
-    productId: string,
-    inventoryId: string,
-    isAssigned?: boolean,
-  ) => {
-    if (!userId) return;
-    if (isAssigned) {
-      // For assigned products: release the manufacturer's seat, clean up availability[]
-      await deleteAssignedProductFromRetailer(
-        productId,
-        inventoryId,
-        profile?.retailerDocId ?? null,
-        profile?.phone ?? null,
-      );
-    } else {
-      // Own products: release retailer's own seat listing and delete
-      await deleteProduct(productId, userId, inventoryId);
-    }
-    await refresh();
-  }, [userId, profile, refresh]);
-
-  // ─── Manufacturer delete (own catalogue products) ─────────────────────────────
-  const handleMfrDelete = useCallback(async (
-    productId: string,
-    inventoryId: string | undefined,
   ) => {
     if (!userId) return;
     await deleteProduct(productId, userId, inventoryId);
@@ -456,65 +415,66 @@ export default function InventoryPage() {
 
   return (
     <>
-      {/* Page header + seat card side-by-side (seat card hidden on mobile) */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <PageHeader
-          title={t('inventoryTitle')}
-          description={
-            isManufacturer
-              ? t('inventoryDescMfg')
-              : t('inventoryDescRetailer')
-          }
-          helperKey="dashInventory"
-        />
-        <div className="hidden sm:block">
+      {/* ── Header row: title (left) + seat card (right) ────────────────────── */}
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div className="flex-1 min-w-0">
+          <PageHeader
+            title={t('inventoryTitle')}
+            description={
+              isManufacturer ? t('inventoryDescMfg') : t('inventoryDescRetailer')
+            }
+            helperKey="dashInventory"
+          />
+        </div>
+
+        {/* Desktop: seat card in top-right */}
+        <div className="hidden sm:flex items-start shrink-0">
           <SeatInfoCard stats={seatStats} />
         </div>
+
+        {/* Mobile: compact add button inline with header */}
+        <button
+          type="button"
+          onClick={() => setAddModalOpen(true)}
+          className="sm:hidden inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95 self-start mt-1"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Product
+        </button>
       </div>
 
+      {/* ── Desktop: Add Product button — prominent, below heading ───────────── */}
+      <div className="hidden sm:flex items-center gap-3 mb-6">
+        <button
+          type="button"
+          onClick={() => setAddModalOpen(true)}
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95 transition-all"
+        >
+          <Plus className="h-4 w-4" /> Add Product
+        </button>
+      </div>
+
+      {/* Status messages */}
       {magicStatus && (
-        <div className={`mb-6 flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium ${
+        <div className={`mb-4 flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium ${
           magicStatus.type === "success" ? "bg-primary/10 text-primary border border-primary/20" : "bg-red-50 text-red-700 border border-red-200"
         }`}>
           {magicStatus.type === "success" && <CheckCircle2 className="h-4 w-4 shrink-0" />}
           {magicStatus.message}
         </div>
       )}
-
-      {error ? (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
-      ) : null}
-
-      {/* Retailer-only: invite code sync + health cards */}
-      {!isManufacturer && userId && (
-        <>
-          <InviteCodeSync uid={userId} onSynced={refresh} />
-          <InventoryHealthCards
-            inStock={health.inStock}
-            lowStock={health.lowStock}
-            outOfStock={health.outOfStock}
-            score={health.score}
-            label={health.label}
-          />
-        </>
       )}
 
-      {/* Product table */}
-      <section className="mt-8" aria-label="Inventory list">
+      {/* ── Product list ────────────────────────────────────────────────────── */}
+      <section aria-label="Inventory list">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-on-surface">
-              {isManufacturer ? t('yourCatalogue') : t('yourInventory')}
-            </h2>
-            <p className="mt-0.5 text-sm text-on-surface-variant">
-              {isManufacturer
-                ? t('catalogueDesc')
-                : t('inventoryListDesc')}
-            </p>
-          </div>
-          {/* Search bar */}
+          <h2 className="text-base font-semibold text-on-surface">
+            {isManufacturer ? t('yourCatalogue') : t('yourInventory')}
+          </h2>
+          {/* Search */}
           <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 w-full sm:w-64">
             <Search className="h-4 w-4 text-outline shrink-0" />
             <input
@@ -531,69 +491,113 @@ export default function InventoryPage() {
             )}
           </div>
         </div>
-        <div>
-          {loading ? (
-            <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-            </div>
-          ) : isManufacturer ? (
-            <ManufacturerCatalogueTable
-              rows={catalogueRows}
-              onRefresh={refresh}
-              onToggleActive={handleMfrToggleActive}
-              onDelete={handleMfrDelete}
-            />
-          ) : (
-            <InventoryManagementTable
-              rows={retailerRows.filter(r =>
-                !search || r.productName.toLowerCase().includes(search.toLowerCase())
-              )}
-              onUpdated={refresh}
-              userId={userId}
-              onToggleActive={handleRetailerToggleActive}
-              onDelete={handleRetailerDelete}
-            />
-          )}
-        </div>
+
+        {loading ? (
+          <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          </div>
+        ) : (
+          <InventoryTable
+            role={role}
+            userId={userId}
+            accountDeliveryEnabled={accountDeliveryEnabled}
+            rows={rows.filter(r =>
+              !search || r.productName.toLowerCase().includes(search.toLowerCase())
+            )}
+            onUpdated={refresh}
+            onToggleActive={handleToggleActive}
+            onDelete={handleDelete}
+          />
+        )}
       </section>
 
-      {/* Add product form — both manufacturers and retailers can now add products */}
-      <section className="mt-8 flex flex-col gap-4" aria-label="Add product">
-        <AddProductInventoryForm
-          userId={userId}
-          role={role}
-          disabled={loading}
-          onCreated={refresh}
-          seatStats={seatStats}
-          storeName={profile?.shopName}
-        />
-        <BulkProductUpload
-          userId={userId}
-          role={role}
-          seatStats={seatStats}
-          onDone={refresh}
-          storeName={profile?.shopName}
-        />
-      </section>
+      {/* ── Secondary widgets (below the fold) ──────────────────────────────── */}
 
-      {/* Retailer: show upgrade CTA if no seats and no subscription (desktop only) */}
+      {/* Retailer invite code — moved below product list */}
+      {!isManufacturer && userId && (
+        <section className="mt-8">
+          <InviteCodeSync uid={userId} onSynced={refresh} />
+        </section>
+      )}
+
+      {/* Health cards — desktop only (hidden on mobile per UX decision) */}
+      {!isManufacturer && (
+        <section className="mt-6 hidden sm:block">
+          <InventoryHealthCards
+            inStock={health.inStock}
+            lowStock={health.lowStock}
+            outOfStock={health.outOfStock}
+            score={health.score}
+            label={health.label}
+          />
+        </section>
+      )}
+
+      {/* Retailer upgrade CTA — desktop only */}
       {!isManufacturer && seatStats.available === 0 && seatStats.totalPurchased === 0 && (
-        <section className="mt-8 hidden sm:block">
+        <section className="mt-6 hidden sm:block">
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low px-5 py-6 text-center">
-            <p className="text-sm font-semibold text-on-surface mb-1">
-              {t('noActiveSubMsg')}
-            </p>
-            <p className="text-xs text-on-surface-variant mb-4">
-              {t('purchaseSeatsStart')}
-            </p>
-            <Link
-              href="/dashboard/upgrade"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95"
-            >
+            <p className="text-sm font-semibold text-on-surface mb-1">{t('noActiveSubMsg')}</p>
+            <p className="text-xs text-on-surface-variant mb-4">{t('purchaseSeatsStart')}</p>
+            <Link href="/dashboard/upgrade" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-95">
               {t('buySeatsBtn')}
             </Link>
           </div>
         </section>
+      )}
+
+      {/* FAB — mobile only, opens add-product modal */}
+      <button
+        type="button"
+        onClick={() => setAddModalOpen(true)}
+        aria-label="Add product"
+        className="fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-xl hover:opacity-95 active:scale-95 transition-all sm:hidden"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {/* ── Add Product Modal ────────────────────────────────────────────────── */}
+      {addModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
+            onClick={() => setAddModalOpen(false)}
+          />
+          <div className="fixed inset-y-0 right-0 z-[61] flex w-full max-w-xl flex-col bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
+              <div>
+                <h2 className="text-base font-bold text-on-surface">Add Product</h2>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  {isManufacturer ? "Add to your catalogue" : "Add to your inventory"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddModalOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+              <AddProductInventoryForm
+                userId={userId}
+                role={role}
+                disabled={false}
+                onCreated={async () => { setAddModalOpen(false); await refresh(); }}
+                seatStats={seatStats}
+                storeName={profile?.shopName}
+              />
+              <BulkProductUpload
+                userId={userId}
+                role={role}
+                seatStats={seatStats}
+                onDone={async () => { setAddModalOpen(false); await refresh(); }}
+                storeName={profile?.shopName}
+              />
+            </div>
+          </div>
+        </>
       )}
     </>
   );

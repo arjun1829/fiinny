@@ -435,7 +435,7 @@ service cloud.firestore {
         // Allow retailer to read their own invite by phone (for auto-accept flow)
         phoneMatches(resource.data.retailerPhone)
       );
-      allow list: if isAuthed();
+      allow list: if true;
       allow create: if isAuthed() && (
         request.resource.data.manufacturerId == request.auth.uid
       );

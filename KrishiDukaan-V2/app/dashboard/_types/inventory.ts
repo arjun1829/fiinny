@@ -31,7 +31,13 @@ export interface ProductDoc {
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
 
-  /** Optional Product Insights fields */
+  /** GST fields */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+
+  /** Category-specific structured information (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields — backward compat only. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
@@ -89,27 +95,58 @@ export type DiscountUpdateInput = {
 
 export type StockStatus = "out_of_stock" | "low_stock" | "in_stock";
 
-/** Joined row for the retailer inventory table. */
+export type ProductVariant = { unit: string; price: number; stock?: number };
+
+/**
+ * Unified inventory row used by BOTH the manufacturer catalogue and the retailer
+ * inventory. It is a superset that carries everything the shared InventoryTable
+ * and the shared EditProductModal need, regardless of role.
+ *
+ * Role/source differences are expressed via fields (source, assignedByManufacturer,
+ * ownerId), never via separate row shapes.
+ */
 export interface InventoryRow {
-  inventoryId: string;
+  // ── Identity ──────────────────────────────────────────────────────────────
   productId: string;
+  /** Joined inventory doc id. "" when no inventory record exists yet. */
+  inventoryId: string;
+
+  // ── Display ───────────────────────────────────────────────────────────────
   productName: string;
   category: string;
   unit: string;
-  stockQuantity: number;
+  description: string;
+  image: string;
+  images: string[];
+  variants: ProductVariant[];
+
+  // ── Pricing & stock ───────────────────────────────────────────────────────
+  /** Base/list price (manufacturer catalogue price; equals sellingPrice for retailers). */
+  price: number;
+  /** Effective selling price from the inventory record. */
   sellingPrice: number;
+  stockQuantity: number;
   reorderThreshold: number;
   status: StockStatus;
+
+  // ── Delivery mode ─────────────────────────────────────────────────────────
+  sellMode: "online_delivery" | "offline_store_only";
+
+  // ── GST ───────────────────────────────────────────────────────────────────
+  gstApplicable: boolean;
+  gstRate: 0 | 5 | 12 | 18 | 28;
+
+  // ── Lifecycle / ownership ───────────────────────────────────────────────────
   isActive: boolean;
   assignedByManufacturer: boolean;
-  updatedAt: Date | null;
-  /** 'retailer_inventory' | 'manufacturer_assigned' */
-  source?: string;
-  /** UID or placeholder retailerDocId */
+  /** 'manufacturer_inventory' | 'retailer_inventory' | 'manufacturer_assigned' | ... */
+  source: string;
+  /** Owner UID (or placeholder retailerDocId for pending assignments). */
   ownerId?: string;
   originalProductId?: string | null;
+  updatedAt: Date | null;
 
-  // Discount fields
+  // ── Discount fields ─────────────────────────────────────────────────────────
   discountEnabled: boolean;
   discountType: "percentage" | "fixed_amount";
   discountPct: number;
@@ -121,48 +158,24 @@ export interface InventoryRow {
   // Bulk discount fields
   bulkDiscountEnabled: boolean;
   bulkDiscountTiers: BulkDiscountTier[];
-  /** All package variants for this product */
-  variants?: { unit: string; price: number; stock?: number }[];
-}
 
-/** Row for the manufacturer's catalogue table. */
-export interface ManufacturerProductRow {
-  productId: string;
-  inventoryId?: string;
-  productName: string;
-  category: string;
-  unit: string;
-  price: number;
-  description: string;
-  image: string;
-  images: string[];
-  variants: { unit: string; price: number; stock?: number }[];
-  stockQuantity: number;
-  source: string;
-  isActive: boolean;
-  updatedAt: Date | null;
-  originalProductId?: string | null;
-
-  /** Optional Product Insights fields */
+  // ── Category-specific info ────────────────────────────────────────────────────
+  /** Structured category info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;
   applicationDesc?: string;
   dosage?: string;
   bestForCrops?: string[];
-
-  // Discount fields
-  discountEnabled: boolean;
-  discountType: "percentage" | "fixed_amount";
-  discountPct: number;
-  discountFixedAmt: number;
-  discountStartDate: Date | null;
-  discountEndDate: Date | null;
-  effectiveDiscountPct: number;
-  effectiveDiscountAmt: number;
-  bulkDiscountEnabled: boolean;
-  bulkDiscountTiers: BulkDiscountTier[];
 }
+
+/**
+ * @deprecated Use {@link InventoryRow}. Kept as an alias so existing imports keep
+ * working after the manufacturer/retailer inventory unification.
+ */
+export type ManufacturerProductRow = InventoryRow;
 
 export function deriveStockStatus(
   stockQuantity: number,
