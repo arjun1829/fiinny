@@ -453,6 +453,34 @@ export async function enableOnlineDeliveryWithGst(
 }
 
 /**
+ * Immediately disables online delivery across all three Firestore collections
+ * (role collection, profiles mirror, and users doc). Mirrors the same writes
+ * that enableOnlineDeliveryWithGst makes, but sets onlineDelivery: false.
+ */
+export async function disableOnlineDelivery(
+  uid: string,
+  role: "retailer" | "manufacturer",
+): Promise<void> {
+  const phone = await phoneFromUid(uid);
+  const now = serverTimestamp();
+  const payload = { onlineDelivery: false, updatedAt: now };
+
+  if (role === "manufacturer") {
+    const docId = phone || uid;
+    await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
+  } else {
+    const rDocId = await retailerDocIdFromUid(uid);
+    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+  }
+
+  const profileDocId = phone || uid;
+  await setDoc(doc(db, "profiles", profileDocId), payload, { merge: true });
+
+  const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
+  await setDoc(userTarget, payload, { merge: true });
+}
+
+/**
  * Updates the GST number on an account where Online Delivery is already enabled.
  * GST cannot be cleared (set to empty) while delivery is active — callers must
  * validate that the supplied gstin is non-empty and valid before calling.

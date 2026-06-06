@@ -212,6 +212,7 @@ export default function InventoryPage() {
 
   const [profile, setProfile] = useState<any>(null);
   const [role, setRole] = useState<UserRole>("retailer");
+  const [accountDeliveryEnabled, setAccountDeliveryEnabled] = useState<boolean | undefined>(undefined);
   const [seatStats, setSeatStats] = useState<SeatStats>(DEFAULT_STATS);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -302,6 +303,7 @@ export default function InventoryPage() {
         const resolvedRole: UserRole =
           profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
         setRole(resolvedRole);
+        setAccountDeliveryEnabled(!!(profileData as any)?.onlineDelivery);
         let rDocId = profileData?.retailerDocId;
 
         if (resolvedRole === "retailer") {
@@ -498,6 +500,7 @@ export default function InventoryPage() {
           <InventoryTable
             role={role}
             userId={userId}
+            accountDeliveryEnabled={accountDeliveryEnabled}
             rows={rows.filter(r =>
               !search || r.productName.toLowerCase().includes(search.toLowerCase())
             )}

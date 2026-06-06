@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
-import { FeatureLocked } from "../_components/feature-locked";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
 import { generateInvoicePDF } from "../../utils/invoice-generator";
@@ -243,7 +242,6 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [sellerType, setSellerType] = useState<"retailer" | "manufacturer" | null>(null);
-  const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
@@ -275,8 +273,6 @@ export default function OrdersPage() {
       }
       const profile = await getUserProfile(user.uid);
       const role = profile?.role;
-      const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
-      setOnlineDelivery(hasOnlineDelivery);
       if (role === "retailer" || role === "manufacturer") {
         setUid(user.uid);
         setSellerType(role);
@@ -285,11 +281,7 @@ export default function OrdersPage() {
           phone: String((profile as any)?.phone ?? ""),
           gstin: String((profile as any)?.gstin ?? ""),
         });
-        if (hasOnlineDelivery) {
-          await load(user.uid, role);
-        } else {
-          setLoading(false);
-        }
+        await load(user.uid, role);
       } else {
         setUid(null);
         setSellerType(null);
@@ -346,8 +338,6 @@ export default function OrdersPage() {
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
           {t('signInForOrders')}
         </p>
-      ) : onlineDelivery === false ? (
-        <FeatureLocked />
       ) : loading ? (
         <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

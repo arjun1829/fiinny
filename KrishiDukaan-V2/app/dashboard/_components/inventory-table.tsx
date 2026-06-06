@@ -21,6 +21,8 @@ type InventoryTableProps = {
   role: Role;
   userId?: string;
   disabled?: boolean;
+  /** When false, hides product-level delivery toggles (account-level delivery is OFF). */
+  accountDeliveryEnabled?: boolean;
   onUpdated: () => Promise<void> | void;
   /** Activate/deactivate a product. isAssigned=true bypasses seat management. */
   onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean, isAssigned?: boolean) => Promise<void>;
@@ -195,7 +197,7 @@ function SellModeToggleButton({
 // ─── Actions cell ───────────────────────────────────────────────────────────
 
 function ActionsCell({
-  row, dirty, saving, onSave, onEdit, onToggleDiscount, onDelete, onUpdated,
+  row, dirty, saving, onSave, onEdit, onToggleDiscount, onDelete, onUpdated, accountDeliveryEnabled,
 }: {
   row: InventoryRow;
   dirty: boolean;
@@ -205,6 +207,7 @@ function ActionsCell({
   onToggleDiscount: () => void;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
   onUpdated: () => Promise<void> | void;
+  accountDeliveryEnabled?: boolean;
 }) {
   const { t } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -266,8 +269,10 @@ function ActionsCell({
           {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
         </button>
 
-        {/* Online Delivery toggle — own and assigned products */}
-        <SellModeToggleButton row={row} onUpdated={onUpdated} />
+        {/* Online Delivery toggle — hidden when account-level delivery is OFF */}
+        {accountDeliveryEnabled !== false && (
+          <SellModeToggleButton row={row} onUpdated={onUpdated} />
+        )}
 
         {/* Delete (own) / Remove (assigned) */}
         {onDelete && (
@@ -314,6 +319,7 @@ function MobileProductCard({
   onDelete,
   userId,
   onUpdated,
+  accountDeliveryEnabled,
 }: {
   row: InventoryRow;
   onEdit: () => void;
@@ -323,6 +329,7 @@ function MobileProductCard({
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
   userId?: string;
   onUpdated: () => Promise<void> | void;
+  accountDeliveryEnabled?: boolean;
 }) {
   const { t } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -471,8 +478,10 @@ function MobileProductCard({
           </button>
         )}
 
-        {/* Online Delivery toggle — own and assigned */}
-        <SellModeToggleButton row={row} onUpdated={onUpdated} />
+        {/* Online Delivery toggle — hidden when account-level delivery is OFF */}
+        {accountDeliveryEnabled !== false && (
+          <SellModeToggleButton row={row} onUpdated={onUpdated} />
+        )}
 
         {/* Delete (own) / Remove (assigned) */}
         {onDelete && (
@@ -534,7 +543,7 @@ function MobileProductCard({
 // ─── Shared Inventory Table ─────────────────────────────────────────────────
 
 export function InventoryTable({
-  rows, role, userId, disabled, onUpdated, onToggleActive, onDelete,
+  rows, role, userId, disabled, accountDeliveryEnabled, onUpdated, onToggleActive, onDelete,
 }: InventoryTableProps) {
   const { t } = useI18n();
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
@@ -620,6 +629,7 @@ export function InventoryTable({
             onToggleActive={onToggleActive}
             onDelete={onDelete}
             onUpdated={onUpdated}
+            accountDeliveryEnabled={accountDeliveryEnabled}
           />
         ))}
       </div>
@@ -748,6 +758,7 @@ export function InventoryTable({
                         onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
                         onDelete={onDelete}
                         onUpdated={onUpdated}
+                        accountDeliveryEnabled={accountDeliveryEnabled}
                       />
                       {savedId === r.inventoryId && (
                         <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary">

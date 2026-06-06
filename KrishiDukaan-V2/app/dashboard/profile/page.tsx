@@ -15,6 +15,7 @@ import { auth, db, storage, requestRoleUpgrade } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { HelperIcon } from "../../../components/helpers";
 import {
+  disableOnlineDelivery,
   enableOnlineDeliveryWithGst,
   fetchDashboardUserRole,
   isValidGstinFormat,
@@ -180,10 +181,11 @@ function ProfilePageInner() {
   const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // GST inline flow state
-  const [gstFlowMode,   setGstFlowMode]   = useState<"pending-enable" | "update" | null>(null);
-  const [pendingGstin,  setPendingGstin]  = useState("");
-  const [gstSaving,     setGstSaving]     = useState(false);
-  const [gstInputError, setGstInputError] = useState<string | null>(null);
+  const [gstFlowMode,       setGstFlowMode]       = useState<"pending-enable" | "update" | null>(null);
+  const [pendingGstin,      setPendingGstin]      = useState("");
+  const [gstSaving,         setGstSaving]         = useState(false);
+  const [gstInputError,     setGstInputError]     = useState<string | null>(null);
+  const [disablingDelivery, setDisablingDelivery] = useState(false);
 
   const [mapLinkInput,     setMapLinkInput]     = useState("");
   const [resolvingMapLink, setResolvingMapLink] = useState(false);
@@ -843,25 +845,37 @@ function ProfilePageInner() {
               <HelperIcon size="xs" variant="ghost" side="right" textKey="dashSettings" ariaLabel="Online delivery help" />
             </h2>
             <p className="mb-4 text-xs text-on-surface-variant">{t('onlineDeliveryDesc')}</p>
-            <label className="flex items-center gap-3 cursor-pointer w-fit">
+            <label className={`flex items-center gap-3 w-fit ${disablingDelivery ? "opacity-60 pointer-events-none" : "cursor-pointer"}`}>
               <div className="relative">
                 <input
                   type="checkbox"
                   className="sr-only"
                   checked={onlineDelivery}
-                  onChange={(e) => {
+                  disabled={disablingDelivery}
+                  onChange={async (e) => {
                     if (e.target.checked) {
                       setPendingGstin(form.gstin || "");
                       setGstFlowMode("pending-enable");
                       setGstInputError(null);
                     } else {
+                      if (!uid || !userRole) return;
                       cancelGstFlow();
-                      setOnlineDelivery(false);
+                      setDisablingDelivery(true);
+                      try {
+                        await disableOnlineDelivery(uid, userRole);
+                        setOnlineDelivery(false);
+                      } catch {
+                        setStatus({ type: "error", message: "Failed to disable Online Delivery. Please try again." });
+                      } finally {
+                        setDisablingDelivery(false);
+                      }
                     }
                   }}
                 />
                 <div className={`h-6 w-11 rounded-full transition-colors ${onlineDelivery ? "bg-primary" : "bg-surface-container-highest"}`} />
-                <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`} />
+                <div className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${onlineDelivery ? "translate-x-5" : ""}`}>
+                  {disablingDelivery && <Loader2 className="h-3 w-3 animate-spin text-outline absolute inset-1" />}
+                </div>
               </div>
               <span className="text-sm font-medium text-on-surface">{onlineDelivery ? t('enabledLabel') : t('disabledLabel')}</span>
             </label>

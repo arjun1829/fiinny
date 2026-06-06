@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Globe, MapPin, Weight, Plus, Trash2, Save,
-  Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info,
+  Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info, Lock,
 } from "lucide-react";
+import Link from "next/link";
 import { auth } from "../../firebase";
 import { getUserProfile } from "../../firebase";
 import {
@@ -15,7 +16,6 @@ import {
 import type { WeightSlab, CoverageType } from "../_types/delivery-settings";
 import { INDIAN_STATES } from "../_types/delivery-settings";
 import { PageHeader } from "./page-header";
-import { FeatureLocked } from "./feature-locked";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -404,7 +404,23 @@ export function DeliverySettingsPage() {
           title="Delivery Settings"
           description="Configure online delivery, charge slabs, and coverage for your products."
         />
-        <FeatureLocked />
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-16 text-center">
+          <div className="rounded-full bg-surface-container p-5">
+            <Lock className="h-9 w-9 text-on-surface-variant/40" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-on-surface">Online Delivery is currently disabled.</p>
+            <p className="mt-1.5 text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
+              Enable Online Delivery from your Profile to configure delivery coverage and delivery charges.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/profile"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-all"
+          >
+            Go to Profile
+          </Link>
+        </div>
       </div>
     );
   }
