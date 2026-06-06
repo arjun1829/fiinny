@@ -170,6 +170,11 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
       setError("Shop name and owner name are required.");
       return;
     }
+    const phoneDigits = phone.replace(/\D/g, "");
+    if (phoneDigits.length > 0 && phoneDigits.length !== 10) {
+      setError("Phone number must be exactly 10 digits.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -231,7 +236,18 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnPhoneLabel')}</span>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="10-digit mobile number"
+                  className={inputCls}
+                />
+                {phone.replace(/\D/g, "").length > 0 && phone.replace(/\D/g, "").length < 10 && (
+                  <p className="text-xs text-red-600 mt-0.5">Enter exactly 10 digits ({phone.replace(/\D/g, "").length}/10)</p>
+                )}
               </label>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnEmailLabel')}</span>
