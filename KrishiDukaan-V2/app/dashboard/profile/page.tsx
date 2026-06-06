@@ -614,8 +614,9 @@ function ProfilePageInner() {
       const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
       await setDoc(userTarget, {
         businessName: formToSave.businessName.trim(),
-        phone: formToSave.phone.trim(),
-        city: formToSave.city.trim(),
+        ownerName:    formToSave.ownerName.trim(),
+        phone:        formToSave.phone.trim(),
+        city:         formToSave.city.trim(),
         onlineDelivery,
         updatedAt: serverTimestamp(),
       }, { merge: true });
