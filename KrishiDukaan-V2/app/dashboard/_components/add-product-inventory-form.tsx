@@ -493,10 +493,15 @@ export function AddProductInventoryForm({
 
   const applyAutofill = (product: SearchResult) => {
     setName(product.name);
-    const cat = product.category || CATEGORIES[0];
-    const isKnown = isStandardCategory(cat);
-    setCategory(isKnown ? cat : "Other");
-    setCustomCategory(isKnown ? "" : cat);
+    const rawCat = (product.category || "").trim();
+    // Case-insensitive match against the canonical category list.
+    // Firestore may store the value in any case (e.g. "pesticides" vs "Pesticides").
+    const canonicalCat = CATEGORIES.find(
+      (c) => c.toLowerCase() === rawCat.toLowerCase(),
+    );
+    const isKnown = Boolean(canonicalCat) && canonicalCat !== "Other";
+    setCategory(isKnown ? canonicalCat! : "Other");
+    setCustomCategory(isKnown ? "" : rawCat);
     setDescription(product.description || "");
     setExistingProductId(product.id);
 

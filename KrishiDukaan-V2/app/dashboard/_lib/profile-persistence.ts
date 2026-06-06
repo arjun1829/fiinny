@@ -120,22 +120,29 @@ export async function loadProfileState(
 ): Promise<LoadedProfileState> {
   const col = role === "manufacturer" ? "manufacturers" : "retailers";
 
-  // For manufacturers: try phone-keyed doc first (new schema), fall back to uid-keyed (legacy)
-  let snap;
-  if (role === "manufacturer") {
-    const phone = await phoneFromUid(uid);
-    snap = phone ? await getDoc(doc(db, col, phone)) : null;
+  // Try phone-keyed doc first (new schema), fall back to uid-keyed (legacy) for both roles.
+  // Retailers are keyed by E164 phone in `retailers/` just like manufacturers — reading
+  // from retailers/{uid} would silently miss all data saved by saveRetailerProfile.
+  const phone = await phoneFromUid(uid);
+  let snap = phone ? await getDoc(doc(db, col, phone)) : null;
+  if (!snap?.exists()) {
+    // Also try retailerDocId from users/{phone}.retailerDocId (may differ from phone for legacy accounts)
+    if (role === "retailer") {
+      const rDocId = await retailerDocIdFromUid(uid);
+      if (rDocId && rDocId !== phone) {
+        const altSnap = await getDoc(doc(db, col, rDocId));
+        if (altSnap.exists()) snap = altSnap;
+      }
+    }
     if (!snap?.exists()) {
       snap = await getDoc(doc(db, col, uid));
     }
-  } else {
-    snap = await getDoc(doc(db, col, uid));
   }
 
   // Base empty form — try to pre-populate name/phone from users/{phone}
   let prefillName = "";
   let prefillPhone = "";
-  const phone = await phoneFromUid(uid);
+  // `phone` is already resolved above; no need to call phoneFromUid again.
   if (phone) {
     try {
       const userSnap = await getDoc(doc(db, "users", phone));
@@ -311,12 +318,13 @@ export async function saveManufacturerProfile(
   );
 
   // 3. Sync the minimum fields needed by the dashboard layout's profile-completeness
-  //    check to users/{phone} — that check reads businessName + phone + city.
+  //    check to users/{phone} — that check reads businessName + ownerName + city.
   const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
   await setDoc(
     userTarget,
     {
       businessName: form.businessName.trim(),
+      ownerName:    form.ownerName.trim(),
       city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
       updatedAt:    serverTimestamp(),
@@ -412,6 +420,7 @@ export async function saveRetailerProfile(
     rTarget,
     {
       businessName: form.businessName.trim(),
+      ownerName:    form.ownerName.trim(),
       city:         form.city.trim(),
       ...(trimmedEmail ? { email: trimmedEmail } : {}),
       updatedAt:    serverTimestamp(),

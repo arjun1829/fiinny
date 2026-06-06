@@ -36,12 +36,11 @@ function extractAddressFields(place: {
 export function EditRetailerModal({ row, onClose, onSaved }: {
   row: ManufacturerRetailerRow;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const [shopName,  setShopName]  = useState(row.shopName);
   const [ownerName, setOwnerName] = useState(row.ownerName);
-  const [phone,     setPhone]     = useState(row.retailerPhone);
   const [email,     setEmail]     = useState(row.retailerEmail);
 
   const [line1,    setLine1]    = useState(row.address?.line1    ?? "");
@@ -170,25 +169,21 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
       setError("Shop name and owner name are required.");
       return;
     }
-    const phoneDigits = phone.replace(/\D/g, "");
-    if (phoneDigits.length > 0 && phoneDigits.length !== 10) {
-      setError("Phone number must be exactly 10 digits.");
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
       await updateNetworkRetailer(row.id, row.retailerDocId, {
         shopName,
         ownerName,
-        phone,
+        phone: row.retailerPhone,
         email,
         address: { line1, city, state, pincode },
         geo,
       });
-      onSaved();
+      await onSaved();
       onClose();
     } catch (e) {
+      console.error("[EditRetailerModal] save failed:", e);
       setError(e instanceof Error ? e.message : "Failed to save.");
     } finally {
       setSaving(false);
@@ -234,21 +229,13 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
               </label>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className={labelCls}>
+              <div className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnPhoneLabel')}</span>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  placeholder="10-digit mobile number"
-                  className={inputCls}
-                />
-                {phone.replace(/\D/g, "").length > 0 && phone.replace(/\D/g, "").length < 10 && (
-                  <p className="text-xs text-red-600 mt-0.5">Enter exactly 10 digits ({phone.replace(/\D/g, "").length}/10)</p>
-                )}
-              </label>
+                <div className="rounded-xl border border-outline-variant/20 bg-surface-container-low/60 px-3 py-2.5 text-sm tabular-nums text-on-surface-variant">
+                  {row.retailerPhone || "—"}
+                </div>
+                <p className="text-[11px] text-on-surface-variant">Phone number cannot be changed after retailer creation.</p>
+              </div>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnEmailLabel')}</span>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
