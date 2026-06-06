@@ -350,10 +350,12 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
             </button>
           </div>
           {v.sizeAmount === "custom" && (
-            <input type="number" min={1} disabled={isDisabled}
+            <input type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
               placeholder="e.g. 750"
               className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 w-32"
-              value={v.customSize} onChange={(e) => setV(i, { customSize: e.target.value })} />
+              value={v.customSize}
+              onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { customSize: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
+              onBlur={(e) => { if (e.target.value === "" || Number(e.target.value) <= 0) setV(i, { customSize: "" }); }} />
           )}
         </div>
       )}
@@ -383,18 +385,25 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
           <span className="font-medium text-on-surface-variant">Price (₹) *</span>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-on-surface-variant">₹</span>
-            <input required type="number" min={1} step={0.01} disabled={isDisabled}
+            <input required type="text" inputMode="decimal" disabled={isDisabled}
               className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest pl-7 pr-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
               placeholder="0" value={v.price}
-              onChange={(e) => setV(i, { price: e.target.value })} />
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d.]/g, "");
+                const parts = raw.split(".");
+                const joined = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
+                setV(i, { price: joined.replace(/^0+(\d)/, "$1") });
+              }}
+              onBlur={(e) => { const n = parseFloat(e.target.value); setV(i, { price: !isNaN(n) && n > 0 ? String(n) : "" }); }} />
           </div>
         </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="font-medium text-on-surface-variant">Stock Qty *</span>
-          <input required type="number" min={0} disabled={isDisabled}
+          <input required type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
             className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             placeholder="0" value={v.stock}
-            onChange={(e) => setV(i, { stock: e.target.value })} />
+            onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { stock: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
+            onBlur={(e) => { const n = parseInt(e.target.value, 10); setV(i, { stock: isNaN(n) ? "0" : String(Math.max(0, n)) }); }} />
         </label>
       </div>
     </div>
