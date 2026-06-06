@@ -791,8 +791,8 @@ export default function App() {
   };
 
   const placeOrders = async (grandTotal?: number) => {
-    if (!user || userRole !== "customer") {
-      setCheckoutMessage("Please login with a customer account.");
+    if (!user) {
+      setCheckoutMessage("Please login to place an order.");
       return;
     }
     if (!cartItems.length) {
