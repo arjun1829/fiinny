@@ -48,6 +48,13 @@ export type MarketplaceProduct = {
     /** Product-level online delivery flag for this specific seller's listing.
      *  undefined means "unknown/legacy" — fall back to account-level storeOnlineMap check. */
     isOnline?: boolean;
+    /**
+     * This store's OWN per-package-size prices, mirrored from the seller's product copy.
+     * `sellingPrice` above is the base (variants[0]) price; this array carries every
+     * package size the store actually configured so the Product Detail view can show
+     * the correct price per selected variant and hide stores that don't stock a size.
+     */
+    variants?: { unit: string; price: number; stock?: number }[];
   }[];
 
   /** Lowest selling price across all stores that stock this product */

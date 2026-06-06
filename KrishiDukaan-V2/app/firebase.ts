@@ -445,6 +445,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
           isOnline: secondary.isOnline,
+          // Carry this store's own per-package-size prices so the detail view can
+          // resolve the correct price per selected variant (not just the base price).
+          variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
         });
       }
 
@@ -490,6 +493,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         // Carry the copy's isOnline into the existing entry so ProductDetailView
         // can use it for per-seller ordering eligibility.
         if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
+        // Mirror this store's own per-package-size prices onto the entry.
+        if (Array.isArray(copy.variants)) existing.variants = copy.variants;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -498,6 +503,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
           isOnline: copy.isOnline,
+          // Carry this store's own per-package-size prices so the detail view can
+          // resolve the correct price per selected variant (not just the base price).
+          variants: Array.isArray(copy.variants) ? copy.variants : undefined,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);

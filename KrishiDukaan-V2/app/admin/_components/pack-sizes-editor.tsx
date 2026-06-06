@@ -191,7 +191,7 @@ function VariantRow({ v, i, disabled, isOnly, setV, removeV }: {
             </button>
           </div>
           {v.sizeAmount === "custom" && (
-            <input type="number" min={1} disabled={disabled}
+            <input type="number" min={0} step="any" disabled={disabled}
               placeholder="e.g. 750"
               className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 w-32"
               value={v.customSize} onChange={(e) => setV(i, { customSize: e.target.value })} />
