@@ -920,9 +920,27 @@ export default function App() {
       let storePrice: number;
       let originalStorePrice: number | undefined;
       let storeDiscountPct = 0;
+
+      // Resolve the selected store's discount once — same key-resolution order used by
+      // StorePickerInline (uid → phone → store.id). Applied to whichever base price we pick
+      // below so variant adds carry the store's effective selling price (not the list price).
+      storeDiscountPct =
+        (sellerId && product.sellerDiscounts?.[sellerId])
+          ? product.sellerDiscounts[sellerId]
+          : (storePhone && product.sellerDiscounts?.[storePhone])
+            ? product.sellerDiscounts[storePhone]
+            : (store.id && product.sellerDiscounts?.[store.id])
+              ? product.sellerDiscounts[store.id]
+              : 0;
+
       if (variant && variant.price > 0) {
-        storePrice = variant.price;
+        // Variant (e.g. 250ml/500ml): apply the store discount to the variant's list price
+        // so the cart shows the store's effective selling price, matching "Change Store".
+        originalStorePrice = variant.price;
+        const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+        storePrice = finalPrice;
       } else if (price && price > 0) {
+        // Caller passed an already-resolved price (e.g. the store card's display price).
         storePrice = price;
       } else {
         const availability = product.availability?.find(
@@ -931,14 +949,6 @@ export default function App() {
         originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
           ? availability.sellingPrice
           : product.price;
-        storeDiscountPct =
-          (sellerId && product.sellerDiscounts?.[sellerId])
-            ? product.sellerDiscounts[sellerId]
-            : (storePhone && product.sellerDiscounts?.[storePhone])
-              ? product.sellerDiscounts[storePhone]
-              : (store.id && product.sellerDiscounts?.[store.id])
-                ? product.sellerDiscounts[store.id]
-                : 0;
         const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
         storePrice = finalPrice;
       }
@@ -972,7 +982,7 @@ export default function App() {
   }, []);
 
   // Buy Now: add to cart (auto-select first online store if available) + go to cart
-  const handleBuyNow = useCallback((product: MarketplaceProduct) => {
+  const handleBuyNow = useCallback((product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
     // Find first online-delivery store for this product
     const onlineStore = storesWithDistance.find((store) => {
       const storePhone = (store as any).phone as string | undefined;
@@ -990,10 +1000,10 @@ export default function App() {
     });
 
     if (onlineStore) {
-      handleAddToCartFromStore(product, onlineStore);
+      handleAddToCartFromStore(product, onlineStore, undefined, variant);
     } else {
       // No specific store found — add as pending and navigate to cart
-      addToCart(product);
+      addToCart(product, variant);
     }
     navigate("cart");
   }, [storesWithDistance, handleAddToCartFromStore, addToCart, navigate]);
