@@ -338,7 +338,9 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         retailerId == request.auth.uid ||
         resource.data.phone == myPhone() ||
-        resource.data.phone == myPhone().replace('+91', '')
+        resource.data.phone == myPhone().replace('+91', '') ||
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone()
       ));
       allow delete: if isAdmin() || (isAuthed() && retailerId == request.auth.uid);
     }

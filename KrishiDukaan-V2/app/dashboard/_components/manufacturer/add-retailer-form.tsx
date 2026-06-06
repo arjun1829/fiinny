@@ -671,8 +671,10 @@ export function AddRetailerModal({
                   placeholder="10-digit mobile number"
                   className={inputCls}
                 />
-                {phone.length > 0 && phone.length < 10 && (
+                {phone.length > 0 && phone.length < 10 ? (
                   <p className="text-xs text-red-600 mt-0.5">Enter exactly 10 digits ({phone.length}/10)</p>
+                ) : (
+                  <p className="text-[11px] text-amber-700 mt-0.5">Please verify the phone number carefully. It cannot be changed after the retailer is created.</p>
                 )}
               </label>
               <label className={labelCls}>

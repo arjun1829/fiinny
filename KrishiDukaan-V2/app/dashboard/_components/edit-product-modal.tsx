@@ -396,9 +396,16 @@ export function EditProductModal({ row, onClose, onSaved }: {
 }) {
   const { t } = useI18n();
   const [name, setName]               = useState(row.productName);
-  // For "Other": category stores the actual custom name; isStandardCategory check determines display
-  const [category, setCategory]       = useState<string>(() => isStandardCategory(row.category) ? row.category : "Other");
-  const [customCategory, setCustomCategory] = useState(() => isStandardCategory(row.category) ? "" : row.category);
+  // For "Other": category stores the actual custom name; isStandardCategory check determines display.
+  // Use a case-insensitive lookup so Firestore values like "pesticides" resolve to "Pesticides".
+  const [category, setCategory] = useState<string>(() => {
+    const canonical = CATEGORIES.find((c) => c.toLowerCase() === row.category.toLowerCase());
+    return (canonical && canonical !== "Other") ? canonical : (isStandardCategory(row.category) ? row.category : "Other");
+  });
+  const [customCategory, setCustomCategory] = useState(() => {
+    const canonical = CATEGORIES.find((c) => c.toLowerCase() === row.category.toLowerCase());
+    return (canonical && canonical !== "Other") ? "" : row.category;
+  });
   const [description, setDescription] = useState(row.description);
   const [variants, setVariants]       = useState<Variant[]>(rowToVariants(row));
   const [images, setImages]           = useState<ImgSlot[]>(rowToImages(row));
