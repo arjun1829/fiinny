@@ -145,11 +145,15 @@ class ListingRepository {
 
       final profile = await _fetchProfile(storeId, phoneHint: phoneHint);
 
-      // If no Firestore profile, still show if storeName is known
+      // Resolve the display name — fallback chain so we never drop a seller
+      // just because their Firestore profile isn't readable or storeName wasn't
+      // stored at assignment time.
       final name = profile?['shopName']  as String? ??
                    profile?['name']      as String? ??
                    profile?['ownerName'] as String? ??
-                   storeName;
+                   (storeName.isNotEmpty ? storeName : null) ??
+                   (phoneHint.isNotEmpty ? phoneHint : null) ??
+                   storeId;
       if (name.isEmpty) continue;
 
       final phone = (profile?['phone'] as String? ??

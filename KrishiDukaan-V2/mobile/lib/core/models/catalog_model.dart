@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'listing_model.dart';
 
 class CatalogModel {
   final String id;
@@ -16,6 +17,10 @@ class CatalogModel {
   final double? rating;
   final int? reviewCount;
   final DateTime? createdAt;
+  /// Package size variants (label + price), same as web's variants[].
+  final List<VariantModel>? variants;
+  /// Highest discount % offered by any seller for this product.
+  final double maxDiscountPct;
 
   const CatalogModel({
     required this.id,
@@ -33,6 +38,8 @@ class CatalogModel {
     this.rating,
     this.reviewCount,
     this.createdAt,
+    this.variants,
+    this.maxDiscountPct = 0,
   });
 
   String get imageUrl => images.isNotEmpty ? images.first : '';
@@ -68,6 +75,26 @@ class CatalogModel {
         ? List<String>.from(storedSearch)
         : _buildSearch(d['name'] as String? ?? '');
 
+    // Parse variants (package sizes)
+    final rawVariants = d['variants'] as List?;
+    final parsedVariants = rawVariants != null && rawVariants.isNotEmpty
+        ? rawVariants
+            .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
+            .toList()
+        : null;
+
+    // Max discount % — stored directly or derived from sellerDiscounts map
+    final rawMaxDiscount = d['maxDiscountPct'] ?? d['effectiveDiscountPct'];
+    double maxDiscountPct = (rawMaxDiscount as num?)?.toDouble() ?? 0.0;
+    if (maxDiscountPct == 0) {
+      final sellerDiscounts = d['sellerDiscounts'] as Map?;
+      if (sellerDiscounts != null && sellerDiscounts.isNotEmpty) {
+        maxDiscountPct = sellerDiscounts.values
+            .map((v) => (v as num?)?.toDouble() ?? 0.0)
+            .fold<double>(0, (a, b) => a > b ? a : b);
+      }
+    }
+
     return CatalogModel(
       id: doc.id,
       name: d['name'] as String? ?? d['fullName'] as String? ?? '',
@@ -84,6 +111,8 @@ class CatalogModel {
       rating: (d['averageRating'] as num?)?.toDouble(),
       reviewCount: (d['reviewCount'] as num?)?.toInt(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      variants: parsedVariants,
+      maxDiscountPct: maxDiscountPct,
     );
   }
 

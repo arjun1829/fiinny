@@ -2,11 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
+import '../../../core/models/catalog_model.dart';
 import '../providers/marketplace_provider.dart';
 
 const _categories = [
@@ -24,6 +27,10 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   Timer? _debounce;
+
+  // Suggestions
+  List<CatalogModel> _suggestionProducts = [];
+  List<Map<String, dynamic>> _suggestionStores = [];
 
   @override
   void initState() {
@@ -44,6 +51,62 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         _scrollController.position.maxScrollExtent - 300) {
       ref.read(marketplaceProvider.notifier).loadMore();
     }
+  }
+
+  Future<void> _fetchSuggestions(String q) async {
+    final query = q.trim();
+    if (query.isEmpty) {
+      if (mounted) setState(() { _suggestionProducts = []; _suggestionStores = []; });
+      return;
+    }
+
+    try {
+      // Products: reuse catalog repository
+      final repo = ref.read(catalogRepositoryProvider);
+      final prods = await repo.fetchPage(searchQuery: query, limit: 8);
+
+      // Stores: search retailers collection by shopName prefix
+      final s = query; // Firestore startAt/endAt is case-sensitive
+      final snap = await FirebaseFirestore.instance
+          .collection('retailers')
+          .orderBy('shopName')
+          .startAt([s])
+          .endAt(["$s\uf8ff"]).limit(8).get();
+
+      final stores = snap.docs
+          .map((d) => {
+                'id': d.id,
+                'name': d.data().containsKey('shopName') ? d.data()['shopName'] : null,
+                'phone': d.data().containsKey('phone') ? d.data()['phone'] : null,
+                'lat': d.data().containsKey('geo') ? (d.data()['geo']?['latitude']) : d.data()['lat'],
+                'lng': d.data().containsKey('geo') ? (d.data()['geo']?['longitude']) : d.data()['lng'],
+              })
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _suggestionProducts = prods;
+          _suggestionStores = stores;
+        });
+      }
+    } catch (e) {
+      // swallow errors silently
+    }
+  }
+
+  Future<void> _openStoreLocation(Map<String, dynamic> s) async {
+    final lat = s['lat'];
+    final lng = s['lng'];
+    if (lat != null && lng != null) {
+      final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+        return;
+      }
+    }
+
+    // Fallback: go to map screen
+    context.go('/map');
   }
 
   @override
@@ -70,38 +133,87 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
           Container(
             color: AppColors.primary,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (q) {
-                _debounce?.cancel();
-                _debounce = Timer(const Duration(milliseconds: 400), () {
-                  ref.read(marketplaceProvider.notifier).search(q);
-                });
-              },
-              style: AppTextStyles.body,
-              decoration: InputDecoration(
-                hintText: 'Search products...',
-                hintStyle: AppTextStyles.body
-                    .copyWith(color: AppColors.onSurfaceVariant),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          _searchController.clear();
-                          ref.read(marketplaceProvider.notifier).reset();
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
+            child: Column(
+              children: [
+                TextField(
+                  controller: _searchController,
+                  onChanged: (q) {
+                    _debounce?.cancel();
+                    _debounce = Timer(const Duration(milliseconds: 400), () {
+                      ref.read(marketplaceProvider.notifier).search(q);
+                      _fetchSuggestions(q);
+                    });
+                  },
+                  style: AppTextStyles.body,
+                  decoration: InputDecoration(
+                    hintText: 'Search products...',
+                    hintStyle: AppTextStyles.body
+                        .copyWith(color: AppColors.onSurfaceVariant),
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _searchController.clear();
+                              ref.read(marketplaceProvider.notifier).reset();
+                              setState(() {
+                                _suggestionProducts = [];
+                                _suggestionStores = [];
+                              });
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                  ),
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-              ),
+
+                // Suggestions dropdown
+                if ((_suggestionProducts.isNotEmpty || _suggestionStores.isNotEmpty) && _searchController.text.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black12, blurRadius: 8),
+                      ],
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        // Product suggestions
+                        if (_suggestionProducts.isNotEmpty)
+                          ..._suggestionProducts.map((p) => ListTile(
+                                leading: p.imageUrl.isNotEmpty
+                                    ? Image.network(p.imageUrl, width: 48, height: 48, fit: BoxFit.cover)
+                                    : const Icon(Icons.agriculture),
+                                title: Text(p.name),
+                                subtitle: const Text('Product'),
+                                onTap: () => context.go('/product/${p.id}'),
+                              )),
+
+                        // Store suggestions
+                        if (_suggestionStores.isNotEmpty)
+                          const Divider(height: 1),
+                        if (_suggestionStores.isNotEmpty)
+                          ..._suggestionStores.map((s) => ListTile(
+                                leading: const Icon(Icons.store),
+                                title: Text(s['name'] ?? s['phone'] ?? 'Store'),
+                                subtitle: const Text('Store'),
+                                onTap: () => _openStoreLocation(s),
+                              )),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
 

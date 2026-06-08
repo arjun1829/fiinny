@@ -75,10 +75,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final result = await _paymentService.createCartOrder(
         items: items,
-        customerPhone: user.phoneNumber ?? '',
+        userId: user.uid,
       );
 
-      _razorpayOrderId = result['orderId'] as String?;
+      // The Razorpay API returns the order ID in the 'id' field, not 'orderId'
+      _razorpayOrderId = result['id'] as String?;
       final amount = (result['amount'] as num).toInt();
 
       _razorpay.open({
