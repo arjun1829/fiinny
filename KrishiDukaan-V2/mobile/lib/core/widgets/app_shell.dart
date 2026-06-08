@@ -42,13 +42,16 @@ class AppShell extends ConsumerWidget {
     return Scaffold(
       body: navigationShell,
       floatingActionButton: navigationShell.currentIndex != 4 && cartCount > 0
-          ? FloatingActionButton.small(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              onPressed: () => context.push('/cart'),
-              child: Badge(
-                label: Text('$cartCount', style: const TextStyle(fontSize: 10)),
-                child: const Icon(Icons.shopping_cart, size: 20),
+          ? Container(
+              margin: const EdgeInsets.only(bottom: 18), // lift the FAB above bottom nav
+              child: FloatingActionButton.small(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                onPressed: () => context.push('/cart'),
+                child: Badge(
+                  label: Text('$cartCount', style: const TextStyle(fontSize: 10)),
+                  child: const Icon(Icons.shopping_cart, size: 20),
+                ),
               ),
             )
           : null,
@@ -69,7 +72,7 @@ class AppShell extends ConsumerWidget {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 10, 72, 10), // reserve space on right for cart FAB
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(
               children: List.generate(destinations.length, (index) {
                 final destination = destinations[index];
