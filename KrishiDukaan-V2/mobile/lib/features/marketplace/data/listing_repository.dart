@@ -145,11 +145,15 @@ class ListingRepository {
 
       final profile = await _fetchProfile(storeId, phoneHint: phoneHint);
 
-      // If no Firestore profile, still show if storeName is known
+      // Resolve the display name — fallback chain so we never drop a seller
+      // just because their Firestore profile isn't readable or storeName wasn't
+      // stored at assignment time.
       final name = profile?['shopName']  as String? ??
                    profile?['name']      as String? ??
                    profile?['ownerName'] as String? ??
-                   storeName;
+                   (storeName.isNotEmpty ? storeName : null) ??
+                   (phoneHint.isNotEmpty ? phoneHint : null) ??
+                   storeId;
       if (name.isEmpty) continue;
 
       final phone = (profile?['phone'] as String? ??
@@ -242,25 +246,35 @@ class ListingRepository {
   /// Resolves a retailer's profile map from Firestore.
   ///
   /// Lookup order:
-  ///   1. retailers/{phoneHint}  — explicit phone from availability entry
-  ///   2. retailers/{storeId}    — storeId used as doc ID (phone or legacy UID)
-  ///   3. stores/{storeId}       — older stores collection
-  ///
-  /// NOTE: uidIndex reads are intentionally skipped — security rules only allow
-  /// reading your own uidIndex entry, so cross-user lookups throw permission errors.
+  ///   1. profiles/{phoneHint}   — primary new schema (allow read: if true)
+  ///   2. retailers/{phoneHint}  — explicit phone from availability entry
+  ///   3. retailers/{storeId}    — storeId used as doc ID (phone or legacy UID)
+  ///   4. stores/{storeId}       — older stores collection
   Future<Map<String, dynamic>?> _fetchProfile(
     String storeId, {
     String phoneHint = '',
   }) async {
     if (storeId.isEmpty) return null;
     try {
-      // 1. Try retailers/{phoneHint} first — fastest path for new phone-keyed schema
+      // 1. Try profiles/{phoneHint} — primary new-schema source (public read)
+      if (phoneHint.isNotEmpty) {
+        final doc = await _db.collection('profiles').doc(phoneHint).get();
+        if (doc.exists) return {'phone': phoneHint, ...doc.data()!};
+      }
+
+      // 1b. Try profiles/{storeId} if it looks like a phone
+      if (_isPhone(storeId) && storeId != phoneHint) {
+        final doc = await _db.collection('profiles').doc(storeId).get();
+        if (doc.exists) return {'phone': storeId, ...doc.data()!};
+      }
+
+      // 2. Try retailers/{phoneHint} — legacy phone-keyed docs
       if (phoneHint.isNotEmpty && phoneHint != storeId) {
         final doc = await _db.collection('retailers').doc(phoneHint).get();
         if (doc.exists) return {'phone': phoneHint, ...doc.data()!};
       }
 
-      // 2. Try retailers/{storeId} (covers phone-as-id AND uid-as-id legacy docs)
+      // 3. Try retailers/{storeId} (covers phone-as-id AND uid-as-id legacy docs)
       final retailerDoc = await _db.collection('retailers').doc(storeId).get();
       if (retailerDoc.exists) {
         final d = retailerDoc.data()!;
@@ -269,7 +283,7 @@ class ListingRepository {
         return {'phone': phone ?? '', ...d};
       }
 
-      // 3. Try stores/{storeId}
+      // 4. Try stores/{storeId}
       final storeDoc = await _db.collection('stores').doc(storeId).get();
       if (storeDoc.exists) return storeDoc.data();
     } catch (_) {
@@ -321,8 +335,11 @@ class ListingRepository {
 
   static double? _extractLat(
       Map<String, dynamic>? profile, Map<String, dynamic>? d) {
-    final geo = profile?['geo'] as Map<String, dynamic>?;
-    final loc = profile?['location'] as Map<String, dynamic>?;
+    final geoRaw = profile?['geo'];
+    if (geoRaw is GeoPoint) return geoRaw.latitude;
+    final geo = geoRaw is Map ? geoRaw : null;
+    final locRaw = profile?['location'];
+    final loc = locRaw is Map ? locRaw : null;
     return ((geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d?['lat'])
             as num?)
         ?.toDouble();
@@ -330,8 +347,11 @@ class ListingRepository {
 
   static double? _extractLng(
       Map<String, dynamic>? profile, Map<String, dynamic>? d) {
-    final geo = profile?['geo'] as Map<String, dynamic>?;
-    final loc = profile?['location'] as Map<String, dynamic>?;
+    final geoRaw = profile?['geo'];
+    if (geoRaw is GeoPoint) return geoRaw.longitude;
+    final geo = geoRaw is Map ? geoRaw : null;
+    final locRaw = profile?['location'];
+    final loc = locRaw is Map ? locRaw : null;
     return ((geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d?['lng'])
             as num?)
         ?.toDouble();

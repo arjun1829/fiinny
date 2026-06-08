@@ -7,6 +7,7 @@ import '../../../core/models/catalog_model.dart';
 import '../../../core/models/network_retailer_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../../../core/utils/phone_utils.dart';
 
 class ManufacturerRepository {
   final _db = FirebaseFirestore.instance;
@@ -14,32 +15,78 @@ class ManufacturerRepository {
   // ── Retailer network ──────────────────────────────────────────────────────
 
   Stream<List<NetworkRetailerModel>> watchNetwork(String manufacturerPhone) {
-    return _db
-        .collection('manufacturerNetwork')
-        .where('manufacturerPhone', isEqualTo: manufacturerPhone)
-        .snapshots()
-        .map((s) => s.docs
-            .map(NetworkRetailerModel.fromFirestore)
-            .toList()
-          ..sort((a, b) {
-            // active first, then invited, then revoked
-            const order = {'active': 0, 'invited': 1, 'revoked': 2};
-            return (order[a.status] ?? 3)
-                .compareTo(order[b.status] ?? 3);
-          }));
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final streams = <Stream<QuerySnapshot>>[
+      _db
+          .collection('manufacturerRetailers')
+          .where('manufacturerPhone', isEqualTo: manufacturerPhone)
+          .snapshots(),
+    ];
+    if (uid.isNotEmpty) {
+      streams.add(_db
+          .collection('manufacturerRetailers')
+          .where('manufacturerId', isEqualTo: uid)
+          .snapshots());
+    }
+
+    final controller = StreamController<List<NetworkRetailerModel>>();
+    final results = List<List<DocumentSnapshot>>.filled(streams.length, []);
+
+    void emit() {
+      final seen = <String>{};
+      final merged = results
+          .expand((docs) => docs)
+          .where((d) => seen.add(d.id))
+          .map(NetworkRetailerModel.fromFirestore)
+          .where((r) => r.status != 'revoked' && r.onboardingStatus != 'removed')
+          .toList()
+        ..sort((a, b) {
+          // Sort order: active first, then invited, then revoked/inactive/removed
+          const order = {'active': 0, 'invited': 1, 'revoked': 2};
+          return (order[a.status] ?? 3).compareTo(order[b.status] ?? 3);
+        });
+      if (!controller.isClosed) controller.add(merged);
+    }
+
+    final subs = List.generate(streams.length, (i) {
+      return streams[i].listen((s) {
+        results[i] = s.docs;
+        emit();
+      }, onError: controller.addError);
+    });
+
+    controller.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
+    };
+    return controller.stream;
   }
 
   Future<Map<String, int>> fetchNetworkStats(
       String manufacturerPhone) async {
-    final snap = await _db
-        .collection('manufacturerNetwork')
-        .where('manufacturerPhone', isEqualTo: manufacturerPhone)
-        .get();
-    final docs = snap.docs;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final queries = <Future<QuerySnapshot>>[
+      _db
+          .collection('manufacturerRetailers')
+          .where('manufacturerPhone', isEqualTo: manufacturerPhone)
+          .get(),
+    ];
+    if (uid.isNotEmpty) {
+      queries.add(_db
+          .collection('manufacturerRetailers')
+          .where('manufacturerId', isEqualTo: uid)
+          .get());
+    }
+    final snaps = await Future.wait(queries);
+    final seen = <String>{};
+    final docs = snaps.expand((s) => s.docs).where((d) => seen.add(d.id)).toList();
+    final retailers = docs.map(NetworkRetailerModel.fromFirestore).toList();
+
     return {
-      'total': docs.length,
-      'active': docs.where((d) => d['status'] == 'active').length,
-      'invited': docs.where((d) => d['status'] == 'invited').length,
+      'total': retailers.where((r) => r.status != 'revoked' && r.onboardingStatus != 'removed').length,
+      'active': retailers.where((r) => r.status == 'active' && r.onboardingStatus == 'active').length,
+      'invited': retailers.where((r) => r.status == 'invited').length,
     };
   }
 
@@ -53,27 +100,86 @@ class ManufacturerRepository {
     String? city,
     String? state,
   }) async {
+    final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final code = _generateInviteCode();
-    final docRef =
-        _db.collection('manufacturerNetwork').doc(retailerPhone);
+    final normalizedRetailerPhone = PhoneUtils.normalize(retailerPhone);
+    final batch = _db.batch();
+    final now = FieldValue.serverTimestamp();
 
-    await docRef.set({
+    // 1. Pre-create retailer entity keyed by normalized phone (idempotent)
+    final retailerRef = _db.collection('retailers').doc(normalizedRetailerPhone);
+    final retailerPayload = {
+      'role': 'retailer',
+      'phone': normalizedRetailerPhone,
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'email': email?.trim().toLowerCase() ?? '',
+      'address': {
+        'line1': '',
+        'city': city?.trim() ?? '',
+        'state': state?.trim() ?? '',
+        'pincode': '',
+      },
+      'manufacturerId': manufacturerId,
       'manufacturerPhone': manufacturerPhone,
-      // retailerPhone required by security rule for invite-claim update check
-      'retailerPhone': retailerPhone,
-      'shopName': shopName,
-      'ownerName': ownerName,
-      'email': email,
+      'onboardingType': 'manufacturer-network',
+      'assignedSeat': false,
+      'seatAssignedAt': null,
+      'onboardingStatus': 'pending',
+      'createdBy': manufacturerId,
+      'active': false,
+      'subscriptionStatus': 'free',
+      'createdAt': now,
+      'updatedAt': now,
+    };
+    batch.set(retailerRef, retailerPayload, SetOptions(merge: true));
+
+    // 2. Invite doc under manufacturerRetailers (random doc ID)
+    final inviteRef = _db.collection('manufacturerRetailers').doc();
+    final invitePayload = {
+      'id': inviteRef.id,
+      'manufacturerId': manufacturerId,
+      'manufacturerPhone': manufacturerPhone,
+      'retailerDocId': normalizedRetailerPhone,
+      'retailerId': '',
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'retailerEmail': email?.trim().toLowerCase() ?? '',
+      'retailerPhone': normalizedRetailerPhone,
       'inviteCode': code,
       'status': 'invited',
-      // claimable: true required by security rule for retailer to accept invite
       'claimable': true,
+      'onboardingStatus': 'pending',
+      'assignedSeat': false,
+      'seatAssignedAt': null,
+      'createdBy': manufacturerId,
+      'addedAt': now,
       'address': {
-        'city': ?city,
-        'state': ?state,
+        'line1': '',
+        'city': city?.trim() ?? '',
+        'state': state?.trim() ?? '',
+        'pincode': '',
       },
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+    batch.set(inviteRef, invitePayload);
+
+    // 3. Mirror doc under manufacturers/{mPhone}/retailers/{rPhone}
+    final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$normalizedRetailerPhone');
+    final mirrorPayload = {
+      'retailerDocId': normalizedRetailerPhone,
+      'retailerPhone': normalizedRetailerPhone,
+      'manufacturerPhone': manufacturerPhone,
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'inviteCode': code,
+      'status': 'invited',
+      'onboardingStatus': 'pending',
+      'addedAt': now,
+      'updatedAt': now,
+    };
+    batch.set(mirrorRef, mirrorPayload, SetOptions(merge: true));
+
+    await batch.commit();
 
     // Fire invite email via existing API
     if (email != null && email.isNotEmpty) {
@@ -89,47 +195,301 @@ class ManufacturerRepository {
     return code;
   }
 
+  Future<void> updateNetworkRetailer({
+    required String inviteDocId,
+    required String retailerDocId,
+    required String shopName,
+    required String ownerName,
+    required String phone,
+    required String email,
+    required String manufacturerPhone,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+    final newPhone = PhoneUtils.normalize(phone);
+
+    await _db.collection('manufacturerRetailers').doc(inviteDocId).update({
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'retailerPhone': newPhone,
+      'retailerDocId': newPhone,
+      'retailerEmail': email.trim().toLowerCase(),
+      'updatedAt': now,
+    });
+
+    if (manufacturerPhone.isNotEmpty) {
+      final oldMirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$retailerDocId');
+      final newMirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$newPhone');
+
+      if (retailerDocId != newPhone) {
+        await oldMirrorRef.delete();
+      }
+
+      await newMirrorRef.set({
+        'retailerDocId': newPhone,
+        'retailerPhone': newPhone,
+        'manufacturerPhone': manufacturerPhone,
+        'shopName': shopName.trim(),
+        'ownerName': ownerName.trim(),
+        'updatedAt': now,
+      }, SetOptions(merge: true));
+    }
+  }
+
   Future<void> updateRetailerStatus(
       String retailerPhone, String status) async {
-    await _db
-        .collection('manufacturerNetwork')
-        .doc(retailerPhone)
-        .update({
-      'status': status,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    // Legacy support: call the appropriate specific methods
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // Since we only have retailerPhone and status, search for the inviteDocId
+    final snap = await _db
+        .collection('manufacturerRetailers')
+        .where('retailerPhone', isEqualTo: retailerPhone)
+        .where('manufacturerId', isEqualTo: uid)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return;
+    final inviteDocId = snap.docs.first.id;
+    final data = snap.docs.first.data();
+    final manufacturerPhone = data['manufacturerPhone'] as String? ?? '';
+
+    if (status == 'revoked') {
+      await deactivateNetworkRetailer(
+        inviteDocId: inviteDocId,
+        retailerDocId: retailerPhone,
+        manufacturerId: uid,
+        manufacturerPhone: manufacturerPhone,
+      );
+    } else if (status == 'active') {
+      await reactivateNetworkRetailer(
+        inviteDocId: inviteDocId,
+        retailerDocId: retailerPhone,
+        manufacturerPhone: manufacturerPhone,
+      );
+    }
   }
 
   Future<void> removeRetailer(String retailerPhone) async {
-    await _db
-        .collection('manufacturerNetwork')
-        .doc(retailerPhone)
-        .delete();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final snap = await _db
+        .collection('manufacturerRetailers')
+        .where('retailerPhone', isEqualTo: retailerPhone)
+        .where('manufacturerId', isEqualTo: uid)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return;
+    final inviteDocId = snap.docs.first.id;
+    final data = snap.docs.first.data();
+    final manufacturerPhone = data['manufacturerPhone'] as String? ?? '';
+
+    await removeNetworkRetailer(
+      inviteDocId: inviteDocId,
+      retailerDocId: retailerPhone,
+      manufacturerId: uid,
+      manufacturerPhone: manufacturerPhone,
+    );
   }
 
-  // ── Invite claim (called on signup with inviteCode) ───────────────────────
+  Future<void> deactivateNetworkRetailer({
+    required String inviteDocId,
+    required String retailerDocId,
+    required String manufacturerId,
+    required String manufacturerPhone,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+
+    // 1. Fetch active seat listings
+    final listingsSnap = await _db
+        .collection('retailerSeatListings')
+        .where('ownerId', isEqualTo: manufacturerId)
+        .where('retailerDocId', isEqualTo: retailerDocId)
+        .where('listingType', isEqualTo: 'assigned')
+        .where('status', isEqualTo: 'active')
+        .get();
+
+    final batch = _db.batch();
+
+    // 2. Update invite link doc
+    batch.update(_db.collection('manufacturerRetailers').doc(inviteDocId), {
+      'onboardingStatus': 'inactive',
+      'assignedSeat': false,
+      'manuallyDeactivated': true,
+      'deactivatedAt': now,
+    });
+
+    // 3. Release listings + deactivate product copies
+    for (final doc in listingsSnap.docs) {
+      batch.update(doc.reference, {
+        'status': 'released',
+        'releasedAt': now,
+      });
+      final productId = doc.data()['productId'] as String? ?? '';
+      if (productId.isNotEmpty) {
+        batch.update(_db.collection('products').doc(productId), {
+          'isActive': false,
+          'updatedAt': now,
+        });
+      }
+    }
+
+    await batch.commit();
+
+    // 4. Sync mirror
+    if (manufacturerPhone.isNotEmpty) {
+      final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$retailerDocId');
+      await mirrorRef.update({
+        'onboardingStatus': 'inactive',
+        'assignedSeat': false,
+        'manuallyDeactivated': true,
+        'updatedAt': now,
+      });
+    }
+  }
+
+  Future<void> reactivateNetworkRetailer({
+    required String inviteDocId,
+    required String retailerDocId,
+    required String manufacturerPhone,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+    await _db.collection('manufacturerRetailers').doc(inviteDocId).update({
+      'onboardingStatus': 'active',
+      'assignedSeat': true,
+      'manuallyDeactivated': false,
+      'reactivatedAt': now,
+    });
+
+    if (manufacturerPhone.isNotEmpty) {
+      final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$retailerDocId');
+      await mirrorRef.update({
+        'onboardingStatus': 'active',
+        'assignedSeat': true,
+        'manuallyDeactivated': false,
+        'updatedAt': now,
+      });
+    }
+  }
+
+  Future<void> removeNetworkRetailer({
+    required String inviteDocId,
+    required String retailerDocId,
+    required String manufacturerId,
+    required String manufacturerPhone,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+
+    // 1. Fetch active seat listings
+    final listingsSnap = await _db
+        .collection('retailerSeatListings')
+        .where('ownerId', isEqualTo: manufacturerId)
+        .where('retailerDocId', isEqualTo: retailerDocId)
+        .where('listingType', isEqualTo: 'assigned')
+        .where('status', isEqualTo: 'active')
+        .get();
+
+    final batch = _db.batch();
+
+    // 2. Revoke the invite link
+    batch.update(_db.collection('manufacturerRetailers').doc(inviteDocId), {
+      'status': 'revoked',
+      'claimable': false,
+      'assignedSeat': false,
+      'onboardingStatus': 'removed',
+      'removedAt': now,
+    });
+
+    // 3. Release listings + deactivate product copies
+    final mfrProductIds = <String>[];
+    for (final doc in listingsSnap.docs) {
+      batch.update(doc.reference, {
+        'status': 'released',
+        'releasedAt': now,
+      });
+      final productId = doc.data()['productId'] as String? ?? '';
+      final mfrProductId = doc.data()['manufacturerProductId'] as String? ?? '';
+      if (productId.isNotEmpty) {
+        batch.update(_db.collection('products').doc(productId), {
+          'isActive': false,
+          'updatedAt': now,
+        });
+      }
+      if (mfrProductId.isNotEmpty) {
+        mfrProductIds.add(mfrProductId);
+      }
+    }
+
+    await batch.commit();
+
+    // 4. Strip availability entries (fire-and-forget-ish)
+    if (mfrProductIds.isNotEmpty) {
+      for (final mfrProductId in mfrProductIds) {
+        try {
+          final snap = await _db.collection('products').doc(mfrProductId).get();
+          if (snap.exists) {
+            final data = snap.data() as Map<String, dynamic>;
+            final availability = data['availability'] as List<dynamic>?;
+            if (availability != null) {
+              final updated = availability
+                  .where((e) => e is Map && e['storeId'] != retailerDocId)
+                  .toList();
+              await _db.collection('products').doc(mfrProductId).update({
+                'availability': updated,
+              });
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 5. Sync mirror
+    if (manufacturerPhone.isNotEmpty) {
+      final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$retailerDocId');
+      await mirrorRef.update({
+        'status': 'revoked',
+        'onboardingStatus': 'removed',
+        'assignedSeat': false,
+        'updatedAt': now,
+      });
+    }
+  }
 
   Future<void> claimInvite(String inviteCode, String userPhone) async {
     final snap = await _db
-        .collection('manufacturerNetwork')
+        .collection('manufacturerRetailers')
         .where('inviteCode', isEqualTo: inviteCode)
         .limit(1)
         .get();
     if (snap.docs.isEmpty) return;
     final doc = snap.docs.first;
     if (doc['status'] == 'invited') {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       await doc.reference.update({
         'status': 'active',
-        // retailerPhone + claimable:false required by security rule for this update
         'retailerPhone': userPhone,
+        'retailerDocId': userPhone,
         'claimable': false,
-        'claimedByPhone': userPhone,
+        'retailerId': uid,
+        'onboardingStatus': 'active',
         'claimedAt': FieldValue.serverTimestamp(),
       });
       // Promote user role to retailer
       await _db.collection('users').doc(userPhone).update({
         'role': 'retailer',
       });
+
+      // Update the mirror
+      final d = doc.data();
+      final manufacturerPhone = d['manufacturerPhone'] as String? ?? '';
+      if (manufacturerPhone.isNotEmpty) {
+        final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$userPhone');
+        await mirrorRef.set({
+          'status': 'active',
+          'retailerPhone': userPhone,
+          'retailerDocId': userPhone,
+          'retailerId': uid,
+          'onboardingStatus': 'active',
+          'claimedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
     }
   }
 
@@ -300,11 +660,18 @@ class ManufacturerRepository {
 
     final futures = <Future<AggregateQuerySnapshot>>[
       _db
-          .collection('manufacturerNetwork')
+          .collection('manufacturerRetailers')
           .where('manufacturerPhone', isEqualTo: manufacturerPhone)
           .where('status', isEqualTo: 'active')
           .count()
           .get(),
+      if (uid.isNotEmpty)
+        _db
+            .collection('manufacturerRetailers')
+            .where('manufacturerId', isEqualTo: uid)
+            .where('status', isEqualTo: 'active')
+            .count()
+            .get(),
       // Legacy catalog collection
       _db
           .collection('catalog')
@@ -335,11 +702,15 @@ class ManufacturerRepository {
 
     final results = await Future.wait(futures);
 
-    final activeRetailers = results[0].count ?? 0;
-    final catalogCount    = results[1].count ?? 0;
-    final productsByPhone = results[2].count ?? 0;
-    final productsByUid   = uid.isNotEmpty ? (results[3].count ?? 0) : 0;
-    final productsByOwner = uid.isNotEmpty ? (results[4].count ?? 0) : 0;
+    final activeCountPhone = results[0].count ?? 0;
+    final activeCountUid = uid.isNotEmpty ? (results[1].count ?? 0) : 0;
+    final activeRetailers = activeCountPhone > activeCountUid ? activeCountPhone : activeCountUid;
+
+    final baseIdx = uid.isNotEmpty ? 2 : 1;
+    final catalogCount    = results[baseIdx].count ?? 0;
+    final productsByPhone = results[baseIdx + 1].count ?? 0;
+    final productsByUid   = uid.isNotEmpty ? (results[baseIdx + 2].count ?? 0) : 0;
+    final productsByOwner = uid.isNotEmpty ? (results[baseIdx + 3].count ?? 0) : 0;
     // Use max across all product-count queries (can't deduplicate counts)
     final maxProductCount = [productsByPhone, productsByUid, productsByOwner]
         .reduce((a, b) => a > b ? a : b);
@@ -357,7 +728,7 @@ class ManufacturerRepository {
   String _generateInviteCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rng = Random.secure();
-    return List.generate(8, (_) => chars[rng.nextInt(chars.length)])
+    return List.generate(10, (_) => chars[rng.nextInt(chars.length)])
         .join();
   }
 

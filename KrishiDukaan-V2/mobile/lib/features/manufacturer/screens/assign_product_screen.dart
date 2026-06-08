@@ -11,7 +11,8 @@ import '../data/manufacturer_repository.dart';
 import '../providers/manufacturer_provider.dart';
 
 class AssignProductScreen extends ConsumerStatefulWidget {
-  const AssignProductScreen({super.key});
+  final String? initialRetailerPhone;
+  const AssignProductScreen({super.key, this.initialRetailerPhone});
 
   @override
   ConsumerState<AssignProductScreen> createState() =>
@@ -23,6 +24,14 @@ class _AssignProductScreenState
   CatalogModel? _selectedProduct;
   final Set<String> _selectedRetailers = {};
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialRetailerPhone != null) {
+      _selectedRetailers.add(widget.initialRetailerPhone!);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

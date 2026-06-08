@@ -1,12 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/constants/app_config.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/review_model.dart';
+import '../../../core/models/store_model.dart';
+import '../../../core/models/listing_model.dart';
 import '../../../core/providers/location_provider.dart';
+import '../../../core/utils/geo_utils.dart';
 import '../data/catalog_repository.dart';
 import '../data/listing_repository.dart';
 import '../data/review_repository.dart';
+import '../data/store_repository.dart';
 
 // ── Marketplace state ──────────────────────────────────────────────────────
 
@@ -82,7 +85,8 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
       state = state.copyWith(
         products: results.map((r) => r.model).toList(),
         isLoading: false,
-        hasMore: results.length >= AppConfig.firestorePageSize,
+        // Since we query all products and filter in memory, we don't paginate page-by-page from firestore anymore
+        hasMore: false,
         lastDoc: results.isNotEmpty ? () => results.last.doc : () => null,
       );
     } catch (e) {
@@ -94,26 +98,7 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   }
 
   Future<void> loadMore() async {
-    if (!state.hasMore || state.isLoadingMore || state.lastDoc == null) return;
-
-    state = state.copyWith(isLoadingMore: true);
-
-    try {
-      final results = await _repo.fetchPageWithDocs(
-        category: state.category,
-        searchQuery: state.searchQuery,
-        startAfter: state.lastDoc,
-      );
-
-      state = state.copyWith(
-        products: [...state.products, ...results.map((r) => r.model)],
-        isLoadingMore: false,
-        hasMore: results.length >= AppConfig.firestorePageSize,
-        lastDoc: results.isNotEmpty ? () => results.last.doc : () => state.lastDoc,
-      );
-    } catch (_) {
-      state = state.copyWith(isLoadingMore: false);
-    }
+    // No-op since we load all products at once to perform accurate in-memory merging/deduping
   }
 
   void setCategory(String? category) {
@@ -144,6 +129,7 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
 
 final catalogRepositoryProvider = Provider((_) => CatalogRepository());
 final listingRepositoryProvider = Provider((_) => ListingRepository());
+final storeRepositoryProvider = Provider((_) => StoreRepository());
 
 final marketplaceProvider =
     StateNotifierProvider<MarketplaceNotifier, MarketplaceState>((ref) {
@@ -159,14 +145,148 @@ final catalogDetailProvider =
   return ref.read(catalogRepositoryProvider).fetchById(catalogId);
 });
 
+final storesListProvider = FutureProvider<List<StoreModel>>((ref) {
+  return ref.read(storeRepositoryProvider).fetchStores();
+});
+
 final listingsForCatalogProvider =
-    StreamProvider.family<List<dynamic>, String>((ref, catalogId) {
+    FutureProvider.family<List<ListingModel>, String>((ref, catalogId) async {
   final location = ref.watch(locationProvider).valueOrNull;
-  return ref.read(listingRepositoryProvider).watchListingsForCatalog(
-        catalogId,
-        userLat: location?.lat,
-        userLng: location?.lng,
+  final product = await ref.watch(catalogDetailProvider(catalogId).future);
+  if (product == null) return [];
+
+  // Stores list enriches with geo/address/name — tolerate failures
+  List<StoreModel> storesList;
+  try {
+    storesList = await ref.watch(storesListProvider.future);
+  } catch (_) {
+    storesList = [];
+  }
+
+  // Build lookup maps for fast enrichment
+  final storeByPhone = <String, StoreModel>{};
+  final storeById = <String, StoreModel>{};
+  for (final s in storesList) {
+    storeById[s.id] = s;
+    final p = s.phone;
+    if (p != null && p.isNotEmpty) {
+      storeByPhone[p] = s;
+      // Normalise ±91 prefix so matching is phone-format-agnostic
+      if (p.startsWith('+91') && p.length > 3) storeByPhone[p.substring(3)] = s;
+      if (!p.startsWith('+91') && p.length == 10) storeByPhone['+91$p'] = s;
+    }
+  }
+
+  StoreModel? findStore(String? id, String? phone) {
+    if (phone != null && phone.isNotEmpty) {
+      final s = storeByPhone[phone];
+      if (s != null) return s;
+    }
+    if (id != null && id.isNotEmpty) {
+      return storeById[id] ?? storeByPhone[id];
+    }
+    return null;
+  }
+
+  final listings = <ListingModel>[];
+  final seenKeys = <String>{}; // deduplicate by phone, fallback to storeId
+
+  void addListing({
+    required String storeId,
+    required String phone,
+    required String name,
+    required double price,
+    required int stockQty,
+    required bool isOnline,
+    required List<VariantModel> variants,
+    StoreModel? store,
+  }) {
+    final key = phone.isNotEmpty ? phone : storeId;
+    if (key.isEmpty || !seenKeys.add(key)) return;
+
+    final lat = store?.lat;
+    final lng = store?.lng;
+    double? distanceKm;
+    if (location != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      distanceKm = GeoUtils.distanceKm(location.lat, location.lng, lat, lng);
+    }
+
+    // Name resolution: store lookup → av.storeName → phone number (never blank)
+    final resolvedName = (store?.name?.isNotEmpty == true ? store!.name : null) ??
+        (name.isNotEmpty ? name : null) ??
+        phone;
+
+    listings.add(ListingModel(
+      id: storeId.isNotEmpty ? storeId : phone,
+      catalogId: product.id,
+      sellerPhone: phone,
+      sellerName: resolvedName,
+      sellerType: 'retailer',
+      sellerAddress: store?.address,
+      sellerLat: lat,
+      sellerLng: lng,
+      price: price,
+      stockQuantity: stockQty,
+      isOnline: isOnline,
+      variants: variants,
+      distanceKm: distanceKm,
+    ));
+  }
+
+  // 1. Iterate availability array — this is the source of truth for all assigned sellers
+  if (product.availability != null) {
+    for (final av in product.availability!) {
+      final storeId = av.storeId;
+      final phone = av.storePhone ?? '';
+      final store = findStore(storeId, phone.isNotEmpty ? phone : null);
+      final resolvedPhone = phone.isNotEmpty ? phone : (store?.phone ?? '');
+
+      // Fix price: 0.0 means not set → fall back to product MRP
+      final price = av.sellingPrice > 0 ? av.sellingPrice : product.price;
+      final stockQty = (av.stockLevel?.toLowerCase() == 'out of stock') ? 0 : 99;
+
+      addListing(
+        storeId: storeId,
+        phone: resolvedPhone,
+        name: av.storeName ?? store?.name ?? '',
+        price: price,
+        stockQty: stockQty,
+        isOnline: av.isOnline ?? true,
+        variants: av.variants ?? [],
+        store: store,
       );
+    }
+  }
+
+  // 2. Add the owner's store if not already covered by availability
+  final ownerPhone = product.retailerPhone ?? product.createdByPhone ?? '';
+  final ownerId = product.retailerId ?? '';
+  if (ownerPhone.isNotEmpty || ownerId.isNotEmpty) {
+    final ownerStore = findStore(
+      ownerId.isNotEmpty ? ownerId : null,
+      ownerPhone.isNotEmpty ? ownerPhone : null,
+    );
+    final isOnline = product.sellMode != 'offline_store_only';
+    addListing(
+      storeId: ownerId,
+      phone: ownerPhone,
+      name: ownerStore?.name ?? product.store ?? '',
+      price: product.price,
+      stockQty: 99,
+      isOnline: isOnline,
+      variants: [],
+      store: ownerStore,
+    );
+  }
+
+  // Sort ascending by distance; sellers without location go to end
+  listings.sort((a, b) {
+    if (a.distanceKm == null) return 1;
+    if (b.distanceKm == null) return -1;
+    return a.distanceKm!.compareTo(b.distanceKm!);
+  });
+
+  return listings;
 });
 
 final _reviewRepo = ReviewRepository();

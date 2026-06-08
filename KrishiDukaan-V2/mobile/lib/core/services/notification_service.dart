@@ -25,8 +25,12 @@ class NotificationService {
     if (_initialized) return;
     _initialized = true;
 
-    // Permission request (Android 13+, iOS)
-    await _fcm.requestPermission(alert: true, badge: true, sound: true);
+    // Permission request (Android 13+, iOS) — user may deny or block; non-fatal
+    try {
+      await _fcm.requestPermission(alert: true, badge: true, sound: true);
+    } catch (_) {
+      return; // Notifications blocked — skip rest of FCM setup
+    }
 
     // Local notifications setup (for showing heads-up in foreground)
     const androidSettings =

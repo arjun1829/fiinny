@@ -1,0 +1,16 @@
+flutter_native_splash:
+  # Full-screen green background — matches AppColors.primary
+  color: "#2E7D32"
+  color_dark: "#1B5E20"
+
+  image: assets/icons/app_icon.png
+  image_dark: assets/icons/app_icon.png
+
+  android_12:
+    image: assets/icons/app_icon.png
+    color: "#2E7D32"
+    color_dark: "#1B5E20"
+    icon_background_color: "#2E7D32"
+
+  web: false
+  ios: false
