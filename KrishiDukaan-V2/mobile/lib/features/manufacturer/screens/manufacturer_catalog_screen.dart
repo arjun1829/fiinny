@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
@@ -110,8 +111,26 @@ class _CatalogTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: const Icon(Icons.inventory_2_outlined,
-            color: AppColors.primaryLight),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 50,
+            height: 50,
+            child: product.imageUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: product.imageUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primaryLight),
+                    errorWidget: (_, __, ___) => const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primaryLight),
+                  )
+                : const Icon(Icons.inventory_2_outlined,
+                    color: AppColors.primaryLight),
+          ),
+        ),
         title: Text(product.name, style: AppTextStyles.bodyMedium),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,6 +214,8 @@ class _ProductSheetState extends State<_ProductSheet> {
   late final TextEditingController _kCtrl;
   String _category = 'Fertilizers';
   bool _saving = false;
+  late bool _isActive;
+  late List<TextEditingController> _imageUrlCtrls;
 
   static const _categories = [
     'Fertilizers',
@@ -226,7 +247,11 @@ class _ProductSheetState extends State<_ProductSheet> {
         text: p?.potassium != null
             ? p!.potassium!.toStringAsFixed(0)
             : '');
-    _category = p?.category ?? 'Fertilizers';
+    _category = _matchCategory(p?.category);
+    _isActive = p == null ? true : (p.images.isNotEmpty || p.name.isNotEmpty);
+    final existingImages = p?.images ?? [];
+    _imageUrlCtrls = List.generate(5, (i) =>
+        TextEditingController(text: i < existingImages.length ? existingImages[i] : ''));
   }
 
   @override
@@ -237,6 +262,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     _nCtrl.dispose();
     _pCtrl.dispose();
     _kCtrl.dispose();
+    for (final c in _imageUrlCtrls) { c.dispose(); }
     super.dispose();
   }
 
@@ -257,7 +283,30 @@ class _ProductSheetState extends State<_ProductSheet> {
           children: [
             Text(isEdit ? 'Edit Product' : 'Add Product',
                 style: AppTextStyles.heading2),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+
+            if (isEdit) ...[
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  title: Text(_isActive ? 'Active' : 'Inactive',
+                      style: AppTextStyles.bodyMedium),
+                  subtitle: Text(
+                    _isActive ? 'Visible to retailers' : 'Hidden from catalog',
+                    style: AppTextStyles.caption,
+                  ),
+                  value: _isActive,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (v) => setState(() => _isActive = v),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             TextField(
               controller: _nameCtrl,
               decoration: const InputDecoration(
@@ -313,7 +362,22 @@ class _ProductSheetState extends State<_ProductSheet> {
                     child: _npkField(_kCtrl, 'K (Potassium)')),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            Text('Product Images (up to 5)',
+                style: AppTextStyles.bodyMedium),
+            const SizedBox(height: 8),
+            ...List.generate(5, (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: _imageUrlCtrls[i],
+                decoration: InputDecoration(
+                  labelText: i == 0 ? 'Main image URL' : 'Image ${i + 1} URL',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            )),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -337,6 +401,14 @@ class _ProductSheetState extends State<_ProductSheet> {
     );
   }
 
+  String _matchCategory(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Fertilizers';
+    return _categories.firstWhere(
+      (c) => c.toLowerCase() == raw.toLowerCase(),
+      orElse: () => 'Fertilizers',
+    );
+  }
+
   Widget _npkField(TextEditingController ctrl, String label) =>
       TextField(
         controller: ctrl,
@@ -356,7 +428,12 @@ class _ProductSheetState extends State<_ProductSheet> {
     setState(() => _saving = true);
     try {
       final repo = ManufacturerRepository();
-      final data = {
+      final imageUrls = _imageUrlCtrls
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      final data = <String, dynamic>{
         'name': name,
         'category': _category,
         'price': price,
@@ -366,6 +443,8 @@ class _ProductSheetState extends State<_ProductSheet> {
         'nitrogen': double.tryParse(_nCtrl.text.trim()),
         'phosphorus': double.tryParse(_pCtrl.text.trim()),
         'potassium': double.tryParse(_kCtrl.text.trim()),
+        'images': imageUrls,
+        'isActive': _isActive,
       };
 
       if (widget.product != null) {

@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/widgets/app_brand_icon.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -21,17 +22,22 @@ class ProfileScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Text(
-          isHindi ? 'प्रोफ़ाइल' : 'Profile',
-          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+        titleSpacing: 16,
+        title: Row(
+          children: [
+            const AppBrandIcon(size: 34),
+            const SizedBox(width: 10),
+            Text(
+              isHindi ? 'प्रोफ़ाइल' : 'Profile',
+              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+            ),
+          ],
         ),
         automaticallyImplyLeading: false,
       ),
       body: userAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            const Center(child: Text('Failed to load profile.')),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => const Center(child: Text('Failed to load profile.')),
         data: (user) {
           if (user == null) {
             return _GuestView(isHindi: isHindi);
@@ -47,8 +53,11 @@ class _ProfileBody extends ConsumerWidget {
   final dynamic user;
   final bool isHindi;
   final dynamic locale;
-  const _ProfileBody(
-      {required this.user, required this.isHindi, required this.locale});
+  const _ProfileBody({
+    required this.user,
+    required this.isHindi,
+    required this.locale,
+  });
 
   String _roleLabel(String role, bool hindi) {
     switch (role) {
@@ -75,9 +84,7 @@ class _ProfileBody extends ConsumerWidget {
                 radius: 40,
                 backgroundColor: AppColors.primaryContainer,
                 child: Text(
-                  user.name.isNotEmpty
-                      ? user.name[0].toUpperCase()
-                      : '?',
+                  user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                   style: AppTextStyles.heading1.copyWith(
                     color: AppColors.primary,
                     fontSize: 32,
@@ -88,16 +95,19 @@ class _ProfileBody extends ConsumerWidget {
               Text(user.name, style: AppTextStyles.heading2),
               const SizedBox(height: 4),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   _roleLabel(user.role, isHindi),
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.primary),
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ],
@@ -173,8 +183,7 @@ class _ProfileBody extends ConsumerWidget {
           icon: const Icon(Icons.logout, color: AppColors.error),
           label: Text(
             isHindi ? 'लॉग आउट' : 'Logout',
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.error),
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
           ),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: AppColors.error),
@@ -187,10 +196,7 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         Center(
-          child: Text(
-            'KrishiDukaan v1.0.0',
-            style: AppTextStyles.caption,
-          ),
+          child: Text('KrishiDukaan v1.0.0', style: AppTextStyles.caption),
         ),
         const SizedBox(height: 80),
       ],
@@ -208,8 +214,11 @@ class _GuestView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.person_outline, size: 72,
-              color: AppColors.onSurfaceVariant),
+          const Icon(
+            Icons.person_outline,
+            size: 72,
+            color: AppColors.onSurfaceVariant,
+          ),
           const SizedBox(height: 16),
           Text(
             isHindi
@@ -243,9 +252,10 @@ class _Card extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 4,
-              offset: const Offset(0, 2)),
+            color: AppColors.cardShadow,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -264,8 +274,11 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const _InfoRow(
-      {required this.icon, required this.label, required this.value});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -275,14 +288,19 @@ class _InfoRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: AppColors.onSurfaceVariant),
           const SizedBox(width: 10),
-          Text(label,
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.onSurfaceVariant)),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(value,
-                style: AppTextStyles.bodyMedium,
-                textAlign: TextAlign.end),
+            child: Text(
+              value,
+              style: AppTextStyles.bodyMedium,
+              textAlign: TextAlign.end,
+            ),
           ),
         ],
       ),
@@ -294,8 +312,11 @@ class _LinkRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _LinkRow(
-      {required this.icon, required this.label, required this.onTap});
+  const _LinkRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -309,8 +330,11 @@ class _LinkRow extends StatelessWidget {
             Icon(icon, size: 18, color: AppColors.primary),
             const SizedBox(width: 10),
             Expanded(child: Text(label, style: AppTextStyles.bodyMedium)),
-            const Icon(Icons.chevron_right,
-                size: 18, color: AppColors.onSurfaceVariant),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -322,8 +346,11 @@ class _LanguageTile extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _LanguageTile(
-      {required this.label, required this.selected, required this.onTap});
+  const _LanguageTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {

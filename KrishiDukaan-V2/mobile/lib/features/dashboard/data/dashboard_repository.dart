@@ -200,55 +200,110 @@ class DashboardRepository {
   Stream<List<OrderModel>> watchSellerOrders(String sellerPhone) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    final byPhone = _db
-        .collection('orders')
-        .where('sellerPhone', isEqualTo: sellerPhone)
-        .snapshots();
-
-    if (uid.isEmpty) {
-      return byPhone.map((s) => s.docs.map(OrderModel.fromFirestore).toList());
+    final streams = <Stream<QuerySnapshot>>[
+      _db
+          .collection('orders')
+          .where('sellerPhone', isEqualTo: sellerPhone)
+          .snapshots(),
+    ];
+    if (uid.isNotEmpty) {
+      streams.add(_db
+          .collection('orders')
+          .where('sellerId', isEqualTo: uid)
+          .snapshots());
     }
-
-    // Legacy orders stored sellerId as phone string; newer ones use sellerPhone.
-    // Also check sellerId == uid for any orders written before this fix.
-    final bySellerId = _db
+    // Include bySellerId = sellerPhone for legacy support
+    streams.add(_db
         .collection('orders')
         .where('sellerId', isEqualTo: sellerPhone)
-        .snapshots();
+        .snapshots());
 
     final controller = StreamController<List<OrderModel>>();
-    List<DocumentSnapshot> phoneResults    = [];
-    List<DocumentSnapshot> sellerIdResults = [];
+    final results = List<List<DocumentSnapshot>>.filled(streams.length, []);
 
     void emit() {
-      final seen = <String>{};
-      final merged = [...phoneResults, ...sellerIdResults]
-          .where((d) => seen.add(d.id))
-          .toList()
-        ..sort((a, b) {
-          final ta = (a['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
-          final tb = (b['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
-          return tb.compareTo(ta);
+      try {
+        final seen = <String>{};
+        final merged = results
+            .expand((docs) => docs)
+            .where((d) => seen.add(d.id))
+            .toList();
+
+        merged.sort((a, b) {
+          try {
+            final dataA = a.data() as Map<String, dynamic>? ?? {};
+            final dataB = b.data() as Map<String, dynamic>? ?? {};
+
+            final rawA = dataA['createdAt'];
+            final rawB = dataB['createdAt'];
+
+            int timeA = 0;
+            if (rawA is Timestamp) {
+              timeA = rawA.millisecondsSinceEpoch;
+            } else if (rawA is String) {
+              timeA = DateTime.tryParse(rawA)?.millisecondsSinceEpoch ?? 0;
+            }
+
+            int timeB = 0;
+            if (rawB is Timestamp) {
+              timeB = rawB.millisecondsSinceEpoch;
+            } else if (rawB is String) {
+              timeB = DateTime.tryParse(rawB)?.millisecondsSinceEpoch ?? 0;
+            }
+
+            return timeB.compareTo(timeA);
+          } catch (e) {
+            return 0;
+          }
         });
-      if (!controller.isClosed) {
-        controller.add(merged.map(OrderModel.fromFirestore).toList());
+
+        if (!controller.isClosed) {
+          final mappedOrders = <OrderModel>[];
+          for (final doc in merged) {
+            try {
+              mappedOrders.add(OrderModel.fromFirestore(doc));
+            } catch (err, stack) {
+              print('Error mapping order ${doc.id}: $err');
+              print(stack.toString());
+            }
+          }
+          controller.add(mappedOrders);
+        }
+      } catch (err, stack) {
+        print('Error in watchSellerOrders emit: $err');
+        print(stack.toString());
       }
     }
 
-    final sub1 = byPhone.listen((s)     { phoneResults    = s.docs; emit(); },
-        onError: controller.addError);
-    final sub2 = bySellerId.listen((s)  { sellerIdResults = s.docs; emit(); },
-        onError: controller.addError);
+    final subs = List.generate(streams.length, (i) {
+      return streams[i].listen((s) {
+        results[i] = s.docs;
+        emit();
+      }, onError: (_) {
+        // A single query may be denied by rules (e.g. sellerId == phone is not
+        // permitted — rules only allow sellerId == uid). Silence it so the
+        // other queries (sellerPhone, sellerId == uid) still populate results.
+      });
+    });
 
-    controller.onCancel = () { sub1.cancel(); sub2.cancel(); };
+    controller.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
+    };
     return controller.stream;
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {
+    final fsStatus = switch (status) {
+      'cancelled' => 'rejected',
+      'dispatched' => 'out_for_delivery',
+      _ => status,
+    };
     await _db.collection('orders').doc(orderId).update({
-      'status': status,
+      'status': fsStatus,
       'statusHistory': FieldValue.arrayUnion([
-        {'status': status, 'at': DateTime.now().toIso8601String()},
+        {'status': fsStatus, 'at': DateTime.now().toIso8601String()},
       ]),
       'updatedAt': FieldValue.serverTimestamp(),
     });

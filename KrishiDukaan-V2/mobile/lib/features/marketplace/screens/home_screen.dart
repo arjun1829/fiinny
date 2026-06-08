@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
 
@@ -21,13 +22,17 @@ class HomeScreen extends ConsumerWidget {
           SliverAppBar(
             floating: true,
             backgroundColor: AppColors.primary,
+            titleSpacing: 16,
             title: Row(
               children: [
-                const Icon(Icons.grass, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(
-                  'KrishiDukaan',
-                  style: AppTextStyles.heading2.copyWith(color: Colors.white),
+                const AppBrandIcon(size: 34),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'KrishiDukaan',
+                    style: AppTextStyles.heading2.copyWith(color: Colors.white),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -37,7 +42,10 @@ class HomeScreen extends ConsumerWidget {
                 onPressed: () => context.go('/marketplace'),
               ),
               IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                icon: const Icon(
+                  Icons.notifications_outlined,
+                  color: Colors.white,
+                ),
                 onPressed: () {},
               ),
             ],
@@ -69,38 +77,79 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Find the best agri products near you',
-                    style: AppTextStyles.body
-                        .copyWith(color: AppColors.onSurfaceVariant),
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 20),
 
-                  // Search bar
-                  GestureDetector(
-                    onTap: () => context.go('/marketplace'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.divider),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.cardShadow,
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.primary.withValues(alpha: 0.08),
+                          Colors.white,
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      child: Row(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: AppColors.primaryContainer.withValues(
+                          alpha: 0.6,
+                        ),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.search,
-                              color: AppColors.onSurfaceVariant),
-                          const SizedBox(width: 12),
                           Text(
-                            'Search fertilizers, seeds, pesticides...',
-                            style: AppTextStyles.body.copyWith(
-                              color: AppColors.onSurfaceVariant,
+                            'Quick product search',
+                            style: AppTextStyles.heading3.copyWith(
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Search by product type, crop need, or nearby availability.',
+                            style: AppTextStyles.bodySmall,
+                          ),
+                          const SizedBox(height: 14),
+                          GestureDetector(
+                            onTap: () => context.go('/marketplace'),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.cardShadow,
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.search,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Search fertilizers, seeds, pesticides...',
+                                    style: AppTextStyles.body.copyWith(
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -164,11 +213,11 @@ class HomeScreen extends ConsumerWidget {
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.75,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
                           itemCount: 4,
                           itemBuilder: (_, _) => _PlaceholderProductCard(),
                         ),
@@ -180,16 +229,16 @@ class HomeScreen extends ConsumerWidget {
                                 physics: const NeverScrollableScrollPhysics(),
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  childAspectRatio: 0.75,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                ),
+                                      crossAxisCount: 2,
+                                      childAspectRatio: 0.75,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                    ),
                                 itemCount: products.length,
                                 itemBuilder: (_, i) => ProductCard(
                                   product: products[i],
-                                  onTap: () => context
-                                      .go('/product/${products[i].id}'),
+                                  onTap: () =>
+                                      context.go('/product/${products[i].id}'),
                                 ),
                               ),
                       );
@@ -270,21 +319,26 @@ class _DashboardBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Your Dashboard',
-                    style: AppTextStyles.heading3
-                        .copyWith(color: Colors.white)),
-                Text('Manage inventory & orders',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: Colors.white70)),
+                Text(
+                  'Your Dashboard',
+                  style: AppTextStyles.heading3.copyWith(color: Colors.white),
+                ),
+                Text(
+                  'Manage inventory & orders',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
               ],
             ),
           ),
           FilledButton(
             onPressed: () => context.go('/dashboard'),
             style: FilledButton.styleFrom(backgroundColor: Colors.white),
-            child: Text('Open',
-                style: AppTextStyles.button
-                    .copyWith(color: AppColors.primary)),
+            child: Text(
+              'Open',
+              style: AppTextStyles.button.copyWith(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -311,10 +365,11 @@ class _BecomeRetailerBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Sell on KrishiDukaan',
-                    style: AppTextStyles.heading3),
-                Text('Reach farmers in your area',
-                    style: AppTextStyles.bodySmall),
+                Text('Sell on KrishiDukaan', style: AppTextStyles.heading3),
+                Text(
+                  'Reach farmers in your area',
+                  style: AppTextStyles.bodySmall,
+                ),
               ],
             ),
           ),
@@ -350,7 +405,9 @@ class _PlaceholderProductCard extends StatelessWidget {
             height: 120,
             decoration: BoxDecoration(
               color: AppColors.surfaceVariant,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
             ),
             child: const Center(
               child: Icon(Icons.grass, size: 48, color: AppColors.primaryLight),
@@ -379,10 +436,7 @@ class _PlaceholderProductCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Loading...',
-                  style: AppTextStyles.price,
-                ),
+                Text('Loading...', style: AppTextStyles.price),
               ],
             ),
           ),

@@ -842,7 +842,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
   @override
   Widget build(BuildContext context) {
     final listing = widget.listing;
-    final hasDiscount = listing.discount != null && listing.discount!.isActive;
+    final hasDiscount = listing.discount != null && listing.discount!.isCurrentlyActive;
     final discountPct =
         hasDiscount ? listing.discount!.percentage : 0.0;
     final effectivePrice = listing.effectivePrice;
@@ -921,7 +921,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                           children: [
                             Flexible(
                               child: Text(
-                                listing.sellerName,
+                                listing.sellerName.isNotEmpty
+                                    ? listing.sellerName
+                                    : listing.sellerPhone,
                                 style: AppTextStyles.bodyMedium.copyWith(
                                     fontWeight: FontWeight.w700),
                                 overflow: TextOverflow.ellipsis,
@@ -1063,10 +1065,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                         ),
                       ),
                     ),
-                  if (listing.hasLocation && listing.isInStock)
+                  if (listing.hasLocation && listing.isInStock && listing.isOnline)
                     const SizedBox(width: 8),
-                  // Add to cart / Order button
-                  if (listing.isInStock)
+                  // Add to cart / Order button — only if seller sells online
+                  if (listing.isInStock && listing.isOnline)
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: () => _addToCart(context),

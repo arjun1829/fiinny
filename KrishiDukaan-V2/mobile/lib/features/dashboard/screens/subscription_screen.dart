@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
@@ -77,20 +79,25 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             body: jsonEncode({
               'seatCount': _seats,
               'durationMonths': _duration.months,
-              'userId': user.phone,
+              'userId': user.uid,
             }),
           )
           .timeout(const Duration(seconds: 15));
 
       if (res.statusCode != 200) {
-        throw Exception('Server error ${res.statusCode}');
+        throw Exception('Payment server error (${res.statusCode}). '
+            'Check that RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set '
+            'in your production environment.');
       }
 
       final order = jsonDecode(res.body) as Map<String, dynamic>;
       if (order['error'] != null) throw Exception(order['error']);
 
+      // Use the key the backend used to create the order so they always match.
+      final razorpayKey = order['key_id'] as String? ?? AppConfig.razorpayKeyId;
+
       _razorpay.open({
-        'key': AppConfig.razorpayKeyId,
+        'key': razorpayKey,
         'amount': order['amount'],
         'currency': order['currency'] ?? 'INR',
         'order_id': order['id'],
@@ -106,21 +113,126 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = 'Could not start payment. Please try again.';
+        _error = 'Could not start payment: $e';
         _loading = false;
       });
     }
   }
 
-  void _onSuccess(PaymentSuccessResponse r) {
-    setState(() => _loading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Subscription activated!'),
-        backgroundColor: AppColors.success,
-      ),
-    );
-    context.go('/dashboard');
+  void _onSuccess(PaymentSuccessResponse response) async {
+    setState(() => _loading = true);
+
+    try {
+      // 1. Verify payment signature with backend API
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final verifyRes = await http.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/api/payment/verify'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'razorpay_order_id': response.orderId ?? '',
+          'razorpay_payment_id': response.paymentId ?? '',
+          'razorpay_signature': response.signature ?? '',
+        }),
+      );
+
+      if (verifyRes.statusCode != 200) {
+        throw Exception('Payment verification failed');
+      }
+
+      final verifyData = jsonDecode(verifyRes.body) as Map<String, dynamic>;
+      if (verifyData['status'] != 'ok') {
+        throw Exception('Payment verification failed');
+      }
+
+      final verifiedSeatCount = (verifyData['seatCount'] as num?)?.toInt() ?? _seats;
+
+      // 2. Update Subscription Status in Firestore directly (matches web SDK updateSubscriptionStatus)
+      final user = ref.read(currentUserProvider).valueOrNull!;
+      final firebaseUser = FirebaseAuth.instance.currentUser!;
+
+      final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.phone);
+      final currentSeats = user.totalSeats;
+      final seatsToAdd = verifiedSeatCount;
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      batch.update(userDocRef, {
+        'isPaid': true,
+        'subscriptionStatus': 'paid',
+        'paymentDetails': {
+          'orderId': response.orderId,
+          'paymentId': response.paymentId,
+        },
+        'totalSeats': currentSeats + seatsToAdd,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      final pricePerSeat = _pricePerSeat[_duration.months] ?? 21;
+      final totalAmount = seatsToAdd * pricePerSeat;
+
+      final now = DateTime.now();
+      final expiry = DateTime.now().add(Duration(days: _duration.months * 30));
+
+      final paymentRef = FirebaseFirestore.instance.collection('payments').doc();
+      batch.set(paymentRef, {
+        'userId': firebaseUser.uid,
+        'userPhone': user.phone,
+        'amount': totalAmount,
+        'seatCount': seatsToAdd,
+        'durationMonths': _duration.months,
+        'currency': 'INR',
+        'razorpayOrderId': response.orderId,
+        'razorpayPaymentId': response.paymentId,
+        'timestamp': FieldValue.serverTimestamp(),
+        'status': 'success',
+      });
+
+      final subRef = FirebaseFirestore.instance.collection('subscriptions').doc();
+      batch.set(subRef, {
+        'ownerId': firebaseUser.uid,
+        'ownerPhone': user.phone,
+        'ownerType': user.role == 'manufacturer' ? 'manufacturer' : 'retailer',
+        'planName': 'Standard',
+        'seatsPurchased': seatsToAdd,
+        'durationMonths': _duration.months,
+        'amountPaid': totalAmount,
+        'currency': 'INR',
+        'razorpayOrderId': response.orderId,
+        'razorpayPaymentId': response.paymentId,
+        'subscriptionStatus': 'active',
+        'startDate': Timestamp.fromDate(now),
+        'expiryDate': Timestamp.fromDate(expiry),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      // Refresh the user state so changes propagate to dashboard and shell
+      ref.invalidate(currentUserProvider);
+
+      setState(() => _loading = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Subscription activated!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        context.go('/dashboard');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Payment verification or DB update failed: $e';
+        });
+      }
+    }
   }
 
   void _onError(PaymentFailureResponse r) {

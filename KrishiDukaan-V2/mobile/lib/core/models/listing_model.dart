@@ -14,6 +14,11 @@ class ListingModel {
   final List<VariantModel> variants;
   final DiscountModel? discount;
   final String? assignedByManufacturerPhone;
+  final String? productName;
+  final String? imageUrl;
+  final List<String> images;
+  final bool isActive;
+  final bool isOnline;
 
   // Set client-side after Haversine calculation
   double? distanceKm;
@@ -32,6 +37,11 @@ class ListingModel {
     required this.variants,
     this.discount,
     this.assignedByManufacturerPhone,
+    this.productName,
+    this.imageUrl,
+    this.images = const [],
+    this.isActive = true,
+    this.isOnline = true,
     this.distanceKm,
   });
 
@@ -39,7 +49,7 @@ class ListingModel {
   bool get hasLocation => sellerLat != null && sellerLng != null;
 
   double get effectivePrice {
-    if (discount != null && discount!.isActive) {
+    if (discount != null && discount!.isCurrentlyActive) {
       return price * (1 - discount!.percentage / 100);
     }
     return price;
@@ -49,6 +59,17 @@ class ListingModel {
     final d = doc.data() as Map<String, dynamic>;
     final geo = d['sellerGeo'] as Map<String, dynamic>?;
     final discountData = d['discount'] as Map<String, dynamic>?;
+
+    // Parse images — web uses images[] array; legacy uses image string
+    List<String> imgs;
+    final rawImages = d['images'];
+    if (rawImages is List && rawImages.isNotEmpty) {
+      imgs = rawImages.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+    } else {
+      final single = d['image'] as String? ?? d['imageUrl'] as String?;
+      imgs = (single != null && single.isNotEmpty) ? [single] : [];
+    }
+
     return ListingModel(
       id: doc.id,
       // Web products use doc.id as the canonical product id; no separate catalogId
@@ -79,8 +100,12 @@ class ListingModel {
           ? DiscountModel.fromMap(discountData)
           : null,
       assignedByManufacturerPhone:
-          d['assignedByManufacturerPhone'] as String? ??
           d['assignedByManufacturerPhone'] as String?,
+      productName: d['name'] as String? ?? d['fullName'] as String?,
+      imageUrl: imgs.isNotEmpty ? imgs.first : null,
+      images: imgs,
+      isActive: d['isActive'] as bool? ?? true,
+      isOnline: d['isOnline'] as bool? ?? true,
     );
   }
 

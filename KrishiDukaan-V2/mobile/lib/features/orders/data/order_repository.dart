@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/models/cart_model.dart';
@@ -74,18 +75,60 @@ class OrderRepository {
     await batch.commit();
   }
 
-  /// Streams orders placed BY the current customer.
+  /// Streams all orders for the current user — as buyer and as seller.
+  /// Runs three separate queries so a permission denial on any one (e.g. phone
+  /// queries when myPhone() fails in rules) never kills the other results.
   Stream<List<OrderModel>> watchCustomerOrders() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return Stream.value([]);
 
-    return _db
-        .collection('orders')
+    final phone = user.phoneNumber ?? '';
+
+    final controller = StreamController<List<OrderModel>>();
+    List<DocumentSnapshot> uidDocs    = [];
+    List<DocumentSnapshot> buyerDocs  = [];
+    List<DocumentSnapshot> sellerDocs = [];
+
+    void emit() {
+      final seen = <String>{};
+      final orders = [...uidDocs, ...buyerDocs, ...sellerDocs]
+          .where((d) => seen.add(d.id))
+          .map((d) {
+            try { return OrderModel.fromFirestore(d); } catch (_) { return null; }
+          })
+          .whereType<OrderModel>()
+          .toList()
+        ..sort((a, b) =>
+            (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+      if (!controller.isClosed) controller.add(orders);
+    }
+
+    // Query 1: by Firebase Auth UID — always allowed by security rules
+    final sub1 = _db.collection('orders')
         .where('customerId', isEqualTo: user.uid)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map(OrderModel.fromFirestore).toList());
+        .listen((s) { uidDocs = s.docs; emit(); }, onError: (_) {});
+
+    // Queries 2 & 3: by phone — may be denied if myPhone() fails in rules; silenced
+    StreamSubscription? sub2;
+    StreamSubscription? sub3;
+    if (phone.isNotEmpty) {
+      sub2 = _db.collection('orders')
+          .where('customerPhone', isEqualTo: phone)
+          .snapshots()
+          .listen((s) { buyerDocs = s.docs; emit(); }, onError: (_) {});
+      sub3 = _db.collection('orders')
+          .where('sellerPhone', isEqualTo: phone)
+          .snapshots()
+          .listen((s) { sellerDocs = s.docs; emit(); }, onError: (_) {});
+    }
+
+    controller.onCancel = () {
+      sub1.cancel();
+      sub2?.cancel();
+      sub3?.cancel();
+    };
+    return controller.stream;
   }
 
   Future<OrderModel?> fetchById(String orderId) async {

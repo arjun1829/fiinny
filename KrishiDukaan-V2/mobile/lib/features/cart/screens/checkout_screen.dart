@@ -81,9 +81,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       // The Razorpay API returns the order ID in the 'id' field, not 'orderId'
       _razorpayOrderId = result['id'] as String?;
       final amount = (result['amount'] as num).toInt();
+      // Use the key the backend used to create the order — prevents key-mismatch
+      // errors when the server's RAZORPAY_KEY_ID differs from the app default.
+      final razorpayKey = result['key_id'] as String? ?? AppConfig.razorpayKeyId;
 
       _razorpay.open({
-        'key': AppConfig.razorpayKeyId,
+        'key': razorpayKey,
         'order_id': _razorpayOrderId,
         'amount': amount,
         'name': 'KrishiDukaan',
@@ -99,7 +102,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _error = 'Failed to initiate payment. Please try again.';
+        _error = 'Failed to initiate payment: $e';
       });
     }
   }

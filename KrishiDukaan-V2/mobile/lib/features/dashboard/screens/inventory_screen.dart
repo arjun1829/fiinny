@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -128,12 +129,25 @@ class _ListingTile extends StatelessWidget {
           child: SizedBox(
             width: 50,
             height: 50,
-            child: const Icon(Icons.inventory_2_outlined,
-                color: AppColors.primaryLight),
+            child: listing.imageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: listing.imageUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primaryLight),
+                    errorWidget: (_, __, ___) => const Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppColors.primaryLight),
+                  )
+                : const Icon(Icons.inventory_2_outlined,
+                    color: AppColors.primaryLight),
           ),
         ),
-        title: Text('Catalog: ${listing.catalogId.substring(0, 8)}...',
-            style: AppTextStyles.bodyMedium),
+        title: Text(
+          listing.productName ?? 'Product ${listing.catalogId.substring(0, 8)}...',
+          style: AppTextStyles.bodyMedium,
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -188,7 +202,6 @@ class _ListingTile extends StatelessWidget {
           onSelected: (action) => _handleAction(action, context),
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(value: 'discount', child: Text('Discount')),
             PopupMenuItem(
                 value: 'delete',
                 child: Text('Delete',
@@ -209,15 +222,6 @@ class _ListingTile extends StatelessWidget {
               borderRadius:
                   BorderRadius.vertical(top: Radius.circular(20))),
           builder: (_) => _EditListingSheet(listing: listing),
-        );
-      case 'discount':
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          shape: const RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(20))),
-          builder: (_) => _DiscountSheet(listing: listing),
         );
       case 'delete':
         showDialog(
@@ -401,6 +405,8 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
 // ── Edit Listing Sheet ────────────────────────────────────────────────────────
 
+const _kUnitTypes = ['gm', 'KG', 'ml', 'L', 'Packet', 'Piece', 'Bottle', 'Can', 'Custom'];
+
 class _EditListingSheet extends StatefulWidget {
   final ListingModel listing;
   const _EditListingSheet({required this.listing});
@@ -415,6 +421,20 @@ class _EditListingSheetState extends State<_EditListingSheet> {
   File? _imageFile;
   bool _saving = false;
 
+  // Active toggle
+  late bool _isActive;
+
+  // Variants
+  late List<_VariantEntry> _variants;
+  String _selectedUnit = 'KG';
+
+  // Image URLs (up to 5)
+  late List<TextEditingController> _imageUrlCtrls;
+
+  // Discount
+  late bool _discountActive;
+  late double _discountPct;
+
   @override
   void initState() {
     super.initState();
@@ -422,13 +442,36 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         text: widget.listing.price.toStringAsFixed(0));
     _stockCtrl = TextEditingController(
         text: '${widget.listing.stockQuantity}');
+    _isActive = widget.listing.isActive;
+    _variants = widget.listing.variants.map((v) => _VariantEntry(
+      label: v.label,
+      price: v.price,
+      stock: v.stock,
+    )).toList();
+    // Initialize image URL controllers from existing images
+    final existingUrls = widget.listing.images;
+    _imageUrlCtrls = List.generate(5, (i) {
+      return TextEditingController(text: i < existingUrls.length ? existingUrls[i] : '');
+    });
+    _discountActive = widget.listing.discount?.isActive ?? false;
+    _discountPct = widget.listing.discount?.percentage ?? 10;
   }
 
   @override
   void dispose() {
     _priceCtrl.dispose();
     _stockCtrl.dispose();
+    for (final c in _imageUrlCtrls) { c.dispose(); }
+    for (final v in _variants) { v.dispose(); }
     super.dispose();
+  }
+
+  void _addVariant() {
+    setState(() => _variants.add(_VariantEntry(label: '', price: 0, stock: 0)));
+  }
+
+  void _removeVariant(int i) {
+    setState(() => _variants.removeAt(i));
   }
 
   @override
@@ -440,47 +483,39 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Edit Listing', style: AppTextStyles.heading2),
-          const SizedBox(height: 16),
-
-          // Image picker
-          GestureDetector(
-            onTap: _pickImage,
-            child: Container(
-              height: 100,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.divider),
-              ),
-              child: _imageFile != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(_imageFile!, fit: BoxFit.cover),
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.add_photo_alternate_outlined,
-                            size: 32, color: AppColors.onSurfaceVariant),
-                        Text('Add Image',
-                            style: AppTextStyles.bodySmall),
-                      ],
-                    ),
-            ),
-          ),
           const SizedBox(height: 12),
 
+          // Active/Inactive toggle
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              title: Text(_isActive ? 'Active' : 'Inactive',
+                  style: AppTextStyles.bodyMedium),
+              subtitle: Text(
+                _isActive ? 'Visible to customers' : 'Hidden from marketplace',
+                style: AppTextStyles.caption,
+              ),
+              value: _isActive,
+              activeThumbColor: AppColors.primary,
+              onChanged: (v) => setState(() => _isActive = v),
+            ),
+          ),
+          // Base price & stock
           TextField(
             controller: _priceCtrl,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
-              labelText: 'Price (₹)',
+              labelText: 'Base Price (₹)',
               border: OutlineInputBorder(),
               prefixText: '₹ ',
             ),
@@ -494,7 +529,163 @@ class _EditListingSheetState extends State<_EditListingSheet> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 16),
+
+          // ── Pack sizes / variants ──────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Pack Sizes', style: AppTextStyles.bodyMedium),
+              TextButton.icon(
+                onPressed: _addVariant,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add Size'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+              ),
+            ],
+          ),
+          // Unit type chips
+          Wrap(
+            spacing: 6,
+            children: _kUnitTypes.map((u) => ChoiceChip(
+              label: Text(u, style: AppTextStyles.caption),
+              selected: _selectedUnit == u,
+              selectedColor: AppColors.primaryContainer,
+              onSelected: (_) => setState(() => _selectedUnit = u),
+            )).toList(),
+          ),
+          const SizedBox(height: 8),
+          ..._variants.asMap().entries.map((e) {
+            final i = e.key;
+            final v = e.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: v.labelCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Size (e.g. 1 $_selectedUnit)',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: v.priceCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '₹ Price',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: v.stockCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Stock',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline,
+                        color: AppColors.error, size: 20),
+                    onPressed: () => _removeVariant(i),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+
+          // ── Product images ─────────────────────────────────────────────
+          Text('Product Images (up to 5)', style: AppTextStyles.bodyMedium),
+          const SizedBox(height: 8),
+          // Main image — file picker or URL
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _imageUrlCtrls[0],
+                  decoration: const InputDecoration(
+                    labelText: 'Main image URL',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _pickImage,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.divider),
+                  ),
+                  child: _imageFile != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(_imageFile!, fit: BoxFit.cover),
+                        )
+                      : const Icon(Icons.add_photo_alternate_outlined,
+                          size: 24, color: AppColors.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...List.generate(4, (i) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextField(
+              controller: _imageUrlCtrls[i + 1],
+              decoration: InputDecoration(
+                labelText: 'Image ${i + 2} URL',
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          )),
+          const SizedBox(height: 16),
+
+          // ── Discount ───────────────────────────────────────────────────
+          Text('Discount', style: AppTextStyles.bodyMedium),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              _discountActive ? '${_discountPct.toInt()}% off' : 'No discount',
+              style: AppTextStyles.body,
+            ),
+            value: _discountActive,
+            activeThumbColor: AppColors.primary,
+            onChanged: (v) => setState(() => _discountActive = v),
+          ),
+          if (_discountActive)
+            Slider(
+              value: _discountPct,
+              min: 1,
+              max: 80,
+              divisions: 79,
+              label: '${_discountPct.toInt()}%',
+              activeColor: AppColors.primary,
+              onChanged: (v) => setState(() => _discountPct = v),
+            ),
           const SizedBox(height: 20),
+
           SizedBox(
             width: double.infinity,
             child: FilledButton(
@@ -511,6 +702,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -548,16 +740,48 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
     setState(() => _saving = true);
     try {
-      final updates = <String, dynamic>{
-        'price': price,
-        'stockQuantity': stock,
-      };
+      // Collect image URLs (non-empty)
+      final imageUrls = _imageUrlCtrls
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
 
+      // Upload picked file if any, replace or prepend to URLs
       if (_imageFile != null) {
         final url = await DashboardRepository()
             .uploadListingImage(_imageFile!, widget.listing.sellerPhone);
-        updates['imageUrl'] = url;
+        if (imageUrls.isEmpty || imageUrls.first.isEmpty) {
+          if (imageUrls.isEmpty) {
+            imageUrls.insert(0, url);
+          } else {
+            imageUrls[0] = url;
+          }
+        } else {
+          imageUrls.insert(0, url);
+          if (imageUrls.length > 5) imageUrls.removeLast();
+        }
       }
+
+      // Collect variants
+      final variants = _variants.map((v) {
+        final label = v.labelCtrl.text.trim();
+        final vPrice = double.tryParse(v.priceCtrl.text.trim()) ?? 0;
+        final vStock = int.tryParse(v.stockCtrl.text.trim()) ?? 0;
+        return VariantModel(label: label, price: vPrice, stock: vStock);
+      }).where((v) => v.label.isNotEmpty).toList();
+
+      final updates = <String, dynamic>{
+        'price': price,
+        'stockQuantity': stock,
+        'isActive': _isActive,
+        if (imageUrls.isNotEmpty) 'images': imageUrls,
+        if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
+        'variants': variants.map((v) => v.toMap()).toList(),
+        'discount': {
+          'isActive': _discountActive,
+          'percentage': _discountPct,
+        },
+      };
 
       await DashboardRepository()
           .updateListing(widget.listing.id, updates);
@@ -565,6 +789,23 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _VariantEntry {
+  final TextEditingController labelCtrl;
+  final TextEditingController priceCtrl;
+  final TextEditingController stockCtrl;
+
+  _VariantEntry({required String label, required double price, required int stock})
+      : labelCtrl = TextEditingController(text: label),
+        priceCtrl = TextEditingController(text: price > 0 ? price.toStringAsFixed(0) : ''),
+        stockCtrl = TextEditingController(text: stock > 0 ? '$stock' : '');
+
+  void dispose() {
+    labelCtrl.dispose();
+    priceCtrl.dispose();
+    stockCtrl.dispose();
   }
 }
 

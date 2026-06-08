@@ -150,6 +150,18 @@ class _ManufacturerBody extends ConsumerWidget {
                   onTap: () =>
                       context.push('/dashboard/manufacturer/brand'),
                 ),
+                _ActionTile(
+                  icon: Icons.receipt_long_outlined,
+                  label: 'Incoming Orders',
+                  onTap: () =>
+                      context.push('/dashboard/orders'),
+                ),
+                _ActionTile(
+                  icon: Icons.local_shipping_outlined,
+                  label: 'Delivery Settings',
+                  onTap: () =>
+                      context.push('/dashboard/delivery'),
+                ),
               ],
             ),
             const SizedBox(height: 80),

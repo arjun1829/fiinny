@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +22,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     // Initialize FCM when a logged-in user is first available
     ref.listenManual(currentUserProvider, (_, next) {
       final user = next.valueOrNull;
-      if (user != null && user.phone.isNotEmpty) {
+      if (!kIsWeb && user != null && user.phone.isNotEmpty) {
         NotificationService().initialize(user.phone);
       }
     });

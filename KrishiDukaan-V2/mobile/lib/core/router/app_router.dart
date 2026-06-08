@@ -187,7 +187,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/manufacturer/assign',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const AssignProductScreen(),
+        builder: (_, state) {
+          final phone = state.uri.queryParameters['retailerPhone'];
+          return AssignProductScreen(initialRetailerPhone: phone);
+        },
       ),
       GoRoute(
         path: '/dashboard/manufacturer/brand',
