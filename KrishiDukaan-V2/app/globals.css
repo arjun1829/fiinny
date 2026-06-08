@@ -26,6 +26,27 @@
   scrollbar-width: none;
 }
 
+/* Visible, clean custom scrollbar for the product-detail store list (desktop).
+   Thin track, rounded always-visible thumb that darkens on hover. */
+.store-scrollbar {
+  scrollbar-width: thin;                                   /* Firefox */
+  scrollbar-color: rgba(61, 43, 31, 0.35) transparent;     /* thumb / track */
+}
+.store-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.store-scrollbar::-webkit-scrollbar-track {
+  background: rgba(61, 43, 31, 0.06);
+  border-radius: 9999px;
+}
+.store-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(61, 43, 31, 0.35);
+  border-radius: 9999px;
+}
+.store-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(61, 43, 31, 0.55);
+}
+
 /* Leaflet map overrides */
 .leaflet-container {
   font-family: inherit;

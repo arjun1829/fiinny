@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag } from "lucide-react";
+import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package } from "lucide-react";
 import { cn } from "../../dashboard/_lib/cn";
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/admin/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/admin/products", label: "Products", icon: Box },
   { href: "/admin/discounts", label: "Discounts", icon: Tag },
+  { href: "/admin/inventory", label: "Inventory", icon: Package },
   { href: "/admin/companies", label: "Company Pages", icon: Building2 },
   { href: "/admin/hubs", label: "Hubs", icon: Layers },
   { href: "/admin/reports", label: "Reports", icon: Mail },

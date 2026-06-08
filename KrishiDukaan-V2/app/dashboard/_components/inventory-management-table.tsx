@@ -31,7 +31,7 @@ type InventoryManagementTableProps = {
   disabled?: boolean;
   userId?: string;
   onUpdated: () => Promise<void>;
-  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
+  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean, isAssigned?: boolean) => Promise<void>;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
 };
 
@@ -44,7 +44,7 @@ function RowActions({
 }: {
   row: InventoryRow;
   userId?: string;
-  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
+  onToggleActive?: (productId: string, inventoryId: string, isActive: boolean, isAssigned?: boolean) => Promise<void>;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
   onUpdated: () => Promise<void>;
 }) {
@@ -76,7 +76,7 @@ function RowActions({
     setToggling(true);
     setRowError(null);
     try {
-      await onToggleActive(row.productId, row.inventoryId, row.isActive);
+      await onToggleActive(row.productId, row.inventoryId, row.isActive, row.assignedByManufacturer);
     } catch (e) {
       setRowError(e instanceof Error ? e.message : "Failed.");
     } finally {
@@ -117,12 +117,12 @@ function RowActions({
           </button>
         ) : (
           <>
-            {onToggleActive && !row.assignedByManufacturer ? (
+            {onToggleActive ? (
               <button
                 type="button"
                 onClick={handleToggle}
                 disabled={toggling || deleting}
-                title={row.isActive ? "Deactivate (frees seat)" : "Activate (consumes seat)"}
+                title={row.isActive ? "Deactivate" : "Activate"}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50",
                   row.isActive
@@ -206,9 +206,13 @@ function RowActions({
             originalProductId={row.originalProductId}
             sellingPrice={row.sellingPrice}
             discountEnabled={row.discountEnabled}
+            discountType={row.discountType ?? "percentage"}
             discountPct={row.discountPct}
+            discountFixedAmt={row.discountFixedAmt ?? 0}
             discountStartDate={row.discountStartDate}
             discountEndDate={row.discountEndDate}
+            bulkDiscountEnabled={row.bulkDiscountEnabled ?? false}
+            bulkDiscountTiers={row.bulkDiscountTiers ?? []}
             isActive={row.isActive}
             onSaved={async () => {
               setDiscountOpen(false);

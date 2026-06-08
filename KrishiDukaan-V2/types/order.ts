@@ -30,6 +30,21 @@ export type CartItem = {
   variantUnit?: string;
 };
 
+/**
+ * Stable identity for a single cart line. The SAME product + seller + sell mode
+ * but a DIFFERENT package size (variantUnit) is a DISTINCT cart line, so the
+ * variant is part of the key — otherwise quantity / remove / store-assign would
+ * collapse every size of a product into one entry.
+ *
+ * This is the single source of truth for cart-item identity; both the cart UI
+ * and the cart-state reducers in page.tsx must use it so they never drift.
+ */
+export function cartItemKey(
+  item: Pick<CartItem, "productId" | "sellerId" | "sellMode" | "variantUnit">,
+): string {
+  return `${item.productId}_${item.sellerId}_${item.sellMode}_${item.variantUnit ?? ""}`;
+}
+
 export type OrderItem = {
   productId: string;
   name: string;

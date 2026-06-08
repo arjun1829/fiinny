@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
+import { cartItemKey } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
 import { fetchStoreOnlineDelivery } from "../firebase";
@@ -621,11 +622,11 @@ function CartItemCard({
               </button>
             )}
             <div className="flex items-center gap-1">
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
               <span className={`${isPending ? "w-6" : "w-8"} text-center font-bold text-sm`}>{item.qty}</span>
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
             </div>
-            <button onClick={() => onRemove(`${item.productId}_${item.sellerId}_${item.sellMode}`)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
+            <button onClick={() => onRemove(cartItemKey(item))} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
           </div>
         </div>
         <div className="font-black text-on-surface text-right shrink-0">
@@ -642,7 +643,7 @@ function CartItemCard({
             currentSellerId={isPending ? undefined : item.sellerId}
             variantUnit={item.variantUnit}
             onSelect={(sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
-              onAssignStore(`${item.productId}_${item.sellerId}_${item.sellMode}`, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
+              onAssignStore(cartItemKey(item), sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
               setShowPicker(false);
             }}
           />
@@ -691,9 +692,9 @@ export default function CartView({
   const pendingItems = items.filter((i) => i.sellMode === "pending" || !i.sellerId);
   const canCheckout = readyItems.length > 0;
 
-  const { totalCharge: deliveryCharge, bySellerWeight, loading: estimatingDelivery } =
+  const { totalCharge: deliveryCharge, bySellerCharge, bySellerWeight, loading: estimatingDelivery } =
     useDeliveryEstimates(readyItems);
-  const grandTotal = subtotal + (canCheckout ? deliveryCharge : 0);
+  const grandTotal = subtotal + deliveryCharge;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -887,7 +888,7 @@ export default function CartView({
               </p>
               {readyItems.map((item) => (
                 <CartItemCard
-                  key={item.productId}
+                  key={cartItemKey(item)}
                   item={item}
                   product={allProducts.find((p) => p.id === item.productId)}
                   stores={storesWithDistance}
@@ -909,7 +910,7 @@ export default function CartView({
               </p>
               {pendingItems.map((item) => (
                 <CartItemCard
-                  key={item.productId}
+                  key={cartItemKey(item)}
                   item={item}
                   product={allProducts.find((p) => p.id === item.productId)}
                   stores={storesWithDistance}
@@ -1127,10 +1128,6 @@ export default function CartView({
                 <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
               </div>
             </div>
-          </div>
-        ) : isLoggedIn && !isCustomer ? (
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800">
-            Orders can only be placed from a customer account. Please log in with your customer account.
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">

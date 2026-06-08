@@ -200,9 +200,13 @@ export function ManufacturerCatalogueTable({ rows, onRefresh, onToggleActive }: 
                               originalProductId={r.originalProductId}
                               sellingPrice={r.price}
                               discountEnabled={r.discountEnabled}
+                              discountType={r.discountType ?? "percentage"}
                               discountPct={r.discountPct}
+                              discountFixedAmt={r.discountFixedAmt ?? 0}
                               discountStartDate={r.discountStartDate}
                               discountEndDate={r.discountEndDate}
+                              bulkDiscountEnabled={r.bulkDiscountEnabled ?? false}
+                              bulkDiscountTiers={r.bulkDiscountTiers ?? []}
                               isActive={r.isActive}
                               onSaved={async () => {
                                 setDiscountRow(null);

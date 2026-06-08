@@ -211,6 +211,8 @@ service cloud.firestore {
 
     // ─── orders ──────────────────────────────────────────────────────────────
     // Accepts both new (customerPhone/sellerPhone) and legacy (customerId/sellerId) fields.
+    // NOTE: Retailers and manufacturers can also place orders AS BUYERS (customerId == their uid).
+    //       Their buyer orders are separate from their incoming (seller-side) orders.
     match /orders/{orderId} {
       allow create: if isAuthed() && (
         request.resource.data.customerPhone == myPhone() ||
@@ -308,8 +310,12 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.createdBy == request.auth.uid ||
-        // Allow claiming assigned product if it matches the user's retailerDocId (from invite)
-        (resource.data.source == 'manufacturer_assigned' && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
+        phoneMatches(resource.data.retailerDocId) ||
+        // Allow claiming assigned product if it matches the user's retailerDocId (from invite or admin assignment)
+        ((resource.data.source == 'manufacturer_assigned' || resource.data.source == 'admin_assigned') && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
         // Allow any retailer to add their store to the product's availability array
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability']) ||
@@ -320,7 +326,9 @@ service cloud.firestore {
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.manufacturerId == request.auth.uid
+        resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.manufacturerId)
       ));
     }
 
@@ -365,13 +373,22 @@ service cloud.firestore {
     // ─── Discount field validation helper ───────────────────────────────────
     // Returns true when the incoming write does not set invalid discount values.
     // discountPct must be 0–99; dates must be absent or timestamps.
+    // Also validates new fields: discountType, discountFixedAmt, bulk tiers.
     function discountFieldsValid() {
       let d = request.resource.data;
       return (
         // discountPct: absent, or a number in [0, 99]
         (!('discountPct' in d) || (d.discountPct is number && d.discountPct >= 0 && d.discountPct <= 99)) &&
+        // discountFixedAmt: absent, or a non-negative number
+        (!('discountFixedAmt' in d) || (d.discountFixedAmt is number && d.discountFixedAmt >= 0)) &&
+        // discountType: absent, or one of the valid values
+        (!('discountType' in d) || d.discountType in ['percentage', 'fixed_amount']) &&
         // discountEnabled: absent or bool
         (!('discountEnabled' in d) || d.discountEnabled is bool) &&
+        // bulkDiscountEnabled: absent or bool
+        (!('bulkDiscountEnabled' in d) || d.bulkDiscountEnabled is bool) &&
+        // bulkDiscountTiers: absent or list
+        (!('bulkDiscountTiers' in d) || d.bulkDiscountTiers is list) &&
         // date fields: absent, null, or timestamp
         (!('discountStartDate' in d) || d.discountStartDate == null || d.discountStartDate is timestamp) &&
         (!('discountEndDate'   in d) || d.discountEndDate   == null || d.discountEndDate   is timestamp)
@@ -383,6 +400,9 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
         // retailerDocId can be stored as 10-digit or E164 — match both formats
         phoneMatches(resource.data.retailerDocId) ||
         // Allow if retailerPhone is set (post-backfill) and matches caller
@@ -392,6 +412,8 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthed() && discountFieldsValid() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
         // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
         (phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid) ||
         // Also allow if retailerPhone already matches (re-running backfill)
@@ -399,7 +421,9 @@ service cloud.firestore {
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.retailerId == request.auth.uid
+        resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId)
       ));
     }
 

@@ -3,9 +3,12 @@ import { ICONS, PRODUCTS, STORES } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { calcDiscount } from '../utils/discount';
-import { Tag } from 'lucide-react';
+import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
+import type { BulkDiscountTier } from '../dashboard/_types/inventory';
+import { Tag, Layers } from 'lucide-react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
-import { StoreWithDistance } from '../utils/nearby';
+import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
+import { normalizeUnit } from '../utils/weight';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
@@ -40,6 +43,96 @@ interface ProductDetailViewProps {
   onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
   onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
   onBuyNow?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
+}
+
+// ─── Bulk Discount Tiers Section (lazy-loaded per store) ─────────────────────
+
+function BulkTiersSection({
+  storePhone,
+  productId,
+  basePrice,
+}: {
+  storePhone: string;
+  productId: string;
+  basePrice: number;
+}) {
+  const [tiers, setTiers] = useState<BulkDiscountTier[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!storePhone || !productId) return;
+    let cancelled = false;
+
+    async function fetchTiers() {
+      try {
+        const { getDocs, query, collection, where } = await import("firebase/firestore");
+        const { db: fdb } = await import("../firebase");
+
+        // Find inventory by ownerPhone + (productId or originalProductId)
+        const [snap1, snap2] = await Promise.all([
+          getDocs(query(
+            collection(fdb, "inventory"),
+            where("ownerPhone", "==", storePhone),
+            where("productId", "==", productId),
+          )),
+          getDocs(query(
+            collection(fdb, "inventory"),
+            where("ownerPhone", "==", storePhone),
+            where("originalProductId", "==", productId),
+          )),
+        ]);
+
+        const docs = [...snap1.docs, ...snap2.docs];
+        for (const d of docs) {
+          const data = d.data() as Record<string, unknown>;
+          if (data.bulkDiscountEnabled && Array.isArray(data.bulkDiscountTiers) && data.bulkDiscountTiers.length) {
+            if (!cancelled) setTiers(
+              (data.bulkDiscountTiers as { minQty: number; discountPct: number }[])
+                .sort((a, b) => a.minQty - b.minQty)
+            );
+            break;
+          }
+        }
+      } catch { /* non-critical */ }
+      if (!cancelled) setLoaded(true);
+    }
+
+    fetchTiers();
+    return () => { cancelled = true; };
+  }, [storePhone, productId]);
+
+  if (!loaded || tiers.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-secondary/20 bg-secondary/5 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-secondary/10">
+        <Layers className="h-3.5 w-3.5 text-secondary shrink-0" />
+        <p className="text-[10px] font-black uppercase tracking-widest text-secondary">
+          Bulk Discount Tiers
+        </p>
+      </div>
+      <div className="divide-y divide-secondary/10">
+        {tiers.map((t, i) => {
+          const { finalPrice, discountAmt } = calcDiscount(basePrice, t.discountPct);
+          return (
+            <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+              <span className="text-on-surface-variant">Buy {t.minQty}+ units</span>
+              <div className="flex items-center gap-2">
+                <span className="text-on-surface-variant line-through text-[10px]">₹{fmtPrice(basePrice)}</span>
+                <span className="font-bold text-green-700">₹{fmtPrice(finalPrice)}</span>
+                <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-black text-white">
+                  {t.discountPct}% OFF
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-on-surface-variant px-3 py-2">
+        Add more units to your cart to unlock bigger savings.
+      </p>
+    </div>
+  );
 }
 
 // ─── Retailer Profile Section ─────────────────────────────────────────────────
@@ -609,37 +702,101 @@ export default function ProductDetailView({
     return match >= 0 ? match : 0;
   }, [productVariants, product.price]);
 
+  // ── Per-store variant resolution (SINGLE SOURCE OF TRUTH) ─────────────────
+  // For the CURRENTLY SELECTED package size, resolve this store's own configured
+  // price + stock from its availability entry. This one function drives store
+  // visibility, the store-card price, the price block, and Add/Buy/Order — so
+  // visibility and pricing always stay in sync.
+  //
+  // Rules:
+  //  • availability.variants[] (the store's own per-size prices) is authoritative.
+  //    - If it has the selected unit  → store stocks it; use that variant's price.
+  //    - If it has variants but NOT the selected unit → store does NOT stock it.
+  //  • No availability.variants[] (legacy single-price store) → it only provides the
+  //    base size: stocks the base variant (use availability.sellingPrice), and does
+  //    NOT provide any other size.
+  //  • No variants on the product at all → single-size product; always "stocked".
+  const findStoreAvailability = useCallback((store: any) => {
+    const storePhone = store.phone as string | undefined;
+    return product.availability?.find(
+      (a) =>
+        a.storeId === store.id ||
+        (a.storePhone && storePhone && a.storePhone === storePhone) ||
+        (a.storePhone && a.storePhone === store.id),
+    );
+  }, [product.availability]);
+
+  const resolveStoreVariant = useCallback((store: any): { stocked: boolean; price?: number } => {
+    const availability = findStoreAvailability(store);
+
+    // Single-size product (no variant selector) — nothing to filter on.
+    if (!selectedVariant) {
+      const sp = availability?.sellingPrice ?? (store.sellingPrice ?? store.price);
+      return { stocked: true, price: sp && sp > 0 ? Number(sp) : product.price };
+    }
+
+    const selectedKey = normalizeUnit(selectedVariant.unit);
+
+    // Helper: match a unit-keyed variant list against the selected size, comparing
+    // on the NORMALIZED unit so "2L" / "2 l" / "2ltr" / "2 Liter" all resolve equal.
+    const matchInList = (
+      list: { unit: string; price: number; stock?: number }[],
+    ): { stocked: boolean; price?: number } | null => {
+      if (!list || list.length === 0) return null;
+      const match = list.find((v) => normalizeUnit(v.unit) === selectedKey);
+      if (!match) return { stocked: false };
+      if (match.stock !== undefined && match.stock === 0) return { stocked: false, price: match.price };
+      return { stocked: true, price: match.price };
+    };
+
+    const storeVariants = availability?.variants;
+    if (storeVariants && storeVariants.length > 0) {
+      // Store configured explicit per-size prices — authoritative, normalized match.
+      return matchInList(storeVariants)!;
+    }
+
+    // No per-store availability entry → this is the product's OWNER store (the
+    // manufacturer/retailer that owns this catalogue item). Its real inventory is
+    // the product's own `variants[]`, so use that as this store's source of truth.
+    if (!availability && productVariants && productVariants.length > 0) {
+      return matchInList(productVariants)!;
+    }
+
+    // Legacy store with an availability entry but no per-size prices: it only
+    // provides the BASE size.
+    if (selectedVariantIdx === baseVariantIdx) {
+      const base = availability?.sellingPrice && availability.sellingPrice > 0
+        ? availability.sellingPrice
+        : (store.sellingPrice ?? store.price);
+      return { stocked: true, price: base && base > 0 ? Number(base) : selectedVariant.price };
+    }
+    // Non-base size requested but store has no configured price for it → not stocked.
+    return { stocked: false };
+  }, [findStoreAvailability, selectedVariant, selectedVariantIdx, baseVariantIdx, productVariants, product.price]);
+
+  // Stores that actually provide the SELECTED package size. Driven entirely by
+  // resolveStoreVariant so the rendered list, the price block, and the order
+  // actions all show the same set of stores. Sorting/dedup already done upstream
+  // in displayStores; this only removes stores that don't stock the chosen size.
+  const visibleStores = useMemo(
+    () => displayStores.filter((s) => resolveStoreVariant(s).stocked),
+    [displayStores, resolveStoreVariant],
+  );
+
   // Compute the displayed price block (current price, MRP, savings, discount %,
   // "lowest nearby") for the CURRENTLY SELECTED variant only. Never uses the
   // base product price, the merged maxDiscountPct, or product.lowestPrice — those
   // mix data across variants/sellers.
   const variantPricing = useMemo(() => {
-    const isBaseVariant = !selectedVariant || selectedVariantIdx === baseVariantIdx;
     // List price (MRP) for the selected package size.
     const variantListPrice = selectedVariant ? selectedVariant.price : product.price;
 
-    // Resolve each store's original + discounted price FOR THE SELECTED VARIANT.
-    // Base variant → use the store's own availability.sellingPrice (real per-store price).
-    // Other variants → no per-store variant price exists, so the variant's list price
-    // is authoritative; we still apply each store's discount %.
-    const perStore = displayStores.map((store) => {
-      const storePhone = (store as any).phone as string | undefined;
-      const availability = product.availability?.find(
-        (a) =>
-          a.storeId === store.id ||
-          (a.storePhone && storePhone && a.storePhone === storePhone) ||
-          (a.storePhone && a.storePhone === store.id),
-      );
-      let original: number;
-      if (isBaseVariant) {
-        if (availability?.sellingPrice && availability.sellingPrice > 0) original = availability.sellingPrice;
-        else {
-          const sp = (store as any).sellingPrice ?? (store as any).price;
-          original = sp && sp > 0 ? Number(sp) : variantListPrice;
-        }
-      } else {
-        original = variantListPrice;
-      }
+    // Resolve each STOCKING store's original + discounted price FOR THE SELECTED
+    // VARIANT via the single shared resolver, then apply each store's discount %.
+    // Only stores that actually provide the selected size contribute here.
+    const perStore = visibleStores.map((store) => {
+      const resolved = resolveStoreVariant(store);
+      const original = resolved.price && resolved.price > 0 ? resolved.price : variantListPrice;
       const discountPct = resolveStoreDiscountPct(store);
       const { finalPrice } = calcDiscount(original, discountPct);
       return { original, discountPct, finalPrice };
@@ -673,7 +830,7 @@ export default function ProductDetailView({
       hasOffer: lowest.discountPct > 0 && savings > 0,
       isLowestNearby,
     };
-  }, [displayStores, product.availability, product.price, selectedVariant, selectedVariantIdx, baseVariantIdx, resolveStoreDiscountPct]);
+  }, [visibleStores, resolveStoreVariant, product.price, selectedVariant, resolveStoreDiscountPct]);
 
   useEffect(() => {
     if (displayStores.length === 0) return;
@@ -823,7 +980,14 @@ export default function ProductDetailView({
             />
           </div>
 
-          {displayStores.length > 0 ? displayStores.map(store => {
+          {/* Store list — desktop only gets a capped height with internal scroll so a
+              long list (>5–6 stores) doesn't create whitespace beside the image. Mobile
+              keeps its natural flow (no cap).
+              NOTE: this is a *block* container using space-y-3 (NOT flex). A flex column
+              would let the cards shrink to fit the max-height and visually compress them;
+              block layout keeps every card at its natural size and just scrolls. */}
+          <div className="space-y-3 md:max-h-[560px] md:overflow-y-auto md:pr-2 store-scrollbar">
+          {visibleStores.length > 0 ? visibleStores.map(store => {
             const storePhone = (store as any).phone as string | undefined;
             const availability = product.availability?.find(
               (a) =>
@@ -833,15 +997,13 @@ export default function ProductDetailView({
             );
             const isExpanded = expandedStoreId === store.id;
 
-            // Resolve price FOR THE SELECTED VARIANT.
-            // Base variant → store's own availability.sellingPrice (real per-store price).
-            // Other variants → the variant's list price (no per-store variant price is stored).
-            const isBaseVariant = !selectedVariant || selectedVariantIdx === baseVariantIdx;
+            // Resolve price FOR THE SELECTED VARIANT via the single shared resolver
+            // (same source that drives visibility + the price block). Falls back to
+            // displayPrice only if the resolver returns no price (shouldn't happen for
+            // a visible/stocking store).
             const resolvedPrice: number | undefined = (() => {
-              if (!isBaseVariant && selectedVariant) return selectedVariant.price;
-              if (availability?.sellingPrice && availability.sellingPrice > 0) return availability.sellingPrice;
-              const sp = (store as any).sellingPrice ?? (store as any).price;
-              if (sp && sp > 0) return Number(sp);
+              const r = resolveStoreVariant(store);
+              if (r.price && r.price > 0) return r.price;
               if (displayPrice > 0) return displayPrice;
               return undefined;
             })();
@@ -1036,6 +1198,15 @@ export default function ProductDetailView({
                             </div>
                           );
                         })()}
+
+                        {/* Bulk discount tiers — lazy loaded */}
+                        {storePhone && (
+                          <BulkTiersSection
+                            storePhone={storePhone}
+                            productId={product.id}
+                            basePrice={resolvedPrice ?? product.price}
+                          />
+                        )}
                         <div className="pt-3 flex flex-wrap gap-1">
                           {(store.stock || []).map(item => (
                             <span key={item} className="px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant text-[9px] font-black uppercase tracking-widest border border-surface-container-highest">
@@ -1087,6 +1258,7 @@ export default function ProductDetailView({
               <span className="text-xs text-on-surface-variant">This product is not listed at any store right now.</span>
             </div>
           )}
+          </div>
 
           {/* Delivery option — temporarily hidden (restore by uncommenting) */}
           {/*
@@ -1107,23 +1279,15 @@ export default function ProductDetailView({
           {selectedOrderStoreId && (() => {
             const selectedStore = displayStores.find(s => s.id === selectedOrderStoreId);
             if (!selectedStore) return null;
-            const selectedStorePhone = (selectedStore as any).phone as string | undefined;
-            const selectedAvailability = product.availability?.find(
-              (a) =>
-                a.storeId === selectedStore.id ||
-                (selectedStorePhone && a.storePhone === selectedStorePhone) ||
-                (selectedStorePhone && a.storeId === selectedStorePhone),
-            );
-            // Price for the SELECTED variant. For non-base variants use the variant's
-            // list price (no per-store variant price exists); for the base variant use
-            // the retailer's exact sellingPrice. Fall back to the variant/base list price.
-            const isBaseVariant = !selectedVariant || selectedVariantIdx === baseVariantIdx;
-            const orderPrice =
-              !isBaseVariant && selectedVariant
-                ? selectedVariant.price
-                : selectedAvailability?.sellingPrice && selectedAvailability.sellingPrice > 0
-                  ? selectedAvailability.sellingPrice
-                  : displayPrice;
+            // Price for the SELECTED variant comes from the single shared resolver — the
+            // store's OWN configured price for the chosen package size. Fall back to the
+            // selected variant/base list price only if the resolver has none.
+            const orderPrice = resolveStoreVariant(selectedStore).price ?? displayPrice;
+            // Pass the store-resolved price as the variant price so the cart/discount
+            // engine (unchanged) charges the correct per-size price, not the list price.
+            const orderVariant = selectedVariant
+              ? { ...selectedVariant, price: orderPrice }
+              : undefined;
             return (
               <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -1133,7 +1297,7 @@ export default function ProductDetailView({
                 </div>
                 <button
                   onClick={() => {
-                    onAddToCartFromStore?.(product, selectedStore, orderPrice, selectedVariant ?? undefined);
+                    onAddToCartFromStore?.(product, selectedStore, orderPrice, orderVariant);
                     setSelectedOrderStoreId(null);
                   }}
                   className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
@@ -1174,6 +1338,13 @@ export default function ProductDetailView({
           // for the CURRENTLY SELECTED variant, never the base product or merged data.
           const { currentPrice, mrp, discountPct, savings, hasOffer, isLowestNearby } = variantPricing;
           const showStrikethrough = mrp > currentPrice;
+
+          // Add-to-Cart / Buy Now carry the SELECTED size at its best store-configured
+          // price (mrp = lowest per-store original for this size). The existing cart +
+          // discount engine then applies the store discount, matching the price shown.
+          const cartVariant = selectedVariant
+            ? { ...selectedVariant, price: mrp }
+            : undefined;
 
           return (
         <div className={`flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'}`}>
@@ -1228,14 +1399,14 @@ export default function ProductDetailView({
           </HelperTooltip>
 
           <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
-            {displayStores.length === 0 ? (
+            {visibleStores.length === 0 ? (
               <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
                 Currently unavailable
               </span>
             ) : (
               <>
                 <button
-                  onClick={() => onAddToCart?.(product, selectedVariant ?? undefined)}
+                  onClick={() => onAddToCart?.(product, cartVariant)}
                   disabled={displayStock === 0}
                   className="h-12 px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1244,7 +1415,7 @@ export default function ProductDetailView({
                 </button>
                 {onBuyNow && displayStock !== 0 && (
                   <button
-                    onClick={() => onBuyNow(product, selectedVariant ?? undefined)}
+                    onClick={() => onBuyNow(product, cartVariant)}
                     className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
                   >
                     Buy Now

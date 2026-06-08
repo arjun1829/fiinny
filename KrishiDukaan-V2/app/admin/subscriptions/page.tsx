@@ -570,10 +570,16 @@ export default function AdminSubscriptionsPage() {
               {failedPayments.map((fp) => {
                 const userName = (() => {
                   const phone = fp.userPhone;
-                  const u = users.find(u => u.id === phone || u.uid === fp.userId || u.phone === phone);
+                  // fp.userUid was added later; fp.userId may be UID or phone depending on when it was written
+                  const u = users.find(u =>
+                    (phone && (u.id === phone || u.phone === phone)) ||
+                    u.uid === fp.userUid ||
+                    u.uid === fp.userId ||
+                    u.id === fp.userId
+                  );
                   return u?.name || u?.email || null;
                 })();
-                const paymentId = fp.error?.metadata?.payment_id;
+                const paymentId = fp.error?.metadata?.payment_id || fp.error?.metadata?.paymentId;
                 const orderId = fp.orderId || fp.error?.metadata?.order_id;
                 const errorReason = fp.error?.reason || fp.error?.description || fp.error?.code || 'Unknown error';
                 const amountRupees = fp.amount ? (fp.amount / 100) : null;
@@ -632,9 +638,13 @@ export default function AdminSubscriptionsPage() {
                       <button
                         type="button"
                         onClick={() => {
+                          // Prefer phone (the Firestore doc key) for userDocId so
+                          // adminManualActivate writes users/{phone}. Fall back to userId
+                          // which may be the UID for older failed-payment records.
+                          const resolvedDocId = fp.userPhone || fp.userId || '';
                           setManualForm(f => ({
                             ...f,
-                            userDocId: fp.userPhone || fp.userId || '',
+                            userDocId: resolvedDocId,
                             orderId: orderId || '',
                             seats: fp.seatCount ? String(fp.seatCount) : '1',
                             durationMonths: fp.durationMonths ? String(fp.durationMonths) : '1',

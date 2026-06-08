@@ -18,6 +18,7 @@ import {
 
 import { db } from "../../firebase";
 import type {
+  BulkDiscountTier,
   DiscountUpdateInput,
   InventoryDoc,
   InventoryRow,
@@ -25,7 +26,7 @@ import type {
   ProductDoc,
 } from "../_types/inventory";
 import { deriveStockStatus } from "../_types/inventory";
-import { calcDiscount, getActiveDiscountPct } from "../../utils/discount";
+import { calcDiscount, getActiveDiscountPct, getActiveDiscountAmt } from "../../utils/discount";
 import {
   addSeatListingToBatch,
   canAssignSeat,
@@ -124,9 +125,16 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
       : undefined,
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : undefined,
     discountEnabled:   data.discountEnabled === true,
+    discountType:      data.discountType === "fixed_amount" ? "fixed_amount" : "percentage",
     discountPct:       toNum(data.discountPct, 0),
+    discountFixedAmt:  toNum(data.discountFixedAmt, 0),
     discountStartDate: (data.discountStartDate as Timestamp) ?? null,
     discountEndDate:   (data.discountEndDate as Timestamp) ?? null,
+    bulkDiscountEnabled: data.bulkDiscountEnabled === true,
+    bulkDiscountTiers: Array.isArray(data.bulkDiscountTiers)
+      ? (data.bulkDiscountTiers as { minQty: number; discountPct: number }[])
+          .filter(t => typeof t.minQty === "number" && typeof t.discountPct === "number")
+      : [],
   };
 }
 
@@ -139,14 +147,33 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
 async function fetchProductsByOwner(
   ownerId: string,
   ownerType: "manufacturer" | "retailer",
+  phone?: string,
 ): Promise<ProductDoc[]> {
-  const q = query(
-    collection(db, "products"),
-    where("ownerId", "==", ownerId),
-    where("ownerType", "==", ownerType),
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
+  const queries = [
+    getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", ownerId),
+      where("ownerType", "==", ownerType),
+    ))
+  ];
+  if (phone) {
+    queries.push(getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", phone),
+      where("ownerType", "==", ownerType),
+    )));
+  }
+
+  const snaps = await Promise.all(queries);
+  const productMap = new Map<string, ProductDoc>();
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const p = mapProduct(d.id, d.data() as Record<string, unknown>);
+      productMap.set(p.id, p);
+    });
+  });
+
+  return Array.from(productMap.values());
 }
 
 /**
@@ -179,6 +206,8 @@ async function fetchInventoryForRetailer(
   if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
   Array.from(phoneKeys).forEach((phone) => {
     queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("retailerId", "==", phone))));
   });
 
   const snaps = await Promise.all(queries);
@@ -199,17 +228,24 @@ async function fetchInventoryForRetailer(
  * and legacy docs where only manufacturerId was set are captured. Each query is
  * individually validated by the `inventory` Firestore rule.
  */
-async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
+async function fetchInventoryForManufacturer(uid: string, phone?: string): Promise<Map<string, InventoryDoc>> {
   const map = new Map<string, InventoryDoc>();
 
-  const [snap1, snap2] = await Promise.all([
+  const queries = [
     getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
     getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
-  ]);
+  ];
+  if (phone) {
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
+    queries.push(getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", phone))));
+  }
 
-  [...snap1.docs, ...snap2.docs].forEach((d) => {
-    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-    if (!map.has(inv.productId)) map.set(inv.productId, inv);
+  const snaps = await Promise.all(queries);
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+      if (!map.has(inv.productId)) map.set(inv.productId, inv);
+    });
   });
 
   return map;
@@ -291,6 +327,9 @@ export async function fetchRetailerInventoryRows(
   const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
+    // NOTE: We intentionally keep inactive assigned products in the list so the
+    // retailer can see them and toggle them back to active if needed.
+    // (Previously these were filtered out, making re-activation impossible.)
     const inv = inventoryMap.get(p.id);
     if (!inv) return [];
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
@@ -313,10 +352,16 @@ export async function fetchRetailerInventoryRows(
         ownerId: p.ownerId,
         originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
         discountEnabled:   inv.discountEnabled ?? false,
+        discountType:      inv.discountType ?? "percentage",
         discountPct:       inv.discountPct ?? 0,
+        discountFixedAmt:  inv.discountFixedAmt ?? 0,
         discountStartDate: timestampToDate(inv.discountStartDate),
         discountEndDate:   timestampToDate(inv.discountEndDate),
         effectiveDiscountPct: getActiveDiscountPct(inv),
+        effectiveDiscountAmt: (inv.discountType === "fixed_amount" && inv.discountEnabled)
+          ? (inv.discountFixedAmt ?? 0) : 0,
+        bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
+        bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
         variants: p.variants,
       },
     ];
@@ -367,12 +412,13 @@ export async function acceptAssignedProduct(
  */
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
+  phone?: string,
 ): Promise<ManufacturerProductRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "manufacturer");
+  const products = await fetchProductsByOwner(ownerId, "manufacturer", phone);
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
-  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId, phone);
 
   const rows: ManufacturerProductRow[] = products.map((p) => {
     const raw = p as any;
@@ -400,10 +446,16 @@ export async function fetchManufacturerCatalogueRows(
       dosage: p.dosage ?? "",
       bestForCrops: p.bestForCrops ?? [],
       discountEnabled:   inv?.discountEnabled ?? false,
+      discountType:      inv?.discountType ?? "percentage",
       discountPct:       inv?.discountPct ?? 0,
+      discountFixedAmt:  inv?.discountFixedAmt ?? 0,
       discountStartDate: timestampToDate(inv?.discountStartDate),
       discountEndDate:   timestampToDate(inv?.discountEndDate),
       effectiveDiscountPct: inv ? getActiveDiscountPct(inv) : 0,
+      effectiveDiscountAmt: (inv?.discountType === "fixed_amount" && inv?.discountEnabled)
+        ? (inv?.discountFixedAmt ?? 0) : 0,
+      bulkDiscountEnabled: inv?.bulkDiscountEnabled ?? false,
+      bulkDiscountTiers: inv?.bulkDiscountTiers ?? [],
     };
   });
 
@@ -902,6 +954,28 @@ export async function activateProduct(
   }
 }
 
+/**
+ * Toggle active/inactive for products that were ASSIGNED to a retailer by an
+ * admin or manufacturer. These products do NOT consume/release the retailer's
+ * own seat listing — the seat is owned by the assigning party. We simply flip
+ * `isActive` on the product doc and `isAvailable` on the inventory doc.
+ *
+ * @param productId   - The product document ID
+ * @param inventoryId - The inventory document ID
+ * @param makeActive  - true = activate, false = deactivate
+ */
+export async function toggleAssignedProductActive(
+  productId: string,
+  inventoryId: string,
+  makeActive: boolean,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, "products", productId), { isActive: makeActive, updatedAt: now });
+  batch.update(doc(db, "inventory", inventoryId), { isAvailable: makeActive, updatedAt: now });
+  await batch.commit();
+}
+
 // ─── Discount operations ──────────────────────────────────────────────────────
 
 /**
@@ -915,8 +989,12 @@ export async function updateDiscountRecord(
   patch: DiscountUpdateInput,
   originalProductId?: string | null,
 ): Promise<void> {
-  if (patch.discountPct < 0 || patch.discountPct > 99) {
+  // Validate base discount
+  if (patch.discountType === "percentage" && (patch.discountPct < 0 || patch.discountPct > 99)) {
     throw new Error("Discount percentage must be between 0 and 99.");
+  }
+  if (patch.discountType === "fixed_amount" && patch.discountFixedAmt < 0) {
+    throw new Error("Fixed discount amount cannot be negative.");
   }
   if (
     patch.discountStartDate &&
@@ -926,11 +1004,28 @@ export async function updateDiscountRecord(
     throw new Error("End date must be after start date.");
   }
 
+  // Validate bulk tiers
+  if (patch.bulkDiscountEnabled && patch.bulkDiscountTiers.length > 0) {
+    const sortedTiers = [...patch.bulkDiscountTiers].sort((a, b) => a.minQty - b.minQty);
+    for (const tier of sortedTiers) {
+      if (tier.minQty < 1) throw new Error("Bulk tier minimum quantity must be at least 1.");
+      if (tier.discountPct <= 0 || tier.discountPct > 99) {
+        throw new Error("Bulk tier discount must be between 1% and 99%.");
+      }
+    }
+    // No overlapping (duplicate minQty values)
+    const qtys = sortedTiers.map(t => t.minQty);
+    if (new Set(qtys).size !== qtys.length) {
+      throw new Error("Bulk discount tiers cannot have duplicate minimum quantities.");
+    }
+  }
+
   const startTs = patch.discountStartDate ? Timestamp.fromDate(patch.discountStartDate) : null;
   const endTs   = patch.discountEndDate   ? Timestamp.fromDate(patch.discountEndDate)   : null;
 
   const effectivePct = getActiveDiscountPct({
     discountEnabled:   patch.discountEnabled,
+    discountType:      patch.discountType,
     discountPct:       patch.discountPct,
     discountStartDate: startTs,
     discountEndDate:   endTs,
@@ -939,11 +1034,20 @@ export async function updateDiscountRecord(
   const now = serverTimestamp();
   const batch = writeBatch(db);
 
+  // Sanitize bulk tiers for Firestore (plain objects only)
+  const sanitizedTiers = patch.bulkDiscountEnabled
+    ? patch.bulkDiscountTiers.map(t => ({ minQty: t.minQty, discountPct: t.discountPct }))
+    : [];
+
   batch.update(doc(db, "inventory", inventoryId), {
-    discountEnabled:   patch.discountEnabled,
-    discountPct:       patch.discountPct,
-    discountStartDate: startTs,
-    discountEndDate:   endTs,
+    discountEnabled:       patch.discountEnabled,
+    discountType:          patch.discountType,
+    discountPct:           patch.discountType === "percentage" ? patch.discountPct : 0,
+    discountFixedAmt:      patch.discountType === "fixed_amount" ? patch.discountFixedAmt : 0,
+    discountStartDate:     startTs,
+    discountEndDate:       endTs,
+    bulkDiscountEnabled:   patch.bulkDiscountEnabled,
+    bulkDiscountTiers:     sanitizedTiers,
     updatedAt: now,
   });
 
@@ -955,7 +1059,6 @@ export async function updateDiscountRecord(
   await batch.commit();
 
   // Sync discountPct into the availability[] entry on the root product (fire-and-forget).
-  // This is how the product detail page reads per-seller discounts.
   if (originalProductId) {
     syncAvailabilityDiscount(originalProductId, productId, effectivePct).catch(() => {});
   }
@@ -1094,10 +1197,14 @@ export type AdminDiscountRow = {
   ownerType: string;
   sellingPrice: number;
   discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
   discountPct: number;
+  discountFixedAmt: number;
   discountStartDate: Date | null;
   discountEndDate: Date | null;
   effectiveDiscountPct: number;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
   updatedAt: Date | null;
 };
 
@@ -1125,10 +1232,14 @@ export async function fetchAllDiscounts(): Promise<AdminDiscountRow[]> {
       ownerType: String(data.ownerType ?? "retailer"),
       sellingPrice: inv.sellingPrice,
       discountEnabled: inv.discountEnabled ?? false,
+      discountType: inv.discountType ?? "percentage",
       discountPct: inv.discountPct ?? 0,
+      discountFixedAmt: inv.discountFixedAmt ?? 0,
       discountStartDate: timestampToDate(inv.discountStartDate),
       discountEndDate: timestampToDate(inv.discountEndDate),
       effectiveDiscountPct: getActiveDiscountPct(inv),
+      bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
+      bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
       updatedAt: timestampToDate(inv.updatedAt),
     };
   });

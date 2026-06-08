@@ -70,6 +70,14 @@ export function Navbar({
   const mobileMoreRef = useRef<HTMLDivElement>(null);
   const desktopSearchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
+  
+  const [internalSearch, setInternalSearch] = useState(productSearch || '');
+  const activeSearch = setProductSearch ? productSearch : internalSearch;
+  const updateSearch = (val: string) => {
+    if (setProductSearch) setProductSearch(val);
+    setInternalSearch(val);
+  };
+
 
   const fetchLocation = async () => {
     if (!navigator.geolocation) {
@@ -170,7 +178,7 @@ export function Navbar({
   }, []);
 
   const searchResults = useMemo(() => {
-    const query = productSearch.trim().toLowerCase();
+    const query = activeSearch.trim().toLowerCase();
     if (query.length < 2) return { products: [], stores: [] };
 
     const products = allProducts
@@ -199,10 +207,10 @@ export function Navbar({
   }, [productSearch, allProducts, allStores]);
 
   const hasResults = searchResults.products.length > 0 || searchResults.stores.length > 0;
-  const shouldShowDropdown = showResults && productSearch.trim().length >= 2 && hasResults;
+  const shouldShowDropdown = showResults && activeSearch.trim().length >= 2 && hasResults;
 
   const handleResultClick = (action: () => void) => {
-    if (setProductSearch) setProductSearch('');
+    updateSearch('');
     setShowResults(false);
     action();
   };
@@ -358,30 +366,35 @@ export function Navbar({
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {/* Desktop Product Search Bar */}
-          {!isDashboard && setProductSearch && (
-            <div 
-              ref={desktopSearchRef} 
-              data-tour="search"
-              className="hidden md:block relative flex-1 max-w-sm"
-            >
-              <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-                <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
-                <input
-                  type="text"
-                  placeholder={t('searchPlaceholder')}
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                  onFocus={() => setShowResults(true)}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2 placeholder-on-surface-variant font-medium"
-                />
-                {productSearch ? (
-                  <button
-                    onMouseDown={() => { setProductSearch(''); setShowResults(false); }}
-                    className="mr-2 text-outline hover:text-on-surface transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                  </button>
-                ) : (
+          <div 
+            ref={desktopSearchRef} 
+            data-tour="search"
+            className="hidden md:block relative flex-1 max-w-sm"
+          >
+            <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+              <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                value={activeSearch}
+                onChange={e => updateSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && activeSearch.trim()) {
+                    setShowResults(false);
+                    router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
+                  }
+                }}
+                onFocus={() => setShowResults(true)}
+                className="flex-1 bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2 placeholder-on-surface-variant font-medium"
+              />
+              {activeSearch ? (
+                <button
+                  onMouseDown={() => { updateSearch(''); setShowResults(false); }}
+                  className="mr-2 text-outline hover:text-on-surface transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              ) : (
                   <HelperIcon
                     size="xs"
                     variant="ghost"
@@ -394,8 +407,7 @@ export function Navbar({
               </div>
               {shouldShowDropdown && <SearchDropdown />}
             </div>
-          )}
-        </div>
+          </div>
 
         <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* Cart icon (placeholder) */}
@@ -507,6 +519,14 @@ export function Navbar({
                       {t('dashboard')}
                     </button>
                   )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard/my-orders'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
                   {userRole === 'customer' && (
                     <>
                       <button
@@ -609,6 +629,17 @@ export function Navbar({
                       {t('dashboard')}
                     </button>
                   )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        router.push('/dashboard/my-orders');
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
                   {userRole === 'customer' && (
                     <>
                       <button
@@ -658,30 +689,35 @@ export function Navbar({
         </div>
       </div>
 
-      {!isDashboard && setProductSearch && (
-        <div 
-          ref={mobileSearchRef} 
-          data-tour="search-mobile"
-          className="md:hidden mt-2 relative"
-        >
-          <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-            <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
-            <input
-              type="text"
-              placeholder={t('searchPlaceholder')}
-              value={productSearch}
-              onChange={e => setProductSearch(e.target.value)}
-              onFocus={() => setShowResults(true)}
-              className="w-full bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2.5 placeholder-on-surface-variant font-medium"
-            />
-            {productSearch ? (
-              <button
-                onMouseDown={() => { setProductSearch(''); setShowResults(false); }}
-                className="mr-2 text-outline hover:text-on-surface transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            ) : (
+      <div 
+        ref={mobileSearchRef} 
+        data-tour="search-mobile"
+        className="md:hidden mt-2 relative"
+      >
+        <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+          <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
+          <input
+            type="text"
+            placeholder={t('searchPlaceholder')}
+            value={activeSearch}
+            onChange={e => updateSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && activeSearch.trim()) {
+                setShowResults(false);
+                router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
+              }
+            }}
+            onFocus={() => setShowResults(true)}
+            className="w-full bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2.5 placeholder-on-surface-variant font-medium"
+          />
+          {activeSearch ? (
+            <button
+              onMouseDown={() => { updateSearch(''); setShowResults(false); }}
+              className="mr-2 text-outline hover:text-on-surface transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          ) : (
               <HelperIcon
                 size="xs"
                 variant="ghost"
@@ -694,7 +730,6 @@ export function Navbar({
           </div>
           {shouldShowDropdown && <SearchDropdown />}
         </div>
-      )}
 
     </header>
   );

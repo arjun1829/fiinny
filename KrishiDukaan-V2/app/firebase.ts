@@ -16,6 +16,7 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
   GeoPoint,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -305,7 +306,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
     // variant (manufacturer/retailer copy) still contributes to the merged card's rating.
     const idsByKey = new Map<string, string[]>();
 
-    const allMapped = snapshot.docs.map((item) => {
+    const allMapped = snapshot.docs
+      .filter((item) => item.data().isActive !== false)
+      .map((item) => {
       const data = item.data();
       return {
         id: item.id,
@@ -346,7 +349,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
 
     // Retailer copies hold each store's selling price — collect separately before filtering
     const retailerCopies = allMapped.filter(
-      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned',
+      (p) => p.source === 'retailer_inventory_copy' || p.source === 'manufacturer_assigned' || p.source === 'admin_assigned',
     );
 
     const raw = allMapped.filter(
@@ -355,7 +358,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         product.image &&
         Number.isFinite(product.price) &&
         product.source !== 'manufacturer_assigned' &&
-        product.source !== 'retailer_inventory_copy',
+        product.source !== 'retailer_inventory_copy' &&
+        product.source !== 'admin_assigned',
     );
 
     // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
@@ -416,6 +420,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: secondary.store || undefined,
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
+          // Carry this store's own per-package-size prices so the detail view can
+          // resolve the correct price per selected variant (not just the base price).
+          variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
         });
       }
 
@@ -459,6 +466,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
 
       if (existing) {
         existing.sellingPrice = copy.price;
+        // Mirror this store's own per-package-size prices onto the entry.
+        if (Array.isArray(copy.variants)) existing.variants = copy.variants;
         // Do NOT copy discount into availability entries — use sellerDiscounts map instead
       } else {
         av.push({
@@ -467,6 +476,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           storeName: copy.store || undefined,
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
+          // Carry this store's own per-package-size prices so the detail view can
+          // resolve the correct price per selected variant (not just the base price).
+          variants: Array.isArray(copy.variants) ? copy.variants : undefined,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
@@ -742,8 +754,8 @@ export async function updateSubscriptionStatus(
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
   const timestamp = serverTimestamp();
 
-  // Resolve uid → phone via uidIndex (new schema).
-  // Fall back to writing users/{uid} if uidIndex missing (shouldn't happen after new saveUserProfile).
+  // Resolve uid → phone. Try uidIndex first; then scan users/{uid} directly (works for
+  // admin-created / email-based accounts that have no uidIndex entry).
   let userDocRef = doc(db, 'users', uid);
   let userData: Record<string, unknown> = {};
   let phone: string | null = null;
@@ -755,8 +767,16 @@ export async function updateSubscriptionStatus(
       userDocRef = doc(db, 'users', phone);
     }
     const userDoc = await getDoc(userDocRef);
-    if (userDoc.exists()) userData = userDoc.data() as Record<string, unknown>;
+    if (userDoc.exists()) {
+      userData = userDoc.data() as Record<string, unknown>;
+      // If we landed on users/{uid} (no uidIndex), extract phone from the doc itself
+      if (!phone && userData.phone) phone = String(userData.phone);
+    }
   } catch { /* fall through with empty userData */ }
+
+  // Last resort: if phone is still null and we have a users doc keyed by phone (admin pre-created),
+  // the ownerId/ownerPhone in subscription docs must be phone-based for rules to pass.
+  // Use the uid as the fallback only when no phone can be found at all.
 
   const currentSeats = Number(userData.totalSeats) || 0;
   const seatsToAdd = Number(seatCount) || 1;
@@ -775,7 +795,10 @@ export async function updateSubscriptionStatus(
       const pricePerSeat = PRICE_PER_SEAT[durationMonths] ?? 21;
       const totalAmount = seatsToAdd * pricePerSeat;
 
-      // Write both legacy (userId) and new (userPhone) fields so all queries work.
+      // Write both legacy (userId/ownerId) and new (userPhone/ownerPhone) fields so all queries
+      // and Firestore rules work. Rules check ownerPhone == myPhone() OR ownerId == uid.
+      // When phone is null (rare edge case, no uidIndex + no phone in user doc) we fall
+      // back to uid — rules then use the ownerId == request.auth.uid path.
       await addDoc(collection(db, 'payments'), {
         userId: uid,
         userPhone: phone ?? uid,
@@ -996,6 +1019,7 @@ export async function fetchManufacturerProducts(manufacturerId: string): Promise
     const results: MarketplaceProduct[] = [];
     for (const snap of [byOwnerId, byManufacturerId]) {
       for (const d of snap.docs) {
+        if (d.data().isActive === false) continue;
         if (!seen.has(d.id)) {
           seen.add(d.id);
           results.push({ id: d.id, ...d.data() } as MarketplaceProduct);
@@ -1013,7 +1037,9 @@ export async function fetchRetailerProducts(retailerId: string): Promise<Marketp
   try {
     const q = query(collection(db, 'products'), where('retailerId', '==', retailerId));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    return snapshot.docs
+      .filter(doc => doc.data().isActive !== false)
+      .map(doc => ({
       id: doc.id,
       ...doc.data()
     } as MarketplaceProduct));
@@ -1879,10 +1905,48 @@ export async function adminManualActivate(
   });
 }
 
+/**
+ * Lists every document in the `products` collection for the admin management table.
+ *
+ * Unlike fetchMarketplaceProducts() (which is the farmer-facing feed and therefore
+ * dedups by name, requires a top-level `image`, and hides assigned/inventory copies),
+ * the admin needs to see and manage every product doc individually. So this does NO
+ * dedup, NO source exclusion, and NO image requirement. Sorted newest-first.
+ */
+export async function fetchAllProductsForAdmin(): Promise<MarketplaceProduct[]> {
+  const snapshot = await getDocs(collection(db, 'products'));
+  return snapshot.docs
+    .map((item) => {
+      const data = item.data();
+      const images = Array.isArray(data.images) ? data.images : undefined;
+      const ts = (data.updatedAt ?? data.createdAt) as { toMillis?: () => number } | undefined;
+      return {
+        id: item.id,
+        name: String(data.name || ''),
+        fullName: data.fullName ? String(data.fullName) : undefined,
+        price: Number(data.price || 0),
+        category: String(data.category || 'general'),
+        description: String(data.description || ''),
+        image: String(data.image || (images?.[0] ?? '')),
+        images,
+        stock: String(data.stock || 'In Stock'),
+        store: String(data.store || ''),
+        distance: String(data.distance || 'Nearby'),
+        source: data.source ? String(data.source) : undefined,
+        _sort: ts?.toMillis?.() ?? 0,
+      } as MarketplaceProduct & { _sort: number };
+    })
+    .sort((a, b) => b._sort - a._sort)
+    .map(({ _sort, ...rest }) => rest as MarketplaceProduct);
+}
+
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {
   const ref = await addDoc(collection(db, 'products'), {
     ...product,
     source: 'admin',
+    // Mark active so the product surfaces in every isActive-filtered query
+    // (assignment dropdown, marketplace feeds, etc.), not just the admin table.
+    isActive: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -1895,6 +1959,375 @@ export async function adminUpdateProduct(productId: string, product: Partial<Mar
 
 export async function adminDeleteProduct(productId: string): Promise<void> {
   await deleteDoc(doc(db, 'products', productId));
+}
+
+// ─── Admin → Seller product assignment ──────────────────────────────────────
+// Centralized here so Users & Roles and the Products page share one implementation.
+
+export type SellerRole = 'retailer' | 'manufacturer';
+
+/**
+ * Ensures a seller has an active storefront record in `retailers`/`manufacturers`
+ * (keyed by phone). Without it the seller never appears in `fetchStores()` and
+ * their assigned products have no store to attach to. Idempotent: skips the write
+ * if an active record already exists; otherwise creates/merges one. Safe to call
+ * from the admin (rules allow `isAdmin()` / `isAuthed()` on these collections).
+ */
+export async function ensureSellerStorefront(seller: {
+  phone?: string; id?: string; uid?: string | null; role?: string;
+  name?: string; shopName?: string; businessName?: string;
+  address?: string; city?: string; state?: string; pincode?: string;
+  latitude?: number | null; longitude?: number | null;
+  createdByAdmin?: string;
+}): Promise<void> {
+  const role = seller.role;
+  if (role !== 'retailer' && role !== 'manufacturer') return;
+  const phone = seller.phone || seller.id;
+  if (!phone) return;
+
+  const ref = doc(db, role === 'retailer' ? 'retailers' : 'manufacturers', phone);
+  const snap = await getDoc(ref);
+  if (snap.exists() && snap.data()?.active === true) return; // already live
+
+  const idVal = seller.uid || phone;
+  const now = serverTimestamp();
+  const common: Record<string, unknown> = {
+    phone,
+    ownerName: (seller.name || '').trim(),
+    address: (seller.address || '').trim(),
+    city: (seller.city || '').trim(),
+    state: (seller.state || '').trim(),
+    pincode: (seller.pincode || '').trim(),
+    active: true,
+    updatedAt: now,
+    ...(seller.createdByAdmin ? { preCreatedByAdmin: seller.createdByAdmin } : {}),
+    ...(snap.exists() ? {} : { createdAt: now }),
+  };
+
+  if (role === 'retailer') {
+    await setDoc(ref, {
+      ...common,
+      userId: idVal,
+      retailerId: idVal,
+      shopName: (seller.shopName || seller.businessName || seller.name || '').trim(),
+      status: 'active',
+      userType: 'retailer',
+      location: { latitude: seller.latitude ?? 0, longitude: seller.longitude ?? 0 },
+      products: [],
+    }, { merge: true });
+  } else {
+    await setDoc(ref, {
+      ...common,
+      uid: seller.uid ?? null,
+      userId: idVal,
+      manufacturerId: idVal,
+      businessName: (seller.businessName || seller.shopName || seller.name || '').trim(),
+    }, { merge: true });
+  }
+}
+
+/**
+ * Assigns a marketplace product to a seller by creating a seller-owned copy in
+ * `products` plus an `inventory` record, and an `adminLogs` audit entry.
+ *
+ * Idempotent: if the seller already has an active copy of this product
+ * (matched by originalProductId + ownership), no new copy is created and
+ * `{ alreadyAssigned: true }` is returned — this prevents the duplicate copies
+ * that previously inflated a seller's product list.
+ */
+export async function adminAssignProductToSeller(
+  productId: string,
+  productName: string,
+  sellerPhone: string,
+  sellerName: string,
+  sellerRole: SellerRole,
+  adminUid: string,
+): Promise<{ alreadyAssigned: boolean; copyProductId?: string }> {
+  const productSnap = await getDoc(doc(db, 'products', productId));
+  if (!productSnap.exists()) throw new Error('Product not found.');
+
+  // Duplicate guard: already assigned an active copy of this product to this seller?
+  const existing = await getDocs(query(
+    collection(db, 'products'),
+    where('originalProductId', '==', productId),
+    where('ownerId', '==', sellerPhone),
+  ));
+  if (existing.docs.some(d => d.data().isActive !== false)) {
+    return { alreadyAssigned: true };
+  }
+
+  const src = productSnap.data() as Record<string, unknown>;
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+
+  // Set this seller's ownership ids and clear the opposite role's ids (use null,
+  // never undefined — the Firestore SDK rejects undefined field values, and ...src
+  // may carry a stale manufacturerId/retailerId from the source product).
+  const roleFields = sellerRole === 'retailer'
+    ? { retailerId: sellerPhone, retailerPhone: sellerPhone, manufacturerId: null, manufacturerPhone: null }
+    : { manufacturerId: sellerPhone, manufacturerPhone: sellerPhone, retailerId: null, retailerPhone: null };
+
+  const copyRef = doc(collection(db, 'products'));
+  batch.set(copyRef, {
+    ...src,
+    id: copyRef.id,
+    ownerId: sellerPhone,
+    ownerPhone: sellerPhone,
+    ownerType: sellerRole,
+    ...roleFields,
+    store: sellerName,
+    source: 'admin_assigned',
+    isActive: true,
+    // Live and in-stock immediately so the product is testable without the
+    // seller logging in to set stock/availability themselves.
+    stock: 'In Stock',
+    // Point availability at THIS seller's store (replacing any inherited from the
+    // source product) so the copy is matched to the seller's storefront in the
+    // marketplace and store-detail views.
+    availability: [{
+      storeId: sellerPhone,
+      storePhone: sellerPhone,
+      storeName: sellerName,
+      stockLevel: 'In Stock',
+      sellingPrice: Number(src.price ?? 0),
+    }],
+    assignedByAdmin: adminUid,
+    assignedAt: now,
+    originalProductId: productId,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const invRef = doc(collection(db, 'inventory'));
+  batch.set(invRef, {
+    id: invRef.id,
+    ownerId: sellerPhone,
+    ownerPhone: sellerPhone,
+    ownerType: sellerRole,
+    productId: copyRef.id,
+    originalProductId: productId,
+    stockQuantity: 50,
+    sellingPrice: Number(src.price ?? 0),
+    reorderThreshold: 5,
+    isAvailable: true,
+    assignedByAdmin: adminUid,
+    updatedAt: now,
+  });
+
+  batch.set(doc(collection(db, 'adminLogs')), {
+    action: 'admin_assign_product',
+    productId,
+    productName,
+    copyProductId: copyRef.id,
+    inventoryId: invRef.id,
+    sellerPhone,
+    sellerName,
+    sellerRole,
+    performedBy: adminUid,
+    createdAt: now,
+  });
+
+  await batch.commit();
+
+  // Make sure the seller has a live storefront so the assigned product is visible.
+  await ensureSellerStorefront({ phone: sellerPhone, role: sellerRole, name: sellerName, shopName: sellerName })
+    .catch(err => console.error('ensureSellerStorefront failed', err));
+
+  return { alreadyAssigned: false, copyProductId: copyRef.id };
+}
+
+/**
+ * Reverses an assignment: deactivates the seller's product copy and its
+ * inventory record (looked up by productId), and logs the removal. Only used
+ * for admin-assigned copies — never deletes a seller's self-created products.
+ */
+export async function adminRemoveAssignment(
+  copyProductId: string,
+  productName: string,
+  sellerPhone: string,
+  adminUid: string,
+): Promise<void> {
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'products', copyProductId), { isActive: false, updatedAt: now });
+
+  const invSnap = await getDocs(query(
+    collection(db, 'inventory'),
+    where('productId', '==', copyProductId),
+  ));
+  invSnap.forEach(d => batch.update(d.ref, { isAvailable: false, updatedAt: now }));
+
+  batch.set(doc(collection(db, 'adminLogs')), {
+    action: 'admin_remove_assignment',
+    copyProductId,
+    inventoryId: invSnap.docs[0]?.id ?? null,
+    productName,
+    sellerPhone,
+    performedBy: adminUid,
+    createdAt: now,
+  });
+  await batch.commit();
+}
+
+/**
+ * Updates a single seller's assignment pricing/stock from the admin Products tab.
+ * Syncs both the seller's product copy (price, stock label, availability[0]) and
+ * its inventory record(s) so the marketplace and that store reflect the change.
+ */
+export async function adminUpdateAssignmentPricing(
+  copyProductId: string,
+  patch: { sellingPrice: number; stockQuantity: number; variants?: { unit: string; price: number; stock?: number }[] },
+): Promise<void> {
+  const now = serverTimestamp();
+
+  let sellingPrice = patch.sellingPrice;
+  let stockQuantity = patch.stockQuantity;
+  if (patch.variants && patch.variants.length > 0) {
+    sellingPrice = patch.variants[0].price;
+    stockQuantity = typeof patch.variants[0].stock === 'number' ? patch.variants[0].stock : 0;
+  }
+
+  const inStock = stockQuantity > 0;
+  const stockLabel = inStock ? 'In Stock' : 'Out of Stock';
+
+  const pRef = doc(db, 'products', copyProductId);
+  const pSnap = await getDoc(pRef);
+  const data = (pSnap.exists() ? pSnap.data() : {}) as Record<string, any>;
+  const av = Array.isArray(data.availability) && data.availability.length
+    ? data.availability.map((a: any, i: number) =>
+        i === 0 ? { ...a, sellingPrice: sellingPrice, stockLevel: stockLabel } : a)
+    : [{
+        storeId: data.ownerId ?? data.retailerId ?? null,
+        storePhone: data.retailerPhone ?? data.ownerPhone ?? null,
+        storeName: data.store ?? null,
+        stockLevel: stockLabel,
+        sellingPrice: sellingPrice,
+      }];
+
+  const updatePayload: Record<string, any> = {
+    price: sellingPrice,
+    stock: stockLabel,
+    availability: av,
+    updatedAt: now,
+  };
+  if (patch.variants) {
+    updatePayload.variants = patch.variants;
+  }
+  await updateDoc(pRef, updatePayload);
+
+  const invSnap = await getDocs(query(collection(db, 'inventory'), where('productId', '==', copyProductId)));
+  if (!invSnap.empty) {
+    const batch = writeBatch(db);
+    invSnap.forEach(d => batch.update(d.ref, {
+      sellingPrice: sellingPrice,
+      stockQuantity: stockQuantity,
+      isAvailable: inStock,
+      updatedAt: now,
+    }));
+    await batch.commit();
+  }
+}
+
+/** Loads inventory (price + stock) for a set of product copies, keyed by productId. */
+export async function fetchInventoryForProducts(
+  productIds: string[],
+): Promise<Record<string, { id: string; sellingPrice: number; stockQuantity: number }>> {
+  const out: Record<string, { id: string; sellingPrice: number; stockQuantity: number }> = {};
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  for (let i = 0; i < ids.length; i += 10) {
+    const chunk = ids.slice(i, i + 10);
+    if (!chunk.length) continue;
+    const snap = await getDocs(query(collection(db, 'inventory'), where('productId', 'in', chunk)));
+    snap.forEach(d => {
+      const x = d.data() as Record<string, unknown>;
+      out[String(x.productId)] = {
+        id: d.id,
+        sellingPrice: Number(x.sellingPrice ?? 0),
+        stockQuantity: Number(x.stockQuantity ?? 0),
+      };
+    });
+  }
+  return out;
+}
+
+export type UserProduct = MarketplaceProduct & {
+  /** How many raw product docs collapsed into this entry. */
+  copies: number;
+  /** All doc ids collapsed into this entry (admin can remove any of them). */
+  docIds: string[];
+  /** Subset of docIds that are admin-assigned copies. */
+  assignedDocIds: string[];
+};
+
+type RawProductDoc = Record<string, unknown> & { id: string };
+
+/** Every owner identifier a product doc can be keyed by. */
+function productOwnerKeys(d: RawProductDoc): string[] {
+  return [d.ownerId, d.retailerId, d.manufacturerId, d.ownerPhone, d.retailerPhone, d.manufacturerPhone]
+    .filter(Boolean)
+    .map(String);
+}
+
+/** Fetches every product doc once (raw, with ownership fields) for client-side indexing. */
+export async function fetchAllSellerProducts(): Promise<RawProductDoc[]> {
+  const snap = await getDocs(collection(db, 'products'));
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+}
+
+/** Selects the product docs owned by a user, matching by uid AND phone. */
+export function selectUserProductDocs(
+  all: RawProductDoc[],
+  user: { id?: string; uid?: string | null; phone?: string },
+): RawProductDoc[] {
+  const keys = new Set([user.uid, user.phone, user.id].filter(Boolean).map(String));
+  if (keys.size === 0) return [];
+  return all.filter(d => productOwnerKeys(d).some(k => keys.has(k)));
+}
+
+/**
+ * Collapses raw product docs into de-duplicated display entries.
+ * Docs representing the same product (same originalProductId, else lowercased
+ * name) collapse into one row with a `copies` count, so re-assigned copies stop
+ * appearing multiple times. Inactive docs (isActive === false) are dropped.
+ */
+export function collapseUserProductDocs(docs: RawProductDoc[]): UserProduct[] {
+  const byId = new Map<string, RawProductDoc>();
+  for (const d of docs) if (!byId.has(d.id)) byId.set(d.id, d);
+
+  const groups = new Map<string, UserProduct>();
+  for (const data of Array.from(byId.values())) {
+    if (data.isActive === false) continue;
+    const name = String(data.name ?? '');
+    const groupKey = String(data.originalProductId ?? (name.toLowerCase().trim() || data.id));
+    const isAssigned = data.source === 'admin_assigned';
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.copies += 1;
+      existing.docIds.push(data.id);
+      if (isAssigned) existing.assignedDocIds.push(data.id);
+      continue;
+    }
+    const images = Array.isArray(data.images) ? (data.images as string[]) : undefined;
+    groups.set(groupKey, {
+      id: data.id,
+      name,
+      fullName: data.fullName ? String(data.fullName) : undefined,
+      price: Number(data.price ?? 0),
+      category: String(data.category ?? 'general'),
+      description: String(data.description ?? ''),
+      image: String(data.image ?? (images?.[0] ?? '')),
+      images,
+      stock: String(data.stock ?? 'In Stock'),
+      store: String(data.store ?? ''),
+      distance: String(data.distance ?? 'Nearby'),
+      source: data.source ? String(data.source) : undefined,
+      copies: 1,
+      docIds: [data.id],
+      assignedDocIds: isAssigned ? [data.id] : [],
+    } as UserProduct);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function saveHub(hub: Omit<Hub, 'id'>): Promise<string> {
@@ -2417,17 +2850,38 @@ export async function logFailedPayment(
   try {
     const timestamp = serverTimestamp();
     let phone: string | null = null;
+
+    // Try uidIndex first (phone-keyed users).
     try {
       const idxSnap = await getDoc(doc(db, 'uidIndex', uid));
-      if (idxSnap.exists()) {
-        phone = String(idxSnap.data().phone ?? '');
-      }
+      if (idxSnap.exists()) phone = String(idxSnap.data().phone ?? '');
     } catch { /* ignore */ }
+
+    // Fallback: the user doc itself may be keyed by phone directly (pre-created accounts
+    // that have logged in via OTP already have users/{phone}.uid === uid).
+    if (!phone) {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', uid));
+        if (userSnap.exists()) phone = String(userSnap.data().phone ?? '');
+      } catch { /* ignore */ }
+    }
+
+    const resolvedPhone = phone || null;
 
     await addDoc(collection(db, 'failedPayments'), {
       userId: uid,
-      userPhone: phone ?? uid,
-      error: errorResponse,
+      // Write both uid and phone so admin panel matching works whether the
+      // subscription record was keyed by uid or phone.
+      userPhone: resolvedPhone ?? uid,
+      userUid: uid,
+      error: {
+        reason: errorResponse?.reason ?? null,
+        description: errorResponse?.description ?? null,
+        code: errorResponse?.code ?? null,
+        source: errorResponse?.source ?? null,
+        step: errorResponse?.step ?? null,
+        metadata: errorResponse?.metadata ?? null,
+      },
       orderId: context?.orderId ?? errorResponse?.metadata?.order_id ?? null,
       amount: context?.amount ?? null,
       seatCount: context?.seatCount ?? null,
@@ -2441,7 +2895,14 @@ export async function logFailedPayment(
 }
 
 export async function fetchFailedPayments(): Promise<any[]> {
-  const q = query(collection(db, 'failedPayments'), orderBy('timestamp', 'desc'));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  // No orderBy — avoids needing a composite index on failedPayments.
+  // Sort newest-first client-side instead.
+  const snapshot = await getDocs(collection(db, 'failedPayments'));
+  return snapshot.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a: any, b: any) => {
+      const ta = a.timestamp?.toMillis?.() ?? a.timestamp?.seconds ?? 0;
+      const tb = b.timestamp?.toMillis?.() ?? b.timestamp?.seconds ?? 0;
+      return tb - ta;
+    });
 }
