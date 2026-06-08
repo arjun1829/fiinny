@@ -31,8 +31,9 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { MarketplaceProduct } from '../types/product';
 import { LatLng } from './utils/haversine';
 import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } from './utils/geolocation';
-import { computeStoreDistances } from './utils/nearby';
+import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
+import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
 
 import { Navbar } from '../components/shared/navbar';
@@ -790,8 +791,8 @@ export default function App() {
   };
 
   const placeOrders = async (grandTotal?: number) => {
-    if (!user || userRole !== "customer") {
-      setCheckoutMessage("Please login with a customer account.");
+    if (!user) {
+      setCheckoutMessage("Please login to place an order.");
       return;
     }
     if (!cartItems.length) {
@@ -995,9 +996,11 @@ export default function App() {
         storePrice = finalPrice;
       }
 
-      // Remove any existing pending item for this product (prevents duplicate productId issue)
+      // Remove the existing pending item for THIS product + package size (prevents a
+      // duplicate line for the size now being added from a store). Pending lines for
+      // OTHER sizes of the same product are left untouched — each size is its own line.
       const withoutPending = prev.filter(
-        (i) => !(i.productId === product.id && i.sellMode === "pending")
+        (i) => !(i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit)
       );
       return [
         ...withoutPending,
@@ -1191,18 +1194,20 @@ export default function App() {
             }
             onQtyChange={(itemKey, qty) =>
               setCartItems((prev) =>
-                prev.map((item) => (`${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? { ...item, qty } : item))
+                prev.map((item) => (cartItemKey(item) === itemKey ? { ...item, qty } : item))
               )
             }
             onRemove={(itemKey) =>
-              setCartItems((prev) => prev.filter((item) => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey ? false : true))
+              setCartItems((prev) => prev.filter((item) => cartItemKey(item) === itemKey ? false : true))
             }
             onAssignStore={(itemKey, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) =>
               setCartItems((prev) => {
-                const pendingItem = prev.find(item => `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey);
+                const pendingItem = prev.find(item => cartItemKey(item) === itemKey);
                 if (!pendingItem) return prev;
 
-                const existingItem = prev.find(item => item.productId === pendingItem.productId && item.sellerId === sellerId && item.sellMode === "online_delivery" && `${item.productId}_${item.sellerId}_${item.sellMode}` !== itemKey);
+                // An "online_delivery" line is the SAME cart entry only when it shares
+                // the product, the newly-chosen seller AND the same package size.
+                const existingItem = prev.find(item => item.productId === pendingItem.productId && item.sellerId === sellerId && item.sellMode === "online_delivery" && item.variantUnit === pendingItem.variantUnit && cartItemKey(item) !== itemKey);
 
                 if (existingItem) {
                   return prev
@@ -1219,7 +1224,7 @@ export default function App() {
                 }
 
                 return prev.map((item) =>
-                  `${item.productId}_${item.sellerId}_${item.sellMode}` === itemKey && (item.sellMode === "pending" || item.sellMode === "online_delivery")
+                  cartItemKey(item) === itemKey && (item.sellMode === "pending" || item.sellMode === "online_delivery")
                     ? {
                         ...item,
                         sellerId, sellerType, sellerName,
@@ -1271,8 +1276,13 @@ export default function App() {
             stores={mapFilterProductId
               ? (() => {
                   const prod = mergedProducts.find(p => p.id === mapFilterProductId);
-                  const ids = new Set((prod?.availability ?? []).map(a => a.storeId));
-                  return ids.size ? searchedStores.filter(s => ids.has(s.id)) : searchedStores;
+                  const availability = prod?.availability;
+                  if (!availability || availability.length === 0) return searchedStores;
+                  // Match stores the same robust way ProductDetailView does (by id, phone,
+                  // userId or retailerId) so admin-assigned copies — whose availability.storeId
+                  // is the seller's phone — resolve to the store even when store.id isn't the phone.
+                  const matched = searchedStores.filter(s => storeStocksProduct(s, availability));
+                  return matched.length ? matched : searchedStores;
                 })()
               : searchedStores
             }

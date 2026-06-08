@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
+import { cartItemKey } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
 import { fetchStoreOnlineDelivery } from "../firebase";
@@ -623,11 +624,11 @@ function CartItemCard({
               </button>
             )}
             <div className="flex items-center gap-1">
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
               <span className={`${isPending ? "w-6" : "w-8"} text-center font-bold text-sm`}>{item.qty}</span>
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
             </div>
-            <button onClick={() => onRemove(`${item.productId}_${item.sellerId}_${item.sellMode}`)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
+            <button onClick={() => onRemove(cartItemKey(item))} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
           </div>
         </div>
         <div className="font-black text-on-surface text-right shrink-0">
@@ -1052,7 +1053,7 @@ export default function CartView({
           </p>
         )}
 
-        {isLoggedIn && isCustomer ? (
+        {isLoggedIn ? (
           <div className="mt-5 grid gap-3">
             {/* Name */}
             <input
@@ -1173,10 +1174,6 @@ export default function CartView({
                 <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
               </div>
             </div>
-          </div>
-        ) : isLoggedIn && !isCustomer ? (
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-800">
-            Orders can only be placed from a customer account. Please log in with your customer account.
           </div>
         ) : (
           <button onClick={onGoLogin} className="mt-4 rounded-xl bg-primary text-white px-4 py-3 text-sm font-bold w-full">

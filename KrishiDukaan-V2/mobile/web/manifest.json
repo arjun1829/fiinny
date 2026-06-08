@@ -1,6 +1,6 @@
 {
-    "name": "krishidukan_mobile",
-    "short_name": "krishidukan_mobile",
+    "name": "krishidukaan_app",
+    "short_name": "krishidukaan_app",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

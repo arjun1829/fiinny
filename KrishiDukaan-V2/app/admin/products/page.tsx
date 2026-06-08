@@ -201,7 +201,11 @@ export default function AdminProductsPage() {
     setRowMsg(null);
     setAssignmentsLoading(true);
     try {
-      const copies = assignmentsByOriginal.get(p.id) ?? [];
+      const docIds = (p as any).allDocIds || [p.id];
+      const copies: any[] = [];
+      for (const docId of docIds) {
+        copies.push(...(assignmentsByOriginal.get(docId) ?? []));
+      }
       const inv = await fetchInventoryForProducts(copies.map(c => c.id)).catch(() => ({}));
       setAssignmentRows(copies.map(c => {
         const iv = (inv as any)[c.id];
@@ -213,6 +217,7 @@ export default function AdminProductsPage() {
           active: c.isActive !== false,
           price: String(iv?.sellingPrice ?? c.price ?? ""),
           stock: String(iv?.stockQuantity ?? ""),
+          variants: c.variants || [],
         };
       }));
     } finally { setAssignmentsLoading(false); }
@@ -221,12 +226,27 @@ export default function AdminProductsPage() {
   const setRowField = (copyId: string, field: "price" | "stock", val: string) =>
     setAssignmentRows(prev => prev.map(r => r.copyId === copyId ? { ...r, [field]: val } : r));
 
+  const setRowVariantField = (copyId: string, variantIndex: number, field: "price" | "stock", val: string) => {
+    setAssignmentRows(prev => prev.map(r => {
+      if (r.copyId !== copyId) return r;
+      const nextVariants = [...(r.variants || [])];
+      if (nextVariants[variantIndex]) {
+        nextVariants[variantIndex] = {
+          ...nextVariants[variantIndex],
+          [field]: field === "price" ? (Number(val) || 0) : (Number(val) || 0)
+        };
+      }
+      return { ...r, variants: nextVariants };
+    }));
+  };
+
   const saveAssignmentRow = async (row: typeof assignmentRows[number]) => {
     setSavingRow(row.copyId); setRowMsg(null);
     try {
       await adminUpdateAssignmentPricing(row.copyId, {
         sellingPrice: Number(row.price) || 0,
         stockQuantity: Number(row.stock) || 0,
+        variants: row.variants,
       });
       await load();
       setRowMsg(`Saved ${row.store}.`);
@@ -235,9 +255,16 @@ export default function AdminProductsPage() {
     } finally { setSavingRow(null); }
   };
 
-  const removeAssignmentRow = async (row: typeof assignmentRows[number]) => {
-    if (!viewAssignmentsFor) return;
-    if (!window.confirm(`Remove "${viewAssignmentsFor.name}" from ${row.store}?`)) return;
+  const [confirmRemoveAssignment, setConfirmRemoveAssignment] = useState<any | null>(null);
+
+  const removeAssignmentRow = (row: typeof assignmentRows[number]) => {
+    setConfirmRemoveAssignment(row);
+  };
+
+  const performRemoveAssignment = async () => {
+    if (!viewAssignmentsFor || !confirmRemoveAssignment) return;
+    const row = confirmRemoveAssignment;
+    setConfirmRemoveAssignment(null);
     setRemovingRow(row.copyId); setRowMsg(null);
     try {
       const adminUid = auth.currentUser?.uid ?? "admin";
@@ -253,13 +280,71 @@ export default function AdminProductsPage() {
   // Seller-owned copies are surfaced via the "Assigned" column on their base
   // product, so exclude them from the main catalog list to avoid duplicate rows.
   const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
-  const filtered = products.filter(p => {
-    if (COPY_SOURCES.has((p as any).source)) return false;
-    const q = search.toLowerCase();
-    const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
-    const matchCat = catFilter === "all" || p.category === catFilter;
-    return matchSearch && matchCat;
-  });
+
+  const groupedProducts = useMemo(() => {
+    const groups = new Map<string, MarketplaceProduct[]>();
+    for (const p of products) {
+      if (COPY_SOURCES.has((p as any).source)) continue;
+      const key = p.name.toLowerCase().trim();
+      const arr = groups.get(key) ?? [];
+      arr.push(p);
+      groups.set(key, arr);
+    }
+
+    const result: MarketplaceProduct[] = [];
+    for (const [key, list] of Array.from(groups.entries())) {
+      // Find canonical one in group: prefer manufacturer_inventory, then admin, then retailer_inventory
+      const canonical = list.find(p => p.source === 'manufacturer_inventory')
+        || list.find(p => p.source === 'admin')
+        || list[0];
+
+      // Merge all variants from all docs in the list
+      const mergedVariants: any[] = [];
+      const seenVariantKeys = new Set<string>();
+
+      for (const p of list) {
+        if (p.variants && p.variants.length > 0) {
+          for (const v of p.variants) {
+            const vKey = `${v.unit}-${v.price}`;
+            if (!seenVariantKeys.has(vKey)) {
+              seenVariantKeys.add(vKey);
+              mergedVariants.push(v);
+            }
+          }
+        } else {
+          // If no variants array, treat the product itself as a variant
+          const unit = (p as any).unit || p.stock || "Standard";
+          const vKey = `${unit}-${p.price}`;
+          if (!seenVariantKeys.has(vKey)) {
+            seenVariantKeys.add(vKey);
+            mergedVariants.push({
+              unit,
+              price: p.price,
+              stock: p.stock === 'Out of Stock' ? 0 : 50
+            });
+          }
+        }
+      }
+
+      const allDocIds = list.map(p => p.id);
+
+      result.push({
+        ...canonical,
+        variants: mergedVariants,
+        allDocIds,
+      } as any);
+    }
+    return result;
+  }, [products]);
+
+  const filtered = useMemo(() => {
+    return groupedProducts.filter(p => {
+      const q = search.toLowerCase();
+      const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
+      const matchCat = catFilter === "all" || p.category === catFilter;
+      return matchSearch && matchCat;
+    });
+  }, [groupedProducts, search, catFilter]);
 
   const resetForm = () => { setForm(EMPTY_FORM); setVariants([emptyVariant()]); setImages([newSlot()]); setEditId(null); setFormError(null); };
 
@@ -302,6 +387,29 @@ export default function AdminProductsPage() {
       };
       if (editId) {
         await adminUpdateProduct(editId, payload);
+        // Deactivate other duplicates in Firestore if any exist
+        const originalProduct = products.find(p => p.id === editId);
+        if (originalProduct) {
+          const docIds = (originalProduct as any).allDocIds || [];
+          const otherDocIds = docIds.filter((id: string) => id !== editId);
+          if (otherDocIds.length > 0) {
+            const { writeBatch, doc, serverTimestamp } = await import("firebase/firestore");
+            const { db: fdb } = await import("../../firebase");
+            const batch = writeBatch(fdb);
+            otherDocIds.forEach((id: string) => {
+              batch.update(doc(fdb, 'products', id), { isActive: false, updatedAt: serverTimestamp() });
+            });
+            // Update any copy products linked to the deactivated duplicates
+            const otherDocIdsSet = new Set(otherDocIds);
+            const copyProductsToUpdate = rawProducts.filter(
+              (rp) => rp.source === "admin_assigned" && otherDocIdsSet.has(rp.originalProductId)
+            );
+            copyProductsToUpdate.forEach((cp) => {
+              batch.update(doc(fdb, 'products', cp.id), { originalProductId: editId });
+            });
+            await batch.commit().catch(err => console.error("Failed to deactivate duplicates:", err));
+          }
+        }
       } else {
         await adminCreateProduct(payload as any);
       }
@@ -320,7 +428,18 @@ export default function AdminProductsPage() {
     setDeleteError(null);
     try {
       await adminDeleteProduct(p.id);
-      setProducts(prev => prev.filter(x => x.id !== p.id));
+      const docIds = (p as any).allDocIds || [p.id];
+      const otherDocIds = docIds.filter((id: string) => id !== p.id);
+      if (otherDocIds.length > 0) {
+        const { writeBatch, doc } = await import("firebase/firestore");
+        const { db: fdb } = await import("../../firebase");
+        const batch = writeBatch(fdb);
+        otherDocIds.forEach((id: string) => {
+          batch.delete(doc(fdb, 'products', id));
+        });
+        await batch.commit().catch(err => console.error("Failed to delete duplicate docs:", err));
+      }
+      setProducts(prev => prev.filter(x => !docIds.includes(x.id)));
       setConfirmDelete(null);
     } catch {
       setDeleteError("Delete failed. Please try again.");
@@ -429,7 +548,8 @@ export default function AdminProductsPage() {
                       <td className="px-5 py-3 text-xs text-on-surface-variant">{p.store}</td>
                       <td className="px-5 py-3">
                         {(() => {
-                          const n = (assignmentsByOriginal.get(p.id) ?? []).length;
+                          const docIds = (p as any).allDocIds || [p.id];
+                          const n = docIds.reduce((sum: number, docId: string) => sum + (assignmentsByOriginal.get(docId) ?? []).length, 0);
                           return n > 0 ? (
                             <button onClick={() => openAssignments(p)}
                               className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 px-2.5 py-1 text-xs font-bold text-secondary hover:bg-secondary/20 transition-colors">
@@ -492,7 +612,8 @@ export default function AdminProductsPage() {
                     <div className="min-w-0">
                       <p className="truncate text-[11px] text-on-surface-variant">{p.store || "—"}</p>
                       {(() => {
-                        const n = (assignmentsByOriginal.get(p.id) ?? []).length;
+                        const docIds = (p as any).allDocIds || [p.id];
+                        const n = docIds.reduce((sum: number, docId: string) => sum + (assignmentsByOriginal.get(docId) ?? []).length, 0);
                         return n > 0 ? (
                           <button onClick={() => openAssignments(p)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-secondary">
                             <Users className="h-3 w-3" /> {n} seller{n !== 1 ? "s" : ""}
@@ -777,26 +898,81 @@ export default function AdminProductsPage() {
                       {removingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                     </button>
                   </div>
-                  <div className="flex items-end gap-2">
-                    <label className="flex flex-col gap-1 text-xs flex-1">
-                      <span className="font-medium text-on-surface-variant">Price (₹)</span>
-                      <input type="number" min={0} value={row.price}
-                        onChange={e => setRowField(row.copyId, "price", e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs flex-1">
-                      <span className="font-medium text-on-surface-variant">Stock Qty</span>
-                      <input type="number" min={0} value={row.stock}
-                        onChange={e => setRowField(row.copyId, "stock", e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                    </label>
-                    <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
-                      className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
-                      {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                    </button>
-                  </div>
+                  {row.variants && row.variants.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Variants Pricing & Stock:</p>
+                      {row.variants.map((v: any, vIdx: number) => (
+                        <div key={vIdx} className="flex items-center gap-2 bg-surface-container-low/50 p-2 rounded-xl border border-outline-variant/20">
+                          <span className="text-xs font-semibold text-on-surface w-20 truncate">{v.unit}</span>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Price:</span>
+                            <input type="number" min={0} value={v.price}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "price", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs outline-none focus:border-primary" />
+                          </label>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Stock:</span>
+                            <input type="number" min={0} value={v.stock !== undefined ? v.stock : ""}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "stock", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs text-center outline-none focus:border-primary" />
+                          </label>
+                        </div>
+                      ))}
+                      <div className="flex justify-end pt-1">
+                        <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                          className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                          {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Variants"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-end gap-2">
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Price (₹)</span>
+                        <input type="number" min={0} value={row.price}
+                          onChange={e => setRowField(row.copyId, "price", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Stock Qty</span>
+                        <input type="number" min={0} value={row.stock}
+                          onChange={e => setRowField(row.copyId, "stock", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                        className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                        {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Remove Assignment Confirmation Modal */}
+      {confirmRemoveAssignment && viewAssignmentsFor && (
+        <div className="fixed inset-x-0 bottom-0 top-16 z-[60] flex items-end justify-center bg-on-surface/40 p-4 backdrop-blur-sm sm:items-center">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-bold text-on-surface">Remove Assignment</h3>
+              <p className="text-sm text-on-surface-variant mt-2">
+                Are you sure you want to remove <span className="font-semibold text-on-surface">&quot;{viewAssignmentsFor.name}&quot;</span> from <span className="font-semibold text-on-surface">{confirmRemoveAssignment.store}</span>?
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
+              <button type="button" onClick={() => setConfirmRemoveAssignment(null)}
+                className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors">
+                Cancel
+              </button>
+              <button type="button" onClick={performRemoveAssignment}
+                className="flex-1 py-3 bg-red-600 text-white text-sm font-bold rounded-2xl hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
+                Remove
+              </button>
             </div>
           </div>
         </div>
