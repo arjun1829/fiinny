@@ -211,8 +211,6 @@ service cloud.firestore {
 
     // ─── orders ──────────────────────────────────────────────────────────────
     // Accepts both new (customerPhone/sellerPhone) and legacy (customerId/sellerId) fields.
-    // NOTE: Retailers and manufacturers can also place orders AS BUYERS (customerId == their uid).
-    //       Their buyer orders are separate from their incoming (seller-side) orders.
     match /orders/{orderId} {
       allow create: if isAuthed() && (
         request.resource.data.customerPhone == myPhone() ||
@@ -558,5 +556,11 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
     }
 
+    // ─── carts/{phone} ───────────────────────────────────────────────────────────
+    // Shopping cart — keyed by phone (same as users/{phone}).
+    // Only the cart owner or an admin may read or write.
+    match /carts/{phone} {
+      allow read, write: if isAdmin() || (isAuthed() && myPhone() == phone);
+    } 
   }
 }

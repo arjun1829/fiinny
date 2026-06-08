@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ICONS, PRODUCTS, STORES, INVENTORY, MANUFACTURERS } from './constants';
 import HomeView from './views/HomeView';
 import MarketView from './views/MarketView';
@@ -35,6 +35,7 @@ import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
+import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
@@ -127,6 +128,7 @@ export default function App() {
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
+  const firestoreSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
@@ -305,8 +307,14 @@ export default function App() {
 
   useEffect(() => {
     if (!cartLoaded) return;
-    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
-  }, [cartItems, cartLoaded]);
+    if (userProfile.phone) {
+      // Logged-in users: cart lives in Firestore; keep localStorage clean to prevent
+      // stale guest items from being double-merged on the next login.
+      window.localStorage.removeItem("krishidukan_cart_v1");
+    } else {
+      window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
+    }
+  }, [cartItems, cartLoaded, userProfile.phone]);
 
   useEffect(() => {
     try {
@@ -318,6 +326,21 @@ export default function App() {
     } catch {}
     setCartLoaded(true);
   }, []);
+
+  // Debounced Firestore cart sync for logged-in users
+  useEffect(() => {
+    const phone = userProfile.phone;
+    if (!phone || !cartLoaded) return;
+    if (firestoreSaveTimerRef.current) clearTimeout(firestoreSaveTimerRef.current);
+    firestoreSaveTimerRef.current = setTimeout(() => {
+      saveCart(phone, cartItems).catch((e) =>
+        console.error('[Cart] Firestore save failed:', e)
+      );
+    }, 1500);
+    return () => {
+      if (firestoreSaveTimerRef.current) clearTimeout(firestoreSaveTimerRef.current);
+    };
+  }, [cartItems, userProfile.phone, cartLoaded]);
 
   useEffect(() => {
     if (currentView === 'become-retailer' && userRole === 'retailer') {
@@ -429,14 +452,50 @@ export default function App() {
           if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
             setCurrentView('subscription');
           }
+
+          // Cart: merge guest localStorage cart with Firestore cart, then clear localStorage.
+          // We read localStorage directly here (not from state) to avoid stale-closure issues.
+          const phone = profileData.phone || '';
+          if (phone) {
+            try {
+              const guestCart: CartItem[] = (() => {
+                try {
+                  const raw = window.localStorage.getItem("krishidukan_cart_v1");
+                  if (!raw) return [];
+                  const parsed = JSON.parse(raw);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch { return []; }
+              })();
+
+              const storedItems = await loadStoredCart(phone);
+              let merged: CartItem[];
+              if (storedItems.length > 0) {
+                const firestoreItems = await reconstructCartItems(storedItems);
+                merged = mergeCartItems(guestCart, firestoreItems);
+              } else {
+                merged = guestCart;
+              }
+
+              if (merged.length > 0 || storedItems.length > 0) {
+                setCartItems(merged);
+                await saveCart(phone, merged);
+              }
+              window.localStorage.removeItem("krishidukan_cart_v1");
+            } catch (e) {
+              console.error('[Cart] Failed to sync Firestore cart on login:', e);
+            }
+          }
         }
       } else {
         setUser(null);
         setUserRole('customer');
         setUserProfile({ name: '', phone: '', email: '', isPaid: false });
-        setCheckoutInfo({ 
-          customerName: '', 
-          customerPhone: '', 
+        // Clear cart on logout — Firestore copy is preserved for next login.
+        setCartItems([]);
+        window.localStorage.removeItem("krishidukan_cart_v1");
+        setCheckoutInfo({
+          customerName: '',
+          customerPhone: '',
           addressArea: '',
           addressCity: '',
           addressDistrict: '',
