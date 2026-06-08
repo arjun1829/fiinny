@@ -43,7 +43,7 @@ class AppShell extends ConsumerWidget {
       body: navigationShell,
       floatingActionButton: navigationShell.currentIndex != 4 && cartCount > 0
           ? Container(
-              margin: const EdgeInsets.only(bottom: 18), // lift the FAB above bottom nav
+              margin: const EdgeInsets.only(bottom: 36, right: 12), // lift the FAB higher above bottom nav and inset from right
               child: FloatingActionButton.small(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -55,7 +55,7 @@ class AppShell extends ConsumerWidget {
               ),
             )
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endContained,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         child: DecoratedBox(
