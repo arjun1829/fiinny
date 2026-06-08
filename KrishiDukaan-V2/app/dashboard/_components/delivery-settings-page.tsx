@@ -3,9 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  Truck, Globe, MapPin, Weight, Plus, Trash2, Save,
-  Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info,
+  Globe, MapPin, Weight, Plus, Trash2, Save,
+  Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info, Lock,
 } from "lucide-react";
+import Link from "next/link";
 import { auth } from "../../firebase";
 import { getUserProfile } from "../../firebase";
 import {
@@ -75,33 +76,6 @@ function Section({
       </div>
       <div className="p-5">{children}</div>
     </section>
-  );
-}
-
-// ─── Toggle ───────────────────────────────────────────────────────────────────
-
-function Toggle({ value, onChange, disabled }: {
-  value: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={value}
-      disabled={disabled}
-      onClick={() => onChange(!value)}
-      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 ${
-        value ? "bg-primary" : "bg-surface-container-highest"
-      }`}
-    >
-      <span
-        className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-          value ? "translate-x-6" : "translate-x-1"
-        }`}
-      />
-    </button>
   );
 }
 
@@ -299,14 +273,16 @@ function StatePicker({
 export function DeliverySettingsPage() {
   const [uid, setUid] = useState<string | null>(null);
   const [sellerPhone, setSellerPhone] = useState<string | null>(null);
-  const [ownerType, setOwnerType] = useState<"retailer" | "manufacturer">("retailer");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // Section 1: online delivery
-  const [onlineEnabled, setOnlineEnabled] = useState(false);
+  // Profile-level gate — set from profile.onlineDelivery on load
+  const [profileOnlineDelivery, setProfileOnlineDelivery] = useState<boolean | null>(null);
+
+  // Preserved from Firestore — not exposed in UI (profile is source of truth)
+  const [storedOnlineDeliveryEnabled, setStoredOnlineDeliveryEnabled] = useState(true);
 
   // Section 2: weight slabs
   const [slabs, setSlabs] = useState<SlabDraft[]>([]);
@@ -323,20 +299,17 @@ export function DeliverySettingsPage() {
       try {
         const profile = await getUserProfile(user.uid);
         const phone = String((profile as any)?.phone ?? "").trim();
-        const role = profile?.role === "manufacturer" ? "manufacturer" : "retailer";
+        const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
+        setProfileOnlineDelivery(hasOnlineDelivery);
         setSellerPhone(phone || null);
-        setOwnerType(role);
 
         if (phone) {
           const settings = await fetchDeliverySettings(phone);
           if (settings) {
-            setOnlineEnabled(settings.onlineDeliveryEnabled);
+            setStoredOnlineDeliveryEnabled(settings.onlineDeliveryEnabled);
             setSlabs(settings.weightSlabs);
             setCoverageType(settings.coverageType);
             setSelectedStates(settings.states);
-          } else {
-            // Seed online delivery from existing profile field
-            setOnlineEnabled(!!(profile as any)?.onlineDelivery);
           }
         }
       } catch {
@@ -383,12 +356,11 @@ export function DeliverySettingsPage() {
       await saveDeliverySettings(
         sellerPhone,
         {
-          onlineDeliveryEnabled: onlineEnabled,
+          onlineDeliveryEnabled: storedOnlineDeliveryEnabled,
           coverageType,
           states: coverageType === "states" ? selectedStates : [],
           weightSlabs: slabs as WeightSlab[],
         },
-        ownerType,
       );
       setStatus({ type: "ok", text: "Delivery settings saved." });
     } catch (e) {
@@ -399,7 +371,7 @@ export function DeliverySettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [sellerPhone, canSave, onlineEnabled, coverageType, selectedStates, slabs, ownerType]);
+  }, [sellerPhone, canSave, storedOnlineDeliveryEnabled, coverageType, selectedStates, slabs]);
 
   // Auto-dismiss success
   useEffect(() => {
@@ -425,54 +397,40 @@ export function DeliverySettingsPage() {
     );
   }
 
+  if (profileOnlineDelivery === false) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="Delivery Settings"
+          description="Configure online delivery, charge slabs, and coverage for your products."
+        />
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-16 text-center">
+          <div className="rounded-full bg-surface-container p-5">
+            <Lock className="h-9 w-9 text-on-surface-variant/40" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-on-surface">Online Delivery is currently disabled.</p>
+            <p className="mt-1.5 text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
+              Enable Online Delivery from your Profile to configure delivery coverage and delivery charges.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/profile"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-all"
+          >
+            Go to Profile
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Delivery Settings"
         description="Configure online delivery, charge slabs, and coverage for your products."
       />
-
-      {/* ── Section 1: Online Delivery ── */}
-      <Section
-        icon={Truck}
-        title="Online Delivery"
-        subtitle="When enabled, customers can place delivery orders for your products. Disabling hides the Order button across all your listings."
-        badge={
-          <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              onlineEnabled
-                ? "bg-primary/10 text-primary"
-                : "bg-surface-container-highest text-on-surface-variant"
-            }`}
-          >
-            {onlineEnabled ? "Enabled" : "Disabled"}
-          </span>
-        }
-      >
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold text-on-surface">
-              {onlineEnabled ? "Online ordering is active" : "Online ordering is off"}
-            </p>
-            <p className="text-xs text-on-surface-variant mt-0.5">
-              {onlineEnabled
-                ? "Customers can order your products for home delivery."
-                : "Customers will only see your products — they cannot place online orders."}
-            </p>
-          </div>
-          <Toggle value={onlineEnabled} onChange={setOnlineEnabled} disabled={saving} />
-        </div>
-
-        {!onlineEnabled && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <Info className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <p className="text-xs text-amber-800">
-              Delivery charge slabs and coverage settings are saved even when online delivery is off.
-              They will activate automatically when you turn delivery back on.
-            </p>
-          </div>
-        )}
-      </Section>
 
       {/* ── Section 2: Delivery Charge Slabs ── */}
       <Section
@@ -623,6 +581,7 @@ export function DeliverySettingsPage() {
           )}
         </button>
       </div>
+
     </div>
   );
 }

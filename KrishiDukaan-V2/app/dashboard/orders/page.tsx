@@ -17,6 +17,7 @@ import {
   AlertCircle,
   IndianRupee,
   Download,
+  Lock,
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -346,19 +347,21 @@ export default function OrdersPage() {
           {t('signInForOrders')}
         </p>
       ) : onlineDelivery === false ? (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/40 px-6 py-16 text-center">
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-16 text-center">
           <div className="rounded-full bg-surface-container p-5">
-            <Truck className="h-9 w-9 text-on-surface-variant/40" />
+            <Lock className="h-9 w-9 text-on-surface-variant/40" />
           </div>
           <div>
-            <p className="text-base font-semibold text-on-surface">{t('onlineDeliveryNotEnabled')}</p>
-            <p className="mt-1 text-sm text-on-surface-variant max-w-sm mx-auto">
-              {t('enableOnlineDeliveryHint')}
+            <p className="text-base font-bold text-on-surface">Online Delivery is currently disabled.</p>
+            <p className="mt-1.5 text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
+              Enable Online Delivery from your Profile to view and manage orders.
             </p>
           </div>
-          <Link href="/dashboard/profile?tab=settings"
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
-            {t('goToSettingsBtn')}
+          <Link
+            href="/dashboard/profile"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-all"
+          >
+            Go to Profile
           </Link>
         </div>
       ) : loading ? (

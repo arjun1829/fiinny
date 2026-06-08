@@ -385,20 +385,23 @@ export default function HomeView({
                     )}
                   </div>
                 )}
-                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                  <HelperTooltip side="top" textKey="marketAddToCart">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
-                      className={`w-full border-2 text-xs font-bold py-1.5 rounded-lg transition-colors ${
-                        hasOffer
-                          ? 'border-green-600 text-green-700 hover:bg-green-600 hover:text-white'
-                          : 'border-primary text-primary hover:bg-primary hover:text-white'
-                      }`}
-                    >
-                      {t('addToCart')}
-                    </button>
-                  </HelperTooltip>
-                </div>
+                {(() => { console.log("[HomeView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
+                {product.sellMode !== "offline_store_only" && (
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <HelperTooltip side="top" textKey="marketAddToCart">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                        className={`w-full border-2 text-xs font-bold py-1.5 rounded-lg transition-colors ${
+                          hasOffer
+                            ? 'border-green-600 text-green-700 hover:bg-green-600 hover:text-white'
+                            : 'border-primary text-primary hover:bg-primary hover:text-white'
+                        }`}
+                      >
+                        {t('addToCart')}
+                      </button>
+                    </HelperTooltip>
+                  </div>
+                )}
               </div>
             </motion.div>
             );

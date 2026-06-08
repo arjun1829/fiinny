@@ -346,7 +346,7 @@ export default function App() {
           setInviteAccept({ status: 'already_accepted' });
         } else {
           setInviteAccept({ status: 'success' });
-          setTimeout(() => { window.location.href = '/dashboard/profile'; }, 1800);
+          setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
         }
       })
       .catch(() =>
@@ -477,7 +477,7 @@ export default function App() {
       // Keep invite code in state so the auto-accept effect can claim it after redirect
       navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
-      window.location.href = '/dashboard/profile';
+      window.location.href = '/dashboard';
     } else {
       navigate('home', { replace: true });
     }
@@ -496,7 +496,7 @@ export default function App() {
           productCount: profileData.productCount || 0,
         });
         if (profileData.role === 'retailer' || profileData.role === 'manufacturer') {
-          window.location.href = '/dashboard/profile';
+          window.location.href = '/dashboard';
           return;
         }
       } else {
@@ -710,6 +710,11 @@ export default function App() {
   };
 
   const addToCart = (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     // Use the best available discount (maxDiscountPct) as a preview for the pending item.
     // The price will be updated to the specific store's price when the user selects a store.
     const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
@@ -742,6 +747,7 @@ export default function App() {
           qty: 1,
           sellMode: "pending" as const,
           ...(variantUnit ? { variantUnit } : {}),
+          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
         },
       ];
     });
@@ -784,7 +790,7 @@ export default function App() {
     setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
   };
 
-  const placeOrders = async () => {
+  const placeOrders = async (grandTotal?: number) => {
     if (!user) {
       setCheckoutMessage("Please login to place an order.");
       return;
@@ -808,26 +814,52 @@ export default function App() {
       return;
     }
 
+    // grandTotal includes delivery charges computed by CartView's useDeliveryEstimates hook.
+    // Fall back to product subtotal if grandTotal wasn't passed (shouldn't happen).
+    const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
+    const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
+    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
+
+    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGrandTotal:", clientGrandTotal);
+    console.log("[Checkout] readyItems:", readyItems.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantUnit: i.variantUnit, sellerPhone: i.sellerPhone })));
+
     setCheckoutLoading(true);
     setCheckoutMessage(null);
 
     try {
-      // Step 1: Create Razorpay order on server (server verifies prices — never trust client amount)
+      // Step 1: Create Razorpay order on server.
+      // We send clientGrandTotal (includes delivery) so the server uses it as the
+      // Razorpay amount when its own inventory lookup can't find a matching price.
       const orderRes = await fetch("/api/payment/create-cart-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: readyItems.map((i) => ({
-            productId: i.productId,
-            sellerId:  i.sellerId,
-            qty:       i.qty,
+            productId:   i.productId,
+            sellerId:    i.sellerId,
+            sellerPhone: i.sellerPhone,
+            qty:         i.qty,
           })),
-          userId: user.uid,
+          userId:          user.uid,
+          clientSubtotal,
+          clientDelivery,
+          clientGrandTotal,
           note: `Cart: ${readyItems.length} item(s)`,
         }),
       });
-      if (!orderRes.ok) throw new Error("Could not initiate payment. Please try again.");
+
+      if (!orderRes.ok) {
+        let errMsg = "Could not initiate payment. Please try again.";
+        try {
+          const errBody = await orderRes.json();
+          console.error("[Checkout] create-cart-order API error:", orderRes.status, errBody);
+          if (errBody?.error) errMsg = errBody.error;
+        } catch { /* ignore parse error */ }
+        throw new Error(errMsg);
+      }
+
       const rzpOrder = await orderRes.json();
+      console.log("[Checkout] rzpOrder:", { id: rzpOrder.id, amount: rzpOrder.amount, serverTotal: rzpOrder.serverTotal });
 
       // Step 2: Open Razorpay modal
       const rzp = new (window as any).Razorpay({
@@ -891,6 +923,11 @@ export default function App() {
 
 
   const handleAddToCartFromStore = useCallback((product: MarketplaceProduct, store: any, price?: number, variant?: { unit: string; price: number; stock?: number }) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     const sellerId: string =
       (store as any).retailerId ||
       (store as any).userId ||
@@ -900,6 +937,21 @@ export default function App() {
       setCheckoutMessage("This store is missing seller info and cannot be ordered from online.");
       return;
     }
+
+    // Per-seller product-level check: this specific store's listing may have delivery off
+    // even if the merged card is marked online (because another seller is online).
+    const sellerPhone: string | undefined = (store as any).phone || undefined;
+    const availEntry = product.availability?.find(
+      (a) =>
+        (sellerId && a.storeId === sellerId) ||
+        (sellerPhone && (a.storePhone === sellerPhone || a.storeId === sellerPhone)),
+    );
+    if (availEntry && availEntry.isOnline === false) {
+      setToastMsg("This product is not available for online ordering from this store.");
+      setToastType("error");
+      return;
+    }
+
     const sellerType: "retailer" | "manufacturer" =
       (store as any).retailerId ? "retailer" : "manufacturer";
     const variantUnit = variant?.unit;
@@ -921,27 +973,9 @@ export default function App() {
       let storePrice: number;
       let originalStorePrice: number | undefined;
       let storeDiscountPct = 0;
-
-      // Resolve the selected store's discount once — same key-resolution order used by
-      // StorePickerInline (uid → phone → store.id). Applied to whichever base price we pick
-      // below so variant adds carry the store's effective selling price (not the list price).
-      storeDiscountPct =
-        (sellerId && product.sellerDiscounts?.[sellerId])
-          ? product.sellerDiscounts[sellerId]
-          : (storePhone && product.sellerDiscounts?.[storePhone])
-            ? product.sellerDiscounts[storePhone]
-            : (store.id && product.sellerDiscounts?.[store.id])
-              ? product.sellerDiscounts[store.id]
-              : 0;
-
       if (variant && variant.price > 0) {
-        // Variant (e.g. 250ml/500ml): apply the store discount to the variant's list price
-        // so the cart shows the store's effective selling price, matching "Change Store".
-        originalStorePrice = variant.price;
-        const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
-        storePrice = finalPrice;
+        storePrice = variant.price;
       } else if (price && price > 0) {
-        // Caller passed an already-resolved price (e.g. the store card's display price).
         storePrice = price;
       } else {
         const availability = product.availability?.find(
@@ -950,6 +984,14 @@ export default function App() {
         originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
           ? availability.sellingPrice
           : product.price;
+        storeDiscountPct =
+          (sellerId && product.sellerDiscounts?.[sellerId])
+            ? product.sellerDiscounts[sellerId]
+            : (storePhone && product.sellerDiscounts?.[storePhone])
+              ? product.sellerDiscounts[storePhone]
+              : (store.id && product.sellerDiscounts?.[store.id])
+                ? product.sellerDiscounts[store.id]
+                : 0;
         const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
         storePrice = finalPrice;
       }
@@ -976,6 +1018,7 @@ export default function App() {
           qty: 1,
           sellMode: "online_delivery" as const,
           ...(variantUnit ? { variantUnit } : {}),
+          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
         },
       ];
     });
@@ -985,7 +1028,12 @@ export default function App() {
   }, []);
 
   // Buy Now: add to cart (auto-select first online store if available) + go to cart
-  const handleBuyNow = useCallback((product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
+  const handleBuyNow = useCallback((product: MarketplaceProduct) => {
+    if (product.sellMode === "offline_store_only") {
+      setToastMsg("This product is not available for online ordering.");
+      setToastType("error");
+      return;
+    }
     // Find first online-delivery store for this product
     const onlineStore = storesWithDistance.find((store) => {
       const storePhone = (store as any).phone as string | undefined;
@@ -1003,10 +1051,10 @@ export default function App() {
     });
 
     if (onlineStore) {
-      handleAddToCartFromStore(product, onlineStore, undefined, variant);
+      handleAddToCartFromStore(product, onlineStore);
     } else {
       // No specific store found — add as pending and navigate to cart
-      addToCart(product, variant);
+      addToCart(product);
     }
     navigate("cart");
   }, [storesWithDistance, handleAddToCartFromStore, addToCart, navigate]);
@@ -1133,7 +1181,7 @@ export default function App() {
           <CartView
             items={cartItems}
             isLoggedIn={Boolean(user)}
-            isCustomer={Boolean(user)}
+            isCustomer={userRole === "customer"}
             customerName={checkoutInfo.customerName}
             customerPhone={checkoutInfo.customerPhone}
             addressArea={checkoutInfo.addressArea}

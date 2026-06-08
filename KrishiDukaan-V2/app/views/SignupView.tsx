@@ -82,7 +82,7 @@ export default function SignupView({
         if (!cancelled) {
           setInviteDetails({
             found: false, claimable: false, inviteCode: trimmedInvite,
-            status: "", retailerEmail: "", retailerId: "",
+            status: "", retailerEmail: "", retailerPhone: "", retailerId: "",
             manufacturerId: "", manufacturerName: null,
           });
         }
@@ -104,7 +104,13 @@ export default function SignupView({
 
   useEffect(() => {
     if (inviteDetails?.claimable || inviteDetails?.status === "active") setRole("retailer");
-  }, [inviteDetails?.claimable, inviteDetails?.status]);
+    // Auto-fill phone from invite so the retailer can't sign up with a different number
+    if (inviteDetails?.claimable && inviteDetails.retailerPhone) {
+      const digits = inviteDetails.retailerPhone.replace(/\D/g, "");
+      const tenDigit = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+      setPhone(tenDigit || inviteDetails.retailerPhone);
+    }
+  }, [inviteDetails?.claimable, inviteDetails?.status, inviteDetails?.retailerPhone]);
 
   const manufacturerLabel = inviteDetails?.manufacturerName?.trim() || "this manufacturer";
 
@@ -345,18 +351,31 @@ export default function SignupView({
                   ariaLabel="Mobile number help"
                 />
               </div>
-              <div className="flex items-center gap-2 rounded-2xl border border-outline-variant bg-surface-container-low px-5 py-4">
+              <div className={`flex items-center gap-2 rounded-2xl border px-5 py-4 ${inviteDetails?.claimable && inviteDetails.retailerPhone ? "border-primary/30 bg-primary/5" : "border-outline-variant bg-surface-container-low"}`}>
                 <span className="text-sm font-bold text-on-surface-variant">+91</span>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   required
                   disabled={loading}
+                  readOnly={Boolean(inviteDetails?.claimable && inviteDetails.retailerPhone)}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                   placeholder="10-digit mobile number"
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface"
                 />
+                {inviteDetails?.claimable && inviteDetails.retailerPhone && (
+                  <span className="text-xs font-semibold text-primary shrink-0">Invite</span>
+                )}
               </div>
+              {inviteDetails?.claimable && inviteDetails.retailerPhone ? (
+                <p className="ml-1 text-xs text-on-surface-variant">
+                  This number was pre-registered by the manufacturer and cannot be changed.
+                </p>
+              ) : phone.length > 0 && phone.length < 10 ? (
+                <p className="ml-1 text-xs text-red-600">Enter exactly 10 digits ({phone.length}/10)</p>
+              ) : null}
             </div>
 
             <button

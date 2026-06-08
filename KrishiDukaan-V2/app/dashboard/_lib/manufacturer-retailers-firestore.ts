@@ -3,7 +3,9 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
+  getDocsFromServer,
   GeoPoint,
   limit,
   query,
@@ -167,7 +169,7 @@ async function phonesFromInvite(
   inviteDocId: string,
 ): Promise<{ manufacturerPhone: string | null; retailerPhone: string | null }> {
   try {
-    const snap = await getDoc(doc(db, COLLECTION, inviteDocId));
+    const snap = await getDocFromServer(doc(db, COLLECTION, inviteDocId));
     if (!snap.exists()) return { manufacturerPhone: null, retailerPhone: null };
     const d = snap.data() as Record<string, unknown>;
     return {
@@ -224,11 +226,15 @@ export async function fetchManufacturerRetailers(
     if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
   } catch { /* ignore */ }
 
+  // Use getDocsFromServer to bypass the SDK's local query cache.
+  // After a write (updateNetworkRetailer) the document is updated on the server,
+  // but getDocs can still return a cached query result that predates the write.
+  // getDocsFromServer forces a fresh network read so edits are always visible.
   const queries = [
-    getDocs(query(collection(db, COLLECTION), where("manufacturerId", "==", manufacturerId))),
+    getDocsFromServer(query(collection(db, COLLECTION), where("manufacturerId", "==", manufacturerId))),
   ];
   if (manufacturerPhone && manufacturerPhone !== manufacturerId) {
-    queries.push(getDocs(query(collection(db, COLLECTION), where("manufacturerPhone", "==", manufacturerPhone))));
+    queries.push(getDocsFromServer(query(collection(db, COLLECTION), where("manufacturerPhone", "==", manufacturerPhone))));
   }
 
   const snaps = await Promise.all(queries);
@@ -246,21 +252,28 @@ export async function fetchManufacturerRetailers(
     });
   });
 
-  // For rows missing address/geo, fetch from the retailer's own profile doc
-  // (happens when retailer fills their profile after being linked, or via linkExistingRetailer)
-  const missingAddr = rows.filter(
-    (r) => !r.address?.line1 && !r.address?.city && r.retailerDocId,
+  // For rows missing address/geo or names, supplement from the retailer's own profile doc.
+  // `manufacturerRetailers` is the source of truth for names — the retailer's profile
+  // is only consulted as a fallback when the invite doc has no value (e.g. linked accounts).
+  // Manufacturer can't write to `retailers/` directly (Firestore rules), so we never override
+  // a name that already exists in `manufacturerRetailers` with one from `retailers/`.
+  const needsSupplement = rows.filter(
+    (r) => r.retailerDocId && (!r.address?.line1 || !r.address?.city || !r.shopName || !r.ownerName),
   );
-  if (missingAddr.length > 0) {
+  if (needsSupplement.length > 0) {
     await Promise.all(
-      missingAddr.map(async (row) => {
+      needsSupplement.map(async (row) => {
         try {
           const rSnap = await getDoc(doc(db, "retailers", row.retailerDocId));
           if (!rSnap.exists()) return;
           const rd = rSnap.data() as Record<string, unknown>;
+          // Only fill names when the invite doc has none — manufacturerRetailers wins
+          if (!row.shopName && rd.shopName) row.shopName = String(rd.shopName);
+          if (!row.ownerName && rd.ownerName) row.ownerName = String(rd.ownerName);
+          // Fill address/geo when missing
           const rawAddr = rd.address as Record<string, unknown> | null | undefined;
           const rawGeo  = rd.geo as { latitude?: number; longitude?: number } | null | undefined;
-          if (rawAddr?.city || rawAddr?.line1) {
+          if (!row.address?.city && (rawAddr?.city || rawAddr?.line1)) {
             row.address = {
               line1:   String(rawAddr.line1   ?? ""),
               city:    String(rawAddr.city    ?? ""),
@@ -271,10 +284,7 @@ export async function fetchManufacturerRetailers(
           if (!row.geo && rawGeo && typeof rawGeo.latitude === "number" && typeof rawGeo.longitude === "number") {
             row.geo = { latitude: rawGeo.latitude, longitude: rawGeo.longitude };
           }
-          // Also sync shopName/ownerName if they were empty in the invite doc
-          if (!row.shopName && rd.shopName) row.shopName = String(rd.shopName);
-          if (!row.ownerName && rd.ownerName) row.ownerName = String(rd.ownerName);
-        } catch { /* ignore — address stays null */ }
+        } catch { /* ignore */ }
       }),
     );
   }
@@ -585,26 +595,48 @@ export type UpdateNetworkRetailerPatch = {
  */
 export async function updateNetworkRetailer(
   inviteDocId: string,
-  _retailerDocId: string,
+  retailerDocId: string,
   patch: UpdateNetworkRetailerPatch,
 ): Promise<void> {
-  const update: Record<string, unknown> = {
+  const now = serverTimestamp();
+
+  // 1. Update the manufacturer-specific invite/listing doc
+  const inviteUpdate: Record<string, unknown> = {
     shopName:      patch.shopName.trim(),
     ownerName:     patch.ownerName.trim(),
     retailerPhone: toE164India(patch.phone),
     retailerEmail: patch.email.trim().toLowerCase(),
-    updatedAt:     serverTimestamp(),
+    updatedAt:     now,
   };
-  if (patch.address) update.address = patch.address;
-  if (patch.geo !== undefined) update.geo = patch.geo;
-  await updateDoc(doc(db, COLLECTION, inviteDocId), update);
+  if (patch.address) inviteUpdate.address = patch.address;
+  if (patch.geo !== undefined) inviteUpdate.geo = patch.geo;
+  await updateDoc(doc(db, COLLECTION, inviteDocId), inviteUpdate);
 
-  // Sync mirror with updated editable fields
+  // 2. Update the GLOBAL retailer document — the source of truth for name, address,
+  //    and all public-facing retailer information across the entire app.
+  //    Phone is excluded: it is the document key and cannot change.
+  if (retailerDocId) {
+    const globalUpdate: Record<string, unknown> = {
+      shopName:  patch.shopName.trim(),
+      ownerName: patch.ownerName.trim(),
+      email:     patch.email.trim().toLowerCase(),
+      updatedAt: now,
+    };
+    if (patch.address) {
+      globalUpdate.address = patch.address;
+      globalUpdate.city    = patch.address.city.trim();
+      globalUpdate.state   = patch.address.state.trim();
+    }
+    if (patch.geo !== undefined) globalUpdate.geo = patch.geo;
+    await setDoc(doc(db, "retailers", retailerDocId), globalUpdate, { merge: true });
+  }
+
+  // 3. Sync the manufacturer subcollection mirror
   const { manufacturerPhone, retailerPhone } = await phonesFromInvite(inviteDocId);
   if (manufacturerPhone && retailerPhone) {
     const mirrorUpdate: Record<string, unknown> = {
-      shopName: patch.shopName.trim(),
-      ownerName: patch.ownerName.trim(),
+      shopName:      patch.shopName.trim(),
+      ownerName:     patch.ownerName.trim(),
       retailerPhone: toE164India(patch.phone),
     };
     if (patch.address) mirrorUpdate.address = patch.address;
@@ -841,7 +873,6 @@ export async function activateRetailerOnProductAssignment(
         })
         .map((d) =>
           updateDoc(d.ref, {
-            onboardingStatus: "active",
             assignedSeat: true,
             seatAssignedAt: now,
             updatedAt: now,
@@ -851,7 +882,6 @@ export async function activateRetailerOnProductAssignment(
 
     if (manufacturerPhone && retailerPhone) {
       await syncRetailerMirror(manufacturerPhone, retailerPhone, {
-        onboardingStatus: "active",
         assignedSeat: true,
         seatAssignedAt: now,
       });

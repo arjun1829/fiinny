@@ -21,13 +21,16 @@ export type CartItem = {
   sellerPhone?: string;
   name: string;
   image: string;
-  price: number;          // final price after discount
-  originalPrice?: number; // pre-discount price (undefined when no discount)
+  price: number;          // final price after discount (per unit)
+  originalPrice?: number; // pre-discount price per unit (undefined when no discount)
   discountPct?: number;   // active discount % (0 or undefined = no discount)
   qty: number;
   sellMode: "online_delivery" | "offline_store_only" | "pending";
   /** Selected package variant (e.g. "500ml", "1kg") */
   variantUnit?: string;
+  /** GST — copied from the product at add-to-cart time */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
 };
 
 /**
@@ -52,9 +55,13 @@ export type OrderItem = {
   originalPrice?: number; // pre-discount price per unit
   discountPct?: number;   // discount % applied
   qty: number;
-  lineTotal: number;      // price * qty (discounted)
+  lineTotal: number;      // price * qty (discounted, excl. GST)
   /** Selected package size (e.g. "500ml", "1kg") — captured from CartItem.variantUnit */
   variantUnit?: string;
+  /** GST per unit — persisted for invoice generation */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+  gstAmount?: number; // GST per unit = price * gstRate / 100
 };
 
 export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";
@@ -78,10 +85,15 @@ export type OrderDoc = {
   sellerType: SellerType;
   sellerName?: string;
   items: OrderItem[];
+  /** Sum of originalPrice * qty across all items (MRP before discounts) */
+  mrpSubtotal?: number;
+  /** Sum of price * qty across all items (after discounts, excl. GST) */
   subtotal: number;
+  /** Sum of all per-line GST amounts */
+  totalGst?: number;
   /** Weight-based delivery charge from seller's delivery settings */
   deliveryCharge?: number;
-  /** subtotal + deliveryCharge */
+  /** subtotal + deliveryCharge + totalGst */
   grandTotal?: number;
   /** Estimated total weight of the order in kg (parsed from variant units) */
   totalWeightKg?: number;

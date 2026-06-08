@@ -1,5 +1,6 @@
 import { MarketplaceProduct } from "../../types/product";
 import { ICONS, PRODUCTS, STORES } from '../constants';
+import { CATEGORY_FIELDS, CHIPS_FIELDS, isStandardCategory, type ProductCategory, effectiveCategoryInfo } from '../dashboard/_lib/category-info';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { calcDiscount } from '../utils/discount';
@@ -1140,7 +1141,24 @@ export default function ProductDetailView({
                   </HelperTooltip>
                   {onAddToCartFromStore && (() => {
                     const phone = (store as any).phone as string | undefined;
-                    const canOrder = !!phone && storeOnlineMap[phone] === true;
+                    // Account-level: seller has online delivery enabled.
+                    // Product-level: this specific listing's isOnline flag (from availability entry).
+                    // Legacy entries without isOnline default to true — account-level check is sufficient.
+                    const availEntry = product.availability?.find(
+                      (a) =>
+                        (phone && (a.storePhone === phone || a.storeId === phone)) ||
+                        a.storeId === store.id,
+                    );
+                    const productLevelOnline = availEntry?.isOnline !== false;
+                    const canOrder = !!phone && storeOnlineMap[phone] === true && productLevelOnline;
+                    console.log("[ProductDetailView] per-store canOrder", {
+                      storeId: store.id,
+                      storePhone: phone,
+                      accountLevelOnline: phone ? storeOnlineMap[phone] : undefined,
+                      availEntryIsOnline: availEntry?.isOnline,
+                      productLevelOnline,
+                      canOrder,
+                    });
                     if (!canOrder) return null;
                     return (
                       <button
@@ -1399,7 +1417,11 @@ export default function ProductDetailView({
           </HelperTooltip>
 
           <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
-            {visibleStores.length === 0 ? (
+            {product.sellMode === "offline_store_only" ? (
+              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+                In-Store Only
+              </span>
+            ) : visibleStores.length === 0 ? (
               <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
                 Currently unavailable
               </span>
@@ -1434,110 +1456,64 @@ export default function ProductDetailView({
         </p>
       </div>
 
-      {/* Product Insights */}
+      {/* Product Info — renders from categoryInfo (new) or legacy flat fields */}
       {(() => {
-        const hasComposition = !!(product.nitrogen || product.phosphorus || product.potassium);
-        const hasApplication = !!(product.applicationDesc || product.dosage);
-        const hasCrops = !!(product.bestForCrops && product.bestForCrops.length > 0);
-        const hasInsights = hasComposition || hasApplication || hasCrops;
-        
-        if (!hasInsights) return null;
+        // Resolve the effective category info using the backward-compat helper
+        const rawData = product as unknown as Record<string, unknown>;
+        const ci = product.categoryInfo && Object.keys(product.categoryInfo).length > 0
+          ? product.categoryInfo
+          : effectiveCategoryInfo(rawData);
 
-        const cardCount = [hasComposition, hasApplication, hasCrops].filter(Boolean).length;
-        const gridColsClass = cardCount === 3
-          ? "md:grid-cols-3"
-          : cardCount === 2
-            ? "md:grid-cols-2 max-w-4xl"
-            : "md:grid-cols-1 max-w-md";
+        if (!ci || Object.keys(ci).length === 0) return null;
+
+        // Find the field schema for this product's category
+        const cat = product.category?.trim() || "";
+        const activeCat: ProductCategory = isStandardCategory(cat) ? cat : "Other";
+        const fields = CATEGORY_FIELDS[activeCat];
+        // Only show fields that have data
+        const filledFields = fields.filter(({ key }) => {
+          const v = ci[key];
+          return Array.isArray(v) ? v.length > 0 : !!(v as string)?.trim();
+        });
+
+        if (!filledFields.length) return null;
 
         return (
           <section>
             <div className="flex items-center gap-2 mb-6">
               <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
-              <HelperIcon
-                size="sm"
-                variant="ghost"
-                side="right"
-                textKey="productInsights"
-                ariaLabel="Product insights help"
-              />
+              <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
             </div>
-            <div className={`grid grid-cols-1 ${gridColsClass} gap-6`}>
-              {hasComposition && (
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-                  <div className="flex items-center gap-3 text-secondary">
-                    <ICONS.Science className="w-5 h-5" />
-                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('composition')}</h3>
-                    <HelperIcon
-                      size="xs"
-                      variant="ghost"
-                      side="right"
-                      textKey="productComposition"
-                      ariaLabel="Composition help"
-                    />
-                  </div>
-                  {[
-                    { label: t('nitrogenN'), val: product.nitrogen },
-                    { label: t('phosphorusP'), val: product.phosphorus },
-                    { label: t('potassiumK'), val: product.potassium }
-                  ].filter(row => !!row.val).map((row, i) => (
-                    <div key={i} className="flex justify-between items-center py-2 border-b border-surface-container-low last:border-0">
-                      <span className="text-on-surface text-sm opacity-60 font-semibold">{row.label}</span>
-                      <span className="text-on-surface font-black">{row.val}</span>
+            <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
+              <div className="px-6 pt-5 pb-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{activeCat} Information</span>
+              </div>
+              <div className="divide-y divide-surface-container">
+                {filledFields.map(({ key, label, type }) => {
+                  const val = ci[key];
+                  const isChips = CHIPS_FIELDS.has(key) || Array.isArray(val);
+                  const isEmpty = Array.isArray(val) ? val.length === 0 : !(val as string)?.trim();
+                  if (isEmpty) return null;
+                  return (
+                    <div key={key} className="px-6 py-4">
+                      <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">{label}</p>
+                      {isChips && Array.isArray(val) ? (
+                        <div className="flex flex-wrap gap-2">
+                          {val.map((chip, i) => (
+                            <span key={i} className="bg-surface-container px-3 py-1 rounded-full text-xs font-semibold text-on-surface-variant border border-surface-container-highest">
+                              {chip}
+                            </span>
+                          ))}
+                        </div>
+                      ) : type === "textarea" ? (
+                        <p className="text-sm text-on-surface leading-relaxed">{val as string}</p>
+                      ) : (
+                        <p className="text-sm font-bold text-on-surface">{val as string}</p>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {hasApplication && (
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-                  <div className="flex items-center gap-3 text-primary">
-                    <ICONS.Water className="w-5 h-5" />
-                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('application')}</h3>
-                    <HelperIcon
-                      size="xs"
-                      variant="ghost"
-                      side="right"
-                      textKey="productApplication"
-                      ariaLabel="Application help"
-                    />
-                  </div>
-                  {product.applicationDesc && (
-                    <p className="text-on-surface-variant font-medium text-sm">{product.applicationDesc}</p>
-                  )}
-                  {product.dosage && (
-                    <HelperTooltip side="top" textKey="productDosage">
-                      <div className="mt-auto bg-primary/5 rounded-2xl p-4 border border-primary/10 cursor-help">
-                        <span className="block text-[10px] font-black uppercase tracking-widest text-primary mb-1">{t('recommendedDosage')}</span>
-                        <span className="text-2xl font-bold text-on-surface">{product.dosage}</span>
-                      </div>
-                    </HelperTooltip>
-                  )}
-                </div>
-              )}
-
-              {hasCrops && (
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-container flex flex-col gap-4">
-                  <div className="flex items-center gap-3 text-secondary">
-                    <ICONS.Sprout className="w-5 h-5" />
-                    <h3 className="font-bold uppercase tracking-widest text-xs">{t('bestForCrops')}</h3>
-                    <HelperIcon
-                      size="xs"
-                      variant="ghost"
-                      side="right"
-                      textKey="productCropSupport"
-                      ariaLabel="Best for crops help"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {product.bestForCrops?.map((crop, i) => (
-                      <span key={i} className="bg-surface-container px-4 py-2 rounded-full text-xs font-bold text-on-surface-variant border border-surface-container-highest">
-                        {crop}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           </section>
         );

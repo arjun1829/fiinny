@@ -340,7 +340,9 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         retailerId == request.auth.uid ||
         resource.data.phone == myPhone() ||
-        resource.data.phone == myPhone().replace('+91', '')
+        resource.data.phone == myPhone().replace('+91', '') ||
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone()
       ));
       allow delete: if isAdmin() || (isAuthed() && retailerId == request.auth.uid);
     }
@@ -435,7 +437,7 @@ service cloud.firestore {
         // Allow retailer to read their own invite by phone (for auto-accept flow)
         phoneMatches(resource.data.retailerPhone)
       );
-      allow list: if isAuthed();
+      allow list: if true;
       allow create: if isAuthed() && (
         request.resource.data.manufacturerId == request.auth.uid
       );

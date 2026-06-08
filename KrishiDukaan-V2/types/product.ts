@@ -28,6 +28,10 @@ export type MarketplaceProduct = {
   /** Market display & Delivery fields */
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
+
+  /** GST configuration — set by the manufacturer/owner, applies to all sellers of this product */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
   
   /** Legacy display fields — present on older documents only */
   stock?: string;
@@ -41,6 +45,9 @@ export type MarketplaceProduct = {
     stockLevel: string;
     sellingPrice?: number;
     discountPct?: number;  // active discount percentage for this seller (0 if none)
+    /** Product-level online delivery flag for this specific seller's listing.
+     *  undefined means "unknown/legacy" — fall back to account-level storeOnlineMap check. */
+    isOnline?: boolean;
     /**
      * This store's OWN per-package-size prices, mirrored from the seller's product copy.
      * `sellingPrice` above is the base (variants[0]) price; this array carries every
@@ -61,7 +68,18 @@ export type MarketplaceProduct = {
   benefits?: string[];
   application?: string;
 
-  /** Optional Product Insights fields */
+  /**
+   * Category-specific structured information (new schema).
+   * Keys and value types are defined in app/dashboard/_lib/category-info.ts.
+   * String values for most fields; string[] for chips fields (bestForCrops, bestRegions, etc.).
+   */
+  categoryInfo?: Record<string, string | string[]>;
+
+  /**
+   * @deprecated Legacy flat fertilizer insight fields — kept for backward compat
+   * with documents written before the categoryInfo refactor.
+   * New writes use categoryInfo instead.
+   */
   nitrogen?: string;
   phosphorus?: string;
   potassium?: string;

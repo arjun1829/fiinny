@@ -264,8 +264,8 @@ export function RetailerTable({
 }: RetailerTableProps) {
   const { t } = useI18n();
 
-  const activeRows = rows.filter((r) => r.onboardingStatus === "active" && r.status !== "revoked");
-  const allActiveSelected = activeRows.length > 0 && activeRows.every((r) => selectedIds?.has(r.id));
+  const selectableRows = rows.filter((r) => r.status !== "revoked");
+  const allActiveSelected = selectableRows.length > 0 && selectableRows.every((r) => selectedIds?.has(r.id));
 
   const toggleRow = (id: string) => {
     if (!onSelectionChange || !selectedIds) return;
@@ -279,7 +279,7 @@ export function RetailerTable({
     if (allActiveSelected) {
       onSelectionChange(new Set());
     } else {
-      onSelectionChange(new Set(activeRows.map((r) => r.id)));
+      onSelectionChange(new Set(selectableRows.map((r) => r.id)));
     }
   };
 
@@ -318,9 +318,9 @@ export function RetailerTable({
                     type="checkbox"
                     checked={allActiveSelected}
                     onChange={toggleSelectAll}
-                    disabled={activeRows.length === 0}
+                    disabled={selectableRows.length === 0}
                     className="h-4 w-4 rounded border-outline-variant/50 accent-primary cursor-pointer"
-                    title="Select all active retailers"
+                    title="Select all retailers"
                   />
                 </th>
               )}
@@ -342,7 +342,7 @@ export function RetailerTable({
               const canDeactivate = onDeactivate && !isManuallyInactive && row.onboardingStatus === "active";
               const canActivate  = onActivate && isManuallyInactive;
 
-              const isSelectable = selectable && row.onboardingStatus === "active";
+              const isSelectable = selectable && row.status !== "revoked";
               const isChecked    = selectedIds?.has(row.id) ?? false;
 
               return (

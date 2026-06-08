@@ -3,8 +3,12 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2, PackagePlus, Plus, X, Upload, Link as LinkIcon,
-  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2,
+  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt,
 } from "lucide-react";
+import {
+  PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
+  type ProductCategory, effectiveCategoryInfo,
+} from "../_lib/category-info";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts } from "../../firebase";
@@ -18,12 +22,11 @@ import type { MarketplaceProduct } from "../../../types/product";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
-  "Seeds", "Fertilizers", "Pesticides", "Herbicides", "Fungicides",
-  "Tools", "Irrigation", "Soil Nutrients", "Growth Promoters",
-  "Equipment", "Animal Feed", "Organic Products", "Bio Pesticides",
-  "Micro Nutrients", "Others",
-] as const;
+// Use the shared canonical category list
+const CATEGORIES = PRODUCT_CATEGORIES;
+
+const GST_RATES = [0, 5, 12, 18, 28] as const;
+type GstRate = typeof GST_RATES[number];
 
 const UNIT_TYPES = [
   { value: "g",       label: "gm",     display: "gm" },
@@ -105,6 +108,7 @@ type ImageSlot = { mode: "url" | "upload"; url: string; uploading: boolean; erro
 type SearchResult = {
   id: string; name: string; category: string; unit: string; price: number;
   description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
+  categoryInfo?: Record<string, string | string[]>;
   nitrogen?: string; phosphorus?: string; potassium?: string; applicationDesc?: string; dosage?: string; bestForCrops?: string[];
 };
 
@@ -129,6 +133,66 @@ function useAllProducts(userId: string | null) {
     fetchAllMarketplaceProducts().then(setProducts).catch(() => {});
   }, [userId]);
   return products;
+}
+
+// ─── Dynamic Category Info Section ────────────────────────────────────────────
+
+function CategoryInfoSection({
+  category, values, onChange, disabled, open, onToggle,
+}: {
+  category: string;
+  values: Record<string, string>;
+  onChange: (key: string, val: string) => void;
+  disabled: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const activeCat: ProductCategory = isStandardCategory(category) ? category : "Other";
+  const fields = CATEGORY_FIELDS[activeCat];
+  if (!fields.length) return null;
+
+  const inputCls = "w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs";
+
+  return (
+    <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-between text-sm font-semibold text-on-surface w-full"
+      >
+        <span className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" />
+          {activeCat} Info
+          <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-3 border-t border-outline-variant/20 pt-4">
+          {fields.map(({ key, label, type, placeholder }) => (
+            <label key={key} className="flex flex-col gap-1 text-xs">
+              <span className="font-medium text-on-surface">{label}</span>
+              {type === "textarea" ? (
+                <textarea rows={2} disabled={disabled} placeholder={placeholder}
+                  className={`${inputCls} resize-none`}
+                  value={values[key] ?? ""}
+                  onChange={(e) => onChange(key, e.target.value)} />
+              ) : (
+                <input type="text" disabled={disabled} placeholder={placeholder}
+                  className={inputCls}
+                  value={values[key] ?? ""}
+                  onChange={(e) => onChange(key, e.target.value)} />
+              )}
+              {CHIPS_FIELDS.has(key) && (
+                <span className="text-[10px] text-on-surface-variant">Separate multiple values with commas</span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Image Card ───────────────────────────────────────────────────────────────
@@ -286,10 +350,12 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
             </button>
           </div>
           {v.sizeAmount === "custom" && (
-            <input type="number" min={1} disabled={isDisabled}
+            <input type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
               placeholder="e.g. 750"
               className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 w-32"
-              value={v.customSize} onChange={(e) => setV(i, { customSize: e.target.value })} />
+              value={v.customSize}
+              onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { customSize: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
+              onBlur={(e) => { if (e.target.value === "" || Number(e.target.value) <= 0) setV(i, { customSize: "" }); }} />
           )}
         </div>
       )}
@@ -319,18 +385,25 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
           <span className="font-medium text-on-surface-variant">Price (₹) *</span>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-on-surface-variant">₹</span>
-            <input required type="number" min={1} step={0.01} disabled={isDisabled}
+            <input required type="text" inputMode="decimal" disabled={isDisabled}
               className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest pl-7 pr-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
               placeholder="0" value={v.price}
-              onChange={(e) => setV(i, { price: e.target.value })} />
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d.]/g, "");
+                const parts = raw.split(".");
+                const joined = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
+                setV(i, { price: joined.replace(/^0+(\d)/, "$1") });
+              }}
+              onBlur={(e) => { const n = parseFloat(e.target.value); setV(i, { price: !isNaN(n) && n > 0 ? String(n) : "" }); }} />
           </div>
         </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="font-medium text-on-surface-variant">Stock Qty *</span>
-          <input required type="number" min={0} disabled={isDisabled}
+          <input required type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
             className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
             placeholder="0" value={v.stock}
-            onChange={(e) => setV(i, { stock: e.target.value })} />
+            onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { stock: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
+            onBlur={(e) => { const n = parseInt(e.target.value, 10); setV(i, { stock: isNaN(n) ? "0" : String(Math.max(0, n)) }); }} />
         </label>
       </div>
     </div>
@@ -352,17 +425,16 @@ export function AddProductInventoryForm({
   // Basic fields
   const [name,        setName]        = useState("");
   const [category,    setCategory]    = useState<string>(CATEGORIES[0]);
+  const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
   const [showProductDetails, setShowProductDetails] = useState(true);
 
-  // Optional Product Insights fields
-  const [nitrogen, setNitrogen]               = useState("");
-  const [phosphorus, setPhosphorus]           = useState("");
-  const [potassium, setPotassium]             = useState("");
-  const [applicationDesc, setApplicationDesc] = useState("");
-  const [dosage, setDosage]                   = useState("");
-  const [bestForCrops, setBestForCrops]       = useState("");
+  // Category-specific info — keyed by field key, values are string (chips comma-separated in UI)
+  const [categoryInfo, setCategoryInfo] = useState<Record<string, string>>({});
   const [showAdditionalData, setShowAdditionalData] = useState(false);
+
+  const setCatField = (key: string, val: string) =>
+    setCategoryInfo((prev) => ({ ...prev, [key]: val }));
 
   // Variants
   const [variants,    setVariants]    = useState<Variant[]>([newVariant()]);
@@ -378,6 +450,10 @@ export function AddProductInventoryForm({
   const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // GST state
+  const [gstApplicable, setGstApplicable] = useState(false);
+  const [gstRate,       setGstRate]       = useState<GstRate>(0);
 
   // Submit state
   const [submitting,    setSubmitting]    = useState(false);
@@ -417,16 +493,32 @@ export function AddProductInventoryForm({
 
   const applyAutofill = (product: SearchResult) => {
     setName(product.name);
-    setCategory(product.category || CATEGORIES[0]);
+    const rawCat = (product.category || "").trim();
+    // Case-insensitive match against the canonical category list.
+    // Firestore may store the value in any case (e.g. "pesticides" vs "Pesticides").
+    const canonicalCat = CATEGORIES.find(
+      (c) => c.toLowerCase() === rawCat.toLowerCase(),
+    );
+    const isKnown = Boolean(canonicalCat) && canonicalCat !== "Other";
+    setCategory(isKnown ? canonicalCat! : "Other");
+    setCustomCategory(isKnown ? "" : rawCat);
     setDescription(product.description || "");
     setExistingProductId(product.id);
-    setNitrogen(product.nitrogen || "");
-    setPhosphorus(product.phosphorus || "");
-    setPotassium(product.potassium || "");
-    setApplicationDesc(product.applicationDesc || "");
-    setDosage(product.dosage || "");
-    setBestForCrops(product.bestForCrops?.join(", ") || "");
-    setShowAdditionalData(!!(product.nitrogen || product.phosphorus || product.potassium || product.applicationDesc || product.dosage || product.bestForCrops?.length));
+
+    // Build categoryInfo from product's stored data (new or legacy)
+    const rawData = product as unknown as Record<string, unknown>;
+    const ci = effectiveCategoryInfo(rawData);
+    if (ci) {
+      const flat: Record<string, string> = {};
+      Object.entries(ci).forEach(([k, v]) => {
+        flat[k] = Array.isArray(v) ? v.join(", ") : String(v);
+      });
+      setCategoryInfo(flat);
+      setShowAdditionalData(true);
+    } else {
+      setCategoryInfo({});
+      setShowAdditionalData(false);
+    }
 
     const src = product.variants.length
       ? product.variants
@@ -513,12 +605,30 @@ export function AddProductInventoryForm({
     }
 
     const imageUrls = images.map((s) => s.url.trim()).filter(Boolean);
+
+    // Build the saved category: use custom value when "Other" is selected
+    const savedCategory = category === "Other"
+      ? (customCategory.trim() || "Other")
+      : category;
+
+    // Build categoryInfo: parse comma-separated chips to string[], drop empty values
+    const savedCategoryInfo: Record<string, string | string[]> = {};
+    const activeCat = isStandardCategory(savedCategory) ? savedCategory : "Other";
+    const fields = CATEGORY_FIELDS[activeCat as ProductCategory] ?? CATEGORY_FIELDS["Other"];
+    fields.forEach(({ key }) => {
+      const raw = (categoryInfo[key] ?? "").trim();
+      if (!raw) return;
+      savedCategoryInfo[key] = CHIPS_FIELDS.has(key)
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : raw;
+    });
+
     setSubmitting(true);
     setMessage(null);
     try {
       if (isManufacturer) {
         await createManufacturerProduct(userId, {
-          name, category,
+          name, category: savedCategory,
           unit: parsed[0].unit,
           price: parsed[0].price,
           stockQuantity: parsed[0].stock,
@@ -526,16 +636,13 @@ export function AddProductInventoryForm({
           description,
           image: imageUrls[0] ?? undefined,
           images: imageUrls,
-          nitrogen: nitrogen.trim() || undefined,
-          phosphorus: phosphorus.trim() || undefined,
-          potassium: potassium.trim() || undefined,
-          applicationDesc: applicationDesc.trim() || undefined,
-          dosage: dosage.trim() || undefined,
-          bestForCrops: bestForCrops.trim() ? bestForCrops.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+          categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
+          gstApplicable,
+          gstRate: gstApplicable ? gstRate : 0,
         });
       } else {
         await createProductAndInventory(userId, {
-          name, category,
+          name, category: savedCategory,
           unit: parsed[0].unit,
           stockQuantity: parsed[0].stock || 1,
           sellingPrice: parsed[0].price,
@@ -545,19 +652,16 @@ export function AddProductInventoryForm({
           storeName: storeName || "My Store",
           sellMode: "offline_store_only",
           existingProductId: existingProductId ?? undefined,
-          nitrogen: nitrogen.trim() || undefined,
-          phosphorus: phosphorus.trim() || undefined,
-          potassium: potassium.trim() || undefined,
-          applicationDesc: applicationDesc.trim() || undefined,
-          dosage: dosage.trim() || undefined,
-          bestForCrops: bestForCrops.trim() ? bestForCrops.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+          categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
+          gstApplicable,
+          gstRate: gstApplicable ? gstRate : 0,
         });
       }
       setMessage({ type: "ok", text: isManufacturer ? t('formProductAdded') : t('formProductAddedInv') });
-      setName(""); setCategory(CATEGORIES[0]); setDescription(""); setAutofilled(false);
+      setName(""); setCategory(CATEGORIES[0]); setCustomCategory(""); setDescription(""); setAutofilled(false);
       setExistingProductId(null); setAlreadyListed(false);
-      setNitrogen(""); setPhosphorus(""); setPotassium(""); setApplicationDesc("");
-      setDosage(""); setBestForCrops(""); setShowAdditionalData(false);
+      setCategoryInfo({}); setShowAdditionalData(false);
+      setGstApplicable(false); setGstRate(0);
       setVariants([newVariant()]);
       setImages([newSlot()]);
       await onCreated();
@@ -692,14 +796,25 @@ export function AddProductInventoryForm({
               </div>
 
               {/* Category */}
-              <label className="flex flex-col gap-1.5 text-sm">
+              <div className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">{t('formCategoryLabel')} <span className="text-red-500">*</span></span>
                 <select required disabled={isDisabled}
                   className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 appearance-none"
-                  value={category} onChange={(e) => setCategory(e.target.value)}>
+                  value={category}
+                  onChange={(e) => {
+                    setCategory(e.target.value);
+                    setCategoryInfo({});  // clear fields when category changes
+                  }}>
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
-              </label>
+                {category === "Other" && (
+                  <input type="text" disabled={isDisabled}
+                    placeholder="Enter custom category name"
+                    className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-sm"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)} />
+                )}
+              </div>
 
               {/* Description */}
               <label className="flex flex-col gap-1.5 text-sm">
@@ -715,68 +830,15 @@ export function AddProductInventoryForm({
           )}
         </div>
 
-        {/* Collapsible: Additional Data */}
-        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={() => setShowAdditionalData(!showAdditionalData)}
-            className="flex items-center justify-between text-sm font-semibold text-on-surface w-full"
-          >
-            <span className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-primary" /> {t('additionalDataLabel')} (Optional)
-            </span>
-            <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${showAdditionalData ? 'rotate-180' : ''}`} />
-          </button>
-
-          {showAdditionalData && (
-            <div className="flex flex-col gap-4 mt-2 border-t border-outline-variant/20 pt-4">
-              <div>
-                <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-2">{t('composition')}</span>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: t('nitrogenN'), val: nitrogen, set: setNitrogen },
-                    { label: t('phosphorusP'), val: phosphorus, set: setPhosphorus },
-                    { label: t('potassiumK'), val: potassium, set: setPotassium },
-                  ].map(({ label, val, set }) => (
-                    <label key={label} className="flex flex-col gap-1 text-xs">
-                      <span className="font-medium text-on-surface">{label}</span>
-                      <input type="text" disabled={isDisabled} placeholder="e.g. 19%"
-                        className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                        value={val} onChange={(e) => set(e.target.value)} />
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-t border-outline-variant/20 pt-4 flex flex-col gap-3">
-                <span className="text-xs font-bold text-primary uppercase tracking-wider block">{t('application')}</span>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-on-surface text-xs">{t('application') || 'Application'}</span>
-                  <textarea disabled={isDisabled} rows={2}
-                    placeholder="e.g. Suitable for foliar spray and fertigation..."
-                    className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs resize-none"
-                    value={applicationDesc} onChange={(e) => setApplicationDesc(e.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-medium text-on-surface">{t('recommendedDosage')}</span>
-                  <input type="text" disabled={isDisabled} placeholder="e.g. 3-5 gm / Litre"
-                    className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                    value={dosage} onChange={(e) => setDosage(e.target.value)} />
-                </label>
-              </div>
-
-              <div className="border-t border-outline-variant/20 pt-4">
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-bold text-primary uppercase tracking-wider block mb-1">{t('bestForCrops')}</span>
-                  <span className="text-[10px] text-on-surface-variant font-normal mb-1">{t('formBestForCropsHint')}</span>
-                  <input type="text" disabled={isDisabled} placeholder="e.g. Tomatoes, Wheat, Sugarcane, Grapes"
-                    className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50 text-xs"
-                    value={bestForCrops} onChange={(e) => setBestForCrops(e.target.value)} />
-                </label>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Dynamic category-specific fields */}
+        <CategoryInfoSection
+          category={category === "Other" ? (customCategory.trim() || "Other") : category}
+          values={categoryInfo}
+          onChange={setCatField}
+          disabled={isDisabled}
+          open={showAdditionalData}
+          onToggle={() => setShowAdditionalData((v) => !v)}
+        />
 
         {/* ── Section 2: Pack sizes & prices ────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
@@ -827,6 +889,63 @@ export function AddProductInventoryForm({
             </button>
           )}
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
+        </div>
+
+        {/* ── Section 4: GST ────────────────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Receipt className="h-4 w-4 text-primary" /> GST Configuration
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
+            </div>
+            <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+              {([true, false] as const).map((v) => (
+                <button key={String(v)} type="button" disabled={isDisabled}
+                  onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                  className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                    gstApplicable === v
+                      ? "bg-primary text-white"
+                      : "text-on-surface-variant hover:bg-surface-container"
+                  }`}
+                >
+                  {v ? "Yes" : "No"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {gstApplicable && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
+              <div className="flex flex-wrap gap-2">
+                {GST_RATES.map((rate) => (
+                  <button key={rate} type="button" disabled={isDisabled}
+                    onClick={() => setGstRate(rate)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                      gstRate === rate
+                        ? "border-primary bg-primary text-white shadow-sm"
+                        : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                    }`}
+                  >
+                    {rate}%
+                  </button>
+                ))}
+              </div>
+              {gstApplicable && gstRate === 0 && (
+                <p className="text-xs text-amber-700">0% selected — confirm this product is exempt or zero-rated.</p>
+              )}
+            </div>
+          )}
+
+          {gstApplicable && gstRate > 0 && (
+            <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+              GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+            </div>
+          )}
         </div>
 
         {/* Submit + inline success */}

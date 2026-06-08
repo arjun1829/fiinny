@@ -296,8 +296,7 @@ export function AddRetailerModal({
       autocompleteListenerRef.current = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
-        // Only auto-fill shop name if the user hasn't typed one yet
-        if (place.name && !shopName.trim()) setShopName(place.name);
+        if (place.name) setShopName(place.name);
         if (place.address_components?.length) {
           const fields = extractAddressFields(
             place as Parameters<typeof extractAddressFields>[0],
@@ -383,8 +382,8 @@ export function AddRetailerModal({
     setError(null);
 
     const trimmedPhone = phone.trim();
-    if (!trimmedPhone) {
-      setError(t('phoneNumberRequired'));
+    if (!trimmedPhone || trimmedPhone.length < 10) {
+      setError("Phone number must be exactly 10 digits.");
       return;
     }
 
@@ -664,12 +663,19 @@ export function AddRetailerModal({
                 <input
                   required
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   disabled={submitting}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91…"
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="10-digit mobile number"
                   className={inputCls}
                 />
+                {phone.length > 0 && phone.length < 10 ? (
+                  <p className="text-xs text-red-600 mt-0.5">Enter exactly 10 digits ({phone.length}/10)</p>
+                ) : (
+                  <p className="text-[11px] text-amber-700 mt-0.5">Please verify the phone number carefully. It cannot be changed after the retailer is created.</p>
+                )}
               </label>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">
