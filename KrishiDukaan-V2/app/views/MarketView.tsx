@@ -487,7 +487,7 @@ export default function MarketView({
                   )}
                 </div>
 
-                <div className={`p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                <div className={`p-3 md:p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
                   <div className="flex items-center justify-between gap-1 mb-2">
                     <div onClick={(e) => e.stopPropagation()} className="self-start">
                       <HelperTooltip side="bottom" textKey="marketNearbyStore">
@@ -510,7 +510,7 @@ export default function MarketView({
                     {product.name}
                   </h3>
                   {product.description && product.description.trim() && (
-                    <p className="text-on-surface-variant text-xs mt-1 line-clamp-2">
+                    <p className="hidden md:block text-on-surface-variant text-xs mt-1 line-clamp-2">
                       {product.description}
                     </p>
                   )}
@@ -538,7 +538,7 @@ export default function MarketView({
                           Save ₹{(product.price - discountedPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </span>
                         {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
-                          <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                          <span className="hidden md:inline text-[10px] text-outline font-semibold">{brand}</span>
                         )}
                       </div>
                     </div>
@@ -579,7 +579,7 @@ export default function MarketView({
                         </HelperTooltip>
                       </div>
                       {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
-                        <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                        <span className="hidden md:inline text-[10px] text-outline font-semibold">{brand}</span>
                       )}
                     </div>
                   )}
@@ -589,38 +589,58 @@ export default function MarketView({
                     const inCart = cartItems.some((ci) => ci.productId === product.id);
                     if (inCart) {
                       return (
-                        <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
+                        <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                          {/* Mobile: single compact in-cart button */}
                           <button
                             onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
-                            className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                            className="md:hidden w-full border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
                           >
-                            Go to Cart
+                            ✓ In Cart
                           </button>
+                          {/* Desktop: Go to Cart + Buy Now */}
+                          <div className="hidden md:flex gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
+                              className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                            >
+                              Go to Cart
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                              className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                            >
+                              Buy Now
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                        {/* Mobile: single + Add button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                          className="md:hidden w-full bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span className="text-sm font-black leading-none">+</span> Add
+                        </button>
+                        {/* Desktop: Add to Cart + Buy Now */}
+                        <div className="hidden md:flex gap-1">
+                          <HelperTooltip side="top" textKey="marketAddToCart">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                              className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                            >
+                              {t('addToCart')}
+                            </button>
+                          </HelperTooltip>
                           <button
-                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
                             className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
                           >
                             Buy Now
                           </button>
                         </div>
-                      );
-                    }
-                    return (
-                      <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
-                        <HelperTooltip side="top" textKey="marketAddToCart">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
-                            className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
-                          >
-                            {t('addToCart')}
-                          </button>
-                        </HelperTooltip>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
-                          className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
-                        >
-                          Buy Now
-                        </button>
                       </div>
                     );
                   })()}
