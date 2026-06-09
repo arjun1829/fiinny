@@ -214,13 +214,41 @@ export function getActiveSubscriptions(subs: Subscription[]): Subscription[] {
 
 // ─── Seat listings ────────────────────────────────────────────────────────────
 
-/** Listings owned by a manufacturer (seats they've assigned to retailers). */
+/**
+ * Listings owned by a seat owner, keyed by ownerId.
+ *
+ * Dual query (UID + phone), mirroring fetchSubscriptions: own/manufacturer-assigned
+ * listings set ownerId = Auth UID, while ADMIN-assigned listings set ownerId =
+ * sellerPhone (the assignment happens before the seller is the authed caller).
+ * Querying both axes and de-duplicating means a seller's seat count, and the
+ * deactivate/delete/activate seat lookups (all of which call this), consistently
+ * include admin-assigned listings too. Results are de-duped by doc id.
+ */
 export async function fetchSeatListingsForOwner(ownerId: string): Promise<RetailerSeatListing[]> {
-  const q = query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerId));
-  const snap = await getDocs(q);
-  const listings = snap.docs.map((d) =>
-    mapSeatListingDoc(d.id, d.data() as Record<string, unknown>),
-  );
+  // Resolve phone via uidIndex so admin-assigned (phone-keyed) listings are found.
+  let ownerPhone: string | null = null;
+  try {
+    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+  } catch { /* ignore — phone is optional enrichment */ }
+
+  const queries = [
+    getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerId))),
+  ];
+  if (ownerPhone && ownerPhone !== ownerId) {
+    queries.push(getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerPhone))));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const listings: RetailerSeatListing[] = [];
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      listings.push(mapSeatListingDoc(d.id, d.data() as Record<string, unknown>));
+    });
+  });
   listings.sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
   return listings;
 }
