@@ -150,18 +150,44 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
 /**
  * Fetch all products owned by a user, keyed by ownerId + ownerType.
  * Returns BOTH active and inactive products for management UI.
+ *
+ * Admin-assigned products (source: "admin_assigned") key ownership by PHONE
+ * (ownerId/ownerPhone == phone), not the Auth UID, so when a phone is known we
+ * also query by phone — otherwise those copies never surface in Inventory even
+ * though they appear in the marketplace (which matches by phone). Each query is
+ * individually ownership-scoped so the Firestore `products` rule still covers it.
  */
 async function fetchProductsByOwner(
   ownerId: string,
   ownerType: "manufacturer" | "retailer",
+  ownerPhone?: string | null,
 ): Promise<ProductDoc[]> {
-  const q = query(
-    collection(db, "products"),
-    where("ownerId", "==", ownerId),
-    where("ownerType", "==", ownerType),
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
+  const queries: Promise<Awaited<ReturnType<typeof getDocs>>>[] = [
+    getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", ownerId),
+      where("ownerType", "==", ownerType),
+    )),
+  ];
+
+  // Phone-keyed admin-assigned copies: ownerId == phone.
+  if (ownerPhone && ownerPhone !== ownerId) {
+    queries.push(getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", ownerPhone),
+      where("ownerType", "==", ownerType),
+    )));
+  }
+
+  const snaps = await Promise.all(queries);
+  const map = new Map<string, ProductDoc>();
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const p = mapProduct(d.id, d.data() as Record<string, unknown>);
+      if (!map.has(p.id)) map.set(p.id, p);
+    });
+  });
+  return Array.from(map.values());
 }
 
 /**
@@ -194,6 +220,12 @@ async function fetchInventoryForRetailer(
   if (retailerPhone && retailerPhone !== retailerDocId) phoneKeys.add(retailerPhone);
   Array.from(phoneKeys).forEach((phone) => {
     queries.push(getDocs(query(collection(db, "inventory"), where("retailerDocId", "==", phone))));
+    // Admin-assigned inventory keys ownership by phone via ownerId (== phone) and
+    // carries NO retailerDocId, so match that axis too — otherwise the product is
+    // found but its inventory join misses and the row is dropped. Matched on
+    // ownerId (not ownerPhone) so every returned doc passes the inventory read
+    // rule's phoneMatches(ownerId) clause.
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", phone))));
   });
 
   const snaps = await Promise.all(queries);
@@ -214,17 +246,30 @@ async function fetchInventoryForRetailer(
  * and legacy docs where only manufacturerId was set are captured. Each query is
  * individually validated by the `inventory` Firestore rule.
  */
-async function fetchInventoryForManufacturer(uid: string): Promise<Map<string, InventoryDoc>> {
+async function fetchInventoryForManufacturer(
+  uid: string,
+  ownerPhone?: string | null,
+): Promise<Map<string, InventoryDoc>> {
   const map = new Map<string, InventoryDoc>();
 
-  const [snap1, snap2] = await Promise.all([
+  const queries: Promise<Awaited<ReturnType<typeof getDocs>>>[] = [
     getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))),
     getDocs(query(collection(db, "inventory"), where("manufacturerId", "==", uid))),
-  ]);
+  ];
 
-  [...snap1.docs, ...snap2.docs].forEach((d) => {
-    const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
-    if (!map.has(inv.productId)) map.set(inv.productId, inv);
+  // Admin-assigned inventory keys ownership by phone (ownerId == phone), never the
+  // UID — query that axis too so the join below finds them. Matched on ownerId so
+  // every returned doc passes the inventory read rule's phoneMatches(ownerId) clause.
+  if (ownerPhone && ownerPhone !== uid) {
+    queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", ownerPhone))));
+  }
+
+  const snaps = await Promise.all(queries);
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      const inv = mapInventory(d.id, d.data() as Record<string, unknown>);
+      if (!map.has(inv.productId)) map.set(inv.productId, inv);
+    });
   });
 
   return map;
@@ -288,6 +333,13 @@ export async function fetchRetailerInventoryRows(
       where("ownerType", "==", "retailer"),
     );
     queries.push(getDocs(q3));
+    // Admin-assigned copies key ownership by phone via ownerId — match that axis
+    // too so they surface alongside retailerPhone-keyed docs.
+    queries.push(getDocs(query(
+      collection(db, "products"),
+      where("ownerId", "==", retailerPhone),
+      where("ownerType", "==", "retailer"),
+    )));
   }
 
   const snaps = await Promise.all(queries);
@@ -402,12 +454,13 @@ export async function acceptAssignedProduct(
  */
 export async function fetchManufacturerCatalogueRows(
   ownerId: string,
+  ownerPhone?: string,
 ): Promise<InventoryRow[]> {
-  const products = await fetchProductsByOwner(ownerId, "manufacturer");
+  const products = await fetchProductsByOwner(ownerId, "manufacturer", ownerPhone);
   if (!products.length) return [];
 
   // Join inventory to get inventoryId (and up-to-date stockQuantity)
-  const inventoryMap = await fetchInventoryForManufacturer(ownerId);
+  const inventoryMap = await fetchInventoryForManufacturer(ownerId, ownerPhone);
 
   const rows: InventoryRow[] = products.map((p) => {
     const raw = p as any;

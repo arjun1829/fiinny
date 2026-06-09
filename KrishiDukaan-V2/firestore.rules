@@ -466,14 +466,23 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        phoneMatches(resource.data.retailerDocId)
+        phoneMatches(resource.data.retailerDocId) ||
+        // Admin-assigned listings key ownerId by the seller's phone, not their UID.
+        phoneMatches(resource.data.ownerId)
       ));
-      allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if isAuthed() && (
+      // Admin creates a seat listing on the seller's behalf at assignment time
+      // (the seller is not the authed caller then), keyed by the seller's phone.
+      allow create: if isAdmin() || (isAuthed() && request.resource.data.ownerId == request.auth.uid);
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
+        // Seller releasing their own admin-assigned (phone-keyed) listing.
+        phoneMatches(resource.data.ownerId) ||
         (resource.data.retailerDocId != null && phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid)
-      );
-      allow delete: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId)
+      ));
     }
 
     match /manufacturer_contacts/{contactId} {

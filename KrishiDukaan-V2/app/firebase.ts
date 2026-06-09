@@ -564,6 +564,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
               // Use the canonical's own isOnline (before merged OR correction),
               // so ProductDetailView shows the correct per-seller Order button.
               isOnline: p.isOnline,
+              // Carry the owner's OWN per-package-size prices so the detail view can
+              // resolve the correct price per selected variant and keep the store
+              // visible for every configured size — not just the base. Without this,
+              // resolveStoreVariant() finds an availability entry with no variants[]
+              // and falls back to the legacy single-(base)-size path, hiding the
+              // owner store for any non-base variant (e.g. 2L) it actually stocks.
+              variants: Array.isArray(p.variants) ? p.variants : undefined,
             },
           ];
 
@@ -2125,6 +2132,36 @@ export async function ensureSellerStorefront(seller: {
 }
 
 /**
+ * Resolves a seller's latest ACTIVE subscription expiry date (by phone), or null
+ * if they have no active subscription. Used to expire admin-created seat listings
+ * in lockstep with the seller's plan. Reads only — admin is permitted on the
+ * subscriptions collection. Non-fatal: any error resolves to null so assignment
+ * still proceeds with the caller's fallback expiry.
+ */
+async function resolveSellerSubscriptionExpiry(sellerPhone: string): Promise<Date | null> {
+  try {
+    const [byPhone, byId] = await Promise.all([
+      getDocs(query(collection(db, 'subscriptions'), where('ownerPhone', '==', sellerPhone))),
+      getDocs(query(collection(db, 'subscriptions'), where('ownerId', '==', sellerPhone))),
+    ]);
+    const now = Date.now();
+    let maxMs = 0;
+    const consider = (data: Record<string, unknown>) => {
+      const status = data.subscriptionStatus;
+      if (status === 'expired' || status === 'cancelled') return;
+      const exp = data.expiryDate as Timestamp | undefined;
+      const ms = exp?.toMillis?.() ?? 0;
+      if (ms > now && ms > maxMs) maxMs = ms;
+    };
+    byPhone.forEach((d) => consider(d.data() as Record<string, unknown>));
+    byId.forEach((d) => consider(d.data() as Record<string, unknown>));
+    return maxMs > 0 ? new Date(maxMs) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Assigns a marketplace product to a seller by creating a seller-owned copy in
  * `products` plus an `inventory` record, and an `adminLogs` audit entry.
  *
@@ -2213,12 +2250,42 @@ export async function adminAssignProductToSeller(
     updatedAt: now,
   });
 
+  // Seat listing — an admin-assigned product occupies the seller's catalogue space
+  // exactly like an own product, so it must consume a listing seat. The seller's
+  // Inventory page counts active retailerSeatListings (not inventory rows), so
+  // without this the counter never moves. Keyed by sellerPhone as ownerId so the
+  // seller's phone-aware fetchSeatListingsForOwner finds it; listingType "own"
+  // because the seat belongs to the seller. expiresAt tracks the seller's active
+  // subscription so the seat frees with their plan (1-month fallback if none).
+  const sellerSubExpiry = await resolveSellerSubscriptionExpiry(sellerPhone);
+  const seatExpiry = sellerSubExpiry ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const seatRef = doc(collection(db, 'retailerSeatListings'));
+  batch.set(seatRef, {
+    ownerId: sellerPhone,
+    ownerPhone: sellerPhone,
+    ownerType: sellerRole,
+    manufacturerId: null,
+    manufacturerPhone: null,
+    retailerDocId: null,
+    retailerId: null,
+    retailerPhone: sellerRole === 'retailer' ? sellerPhone : null,
+    productId: copyRef.id,
+    manufacturerProductId: null,
+    listingType: 'own',
+    status: 'active',
+    assignedByAdmin: adminUid,
+    assignedAt: now,
+    expiresAt: Timestamp.fromDate(seatExpiry),
+    releasedAt: null,
+  });
+
   batch.set(doc(collection(db, 'adminLogs')), {
     action: 'admin_assign_product',
     productId,
     productName,
     copyProductId: copyRef.id,
     inventoryId: invRef.id,
+    seatListingId: seatRef.id,
     sellerPhone,
     sellerName,
     sellerRole,
@@ -2256,10 +2323,22 @@ export async function adminRemoveAssignment(
   ));
   invSnap.forEach(d => batch.update(d.ref, { isAvailable: false, updatedAt: now }));
 
+  // Release the seat listing created at assignment time so the seller's seat frees.
+  const seatSnap = await getDocs(query(
+    collection(db, 'retailerSeatListings'),
+    where('productId', '==', copyProductId),
+  ));
+  seatSnap.forEach(d => {
+    if ((d.data() as Record<string, unknown>).status === 'active') {
+      batch.update(d.ref, { status: 'released', releasedAt: now });
+    }
+  });
+
   batch.set(doc(collection(db, 'adminLogs')), {
     action: 'admin_remove_assignment',
     copyProductId,
     inventoryId: invSnap.docs[0]?.id ?? null,
+    seatListingId: seatSnap.docs[0]?.id ?? null,
     productName,
     sellerPhone,
     performedBy: adminUid,
