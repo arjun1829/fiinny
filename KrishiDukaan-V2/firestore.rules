@@ -561,6 +561,6 @@ service cloud.firestore {
     // Only the cart owner or an admin may read or write.
     match /carts/{phone} {
       allow read, write: if isAdmin() || (isAuthed() && myPhone() == phone);
-    } 
+    }
   }
-}
+  }
