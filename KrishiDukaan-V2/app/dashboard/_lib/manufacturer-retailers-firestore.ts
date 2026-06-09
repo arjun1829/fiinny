@@ -311,7 +311,7 @@ export type CreateNetworkRetailerInput = {
   shopName: string;
   ownerName: string;
   phone: string;
-  email: string;
+  email?: string;
   address: NetworkRetailerAddress;
   geo: GeoPoint | null;
 };
@@ -341,7 +341,7 @@ export async function createNetworkRetailer(
     phone: normalizedPhone,
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
-    email: input.email.trim().toLowerCase(),
+    email: input.email?.trim().toLowerCase() ?? "",
     address: {
       line1: input.address.line1.trim(),
       city: input.address.city.trim(),
@@ -373,7 +373,7 @@ export async function createNetworkRetailer(
     retailerId: "",
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
-    retailerEmail: input.email.trim().toLowerCase(),
+    retailerEmail: input.email?.trim().toLowerCase() ?? "",
     retailerPhone: normalizedPhone,
     inviteCode,
     status: "invited",
@@ -773,7 +773,7 @@ export async function linkExistingRetailerToNetwork(input: {
     retailerId: input.retailerUid,
     shopName: input.shopName.trim(),
     ownerName: input.ownerName.trim(),
-    retailerEmail: input.email.trim().toLowerCase(),
+    retailerEmail: input.email?.trim().toLowerCase() ?? "",
     retailerPhone,
     inviteCode,
     status: "active",
