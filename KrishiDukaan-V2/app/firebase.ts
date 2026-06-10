@@ -794,19 +794,27 @@ export async function saveUserProfile(
   await setDoc(doc(db, 'uidIndex', uid), { phone, createdAt: now });
 
   // Step 2: now myPhone() resolves correctly, so users/{phone} write is allowed.
-  await setDoc(doc(db, 'users', phone), {
-    uid,
-    phone,
-    name: profile.name,
-    email: null,
-    role: profile.role,
-    roleUpgradeHistory: [],
-    isPaid: false,
-    totalSeats: 0,
-    productCount: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // If the doc already exists (admin pre-created the account), preserve every
+  // admin-set field (role, address, isPaid, etc.) — only link the real Auth UID.
+  // For a brand new user, create the full record as usual.
+  const existingSnap = await getDoc(doc(db, 'users', phone));
+  if (existingSnap.exists()) {
+    await updateDoc(doc(db, 'users', phone), { uid, updatedAt: now });
+  } else {
+    await setDoc(doc(db, 'users', phone), {
+      uid,
+      phone,
+      name: profile.name,
+      email: null,
+      role: profile.role,
+      roleUpgradeHistory: [],
+      isPaid: false,
+      totalSeats: 0,
+      productCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 }
 
 export async function getUserProfile(uid: string) {

@@ -70,13 +70,21 @@ service cloud.firestore {
       allow read: if isAuthed() && (
         isAdmin() ||
         request.auth.uid == phone ||
-        myPhone() == phone || myRole() in ['retailer', 'manufacturer']
+        myPhone() == phone || myRole() in ['retailer', 'manufacturer'] ||
+        // Allow first-time phone-auth login to read their pre-created doc before uidIndex exists.
+        // request.auth.token.phone_number is the E.164 number from the Firebase auth JWT.
+        request.auth.token.phone_number == phone
       );
       allow create: if isAdmin()
                        || (isAuthed()
                        && myPhone() == phone
                        && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer']);
-      allow update: if isAdmin() || (isAuthed() && (request.auth.uid == phone || myPhone() == phone) &&
+      allow update: if isAdmin() || (isAuthed() && (
+          request.auth.uid == phone ||
+          myPhone() == phone ||
+          // Allow linking uid on first login before uidIndex is bootstrapped.
+          request.auth.token.phone_number == phone
+        ) &&
         // Prevent role downgrade
         !(
           (resource.data.role == 'retailer'     && request.resource.data.role == 'customer') ||
