@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/hub_model.dart';
+import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../providers/hubs_provider.dart';
@@ -76,14 +78,20 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
               SliverAppBar(
                 floating: true,
                 snap: true,
-                backgroundColor: AppColors.primary,
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                flexibleSpace: Container(
+                  decoration: BoxDecoration(gradient: topBarGradient()),
+                ),
+                titleSpacing: 16,
                 title: Row(
                   children: [
-                    const Icon(Icons.grass, color: Colors.white),
-                    const SizedBox(width: 8),
+                    const AppBrandIcon(size: 30),
+                    const SizedBox(width: 10),
                     Text('Crop Hubs',
                         style: AppTextStyles.heading2
-                            .copyWith(color: Colors.white)),
+                            .copyWith(color: Colors.white, fontSize: 18)),
                   ],
                 ),
               ),

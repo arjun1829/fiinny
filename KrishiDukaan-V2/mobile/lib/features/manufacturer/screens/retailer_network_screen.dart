@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/network_retailer_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/services/places_service.dart';
 import '../../../core/utils/phone_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
@@ -98,8 +102,7 @@ class _NetworkBody extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: Colors.transparent,
       builder: (_) => _AddRetailerSheet(
         manufacturerPhone: manufacturerPhone,
         manufacturerName: manufacturerName,
@@ -622,36 +625,36 @@ class _EditRetailerSheetState extends State<_EditRetailerSheet> {
           const SizedBox(height: 16),
           TextField(
             controller: _shopNameCtrl,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Shop Name *',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           TextField(
             controller: _ownerNameCtrl,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Owner Name *',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           TextField(
             controller: _phoneCtrl,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Phone Number *',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixText: '+91 ',
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           TextField(
             controller: _emailCtrl,
             keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Email',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
           const SizedBox(height: 20),
@@ -715,46 +718,34 @@ class _EditRetailerSheetState extends State<_EditRetailerSheet> {
   }
 }
 
+// ─── Add Retailer Sheet ──────────────────────────────────────────────────────
+
 class _AddRetailerSheet extends StatefulWidget {
   final String manufacturerPhone;
   final String manufacturerName;
   final VoidCallback onAdded;
-  const _AddRetailerSheet(
-      {required this.manufacturerPhone, required this.manufacturerName, required this.onAdded});
+  const _AddRetailerSheet({
+    required this.manufacturerPhone,
+    required this.manufacturerName,
+    required this.onAdded,
+  });
 
   @override
   State<_AddRetailerSheet> createState() => _AddRetailerSheetState();
 }
 
 class _AddRetailerSheetState extends State<_AddRetailerSheet> {
-  final _shopNameCtrl = TextEditingController();
-  final _ownerNameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _cityCtrl = TextEditingController();
-  final _stateCtrl = TextEditingController();
-  bool _saving = false;
-  String? _inviteCode;
-
-  @override
-  void dispose() {
-    _shopNameCtrl.dispose();
-    _ownerNameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _cityCtrl.dispose();
-    _stateCtrl.dispose();
-    super.dispose();
-  }
+  int _tab = 0; // 0 = New Retailer, 1 = Link Existing
+  String? _inviteCode; // set after successful add
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+    final screenH = MediaQuery.of(context).size.height;
+    return Container(
+      height: screenH * 0.92,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: _inviteCode != null
           ? _SuccessView(
@@ -762,105 +753,307 @@ class _AddRetailerSheetState extends State<_AddRetailerSheet> {
               onDone: () => Navigator.pop(context),
             )
           : Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Add Retailer', style: AppTextStyles.heading2),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _shopNameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Shop Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+                // Drag handle
                 const SizedBox(height: 10),
-                TextField(
-                  controller: _ownerNameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Owner Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone Number *',
-                    border: OutlineInputBorder(),
-                    prefixText: '+91 ',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (for invite)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _cityCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'City',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.divider,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _stateCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'State',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary),
-                    child: _saving
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white))
-                        : const Text('Add & Send Invite'),
                   ),
+                ),
+                const SizedBox(height: 14),
+                // Title + subtitle
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Add Retailer', style: AppTextStyles.heading2),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Creates a retailer profile and generates a signup invite link.',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Tab bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      _TabButton(
+                        label: 'New Retailer',
+                        selected: _tab == 0,
+                        onTap: () => setState(() => _tab = 0),
+                      ),
+                      const SizedBox(width: 8),
+                      _TabButton(
+                        label: 'Link Existing',
+                        selected: _tab == 1,
+                        onTap: () => setState(() => _tab = 1),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Divider(height: 1),
+                // Content
+                Expanded(
+                  child: _tab == 0
+                      ? _NewRetailerForm(
+                          manufacturerPhone: widget.manufacturerPhone,
+                          manufacturerName: widget.manufacturerName,
+                          onAdded: (code) {
+                            widget.onAdded();
+                            setState(() => _inviteCode = code);
+                          },
+                        )
+                      : _LinkExistingForm(
+                          manufacturerPhone: widget.manufacturerPhone,
+                          manufacturerName: widget.manufacturerName,
+                          onLinked: () {
+                            widget.onAdded();
+                            Navigator.pop(context);
+                          },
+                        ),
                 ),
               ],
             ),
     );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _TabButton(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary
+              : AppColors.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: selected ? Colors.white : AppColors.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── New Retailer Form ────────────────────────────────────────────────────────
+
+class _NewRetailerForm extends StatefulWidget {
+  final String manufacturerPhone;
+  final String manufacturerName;
+  final void Function(String inviteCode) onAdded;
+  const _NewRetailerForm({
+    required this.manufacturerPhone,
+    required this.manufacturerName,
+    required this.onAdded,
+  });
+
+  @override
+  State<_NewRetailerForm> createState() => _NewRetailerFormState();
+}
+
+class _NewRetailerFormState extends State<_NewRetailerForm> {
+  final _shopNameCtrl = TextEditingController();
+  final _ownerNameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _mapsSearchCtrl = TextEditingController();
+  final _mapsLinkCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _pincodeCtrl = TextEditingController();
+
+  bool _saving = false;
+  bool _loadingSuggestions = false;
+  bool _locating = false;
+  bool _parsingLink = false;
+  bool _showMapsLinkField = false;
+  List<PlaceSuggestion> _suggestions = [];
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _shopNameCtrl.dispose();
+    _ownerNameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _mapsSearchCtrl.dispose();
+    _mapsLinkCtrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _pincodeCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onMapsSearchChanged(String v) {
+    _debounce?.cancel();
+    if (v.trim().isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      setState(() => _loadingSuggestions = true);
+      final results = await PlacesService.autocomplete(
+          v, AppConfig.googleMapsApiKey);
+      if (mounted) setState(() { _suggestions = results; _loadingSuggestions = false; });
+    });
+  }
+
+  Future<void> _selectSuggestion(PlaceSuggestion s) async {
+    setState(() {
+      _mapsSearchCtrl.text = s.description;
+      _suggestions = [];
+      _loadingSuggestions = true;
+    });
+    final details = await PlacesService.getDetails(
+        s.placeId, AppConfig.googleMapsApiKey);
+    if (!mounted) return;
+    if (details != null) {
+      setState(() {
+        if (_shopNameCtrl.text.isEmpty && details.name.isNotEmpty) {
+          _shopNameCtrl.text = details.name;
+        }
+        if (details.city?.isNotEmpty == true) _cityCtrl.text = details.city!;
+        if (details.state?.isNotEmpty == true) _stateCtrl.text = details.state!;
+        if (details.pincode?.isNotEmpty == true) _pincodeCtrl.text = details.pincode!;
+      });
+    }
+    setState(() => _loadingSuggestions = false);
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() => _locating = true);
+    try {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+        }
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      final details = await PlacesService.reverseGeocode(
+          pos.latitude, pos.longitude, AppConfig.googleMapsApiKey);
+      if (mounted && details != null) {
+        setState(() {
+          if (details.city?.isNotEmpty == true) _cityCtrl.text = details.city!;
+          if (details.state?.isNotEmpty == true) _stateCtrl.text = details.state!;
+          if (details.pincode?.isNotEmpty == true) _pincodeCtrl.text = details.pincode!;
+          _mapsSearchCtrl.text = details.formattedAddress ?? '';
+          _suggestions = [];
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Location error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  Future<void> _parseMapsLink() async {
+    final url = _mapsLinkCtrl.text.trim();
+    if (url.isEmpty) return;
+    setState(() => _parsingLink = true);
+    try {
+      ({double lat, double lng})? coords;
+      if (url.contains('goo.gl') || url.contains('maps.app')) {
+        coords = await PlacesService.resolveShortUrl(url);
+      } else {
+        coords = PlacesService.parseMapsUrl(url);
+      }
+      if (coords == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Could not parse location from that link')),
+          );
+        }
+        return;
+      }
+      final details = await PlacesService.reverseGeocode(
+          coords.lat, coords.lng, AppConfig.googleMapsApiKey);
+      if (mounted && details != null) {
+        setState(() {
+          if (details.city?.isNotEmpty == true) _cityCtrl.text = details.city!;
+          if (details.state?.isNotEmpty == true) _stateCtrl.text = details.state!;
+          if (details.pincode?.isNotEmpty == true) _pincodeCtrl.text = details.pincode!;
+          if (_shopNameCtrl.text.isEmpty && details.name.isNotEmpty) {
+            _shopNameCtrl.text = details.name;
+          }
+          _mapsSearchCtrl.text = details.formattedAddress ?? '';
+          _mapsLinkCtrl.clear();
+          _showMapsLinkField = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _parsingLink = false);
+    }
   }
 
   Future<void> _save() async {
     final shop = _shopNameCtrl.text.trim();
     final owner = _ownerNameCtrl.text.trim();
     final rawPhone = _phoneCtrl.text.trim();
-    if (shop.isEmpty || owner.isEmpty || rawPhone.isEmpty) return;
-
-    final phone = PhoneUtils.normalize(rawPhone);
-    if (!PhoneUtils.isValid(phone)) {
+    if (shop.isEmpty || owner.isEmpty || rawPhone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid phone number')),
+        const SnackBar(content: Text('Shop name, owner name and phone are required')),
       );
       return;
     }
-
+    final phone = PhoneUtils.normalize(rawPhone);
+    if (!PhoneUtils.isValid(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid 10-digit phone number')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final code = await ManufacturerRepository().addRetailer(
@@ -869,29 +1062,621 @@ class _AddRetailerSheetState extends State<_AddRetailerSheet> {
         shopName: shop,
         ownerName: owner,
         retailerPhone: phone,
-        email: _emailCtrl.text.trim().isNotEmpty
-            ? _emailCtrl.text.trim()
-            : null,
-        city: _cityCtrl.text.trim().isNotEmpty
-            ? _cityCtrl.text.trim()
-            : null,
-        state: _stateCtrl.text.trim().isNotEmpty
-            ? _stateCtrl.text.trim()
-            : null,
+        email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+        city: _cityCtrl.text.trim().isNotEmpty ? _cityCtrl.text.trim() : null,
+        state: _stateCtrl.text.trim().isNotEmpty ? _stateCtrl.text.trim() : null,
+        pincode: _pincodeCtrl.text.trim().isNotEmpty ? _pincodeCtrl.text.trim() : null,
       );
-      widget.onAdded();
-      if (mounted) setState(() => _inviteCode = code);
+      widget.onAdded(code);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final kb = MediaQuery.of(context).viewInsets.bottom;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, kb + 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Shop name
+          TextField(
+            controller: _shopNameCtrl,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: 'Shop name *',
+              hintText: 'Retailer shop name',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Owner name
+          TextField(
+            controller: _ownerNameCtrl,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: 'Owner name *',
+              hintText: 'Owner or contact person',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Phone
+          TextField(
+            controller: _phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              labelText: 'Phone *',
+              hintText: '+91…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixText: '+91 ',
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Email
+          TextField(
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: 'Email (optional)',
+              hintText: 'retailer@example.com',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Google Maps search section ──────────────────────────────────
+          Row(
+            children: [
+              const Icon(Icons.location_on, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Search shop on Google Maps — auto-fills name & address',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _mapsSearchCtrl,
+            decoration: InputDecoration(
+              hintText: 'Type shop name or address (e.g. Ramesh Agro Store Pune)',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _loadingSuggestions
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : _mapsSearchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() {
+                            _mapsSearchCtrl.clear();
+                            _suggestions = [];
+                          }),
+                        )
+                      : null,
+            ),
+            onChanged: _onMapsSearchChanged,
+          ),
+          // Suggestions dropdown
+          if (_suggestions.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: AppColors.divider),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
+                ],
+              ),
+              child: Column(
+                children: _suggestions.take(5).map((s) {
+                  return InkWell(
+                    onTap: () => _selectSuggestion(s),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place_outlined,
+                              size: 16,
+                              color: AppColors.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(s.description,
+                                style: AppTextStyles.bodySmall),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          const SizedBox(height: 10),
+
+          // Location action row
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _locating ? null : _useCurrentLocation,
+                  icon: _locating
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.my_location, size: 16),
+                  label: const Text('Use current location',
+                      style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    side: const BorderSide(color: AppColors.primary),
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      setState(() => _showMapsLinkField = !_showMapsLinkField),
+                  icon: const Icon(Icons.link, size: 16),
+                  label: const Text('Paste Maps link',
+                      style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    side: BorderSide(
+                        color: _showMapsLinkField
+                            ? AppColors.primary
+                            : AppColors.divider),
+                    foregroundColor: _showMapsLinkField
+                        ? AppColors.primary
+                        : AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Paste Maps link field
+          if (_showMapsLinkField) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _mapsLinkCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      hintText:
+                          'https://maps.google.com/maps?q=18.52,73.85 or share link…',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _parsingLink ? null : _parseMapsLink,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                  ),
+                  child: _parsingLink
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Go'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+
+          // ── City / State / Pincode row ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _cityCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'City',
+                    hintText: 'City',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _stateCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'State',
+                    hintText: 'State',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _pincodeCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'PIN',
+                    hintText: 'PIN',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // ── Action buttons ──────────────────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: AppColors.divider),
+                    foregroundColor: AppColors.onSurfaceVariant,
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Add Retailer'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+// ─── Link Existing Form ───────────────────────────────────────────────────────
+
+class _LinkExistingForm extends StatefulWidget {
+  final String manufacturerPhone;
+  final String manufacturerName;
+  final VoidCallback onLinked;
+  const _LinkExistingForm({
+    required this.manufacturerPhone,
+    required this.manufacturerName,
+    required this.onLinked,
+  });
+
+  @override
+  State<_LinkExistingForm> createState() => _LinkExistingFormState();
+}
+
+class _LinkExistingFormState extends State<_LinkExistingForm> {
+  final _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  Map<String, dynamic>? _selected;
+  bool _searching = false;
+  bool _linking = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String v) {
+    _debounce?.cancel();
+    if (v.trim().length < 2) {
+      setState(() { _results = []; _selected = null; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted) return;
+      setState(() { _searching = true; _selected = null; });
+      try {
+        final res = await ManufacturerRepository()
+            .searchRegisteredRetailers(v.trim());
+        if (mounted) setState(() { _results = res; _searching = false; });
+      } catch (_) {
+        if (mounted) setState(() => _searching = false);
+      }
+    });
+  }
+
+  Future<void> _link() async {
+    final u = _selected;
+    if (u == null) return;
+    setState(() => _linking = true);
+    try {
+      await ManufacturerRepository().linkExistingRetailer(
+        manufacturerPhone: widget.manufacturerPhone,
+        manufacturerName: widget.manufacturerName,
+        retailerPhone: u['phone'] as String? ?? u['id'] as String,
+        shopName: u['shopName'] as String? ?? u['name'] as String? ?? '',
+        ownerName: u['name'] as String? ?? '',
+        email: u['email'] as String?,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '${u['shopName'] ?? u['name'] ?? 'Retailer'} linked to your network'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        widget.onLinked();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _linking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final kb = MediaQuery.of(context).viewInsets.bottom;
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, kb + 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Search for a retailer who already has a KrishiDukan account and link them to your network.',
+            style: AppTextStyles.body
+                .copyWith(color: AppColors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchCtrl,
+            decoration: InputDecoration(
+              hintText: 'Search by name, shop, or phone…',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : _searchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() {
+                            _searchCtrl.clear();
+                            _results = [];
+                            _selected = null;
+                          }),
+                        )
+                      : null,
+            ),
+            onChanged: _onSearchChanged,
+          ),
+          const SizedBox(height: 4),
+
+          // Results dropdown
+          if (_results.isNotEmpty && _selected == null)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: AppColors.divider),
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2))
+                ],
+              ),
+              child: Column(
+                children: _results.map((u) {
+                  final shop = u['shopName'] as String? ?? '';
+                  final name = u['name'] as String? ?? '';
+                  final phone = u['phone'] as String? ?? u['id'] as String;
+                  return InkWell(
+                    onTap: () => setState(() {
+                      _selected = u;
+                      _results = [];
+                      _searchCtrl.text = shop.isNotEmpty ? shop : name;
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.store_outlined,
+                              size: 18,
+                              color: AppColors.onSurfaceVariant),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  shop.isNotEmpty ? shop : name,
+                                  style: AppTextStyles.bodyMedium,
+                                ),
+                                if (name.isNotEmpty && shop.isNotEmpty)
+                                  Text(name, style: AppTextStyles.caption),
+                                Text(phone, style: AppTextStyles.caption),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+          // No results
+          if (!_searching &&
+              _searchCtrl.text.trim().length >= 2 &&
+              _results.isEmpty &&
+              _selected == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline,
+                      size: 16, color: AppColors.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No registered retailers found for "${_searchCtrl.text.trim()}".',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Selected retailer card
+          if (_selected != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle,
+                      color: AppColors.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (_selected!['shopName'] as String?)?.isNotEmpty ==
+                                  true
+                              ? _selected!['shopName'] as String
+                              : _selected!['name'] as String? ?? '',
+                          style: AppTextStyles.bodyMedium
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if ((_selected!['name'] as String?)?.isNotEmpty == true)
+                          Text(_selected!['name'] as String,
+                              style: AppTextStyles.caption),
+                        Text(
+                          _selected!['phone'] as String? ??
+                              _selected!['id'] as String,
+                          style: AppTextStyles.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() {
+                      _selected = null;
+                      _searchCtrl.clear();
+                    }),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: const BorderSide(color: AppColors.divider),
+                    foregroundColor: AppColors.onSurfaceVariant,
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: FilledButton(
+                  onPressed: (_selected != null && !_linking) ? _link : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    disabledBackgroundColor:
+                        AppColors.primary.withValues(alpha: 0.4),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: _linking
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Link to Network'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Success view (shown after New Retailer is added) ─────────────────────────
 
 class _SuccessView extends StatelessWidget {
   final String inviteCode;
@@ -900,61 +1685,68 @@ class _SuccessView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.check_circle, color: AppColors.success, size: 64),
-        const SizedBox(height: 12),
-        Text('Retailer Added!', style: AppTextStyles.heading2),
-        const SizedBox(height: 8),
-        const Text('Share this invite code with the retailer:',
-            textAlign: TextAlign.center),
-        const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () {
-            Clipboard.setData(ClipboardData(text: inviteCode));
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Copied!'),
-                  backgroundColor: AppColors.primary),
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 24, vertical: 14),
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  inviteCode,
-                  style: AppTextStyles.heading2.copyWith(
-                    letterSpacing: 4,
-                    fontFamily: 'monospace',
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle, color: AppColors.success, size: 64),
+          const SizedBox(height: 16),
+          Text('Retailer Added!', style: AppTextStyles.heading2),
+          const SizedBox(height: 8),
+          Text(
+            'Share this invite code with the retailer:',
+            style: AppTextStyles.body
+                .copyWith(color: AppColors.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: inviteCode));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Copied!'),
+                    backgroundColor: AppColors.primary),
+              );
+            },
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    inviteCode,
+                    style: AppTextStyles.heading2.copyWith(
+                      letterSpacing: 4,
+                      fontFamily: 'monospace',
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                const Icon(Icons.copy,
-                    color: AppColors.primary, size: 20),
-              ],
+                  const SizedBox(width: 10),
+                  const Icon(Icons.copy, color: AppColors.primary, size: 20),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: onDone,
-            style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary),
-            child: const Text('Done'),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onDone,
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: const Text('Done'),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

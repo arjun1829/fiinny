@@ -26,3 +26,10 @@ final deliverySettingsProvider =
 });
 
 final dashboardRepoProvider = Provider((_) => _repo);
+
+/// Real seat stats from subscriptions + retailerSeatListings.
+/// Matches web's computeSeatStats logic exactly.
+final seatStatsProvider =
+    FutureProvider.family<SeatStats, String>((ref, phone) {
+  return _repo.fetchSeatStats(phone);
+});

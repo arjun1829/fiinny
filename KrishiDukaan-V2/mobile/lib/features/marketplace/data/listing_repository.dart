@@ -132,6 +132,9 @@ class ListingRepository {
       final stockLevel = av['stockLevel'] as String? ?? 'In Stock';
       final sellingPrice =
           (av['sellingPrice'] as num?)?.toDouble() ?? productPrice;
+      // Writers mirror the seller's effective discount into the entry so the
+      // seller tile shows the same discounted price as the marketplace grid.
+      final entryDiscount = DiscountModel.fromAvailabilityEntry(av);
 
       // Prefer explicit storePhone; fall back to storeId if it looks like a phone
       final phoneHint = storePhone.isNotEmpty
@@ -148,16 +151,21 @@ class ListingRepository {
       // Resolve the display name — fallback chain so we never drop a seller
       // just because their Firestore profile isn't readable or storeName wasn't
       // stored at assignment time.
-      final name = profile?['shopName']  as String? ??
-                   profile?['name']      as String? ??
-                   profile?['ownerName'] as String? ??
-                   (storeName.isNotEmpty ? storeName : null) ??
+      // Use _ne() so empty/whitespace profile fields don't block the chain.
+      // businessName included for web-schema profiles that only store that.
+      final name = _ne(profile?['shopName'])     ??
+                   _ne(profile?['businessName']) ??
+                   _ne(profile?['name'])         ??
+                   _ne(profile?['ownerName'])    ??
+                   _ne(storeName)                ??
                    (phoneHint.isNotEmpty ? phoneHint : null) ??
                    storeId;
       if (name.isEmpty) continue;
 
-      final phone = (profile?['phone'] as String? ??
-                    (phoneHint.isNotEmpty ? phoneHint : storeId));
+      // _ne() here too: _fetchProfile can return phone: '' which would
+      // otherwise block the phoneHint/storeId fallback.
+      final phone = _ne(profile?['phone']) ??
+          (phoneHint.isNotEmpty ? phoneHint : storeId);
 
       final address = _extractAddress(profile, null);
       final lat     = _extractLat(profile, null);
@@ -176,6 +184,7 @@ class ListingRepository {
         // Web doesn't track exact qty in availability — use stockLevel flag
         stockQuantity: stockLevel != 'Out of Stock' ? 99 : 0,
         variants:     [],
+        discount:     entryDiscount,
       ));
     }
 
@@ -208,10 +217,13 @@ class ListingRepository {
     // If no profile found, construct a minimal one from the product doc itself
     if (profile == null && storeName.isEmpty) return [];
 
-    final name = profile?['shopName']  as String? ??
-                 profile?['name']      as String? ??
-                 profile?['ownerName'] as String? ??
-                 storeName;
+    final name = _ne(profile?['shopName'])     ??
+                 _ne(profile?['businessName']) ??
+                 _ne(profile?['name'])         ??
+                 _ne(profile?['ownerName'])    ??
+                 _ne(storeName)                ??
+                 _ne(retailerPhone)            ??
+                 'Store';
 
     final address = _extractAddress(profile, d);
     final lat     = _extractLat(profile, d);
@@ -315,6 +327,16 @@ class ListingRepository {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
+  /// Returns [v] as a trimmed non-empty String, or null. Treats empty and
+  /// whitespace-only strings the same as null so the ?? fallback chain works
+  /// correctly when Firestore stores "" or " " — otherwise a whitespace
+  /// shopName renders as an invisible seller name in the store list.
+  static String? _ne(dynamic v) {
+    if (v is! String) return null;
+    final t = v.trim();
+    return t.isEmpty ? null : t;
+  }
+
   /// Returns true if [s] looks like an Indian phone number (10–13 digits,
   /// optionally prefixed with +91).
   static bool _isPhone(String s) {
@@ -357,15 +379,6 @@ class ListingRepository {
         ?.toDouble();
   }
 
-  static DiscountModel? _parseDiscount(Map<String, dynamic> d) {
-    final pct     = (d['discountPct'] as num?)?.toDouble();
-    final enabled = d['discountEnabled'] as bool? ?? false;
-    if (pct == null || pct == 0) return null;
-    return DiscountModel(
-      percentage: pct,
-      isActive:   enabled,
-      startDate:  (d['discountStartDate'] as Timestamp?)?.toDate(),
-      endDate:    (d['discountEndDate']   as Timestamp?)?.toDate(),
-    );
-  }
+  static DiscountModel? _parseDiscount(Map<String, dynamic> d) =>
+      DiscountModel.fromProductData(d);
 }

@@ -58,7 +58,14 @@ export async function POST(request: Request) {
     };
 
     const order = await razorpay.orders.create(options);
-    return NextResponse.json({ ...order, seatCount: seats, durationMonths: months });
+    return NextResponse.json({
+      ...order,
+      seatCount:      seats,
+      durationMonths: months,
+      // Return the key used to create this order so the mobile always opens
+      // Razorpay with the matching key (prevents key-mismatch errors).
+      key_id: process.env.RAZORPAY_KEY_ID,
+    });
   } catch (error) {
     console.error('Error creating Razorpay order:', error);
     return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });

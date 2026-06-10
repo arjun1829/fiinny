@@ -91,6 +91,7 @@ class StoreRepository {
         name: (d['shopName'] ?? d['businessName'] ?? d['ownerName'] ?? '').toString(),
         ownerName: d['ownerName']?.toString(),
         phone: phone,
+        uid: d['uid']?.toString(),
         logo: d['logo']?.toString(),
         address: addrStr,
         city: city,
@@ -119,6 +120,7 @@ class StoreRepository {
           name: (d['shopName'] ?? d['ownerName'] ?? '').toString(),
           ownerName: d['ownerName']?.toString(),
           phone: phone,
+          uid: d['uid']?.toString(),
           logo: d['logo']?.toString(),
           address: d['address']?.toString(),
           city: d['city']?.toString(),
@@ -159,6 +161,7 @@ class StoreRepository {
           name: (d['businessName'] ?? d['ownerName'] ?? '').toString(),
           ownerName: d['ownerName']?.toString(),
           phone: phone,
+          uid: d['uid']?.toString(),
           logo: d['logo']?.toString(),
           address: addr is String ? addr : null,
           city: city ?? d['city']?.toString(),
@@ -187,6 +190,7 @@ class StoreRepository {
           name: (d['name'] ?? d['shopName'] ?? '').toString(),
           ownerName: d['ownerName']?.toString(),
           phone: phone,
+          uid: d['uid']?.toString() ?? d['userId']?.toString(),
           logo: d['logo']?.toString(),
           address: d['address']?.toString(),
           city: d['city']?.toString(),
@@ -214,6 +218,7 @@ class StoreRepository {
         name: ts.name,
         ownerName: ts.ownerName,
         phone: ts.phone,
+        userId: ts.uid,
         address: ts.address,
         logo: ts.logo,
         lat: ts.lat,
@@ -252,6 +257,7 @@ class _TempStore {
   final String name;
   final String? ownerName;
   final String? phone;
+  final String? uid;
   final String? logo;
   final String? address;
   final String? city;
@@ -266,6 +272,7 @@ class _TempStore {
     required this.name,
     this.ownerName,
     this.phone,
+    this.uid,
     this.logo,
     this.address,
     this.city,

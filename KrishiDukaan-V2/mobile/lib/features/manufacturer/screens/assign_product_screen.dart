@@ -137,17 +137,34 @@ class _AssignProductScreenState
             ),
             const SizedBox(height: 24),
 
-            // Assign button
-            if (_selectedProduct != null &&
-                _selectedRetailers.isNotEmpty)
-              SizedBox(
+            // Assign button — always visible so the user knows it exists
+            Builder(builder: (context) {
+              final canAssign = _selectedProduct != null &&
+                  _selectedRetailers.isNotEmpty &&
+                  !_saving;
+              String label;
+              if (_saving) {
+                label = 'Assigning…';
+              } else if (_selectedProduct == null &&
+                  _selectedRetailers.isEmpty) {
+                label = 'Select a product and retailer(s) above';
+              } else if (_selectedProduct == null) {
+                label = 'Select a product first (Step 1)';
+              } else if (_selectedRetailers.isEmpty) {
+                label = 'Select at least one retailer (Step 2)';
+              } else {
+                label =
+                    'Assign to ${_selectedRetailers.length} retailer${_selectedRetailers.length != 1 ? 's' : ''}';
+              }
+              return SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _saving ? null : () => _assign(phone),
+                  onPressed: canAssign ? () => _assign(phone) : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                    disabledBackgroundColor:
+                        AppColors.primary.withValues(alpha: 0.4),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: _saving
                       ? const SizedBox(
@@ -155,12 +172,10 @@ class _AssignProductScreenState
                           width: 20,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : Text(
-                          'Assign to ${_selectedRetailers.length} retailer${_selectedRetailers.length != 1 ? 's' : ''}',
-                          style: AppTextStyles.button,
-                        ),
+                      : Text(label, style: AppTextStyles.button),
                 ),
-              ),
+              );
+            }),
             const SizedBox(height: 80),
           ],
         ),

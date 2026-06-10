@@ -290,22 +290,22 @@ class _BrandTabState extends State<_BrandTab> {
               TextField(
                 controller: widget.taglineCtrl,
                 maxLength: 120,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Tagline',
                   hintText: 'e.g. Growing India\'s Future',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
               TextField(
                 controller: widget.aboutCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'About / Description',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -313,10 +313,10 @@ class _BrandTabState extends State<_BrandTab> {
                       controller: widget.yearCtrl,
                       maxLength: 4,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Founded Year',
                         hintText: '2010',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                       ),
                     ),
@@ -326,24 +326,24 @@ class _BrandTabState extends State<_BrandTab> {
                     child: TextField(
                       controller: widget.websiteCtrl,
                       keyboardType: TextInputType.url,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Website',
                         hintText: 'https://',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
               TextField(
                 controller: widget.socialProofCtrl,
                 maxLength: 120,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Social Proof',
                   hintText: 'e.g. Trusted by 500+ farmers',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ],
@@ -359,17 +359,17 @@ class _BrandTabState extends State<_BrandTab> {
             children: [
               TextField(
                 controller: widget.logoCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Logo URL',
                   hintText: 'https://...',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.image_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.image_outlined),
                 ),
               ),
               if (widget.logoCtrl.text.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
                     imageUrl: widget.logoCtrl.text,
                     height: 60,
@@ -379,20 +379,20 @@ class _BrandTabState extends State<_BrandTab> {
                   ),
                 ),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextField(
                 controller: widget.bannerCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Banner / Cover Image URL',
                   hintText: 'https://...',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.panorama_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: const Icon(Icons.panorama_outlined),
                 ),
               ),
               if (widget.bannerCtrl.text.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
                     imageUrl: widget.bannerCtrl.text,
                     height: 80,
@@ -414,7 +414,7 @@ class _BrandTabState extends State<_BrandTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (widget.certifications.isNotEmpty)
+              if (widget.certifications.isNotEmpty) ...[
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
@@ -427,15 +427,16 @@ class _BrandTabState extends State<_BrandTab> {
                     onDeleted: () => widget.onRemoveCert(c),
                   )).toList(),
                 ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 12),
+              ],
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: widget.certInputCtrl,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'e.g. ISO 9001, IARI Certified',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                       ),
                       onSubmitted: (_) => widget.onAddCert(),
@@ -465,7 +466,7 @@ class _BrandTabState extends State<_BrandTab> {
             children: [
               Text('Paste a YouTube URL or video ID',
                   style: AppTextStyles.caption),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -473,7 +474,7 @@ class _BrandTabState extends State<_BrandTab> {
                       controller: widget.videoInputCtrl,
                       decoration: InputDecoration(
                         hintText: 'https://youtube.com/watch?v=...',
-                        border: const OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                         errorText: widget.videoError,
                       ),

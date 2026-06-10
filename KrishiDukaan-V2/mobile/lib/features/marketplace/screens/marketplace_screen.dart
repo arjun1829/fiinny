@@ -6,23 +6,25 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
-import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
 
 const _categories = [
-  'Fertilizers',
-  'Seeds',
   'Pesticides',
-  'Irrigation',
+  'Fertilizers',
+  'Herbicides',
+  'Bio Pesticides',
+  'Sprayers',
+  'Seeds',
   'Tools',
-  'Organic',
 ];
 
 class MarketplaceScreen extends ConsumerStatefulWidget {
-  const MarketplaceScreen({super.key});
+  final String? initialCategory;
+  const MarketplaceScreen({super.key, this.initialCategory});
 
   @override
   ConsumerState<MarketplaceScreen> createState() => _MarketplaceScreenState();
@@ -41,6 +43,21 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialCategory != null) {
+        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MarketplaceScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialCategory != oldWidget.initialCategory) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+      });
+    }
   }
 
   @override
@@ -130,22 +147,11 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        titleSpacing: 16,
-        title: Row(
-          children: [
-            const AppBrandIcon(size: 34),
-            const SizedBox(width: 10),
-            Text(
-              'Marketplace',
-              style: AppTextStyles.heading2.copyWith(color: Colors.white),
-            ),
-          ],
-        ),
+      appBar: AppTopBar(
+        title: 'Marketplace',
         actions: [
-          IconButton(
-            icon: const Icon(Icons.map_outlined, color: Colors.white),
+          TopBarAction(
+            icon: Icons.map_outlined,
             tooltip: 'Store locator',
             onPressed: () => context.go('/stores'),
           ),
@@ -153,13 +159,30 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       ),
       body: Column(
         children: [
-          // Search bar
+          // Search bar — lives in the same gradient block as the top bar but
+          // with breathing room and rounded bottom corners so it never touches.
           Container(
-            color: AppColors.primary,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            decoration: BoxDecoration(
+              gradient: topBarGradient(),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(20),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
             child: Column(
               children: [
-                TextField(
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
                   controller: _searchController,
                   onChanged: (q) {
                     _debounce?.cancel();
@@ -201,6 +224,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                       vertical: 0,
                       horizontal: 16,
                     ),
+                  ),
                   ),
                 ),
 
@@ -276,7 +300,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                 ..._categories.map(
                   (cat) => _CategoryChip(
                     label: cat,
-                    selected: state.category == cat,
+                    selected: state.category?.toLowerCase() == cat.toLowerCase(),
                     onTap: () =>
                         ref.read(marketplaceProvider.notifier).setCategory(cat),
                   ),

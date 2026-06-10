@@ -8,6 +8,18 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 
+class SeatStats {
+  final int totalPurchased;
+  final int activeUsed;
+  final int available;
+
+  const SeatStats({
+    required this.totalPurchased,
+    required this.activeUsed,
+    required this.available,
+  });
+}
+
 class DashboardRepository {
   final _db = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
@@ -77,6 +89,7 @@ class DashboardRepository {
 
     final streams = <Stream<QuerySnapshot>>[
       _db.collection('products').where('retailerPhone', isEqualTo: sellerPhone).snapshots(),
+      _db.collection('listings').where('sellerPhone', isEqualTo: sellerPhone).snapshots(),
     ];
     if (uid.isNotEmpty) {
       streams.add(_db.collection('products').where('retailerId', isEqualTo: uid).snapshots());
@@ -120,42 +133,72 @@ class DashboardRepository {
     String? sellerAddress,
     double? lat,
     double? lng,
+    List<VariantModel> variants = const [],
+    List<String> images = const [],
+    String? productName,
+    String? category,
+    String? description,
+    bool isActive = true,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     await _db.collection('products').add({
       // Legacy field names used by security rules for update/delete ownership checks
       'retailerPhone': sellerPhone,
       'retailerId': uid,
+      'ownerId': uid,
+      'ownerType': 'retailer',
+      'source': 'retailer_inventory_copy',
       // Store name fields matching legacy schema
       'store': sellerName,
       'sellerType': 'retailer',
       'catalogId': catalogId,
       'price': price,
       'stock': stockQuantity,
+      'stockQuantity': stockQuantity,
       'address': sellerAddress,
       if (lat != null && lng != null) ...{
         'lat': lat,
         'lng': lng,
       },
+      'name': productName,
+      'category': category,
+      'description': description,
+      'images': images,
+      if (images.isNotEmpty) 'imageUrl': images.first,
+      if (images.isNotEmpty) 'image': images.first,
+      'variants': variants.map((v) => v.toMap()).toList(),
+      'isActive': isActive,
+      'isOnline': true,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> updateListing(
-      String listingId, Map<String, dynamic> data) async {
-    await _db.collection('products').doc(listingId).update({
+      String listingId, Map<String, dynamic> data, {String collectionPath = 'products'}) async {
+    await _db.collection(collectionPath).doc(listingId).update({
       ...data,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> deleteListing(String listingId) async {
-    await _db.collection('products').doc(listingId).delete();
+  Future<void> deleteListing(String listingId, {String collectionPath = 'products'}) async {
+    // Before deleting the copy, mark the seller as Out of Stock on the canonical
+    // doc so the marketplace product page immediately reflects the removal.
+    if (collectionPath == 'products') {
+      await syncMarketMirror(listingId, isProductActive: false);
+      await syncInventoryDoc(listingId, isProductActive: false);
+    }
+    await _db.collection(collectionPath).doc(listingId).delete();
   }
 
   // ── Discount ──────────────────────────────────────────────────────────────
 
+  /// Writes a discount on the seller's product copy using the canonical FLAT
+  /// schema shared with the web dashboard (`discountEnabled`, `discountPct`,
+  /// `discountStartDate`, `discountEndDate`, `effectiveDiscountPct`), then
+  /// mirrors the effective percentage into the marketplace `availability[]`
+  /// entry so the product page and web show the same value.
   Future<void> setDiscount(
     String listingId, {
     required bool isActive,
@@ -163,15 +206,158 @@ class DashboardRepository {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
+    final effective =
+        _effectivePct(isActive, percentage, startDate, endDate);
     await _db.collection('products').doc(listingId).update({
-      'discount': {
-        'isActive': isActive,
-        'percentage': percentage,
-        if (startDate != null) 'startDate': Timestamp.fromDate(startDate),
-        if (endDate != null) 'endDate': Timestamp.fromDate(endDate),
-      },
+      'discountEnabled': isActive,
+      'discountType': 'percentage',
+      'discountPct': percentage,
+      'discountStartDate':
+          startDate != null ? Timestamp.fromDate(startDate) : null,
+      'discountEndDate': endDate != null ? Timestamp.fromDate(endDate) : null,
+      'effectiveDiscountPct': effective,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    await syncMarketMirror(listingId, discountPct: effective);
+    await syncInventoryDoc(
+      listingId,
+      discountEnabled: isActive,
+      discountPct: percentage,
+      effectiveDiscountPct: effective,
+      startDate: startDate,
+      endDate: endDate,
+    );
+  }
+
+  /// The active (date-filtered) discount percentage — mirrors web's
+  /// `getActiveDiscountPct`.
+  static double _effectivePct(
+      bool enabled, double pct, DateTime? start, DateTime? end) {
+    if (!enabled || pct <= 0) return 0;
+    final now = DateTime.now();
+    if (start != null && now.isBefore(start)) return 0;
+    if (end != null && now.isAfter(end)) return 0;
+    return pct;
+  }
+
+  /// Mirrors a seller's price / stock / discount change from their own product
+  /// copy into the canonical product's `availability[]` entry, which is what
+  /// the marketplace product page ("Available At") and the web dashboard read.
+  ///
+  /// [sellerProductId] is the seller's own product copy doc. The canonical doc
+  /// is found via `manufacturerProductId` (assigned products) or
+  /// `originalProductId` (retailer copies from the catalog). For standalone
+  /// retailer products (no canonical parent) this is a no-op.
+  ///
+  /// Best-effort: failures never block the primary write.
+  Future<void> syncMarketMirror(
+    String sellerProductId, {
+    double? sellingPrice,
+    String? stockLevel,
+    double? discountPct,
+    bool? isProductActive,
+  }) async {
+    try {
+      final sellerSnap =
+          await _db.collection('products').doc(sellerProductId).get();
+      if (!sellerSnap.exists) return;
+      final s = sellerSnap.data()!;
+      final rootId = (s['manufacturerProductId'] ?? s['originalProductId'])
+          as String?;
+      if (rootId == null || rootId.isEmpty || rootId == sellerProductId) return;
+
+      final ownerId =
+          (s['ownerId'] ?? s['retailerId'] ?? s['retailerDocId'])?.toString() ??
+              '';
+      final ownerPhone =
+          (s['retailerPhone'] ?? s['ownerPhone'])?.toString() ?? '';
+
+      final rootRef = _db.collection('products').doc(rootId);
+      await _db.runTransaction((txn) async {
+        final rootSnap = await txn.get(rootRef);
+        if (!rootSnap.exists) return;
+        final raw = rootSnap.data()?['availability'];
+        if (raw is! List || raw.isEmpty) return;
+
+        var changed = false;
+        final updated = raw.map((e) {
+          final entry = Map<String, dynamic>.from(e as Map);
+          final sid = (entry['storeId'] ?? '').toString();
+          final sphone = (entry['storePhone'] ?? '').toString();
+          final matches = (ownerId.isNotEmpty && sid == ownerId) ||
+              (ownerPhone.isNotEmpty &&
+                  (sphone == ownerPhone || sid == ownerPhone));
+          if (!matches) return entry;
+          changed = true;
+          if (sellingPrice != null) entry['sellingPrice'] = sellingPrice;
+          // isProductActive=false overrides everything — seller hidden from marketplace
+          if (isProductActive == false) {
+            entry['stockLevel'] = 'Out of Stock';
+          } else if (stockLevel != null) {
+            entry['stockLevel'] = stockLevel;
+          }
+          if (discountPct != null) entry['discountPct'] = discountPct;
+          return entry;
+        }).toList();
+
+        if (changed) txn.update(rootRef, {'availability': updated});
+      });
+    } catch (_) {
+      // Best-effort mirror — the primary write already succeeded.
+    }
+  }
+
+  /// Pushes a seller's price / stock / discount edit into the matching
+  /// `inventory/{id}` doc (found by `productId`). The web dashboard reads
+  /// price & stock from `inventory` (with the product doc only as a fallback),
+  /// so without this a mobile edit would not appear on the seller's own web
+  /// dashboard. No-op when the product has no inventory record. Best-effort.
+  Future<void> syncInventoryDoc(
+    String sellerProductId, {
+    double? sellingPrice,
+    int? stockQuantity,
+    bool? isProductActive,
+    bool? discountEnabled,
+    double? discountPct,
+    double? effectiveDiscountPct,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final snap = await _db
+          .collection('inventory')
+          .where('productId', isEqualTo: sellerProductId)
+          .get();
+      if (snap.docs.isEmpty) return;
+
+      final data = <String, dynamic>{
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (sellingPrice != null) data['sellingPrice'] = sellingPrice;
+      if (stockQuantity != null) {
+        data['stockQuantity'] = stockQuantity;
+        // isProductActive=false overrides stock-based availability
+        data['isAvailable'] = isProductActive == false ? false : stockQuantity > 0;
+      } else if (isProductActive != null) {
+        data['isAvailable'] = isProductActive;
+      }
+      if (discountEnabled != null) {
+        data['discountEnabled'] = discountEnabled;
+        data['discountType'] = 'percentage';
+        data['discountPct'] = discountPct ?? 0;
+        data['effectiveDiscountPct'] = effectiveDiscountPct ?? 0;
+        data['discountStartDate'] =
+            startDate != null ? Timestamp.fromDate(startDate) : null;
+        data['discountEndDate'] =
+            endDate != null ? Timestamp.fromDate(endDate) : null;
+      }
+
+      for (final doc in snap.docs) {
+        await doc.reference.update(data);
+      }
+    } catch (_) {
+      // Best-effort — the seller's product copy is already updated.
+    }
   }
 
   // ── Delivery settings ─────────────────────────────────────────────────────
@@ -318,5 +504,96 @@ class DashboardRepository {
         .child('listings/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg');
     final task = await ref.putFile(imageFile);
     return await task.ref.getDownloadURL();
+  }
+
+  // ── Seat stats ────────────────────────────────────────────────────────────
+
+  /// Computes real seat stats from `subscriptions` + `retailerSeatListings`,
+  /// matching web's `computeSeatStats` logic exactly:
+  ///   totalPurchased = sum of seatsPurchased from active (non-expired) subs
+  ///   activeUsed     = count of seat listings with status=active & expiresAt > now
+  ///   available      = max(0, totalPurchased - activeUsed)
+  Future<SeatStats> fetchSeatStats(String ownerPhone) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final now = DateTime.now();
+
+    // Fetch subscriptions — try by phone and by uid in parallel
+    final subFutures = <Future<QuerySnapshot>>[
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('subscriptions')
+            .where('ownerPhone', isEqualTo: ownerPhone)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .get(),
+      if (uid.isNotEmpty)
+        _db
+            .collection('subscriptions')
+            .where('ownerId', isEqualTo: uid)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .get(),
+    ];
+
+    // Fetch seat listings — by ownerPhone, uid, and manufacturerPhone
+    final seatFutures = <Future<QuerySnapshot>>[
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('ownerPhone', isEqualTo: ownerPhone)
+            .where('status', isEqualTo: 'active')
+            .get(),
+      if (uid.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('ownerId', isEqualTo: uid)
+            .where('status', isEqualTo: 'active')
+            .get(),
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('manufacturerPhone', isEqualTo: ownerPhone)
+            .where('status', isEqualTo: 'active')
+            .get(),
+    ];
+
+    final results = await Future.wait([
+      Future.wait(subFutures),
+      Future.wait(seatFutures),
+    ]);
+
+    final subSnaps = results[0];
+    final seatSnaps = results[1];
+
+    // Deduplicate subscriptions by doc id
+    final seenSub = <String>{};
+    int totalPurchased = 0;
+    for (final snap in subSnaps) {
+      for (final doc in snap.docs) {
+        if (!seenSub.add(doc.id)) continue;
+        final d = doc.data() as Map<String, dynamic>? ?? {};
+        final expiry = d['expiryDate'] as Timestamp?;
+        if (expiry != null && expiry.toDate().isBefore(now)) continue;
+        final seats = (d['seatsPurchased'] as num?)?.toInt() ?? 0;
+        totalPurchased += seats;
+      }
+    }
+
+    // Deduplicate seat listings by doc id; count only active + non-expired
+    final seenSeat = <String>{};
+    int activeUsed = 0;
+    for (final snap in seatSnaps) {
+      for (final doc in snap.docs) {
+        if (!seenSeat.add(doc.id)) continue;
+        final d = doc.data() as Map<String, dynamic>? ?? {};
+        final expiry = d['expiresAt'] as Timestamp?;
+        if (expiry == null || expiry.toDate().isBefore(now)) continue;
+        activeUsed++;
+      }
+    }
+
+    return SeatStats(
+      totalPurchased: totalPurchased,
+      activeUsed: activeUsed,
+      available: (totalPurchased - activeUsed).clamp(0, totalPurchased),
+    );
   }
 }

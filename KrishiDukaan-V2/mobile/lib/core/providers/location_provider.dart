@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../constants/app_config.dart';
+import '../services/places_service.dart';
 
 class LatLng {
   final double lat;
@@ -30,4 +31,28 @@ final locationProvider = FutureProvider<LatLng>((ref) async {
   } catch (_) {
     return const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
   }
+});
+
+/// Resolves user's LatLng coordinates to a user-friendly address string (e.g. "Pune, Maharashtra").
+final locationNameProvider = FutureProvider<String>((ref) async {
+  final latLng = await ref.watch(locationProvider.future);
+  try {
+    final details = await PlacesService.reverseGeocode(
+      latLng.lat,
+      latLng.lng,
+      AppConfig.googleMapsApiKey,
+    );
+    if (details != null) {
+      if (details.city != null && details.city!.isNotEmpty) {
+        if (details.state != null && details.state!.isNotEmpty) {
+          return '${details.city}, ${details.state}';
+        }
+        return details.city!;
+      }
+      if (details.formattedAddress != null && details.formattedAddress!.isNotEmpty) {
+        return details.formattedAddress!;
+      }
+    }
+  } catch (_) {}
+  return 'Pune, Maharashtra';
 });

@@ -61,10 +61,17 @@ class CatalogModel {
   final double? rating;
   final int? reviewCount;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final bool isActive;
   /// Package size variants (label + price), same as web's variants[].
   final List<VariantModel>? variants;
   /// Highest discount % offered by any seller for this product.
   final double maxDiscountPct;
+
+  /// Per-seller effective discount %, keyed by seller UID/storeId AND phone.
+  /// Mirrors web's `product.sellerDiscounts` — the source of truth for showing
+  /// how much each store discounts. Populated during the marketplace merge.
+  final Map<String, double> sellerDiscounts;
 
   // Merging / web schema fields
   final String? source;
@@ -76,6 +83,8 @@ class CatalogModel {
   final String? sellMode;
   final List<AvailabilityEntry>? availability;
   final double? lowestPrice;
+
+  final String collectionPath;
 
   const CatalogModel({
     required this.id,
@@ -93,8 +102,11 @@ class CatalogModel {
     this.rating,
     this.reviewCount,
     this.createdAt,
+    this.updatedAt,
+    this.isActive = true,
     this.variants,
     this.maxDiscountPct = 0,
+    this.sellerDiscounts = const {},
     this.source,
     this.retailerId,
     this.retailerPhone,
@@ -104,6 +116,7 @@ class CatalogModel {
     this.sellMode,
     this.availability,
     this.lowestPrice,
+    this.collectionPath = 'catalog',
   });
 
   String get imageUrl => images.isNotEmpty ? images.first : '';
@@ -127,8 +140,11 @@ class CatalogModel {
     double? rating,
     int? reviewCount,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? isActive,
     List<VariantModel>? variants,
     double? maxDiscountPct,
+    Map<String, double>? sellerDiscounts,
     String? source,
     String? retailerId,
     String? retailerPhone,
@@ -138,6 +154,7 @@ class CatalogModel {
     String? sellMode,
     List<AvailabilityEntry>? availability,
     double? lowestPrice,
+    String? collectionPath,
   }) {
     return CatalogModel(
       id: id ?? this.id,
@@ -155,8 +172,11 @@ class CatalogModel {
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isActive: isActive ?? this.isActive,
       variants: variants ?? this.variants,
       maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
+      sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
       source: source ?? this.source,
       retailerId: retailerId ?? this.retailerId,
       retailerPhone: retailerPhone ?? this.retailerPhone,
@@ -166,6 +186,7 @@ class CatalogModel {
       sellMode: sellMode ?? this.sellMode,
       availability: availability ?? this.availability,
       lowestPrice: lowestPrice ?? this.lowestPrice,
+      collectionPath: collectionPath ?? this.collectionPath,
     );
   }
 
@@ -203,6 +224,7 @@ class CatalogModel {
         ? rawVariants
             .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
             .toList()
+            .cast<VariantModel>()
         : null;
 
     // Max discount % — stored directly or derived from sellerDiscounts map
@@ -229,8 +251,14 @@ class CatalogModel {
         ?.map((v) => AvailabilityEntry.fromMap(Map<String, dynamic>.from(v as Map)))
         .toList();
 
+    final rawUpdatedAt = d['updatedAt'] ?? d['createdAt'];
+    final updatedAt = rawUpdatedAt is Timestamp
+        ? rawUpdatedAt.toDate()
+        : (rawUpdatedAt is String ? DateTime.tryParse(rawUpdatedAt) : null);
+
     return CatalogModel(
       id: doc.id,
+      collectionPath: doc.reference.parent.id,
       name: d['name'] as String? ?? d['fullName'] as String? ?? '',
       nameSearch: nameSearch,
       category: d['category'] as String? ?? 'general',
@@ -245,6 +273,8 @@ class CatalogModel {
       rating: (d['averageRating'] as num?)?.toDouble(),
       reviewCount: (d['reviewCount'] as num?)?.toInt(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      updatedAt: updatedAt,
+      isActive: d['isActive'] as bool? ?? true,
       variants: parsedVariants,
       maxDiscountPct: maxDiscountPct,
       source: source,

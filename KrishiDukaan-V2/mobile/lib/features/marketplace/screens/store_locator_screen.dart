@@ -10,6 +10,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/location_provider.dart' as loc;
 import '../../../core/models/store_model.dart';
 import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 import '../providers/marketplace_provider.dart';
 
 class StoreLocatorScreen extends ConsumerStatefulWidget {
@@ -97,18 +98,23 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         titleSpacing: 16,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(gradient: topBarGradient()),
+        ),
         title: Row(
           children: [
-            const AppBrandIcon(size: 34),
+            const AppBrandIcon(size: 30),
             const SizedBox(width: 10),
             Text(
               'Store Locator',
-              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+              style: AppTextStyles.heading2
+                  .copyWith(color: Colors.white, fontSize: 18),
             ),
           ],
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: storesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -678,8 +684,9 @@ class _StoreCard extends StatelessWidget {
                               color: isSelected
                                   ? AppColors.primary
                                   : AppColors.onSurface,
+                              fontWeight: FontWeight.bold,
                             ),
-                            maxLines: 1,
+                            maxLines: isSelected ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           if (store.ownerName != null &&
@@ -745,8 +752,8 @@ class _StoreCard extends StatelessWidget {
                   ],
                 ),
 
-                // Address
-                if (store.address != null && store.address!.isNotEmpty) ...[
+                // Address - only show when selected/expanded
+                if (isSelected && store.address != null && store.address!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -772,8 +779,8 @@ class _StoreCard extends StatelessWidget {
                   ),
                 ],
 
-                // Action buttons
-                if (onCall != null || onNavigate != null) ...[
+                // Action buttons - only show when selected/expanded
+                if (isSelected && (onCall != null || onNavigate != null)) ...[
                   const SizedBox(height: 10),
                   Row(
                     children: [
