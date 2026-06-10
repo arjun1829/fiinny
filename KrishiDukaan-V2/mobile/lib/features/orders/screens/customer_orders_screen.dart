@@ -27,7 +27,7 @@ class CustomerOrdersScreen extends ConsumerWidget {
       body: ordersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorView(
-          message: 'Failed to load orders.',
+          message: 'Could not load orders.',
           onRetry: () => ref.invalidate(customerOrdersProvider),
         ),
         data: (orders) {

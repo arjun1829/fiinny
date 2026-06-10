@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_colors.dart';
@@ -21,7 +23,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     // Initialize FCM when a logged-in user is first available
     ref.listenManual(currentUserProvider, (_, next) {
       final user = next.valueOrNull;
-      if (user != null && user.phone.isNotEmpty) {
+      if (!kIsWeb && user != null && user.phone.isNotEmpty) {
         NotificationService().initialize(user.phone);
       }
     });
@@ -55,6 +57,30 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           elevation: 0,
+          // Soft shadow that only appears once content scrolls beneath the bar,
+          // echoing the floating bottom nav's depth.
+          scrolledUnderElevation: 4,
+          shadowColor: Color(0x33000000),
+          // Stop Material 3 from tinting the bar a washed-out colour.
+          surfaceTintColor: Colors.transparent,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+          ),
+          iconTheme: IconThemeData(color: Colors.white),
+          // Rounded bottom corners to match the pill-shaped bottom nav.
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(22)),
+          ),
+          // Light status-bar icons over the deep-green bar.
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+          ),
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: Colors.white,

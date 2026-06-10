@@ -854,6 +854,41 @@ export async function updateInventoryRecord(
     updatedAt: serverTimestamp(),
   });
 
+  // Mirror price/stock into the CANONICAL product's availability[] entry, which
+  // is what the marketplace product page reads (fire-and-forget).
+  (async () => {
+    try {
+      const invSnap = await getDoc(doc(db, "inventory", inventoryId));
+      if (!invSnap.exists()) return;
+      const inv = invSnap.data();
+      // For assigned products the inventory doc links to the root via
+      // manufacturerProductId. For retailer copies, resolve originalProductId
+      // from the product copy doc.
+      let rootId = (inv.manufacturerProductId as string | undefined) ?? undefined;
+      const copyId = inv.productId as string | undefined;
+      if (!rootId && copyId) {
+        const copySnap = await getDoc(doc(db, "products", copyId));
+        if (copySnap.exists()) {
+          const cd = copySnap.data();
+          rootId = (cd.manufacturerProductId ?? cd.originalProductId) as string | undefined;
+        }
+      }
+      if (rootId && rootId !== copyId) {
+        await syncAvailabilityPriceStock(
+          rootId,
+          {
+            ownerId: String(inv.ownerId ?? inv.retailerId ?? inv.retailerDocId ?? ""),
+            phone: String(inv.retailerPhone ?? inv.ownerPhone ?? ""),
+          },
+          patch.sellingPrice,
+          patch.stockQuantity > 0 ? "In Stock" : "Out of Stock",
+        );
+      }
+    } catch (e) {
+      console.warn("[updateInventoryRecord] availability sync failed:", e);
+    }
+  })();
+
   // Background sync to subcollection mirror (fire-and-forget)
   (async () => {
     try {
@@ -1193,6 +1228,42 @@ async function syncAvailabilityDiscount(
   });
 
   await updateDoc(rootRef, { availability: updated });
+}
+
+/**
+ * Updates the matching seller's `sellingPrice`/`stockLevel` in a canonical
+ * product's `availability[]` array. Keeps the marketplace product page in sync
+ * when a retailer changes price/stock on their own copy. Matches by
+ * storeId/storePhone. Best-effort.
+ */
+async function syncAvailabilityPriceStock(
+  rootProductId: string,
+  match: { ownerId: string; phone: string },
+  sellingPrice: number,
+  stockLevel: string,
+): Promise<void> {
+  const rootRef = doc(db, "products", rootProductId);
+  const snap = await getDoc(rootRef);
+  if (!snap.exists()) return;
+  const data = snap.data() as Record<string, unknown>;
+  const availability = Array.isArray(data.availability)
+    ? [...(data.availability as Record<string, unknown>[])]
+    : [];
+  if (!availability.length) return;
+
+  let changed = false;
+  const updated = availability.map((entry) => {
+    const storeId = String(entry.storeId ?? "");
+    const storePhone = String(entry.storePhone ?? "");
+    const matches =
+      (match.ownerId && (storeId === match.ownerId || storePhone === match.ownerId)) ||
+      (match.phone && (storePhone === match.phone || storeId === match.phone));
+    if (!matches) return entry;
+    changed = true;
+    return { ...entry, sellingPrice, stockLevel };
+  });
+
+  if (changed) await updateDoc(rootRef, { availability: updated });
 }
 
 /**

@@ -8,17 +8,26 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/utils/phone_utils.dart';
 import '../../../core/widgets/loading_overlay.dart';
 import '../data/auth_repository.dart';
+import '../../manufacturer/data/manufacturer_repository.dart';
 
 class OtpVerificationScreen extends ConsumerStatefulWidget {
   final String phone;
   final String verificationId;
   final String? redirectAfterLogin;
+  final bool isSignup;
+  final String? signupName;
+  final String? signupRole;
+  final String? inviteCode;
 
   const OtpVerificationScreen({
     super.key,
     required this.phone,
     required this.verificationId,
     this.redirectAfterLogin,
+    this.isSignup = false,
+    this.signupName,
+    this.signupRole,
+    this.inviteCode,
   });
 
   @override
@@ -83,18 +92,34 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
       final user = credential.user!;
       final phone = user.phoneNumber ?? widget.phone;
 
-      // Check if user profile exists
-      final exists = await _repo.userExists(phone);
-      if (!mounted) return;
-
-      if (!exists) {
-        context.go('/signup');
-      } else {
-        // Ensure uidIndex entry exists so myPhone()-based security rules work
-        // for users who registered on the web app before the Flutter app existed.
-        await _repo.ensureUidIndex(user.uid, phone);
+      if (widget.isSignup) {
+        // Create user profile immediately
+        await _repo.createUser(
+          uid: user.uid,
+          phone: phone,
+          name: widget.signupName ?? '',
+          role: widget.signupRole ?? 'consumer',
+        );
+        // Claim invite if present
+        if (widget.inviteCode != null && widget.inviteCode!.isNotEmpty) {
+          await ManufacturerRepository().claimInvite(widget.inviteCode!, phone);
+        }
         if (!mounted) return;
         context.go(widget.redirectAfterLogin ?? '/');
+      } else {
+        // Check if user profile exists
+        final exists = await _repo.userExists(phone);
+        if (!mounted) return;
+
+        if (!exists) {
+          context.go('/onboarding');
+        } else {
+          // Ensure uidIndex entry exists so myPhone()-based security rules work
+          // for users who registered on the web app before the Flutter app existed.
+          await _repo.ensureUidIndex(user.uid, phone);
+          if (!mounted) return;
+          context.go(widget.redirectAfterLogin ?? '/');
+        }
       }
     } catch (e) {
       if (!mounted) return;

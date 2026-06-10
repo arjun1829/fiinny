@@ -6,13 +6,30 @@ import '../../../core/models/cart_model.dart';
 
 class PaymentService {
   /// Creates a Razorpay order via the existing Next.js API.
-  /// Returns {orderId, amount (paise)}.
+  ///
+  /// The web API `/api/payment/create-cart-order` expects:
+  ///   items[].productId  – the listing / inventory doc ID
+  ///   items[].sellerId   – seller phone (used for inventory lookup)
+  ///   items[].sellerPhone – seller phone (redundant but accepted)
+  ///   items[].qty        – quantity
+  ///   userId             – Firebase Auth UID of the buyer
+  ///   clientSubtotal     – rupee subtotal computed client-side
+  ///   clientDelivery     – delivery charge (0 for now)
+  ///   clientGrandTotal   – clientSubtotal + clientDelivery
+  ///
+  /// Returns the full Razorpay order object. Use `result['id']` as the
+  /// Razorpay order_id (NOT `result['orderId']` – that field doesn't exist).
   Future<Map<String, dynamic>> createCartOrder({
     required List<CartItemModel> items,
-    required String customerPhone,
+    required String userId,
   }) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw Exception('Not authenticated');
+
+    final clientSubtotal =
+        items.fold<double>(0.0, (sum, i) => sum + i.price * i.quantity);
+    const clientDelivery = 0.0;
+    final clientGrandTotal = clientSubtotal + clientDelivery;
 
     final response = await http.post(
       Uri.parse('${AppConfig.apiBaseUrl}/api/payment/create-cart-order'),
@@ -21,13 +38,21 @@ class PaymentService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
+        // Map mobile cart fields → web API contract
         'items': items.map((i) => {
-          'listingId': i.listingId,
-          'catalogId': i.catalogId,
-          'quantity': i.quantity,
-          if (i.variantLabel != null) 'variantLabel': i.variantLabel,
+          // The web API uses 'productId' for the listing/inventory doc ID
+          'productId': i.listingId,
+          // sellerId and sellerPhone both carry the seller phone so the
+          // server-side inventory lookup succeeds on either field
+          'sellerId': i.sellerPhone,
+          'sellerPhone': i.sellerPhone,
+          'qty': i.quantity,
         }).toList(),
-        'customerPhone': customerPhone,
+        'userId': userId,
+        'clientSubtotal': clientSubtotal,
+        'clientDelivery': clientDelivery,
+        'clientGrandTotal': clientGrandTotal,
+        'note': 'Mobile Cart Order',
       }),
     );
 

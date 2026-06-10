@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // Primary — agri green (matches web tailwind green-800)
-  static const primary = Color(0xFF2E7D32);
-  static const primaryLight = Color(0xFF4CAF50);
+  // Primary — deep agri green (darkened for a richer, premium look)
+  static const primary = Color(0xFF14532D);          // deep forest green
+  static const primaryDark = Color(0xFF0B3D20);      // darker tone for gradients
+  static const primaryLight = Color(0xFF2E7D32);     // former primary, now the lighter accent
   static const primaryContainer = Color(0xFFA5D6A7);
   static const onPrimary = Color(0xFFFFFFFF);
-  static const onPrimaryContainer = Color(0xFF1B5E20);
+  static const onPrimaryContainer = Color(0xFF0A3D0E);
 
   // Secondary — amber CTA (matches web)
   static const secondary = Color(0xFFF9A825);

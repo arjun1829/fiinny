@@ -57,6 +57,7 @@ class AuthRepository {
     required String uid,
     required String phone,
     required String name,
+    String role = 'consumer',
   }) async {
     final batch = _db.batch();
 
@@ -64,7 +65,7 @@ class AuthRepository {
       'uid': uid,
       'phone': phone,
       'name': name,
-      'role': 'consumer',
+      'role': role,
       'isPaid': false,
       'totalSeats': 0,
       'productCount': 0,

@@ -196,6 +196,9 @@ export async function POST(request: Request) {
       serverSubtotal,
       deliveryCharge: safeClientDelivery,
       serverTotal:    totalForPayment,
+      // Return the key used to create this order so the mobile client
+      // always opens Razorpay with the matching key (prevents key-mismatch errors).
+      key_id: process.env.RAZORPAY_KEY_ID,
     });
   } catch (error) {
     console.error('[create-cart-order] unhandled error:', error);

@@ -12,6 +12,11 @@ class AppConfig {
     defaultValue: 'rzp_test_SmPxtEcNJ25LUj',
   );
 
+  static const googleMapsApiKey = String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: 'AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778',
+  );
+
   // Default location: Pune, Maharashtra (used when GPS unavailable)
   static const defaultLat = 18.5204;
   static const defaultLng = 73.8567;
