@@ -46,10 +46,16 @@ function sourceLabel(row: InventoryRow): string {
   if (row.assignedByManufacturer || row.source === "manufacturer_assigned") {
     return "Manufacturer Assigned";
   }
+  if (row.source === "admin_assigned") {
+    return "Admin Assigned";
+  }
   return "Own Catalogue";
 }
 
 function sourceCls(row: InventoryRow): string {
+  // Manufacturer-assigned products keep the muted chip. Admin-assigned products
+  // share the exact same chip styling as "Own Catalogue" for visual consistency —
+  // only the label text differs (handled in sourceLabel).
   return row.assignedByManufacturer || row.source === "manufacturer_assigned"
     ? "bg-on-surface/8 text-on-surface-variant"
     : "bg-primary/10 text-primary";
@@ -439,9 +445,9 @@ function MobileProductCard({
             <div className="flex items-center gap-2 mt-2">
               <span className={cn(
                 "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                row.assignedByManufacturer ? "bg-on-surface/8 text-on-surface-variant" : "bg-primary/10 text-primary",
+                sourceCls(row),
               )}>
-                {row.assignedByManufacturer ? "Manufacturer Assigned" : "Own Catalogue"}
+                {sourceLabel(row)}
               </span>
             </div>
           </div>

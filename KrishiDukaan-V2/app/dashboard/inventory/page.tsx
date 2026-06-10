@@ -236,7 +236,7 @@ export default function InventoryPage() {
 
       // Fetch inventory based on role — both produce the unified InventoryRow[]
       if (resolvedRole === "manufacturer") {
-        setRows(await fetchManufacturerCatalogueRows(uid));
+        setRows(await fetchManufacturerCatalogueRows(uid, rPhone));
       } else {
         // Find ALL linked retailerDocIds to be safe (if backfill failed but invite is active)
         const linkedIds = await fetchLinkedRetailerDocIds(uid);

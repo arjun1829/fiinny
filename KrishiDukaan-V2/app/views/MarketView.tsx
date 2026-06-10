@@ -178,7 +178,23 @@ export default function MarketView({
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(Infinity);
   const [sortBy, setSortBy] = useState<SortKey>('default');
   const [brandFilter, setBrandFilter] = useState<string>('all');
-  const [priceMax, setPriceMax] = useState<number>(3000);
+  // Price ceiling is data-driven so the slider always spans the full catalogue and
+  // no product is silently hidden. A user only narrows the range; until they do,
+  // priceMax sits at the ceiling and the filter is a no-op (see visibleProducts).
+  // Rounded up to the next ₹100 and floored at ₹3000 so the control still has a
+  // sensible range when the catalogue is small/cheap.
+  const priceCeiling = useMemo(() => {
+    const maxPrice = products.reduce((m, p) => Math.max(m, p.price || 0), 0);
+    return Math.max(3000, Math.ceil(maxPrice / 100) * 100);
+  }, [products]);
+  const [priceMax, setPriceMax] = useState<number>(priceCeiling);
+
+  // Keep priceMax pinned to the ceiling while the user hasn't narrowed it, so a
+  // newly-loaded higher-priced product expands the range instead of being hidden.
+  const userSetPriceRef = useRef(false);
+  useEffect(() => {
+    if (!userSetPriceRef.current) setPriceMax(priceCeiling);
+  }, [priceCeiling]);
 
   const storeDistanceMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -208,7 +224,10 @@ export default function MarketView({
     if (brandFilter !== 'all') {
       list = list.filter((p) => inferBrand(p.name) === brandFilter);
     }
-    if (Number.isFinite(priceMax)) {
+    // Only apply the price cap when the user has actually narrowed it below the
+    // catalogue ceiling. At the ceiling it's a no-op, so high-priced products are
+    // never hidden by default.
+    if (priceMax < priceCeiling) {
       list = list.filter((p) => p.price <= priceMax);
     }
     if (Number.isFinite(maxDistanceKm)) {
@@ -228,14 +247,14 @@ export default function MarketView({
         list.sort((a, b) => productDistance(a) - productDistance(b));
     }
     return list;
-  }, [products, brandFilter, priceMax, maxDistanceKm, sortBy, storeDistanceMap]);
+  }, [products, brandFilter, priceMax, priceCeiling, maxDistanceKm, sortBy, storeDistanceMap]);
 
   const distanceLabel =
     DISTANCE_OPTIONS.find((o) => o.km === maxDistanceKm)?.label || t('within5km');
 
   const activeFilterCount =
     (brandFilter !== 'all' ? 1 : 0) +
-    (priceMax < 3000 ? 1 : 0) +
+    (priceMax < priceCeiling ? 1 : 0) +
     (sortBy !== 'default' ? 1 : 0);
 
   return (
@@ -341,17 +360,21 @@ export default function MarketView({
                     <input
                       type="range"
                       min={100}
-                      max={3000}
+                      max={priceCeiling}
                       step={50}
                       value={priceMax}
-                      onChange={(e) => setPriceMax(Number(e.target.value))}
+                      onChange={(e) => {
+                        userSetPriceRef.current = true;
+                        setPriceMax(Number(e.target.value));
+                      }}
                       className="w-full mt-1 accent-primary"
                     />
                   </div>
                   <button
                     onClick={() => {
                       setBrandFilter('all');
-                      setPriceMax(3000);
+                      userSetPriceRef.current = false;
+                      setPriceMax(priceCeiling);
                       setSortBy('default');
                     }}
                     className="text-xs font-bold text-primary hover:underline mt-2"
