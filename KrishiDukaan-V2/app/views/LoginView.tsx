@@ -9,7 +9,7 @@ import {
 import { Phone } from 'lucide-react';
 import { auth, getUserProfile } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface LoginViewProps {
@@ -83,24 +83,63 @@ export default function LoginView({ onBack, onNavigateToSignup, onSuccess }: Log
       const result = await confirmationRef.current.confirm(otp.trim());
       const user = result.user;
 
-      let profile = await getUserProfile(user.uid);
+      console.log('[Login] OTP verified — UID:', user.uid, '| Phone:', user.phoneNumber);
 
-      if (!profile) {
+      let profile = await getUserProfile(user.uid);
+      console.log('[Login] getUserProfile result:', profile ? 'found via uidIndex' : 'not found');
+
+      // Fallback for admin-pre-created accounts: no uidIndex exists yet, but
+      // users/{phone} was written by the admin. Firebase phone auth sets
+      // user.phoneNumber in E.164 format — the same format used as the doc ID.
+      if (!profile && user.phoneNumber) {
+        console.log('[Login] Fallback: looking up users/', user.phoneNumber);
         try {
-          const digits = phone.replace(/\D/g, '');
-          const snap = await getDocs(query(collection(db, 'users'), where('phoneNormalized', '==', digits)));
-          if (!snap.empty) profile = snap.docs[0]!.data() as any;
-        } catch {
-          // Firestore rules block collection queries; fall through
+          const phoneSnap = await getDoc(doc(db, 'users', user.phoneNumber));
+          console.log('[Login] User doc exists:', phoneSnap.exists());
+
+          if (phoneSnap.exists()) {
+            profile = phoneSnap.data() as any;
+            console.log('[Login] Admin-pre-created account found — bootstrapping uidIndex');
+
+            // Bootstrap the uidIndex so all future getUserProfile calls work.
+            // Write uidIndex first (rules only check request.auth.uid == uid,
+            // no myPhone() resolution needed) then update the user doc.
+            const now = serverTimestamp();
+            await setDoc(doc(db, 'uidIndex', user.uid), {
+              phone: user.phoneNumber,
+              createdAt: now,
+            });
+            console.log('[Login] uidIndex created successfully');
+
+            // Link the real Auth UID to the pre-created doc. After uidIndex is
+            // written, myPhone() resolves correctly, so the update rule passes.
+            try {
+              await updateDoc(doc(db, 'users', user.phoneNumber), {
+                uid: user.uid,
+                updatedAt: now,
+              });
+              console.log('[Login] users/{phone}.uid linked successfully');
+            } catch (linkErr) {
+              // Non-fatal: the uidIndex already bootstraps the lookup path.
+              console.warn('[Login] users/{phone}.uid link failed (non-fatal):', linkErr);
+            }
+          }
+        } catch (fallbackErr) {
+          // If this throws it is almost certainly a Firestore permissions error.
+          // Log it so the issue is visible in the browser console.
+          console.error('[Login] Fallback users/{phone} read failed:', fallbackErr);
         }
       }
 
       if (!profile) {
-        setError('No account found for this number. Please sign up first.');
+        console.warn('[Login] No profile found for UID:', user.uid, '| Phone:', user.phoneNumber);
+        setError('No account found for this number. Please contact support or ask your administrator to create your account.');
         setStep('phone');
         setOtp('');
         return;
       }
+
+      console.log('[Login] Login successful — role:', (profile as any)?.role);
 
       onSuccess(user, profile);
     } catch (err: any) {

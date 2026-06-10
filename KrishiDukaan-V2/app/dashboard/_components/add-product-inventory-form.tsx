@@ -11,7 +11,7 @@ import {
 } from "../_lib/category-info";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage, fetchAllMarketplaceProducts } from "../../firebase";
+import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
 import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
 import { createProductAndInventory, retailerHasProduct } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
@@ -112,6 +112,17 @@ type SearchResult = {
   nitrogen?: string; phosphorus?: string; potassium?: string; applicationDesc?: string; dosage?: string; bestForCrops?: string[];
 };
 
+type AdminProductPayload = {
+  name: string; fullName?: string; category: string;
+  price: number; unit: string; variants: { unit: string; price: number; stock?: number }[];
+  description: string; image?: string; images: string[];
+  stock: string; isActive: true; source: "admin";
+  categoryInfo?: Record<string, string | string[]>;
+  gstApplicable: boolean; gstRate: number;
+  sellMode: "online_delivery"; isOnline: true;
+  editProductId: string | null;
+};
+
 type AddProductInventoryFormProps = {
   userId: string | null;
   role: "manufacturer" | "retailer";
@@ -119,6 +130,12 @@ type AddProductInventoryFormProps = {
   onCreated: () => Promise<void>;
   seatStats: SeatStats;
   storeName?: string;
+  /** Admin-only: enables admin mode (no seat check, admin save logic) */
+  adminMode?: boolean;
+  /** Admin-only: pre-fill the form for editing an existing product */
+  initialProduct?: any;
+  /** Admin-only: custom save handler; receives validated payload. If omitted, falls back to adminCreateProduct/adminUpdateProduct. */
+  onAdminSave?: (payload: AdminProductPayload) => Promise<void>;
 };
 
 const newVariant = (): Variant => ({
@@ -277,8 +294,8 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
 
 // ─── Variant Row ──────────────────────────────────────────────────────────────
 
-function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
-  v: Variant; i: number; isDisabled: boolean; isOnly: boolean;
+function VariantRow({ v, i, isDisabled, isOnly, setV, removeV, adminMode }: {
+  v: Variant; i: number; isDisabled: boolean; isOnly: boolean; adminMode?: boolean;
   setV: (i: number, p: Partial<Variant>) => void;
   removeV: (i: number) => void;
 }) {
@@ -379,8 +396,8 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
         </div>
       )}
 
-      {/* Price + Stock */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Price (+ Stock when not in admin/catalog mode) */}
+      <div className={`grid gap-3 ${adminMode ? "grid-cols-1" : "grid-cols-2"}`}>
         <label className="flex flex-col gap-1 text-xs">
           <span className="font-medium text-on-surface-variant">Price (₹) *</span>
           <div className="relative">
@@ -397,14 +414,16 @@ function VariantRow({ v, i, isDisabled, isOnly, setV, removeV }: {
               onBlur={(e) => { const n = parseFloat(e.target.value); setV(i, { price: !isNaN(n) && n > 0 ? String(n) : "" }); }} />
           </div>
         </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium text-on-surface-variant">Stock Qty *</span>
-          <input required type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
-            className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
-            placeholder="0" value={v.stock}
-            onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { stock: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
-            onBlur={(e) => { const n = parseInt(e.target.value, 10); setV(i, { stock: isNaN(n) ? "0" : String(Math.max(0, n)) }); }} />
-        </label>
+        {!adminMode && (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium text-on-surface-variant">Stock Qty *</span>
+            <input required type="text" inputMode="numeric" pattern="[0-9]*" disabled={isDisabled}
+              className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+              placeholder="0" value={v.stock}
+              onChange={(e) => { const digits = e.target.value.replace(/\D/g, ""); setV(i, { stock: digits === "" ? "" : String(parseInt(digits, 10)) }); }}
+              onBlur={(e) => { const n = parseInt(e.target.value, 10); setV(i, { stock: isNaN(n) ? "0" : String(Math.max(0, n)) }); }} />
+          </label>
+        )}
       </div>
     </div>
   );
@@ -419,6 +438,9 @@ export function AddProductInventoryForm({
   onCreated,
   seatStats,
   storeName,
+  adminMode,
+  initialProduct,
+  onAdminSave,
 }: AddProductInventoryFormProps) {
   const { t } = useI18n();
 
@@ -467,10 +489,43 @@ export function AddProductInventoryForm({
     return () => clearTimeout(id);
   }, [message]);
 
+  // Pre-fill form when editing an admin product
+  useEffect(() => {
+    if (!adminMode || !initialProduct) return;
+    const p = initialProduct;
+    setName(p.name || "");
+    const rawCat = String(p.category || "").trim();
+    const canonical = CATEGORIES.find((c) => c.toLowerCase() === rawCat.toLowerCase());
+    const known = Boolean(canonical) && canonical !== "Other";
+    setCategory(known ? canonical! : "Other");
+    setCustomCategory(known ? "" : rawCat);
+    setDescription(p.description || "");
+    const src: { unit: string; price: number }[] = p.variants?.length
+      ? p.variants
+      : [{ unit: p.unit || "", price: p.price || 0 }];
+    setVariants(src.map((v) => ({ ...parseUnitToVariant(v.unit), price: String(v.price), stock: "" })));
+    const urls: string[] = p.images?.length ? p.images : (p.image ? [p.image] : []);
+    setImages(urls.length ? urls.map((u: string) => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()]);
+    setGstApplicable(!!p.gstApplicable);
+    setGstRate(p.gstRate ?? 0);
+    const ci = effectiveCategoryInfo(p as Record<string, unknown>);
+    if (ci) {
+      const flat: Record<string, string> = {};
+      Object.entries(ci).forEach(([k, v]) => { flat[k] = Array.isArray(v) ? v.join(", ") : String(v); });
+      setCategoryInfo(flat);
+      setShowAdditionalData(true);
+    } else {
+      setCategoryInfo({});
+    }
+    setShowProductDetails(true);
+    setAutofilled(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProduct?.id, adminMode]);
+
   const isManufacturer = role === "manufacturer";
   const hasSeats       = seatStats.available > 0;
   const noSubscription = seatStats.totalPurchased === 0;
-  const isDisabled     = disabled || submitting || !userId || !hasSeats || (role === "retailer" && alreadyListed);
+  const isDisabled     = disabled || submitting || !userId || (adminMode ? false : (!hasSeats || (role === "retailer" && alreadyListed)));
 
   // ── Search ───────────────────────────────────────────────────────────────────
   const handleNameChange = useCallback((val: string) => {
@@ -579,10 +634,10 @@ export function AddProductInventoryForm({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!userId) return;
-    if (!hasSeats) { setMessage({ type: "err", text: "No seats available. Buy more seats." }); return; }
+    if (!adminMode && !hasSeats) { setMessage({ type: "err", text: "No seats available. Buy more seats." }); return; }
     if (!name.trim() || !category) { setMessage({ type: "err", text: "Product name and category are required." }); return; }
 
-    if (variants.some((v) => v.stock.trim() === "")) {
+    if (!adminMode && variants.some((v) => v.stock.trim() === "")) {
       setMessage({ type: "err", text: "Stock quantity is required for each package size." });
       return;
     }
@@ -626,6 +681,36 @@ export function AddProductInventoryForm({
     setSubmitting(true);
     setMessage(null);
     try {
+      if (adminMode) {
+        const adminPayload: AdminProductPayload = {
+          name: name.trim(), fullName: name.trim(), category: savedCategory,
+          price: parsed[0].price, unit: parsed[0].unit,
+          variants: parsed.map(({ unit, price }) => ({ unit, price })),
+          description, image: imageUrls[0] ?? undefined, images: imageUrls,
+          stock: "In Stock", isActive: true, source: "admin",
+          categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
+          gstApplicable, gstRate: gstApplicable ? gstRate : 0,
+          sellMode: "online_delivery", isOnline: true,
+          editProductId: initialProduct?.id ?? null,
+        };
+        if (onAdminSave) {
+          await onAdminSave(adminPayload);
+        } else if (initialProduct?.id) {
+          await adminUpdateProduct(initialProduct.id, adminPayload as any);
+        } else {
+          await adminCreateProduct(adminPayload as any);
+        }
+        setMessage({ type: "ok", text: initialProduct?.id ? "Product updated." : "Product added to catalog." });
+        if (!initialProduct?.id) {
+          setName(""); setCategory(CATEGORIES[0]); setCustomCategory(""); setDescription("");
+          setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
+          setCategoryInfo({}); setShowAdditionalData(false);
+          setGstApplicable(false); setGstRate(0);
+          setVariants([newVariant()]); setImages([newSlot()]);
+        }
+        await onCreated();
+        return;
+      }
       if (isManufacturer) {
         await createManufacturerProduct(userId, {
           name, category: savedCategory,
@@ -677,27 +762,30 @@ export function AddProductInventoryForm({
       !hasSeats ? "border-red-200 bg-red-50/30" : "border-outline-variant/30 bg-surface-container-lowest"
     }`}>
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-base font-semibold text-on-surface">
-          {isManufacturer ? t('addProductToCatalogue') : t('addProductToInventory')}
-        </h2>
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-          hasSeats ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"
-        }`}>
-          {seatStats.available} {seatStats.available !== 1 ? t('seatsAvailableLabel') : t('seatAvailableLabel')}
-        </span>
-      </div>
-
-      {noSubscription && (
-        <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {t('noActiveSub')} <Link href="/dashboard/upgrade" className="font-semibold underline">{t('purchasePlanLink')}</Link> {t('toStartListing')}
-        </div>
-      )}
-      {!noSubscription && !hasSeats && (
-        <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {t('allSeatsUsed')}{" "}
-          <Link href="/dashboard/upgrade" className="font-semibold underline">{t('buyMoreSeatsLink')}</Link> {t('toContinue')}
-        </div>
+      {!adminMode && (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-semibold text-on-surface">
+              {isManufacturer ? t('addProductToCatalogue') : t('addProductToInventory')}
+            </h2>
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+              hasSeats ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"
+            }`}>
+              {seatStats.available} {seatStats.available !== 1 ? t('seatsAvailableLabel') : t('seatAvailableLabel')}
+            </span>
+          </div>
+          {noSubscription && (
+            <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {t('noActiveSub')} <Link href="/dashboard/upgrade" className="font-semibold underline">{t('purchasePlanLink')}</Link> {t('toStartListing')}
+            </div>
+          )}
+          {!noSubscription && !hasSeats && (
+            <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {t('allSeatsUsed')}{" "}
+              <Link href="/dashboard/upgrade" className="font-semibold underline">{t('buyMoreSeatsLink')}</Link> {t('toContinue')}
+            </div>
+          )}
+        </>
       )}
 
       {/* Error toast only — success shown inline */}
@@ -852,7 +940,7 @@ export function AddProductInventoryForm({
 
           <div className="flex flex-col gap-3">
             {variants.map((v, i) => (
-              <VariantRow key={i} v={v} i={i} isDisabled={isDisabled} isOnly={variants.length <= 1}
+              <VariantRow key={i} v={v} i={i} isDisabled={isDisabled} isOnly={variants.length <= 1} adminMode={adminMode}
                 setV={setV} removeV={removeV} />
             ))}
           </div>
@@ -891,8 +979,8 @@ export function AddProductInventoryForm({
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 
-        {/* ── Section 4: GST ────────────────────────────────────────────────── */}
-        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+        {/* ── Section 4: GST (not shown in admin/catalog mode) ─────────────── */}
+        {!adminMode && <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
             <Receipt className="h-4 w-4 text-primary" /> GST Configuration
           </div>
@@ -946,16 +1034,21 @@ export function AddProductInventoryForm({
               GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Submit + inline success */}
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" disabled={isDisabled}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 transition-all">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
-            {!hasSeats ? t('formNoSeats') : submitting ? t('formSavingLabel') : isManufacturer ? t('formAddToCatalogue') : t('formAddToInventory')}
+            {submitting
+              ? t('formSavingLabel')
+              : adminMode
+                ? (initialProduct?.id ? "Save Changes" : "Add to Catalog")
+                : (!hasSeats ? t('formNoSeats') : isManufacturer ? t('formAddToCatalogue') : t('formAddToInventory'))
+            }
           </button>
-          {!hasSeats && (
+          {!adminMode && !hasSeats && (
             <Link href="/dashboard/upgrade"
               className="inline-flex items-center gap-2 rounded-xl border-2 border-primary text-primary px-5 py-3 text-sm font-bold hover:bg-primary/5 transition-all">
               {t('formBuyMoreSeats')}

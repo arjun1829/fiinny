@@ -1,12 +1,14 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { GeoPoint } from "firebase/firestore";
 import {
   CheckCircle2, ChevronDown, ChevronUp,
-  FileDown, Loader2, Upload, UserPlus, X,
+  FileDown, Loader2, MapPin, Upload, UserPlus, X,
 } from "lucide-react";
 import Link from "next/link";
 import { createNetworkRetailer } from "../../_lib/manufacturer-retailers-firestore";
+import { parseGoogleMapsUrl } from "./add-retailer-form";
 import { useI18n } from "../../../i18n/I18nContext";
 import { HelperIcon } from "../../../../components/helpers";
 
@@ -50,6 +52,33 @@ function parseCSV(text: string): string[][] {
   return rows;
 }
 
+// ─── Geo resolution ───────────────────────────────────────────────────────────
+
+/**
+ * Resolve a Google Maps link to a GeoPoint.
+ * 1. Try client-side regex parsing (works for full URLs containing coordinates).
+ * 2. Fall back to /api/resolve-maps-url which follows redirects server-side
+ *    (needed for short links like goo.gl/maps/...).
+ */
+async function resolveGeoFromMapsLink(mapsLink: string): Promise<GeoPoint | null> {
+  if (!mapsLink) return null;
+
+  // Client-side parse first (zero-latency for direct URLs)
+  const direct = parseGoogleMapsUrl(mapsLink);
+  if (direct) return new GeoPoint(direct.lat, direct.lng);
+
+  // Server-side expansion for short/redirected URLs
+  try {
+    const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(mapsLink)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (typeof data.lat === "number" && typeof data.lng === "number") {
+      return new GeoPoint(data.lat, data.lng);
+    }
+  } catch { /* silent — geo is optional, never block the row */ }
+  return null;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ParsedRetailerRow = {
@@ -58,7 +87,7 @@ type ParsedRetailerRow = {
   ownerName: string;
   phone: string;
   normalizedPhone: string;
-  email: string;
+  googleMapsLink: string;
   city: string;
   state: string;
   pincode: string;
@@ -71,10 +100,16 @@ type RowStatus = "pending" | "uploading" | "done" | "error" | "skipped";
 
 type UploadRow = ParsedRetailerRow & { status: RowStatus; statusMsg: string };
 
-const CSV_TEMPLATE =
-  "shopName,ownerName,phone,email,city,state,pincode\n" +
-  "Ramesh Agro Store,Ramesh Kumar,9876543210,ramesh@example.com,Pune,Maharashtra,411001\n" +
-  "Suresh Seeds,Suresh Patel,9123456789,,Nashik,Maharashtra,422001\n";
+// Google Maps URLs contain a comma between lat and lng, so the googleMapsLink
+// cell must always be quoted ("...") in the CSV. Without quotes, the comma is
+// treated as a column separator, shifting city/state/pincode into wrong columns.
+const CSV_TEMPLATE = `shopName,ownerName,phone,googleMapsLink,city,state,pincode
+Sai Agro Test 01,Sai Surve Test 01,9876500001,"https://maps.google.com/?q=18.5204,73.8567",Pune,Maharashtra,411001
+Krishi Kendra Test 02,Rahul Jadhav Test 02,9876500002,"https://maps.google.com/?q=19.9975,73.7898",Nashik,Maharashtra,422001
+Agro Solutions Test 03,Amit Bhosale Test 03,9876500003,"https://maps.google.com/?q=16.7050,74.2433",Kolhapur,Maharashtra,416003
+Farmer Store Test 04,Nikhil Pawar Test 04,9876500004,"https://maps.google.com/?q=19.8762,75.3433",Aurangabad,Maharashtra,431001
+Green Agro Test 05,Pratik Shinde Test 05,9876500005,"https://maps.google.com/?q=17.6805,75.9080",Solapur,Maharashtra,413001
+`;
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
@@ -93,13 +128,13 @@ function parseRetailerCSV(
 
   return dataRows.map((cells, i) => {
     const rowNum = isHeader ? i + 2 : i + 1;
-    const shopName = (cells[0] ?? "").trim();
-    const ownerName = (cells[1] ?? "").trim();
-    const phoneRaw = (cells[2] ?? "").trim();
-    const email = (cells[3] ?? "").trim().toLowerCase();
-    const city = (cells[4] ?? "").trim();
-    const state = (cells[5] ?? "").trim();
-    const pincode = (cells[6] ?? "").trim();
+    const shopName       = (cells[0] ?? "").trim();
+    const ownerName      = (cells[1] ?? "").trim();
+    const phoneRaw       = (cells[2] ?? "").trim();
+    const googleMapsLink = (cells[3] ?? "").trim();
+    const city           = (cells[4] ?? "").trim();
+    const state          = (cells[5] ?? "").trim();
+    const pincode        = (cells[6] ?? "").trim();
 
     const normalizedPhone = phoneRaw ? normalizePhone(phoneRaw) : "";
 
@@ -121,7 +156,7 @@ function parseRetailerCSV(
 
     return {
       rowNum, shopName, ownerName, phone: phoneRaw, normalizedPhone,
-      email, city, state, pincode, errors, isDuplicate, isExisting,
+      googleMapsLink, city, state, pincode, errors, isDuplicate, isExisting,
     };
   });
 }
@@ -214,19 +249,21 @@ export function BulkRetailerUpload({
       });
 
       try {
+        // Resolve Google Maps link to GeoPoint — optional, never blocks the row
+        const geo = await resolveGeoFromMapsLink(rows[i]!.googleMapsLink);
+
         await createNetworkRetailer({
           manufacturerId,
           shopName: rows[i]!.shopName,
           ownerName: rows[i]!.ownerName,
           phone: rows[i]!.phone,
-          email: rows[i]!.email,
           address: {
             line1: [rows[i]!.city, rows[i]!.state].filter(Boolean).join(", "),
             city: rows[i]!.city,
             state: rows[i]!.state,
             pincode: rows[i]!.pincode,
           },
-          geo: null,
+          geo,
         });
 
         setUploadRows((prev) => {
@@ -351,8 +388,13 @@ export function BulkRetailerUpload({
             </button>
             <HelperIcon size="xs" variant="ghost" side="right" textKey="csvRetailerTemplate" ariaLabel={`${t("csvDownloadTemplate")} help`} />
             <span className="text-xs text-on-surface-variant">
-              {t("csvColumnsLabel")} <code className="font-mono">shopName, ownerName, phone, email, city, state, pincode</code>
+              {t("csvColumnsLabel")} <code className="font-mono">shopName, ownerName, phone, googleMapsLink, city, state, pincode</code>
             </span>
+            <p className="text-xs text-amber-600">
+            Google Maps links must be enclosed in double quotes (&quot;&quot;)
+            Example:
+            &quot;https://maps.google.com/?q=18.5204,73.8567&quot;
+          </p>
           </div>
 
           {/* File picker */}
@@ -431,6 +473,7 @@ export function BulkRetailerUpload({
                       <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColShopName")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColOwner")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColPhone")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColMaps")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColCity")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("csvRetailerColState")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("csvColStatus")}</th>
@@ -453,6 +496,13 @@ export function BulkRetailerUpload({
                         <td className="px-3 py-2 text-on-surface-variant">{row.ownerName || "—"}</td>
                         <td className="px-3 py-2 text-on-surface-variant font-mono">
                           {row.normalizedPhone || row.phone || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {row.googleMapsLink ? (
+                            <MapPin className="h-3.5 w-3.5 text-green-600 inline-block" />
+                          ) : (
+                            <span className="text-on-surface-variant/40">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-on-surface-variant">{row.city || "—"}</td>
                         <td className="px-3 py-2 text-on-surface-variant">{row.state || "—"}</td>

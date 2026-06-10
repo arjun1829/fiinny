@@ -1,105 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Upload, Link2, Loader2, Check, Store, Users } from "lucide-react";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage, auth, fetchAllProductsForAdmin, fetchAllSellerProducts, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing, fetchAllUsers } from "../../firebase";
+import { useEffect, useMemo, useState } from "react";
+import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Link2, Loader2, Check, Store, Users } from "lucide-react";
+import { auth, fetchAllProductsForAdmin, fetchAllSellerProducts, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing, fetchAllUsers } from "../../firebase";
 import type { MarketplaceProduct } from "../../../types/product";
 import { cn } from "../../dashboard/_lib/cn";
-import { PackSizesEditor, variantsToRows, parseVariantsForSave, emptyVariant, type Variant } from "../_components/pack-sizes-editor";
+import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
 
 const CATEGORIES = ["seeds", "fertilizers", "pesticides", "irrigation", "tools", "general"];
-const MAX_IMAGES = 5;
-
-type ImageSlot = { mode: "url" | "upload"; url: string; uploading: boolean; error: string };
-
-const newSlot = (): ImageSlot => ({ mode: "url", url: "", uploading: false, error: "" });
-
-const EMPTY_FORM = {
-  name: "", fullName: "", category: "seeds",
-  description: "", stock: "In Stock", store: "", distance: "Nearby",
-};
-
-function ImageCard({ slot, index, onChange, onClear }: {
-  slot: ImageSlot; index: number;
-  onChange: (p: Partial<ImageSlot>) => void; onClear: () => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
-    onChange({ uploading: true, error: "" });
-    try {
-      const path = `product-images/admin-${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), file);
-      onChange({ url: await getDownloadURL(snap.ref), uploading: false });
-    } catch {
-      onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
-    }
-  };
-
-  return (
-    <div className={`flex flex-col rounded-2xl border-2 overflow-hidden transition-colors ${
-      slot.url ? "border-primary/20 bg-surface-container-low" : "border-dashed border-outline-variant/40 bg-surface-container-low/50 hover:border-primary/40"
-    }`}>
-      {slot.url ? (
-        <div className="relative">
-          <img src={slot.url} alt="" className="h-28 w-full object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <button type="button" onClick={onClear}
-            className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500 transition-colors">
-            <X className="h-3 w-3" />
-          </button>
-          {index === 0 && (
-            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white">Main</span>
-          )}
-        </div>
-      ) : (
-        <div className="flex h-28 flex-col items-center justify-center gap-1 text-on-surface-variant/50">
-          <ImageIcon className="h-7 w-7" />
-          <span className="text-[10px]">{index === 0 ? "Main image" : `Image ${index + 1}`}</span>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2 p-2.5">
-        <div className="flex rounded-lg border border-outline-variant/30 text-[11px] overflow-hidden">
-          {(["url", "upload"] as const).map((m) => (
-            <button key={m} type="button"
-              onClick={() => onChange({ mode: m, error: "" })}
-              className={`flex-1 py-1 font-semibold transition-colors ${slot.mode === m ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
-              {m === "url" ? "URL" : "Upload"}
-            </button>
-          ))}
-        </div>
-
-        {slot.mode === "url" ? (
-          <input
-            type="url"
-            value={slot.url}
-            onChange={e => onChange({ url: e.target.value, error: "" })}
-            placeholder="https://…"
-            className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-[11px] focus:border-primary focus:outline-none"
-          />
-        ) : (
-          <>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={slot.uploading}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-outline-variant/30 py-1.5 text-[11px] font-semibold text-on-surface-variant hover:bg-surface-container disabled:opacity-50 transition-colors">
-              {slot.uploading ? (
-                <><div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" /> Uploading…</>
-              ) : (
-                <><Upload className="h-3 w-3" /> Choose file</>
-              )}
-            </button>
-          </>
-        )}
-
-        {slot.error && <p className="text-[10px] text-red-500">{slot.error}</p>}
-      </div>
-    </div>
-  );
-}
+const ADMIN_SEAT_STATS = { totalPurchased: 99, activeUsed: 0, available: 99, expiringSoon: 0 };
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
@@ -108,15 +17,10 @@ export default function AdminProductsPage() {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [variants, setVariants] = useState<Variant[]>([emptyVariant()]);
-  const [images, setImages] = useState<ImageSlot[]>([newSlot()]);
-  const [saving, setSaving] = useState(false);
+  const [editProduct, setEditProduct] = useState<MarketplaceProduct | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<MarketplaceProduct | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
 
   // Assign to seller
   const [assignTarget, setAssignTarget] = useState<MarketplaceProduct | null>(null);
@@ -346,80 +250,33 @@ export default function AdminProductsPage() {
     });
   }, [groupedProducts, search, catFilter]);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setVariants([emptyVariant()]); setImages([newSlot()]); setEditId(null); setFormError(null); };
+  const openAdd  = () => { setEditProduct(null); setShowForm(true); };
+  const openEdit = (p: MarketplaceProduct) => { setEditProduct(p); setShowForm(true); };
 
-  const openAdd = () => { resetForm(); setShowForm(true); };
-  const openEdit = (p: MarketplaceProduct) => {
-    setForm({
-      name: p.name, fullName: p.fullName || "", category: p.category,
-      description: p.description, stock: p.stock, store: p.store, distance: p.distance,
-    });
-    setVariants(variantsToRows((p as any).variants, { unit: (p as any).unit, price: p.price }));
-    const urls: string[] = (p as any).images?.length ? (p as any).images : (p.image ? [p.image] : []);
-    setImages(urls.length ? urls.map(u => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()]);
-    setEditId(p.id);
-    setFormError(null);
-    setShowForm(true);
-  };
-
-  const updateSlot = (i: number, patch: Partial<ImageSlot>) =>
-    setImages(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s));
-  const clearSlot = (i: number) =>
-    setImages(prev => prev.length === 1 ? [newSlot()] : prev.filter((_, idx) => idx !== i));
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name) { setFormError("Product name is required."); return; }
-    const parsed = parseVariantsForSave(variants);
-    if (!parsed.ok) { setFormError(parsed.error); return; }
-    if (images.some(s => s.uploading)) { setFormError("Wait for image uploads to finish."); return; }
-    const imageUrls = images.map(s => s.url.trim()).filter(Boolean);
-    if (!imageUrls.length) { setFormError("At least one image is required."); return; }
-    setSaving(true);
-    setFormError(null);
-    try {
-      const payload = {
-        name: form.name.trim(), fullName: form.fullName.trim() || form.name.trim(),
-        price: parsed.variants[0].price, unit: parsed.variants[0].unit, variants: parsed.variants,
-        category: form.category, description: form.description.trim(),
-        image: imageUrls[0], images: imageUrls,
-        stock: form.stock, store: form.store.trim(), distance: form.distance.trim(),
-      };
-      if (editId) {
-        await adminUpdateProduct(editId, payload);
-        // Deactivate other duplicates in Firestore if any exist
-        const originalProduct = products.find(p => p.id === editId);
-        if (originalProduct) {
-          const docIds = (originalProduct as any).allDocIds || [];
-          const otherDocIds = docIds.filter((id: string) => id !== editId);
-          if (otherDocIds.length > 0) {
-            const { writeBatch, doc, serverTimestamp } = await import("firebase/firestore");
-            const { db: fdb } = await import("../../firebase");
-            const batch = writeBatch(fdb);
-            otherDocIds.forEach((id: string) => {
-              batch.update(doc(fdb, 'products', id), { isActive: false, updatedAt: serverTimestamp() });
-            });
-            // Update any copy products linked to the deactivated duplicates
-            const otherDocIdsSet = new Set(otherDocIds);
-            const copyProductsToUpdate = rawProducts.filter(
-              (rp) => rp.source === "admin_assigned" && otherDocIdsSet.has(rp.originalProductId)
-            );
-            copyProductsToUpdate.forEach((cp) => {
-              batch.update(doc(fdb, 'products', cp.id), { originalProductId: editId });
-            });
-            await batch.commit().catch(err => console.error("Failed to deactivate duplicates:", err));
-          }
+  const handleAdminSave = async (payload: any) => {
+    const { editProductId, ...data } = payload;
+    if (editProductId) {
+      // Edit: update the product and deactivate any stale duplicate docs
+      await adminUpdateProduct(editProductId, data);
+      const original = products.find(p => p.id === editProductId);
+      if (original) {
+        const docIds: string[] = (original as any).allDocIds || [];
+        const others = docIds.filter(id => id !== editProductId);
+        if (others.length > 0) {
+          const { writeBatch, doc, serverTimestamp } = await import("firebase/firestore");
+          const { db: fdb } = await import("../../firebase");
+          const batch = writeBatch(fdb);
+          others.forEach(id => batch.update(doc(fdb, "products", id), { isActive: false, updatedAt: serverTimestamp() }));
+          const othersSet = new Set(others);
+          rawProducts
+            .filter(rp => rp.source === "admin_assigned" && othersSet.has(rp.originalProductId))
+            .forEach(cp => batch.update(doc(fdb, "products", cp.id), { originalProductId: editProductId }));
+          await batch.commit().catch(err => console.error("Failed to deactivate duplicates:", err));
         }
-      } else {
-        await adminCreateProduct(payload as any);
       }
-      await load();
-      setShowForm(false);
-    } catch (err) {
-      console.error(err);
-      setFormError("Save failed. Please try again.");
-    } finally {
-      setSaving(false);
+    } else {
+      // Add: create a new master catalog product
+      await adminCreateProduct(data as any);
     }
   };
 
@@ -648,84 +505,22 @@ export default function AdminProductsPage() {
       {/* Add/Edit Modal */}
       {showForm && (
         <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
-            <div className="flex items-center justify-between border-b border-surface-container p-5 shrink-0 sm:p-6">
-              <h2 className="text-lg font-bold text-on-surface">{editId ? "Edit Product" : "Add Product"}</h2>
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 shrink-0">
+              <h2 className="text-base font-bold text-on-surface">{editProduct ? "Edit Product" : "Add Product"}</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-surface-container transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleSave} className="flex-1 space-y-4 overflow-y-auto p-5 sm:p-6">
-              {formError && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">{formError}</div>
-              )}
-
-              {/* Text fields */}
-              {[
-                { label: "Product Name *", key: "name", placeholder: "e.g. Organic Urea" },
-                { label: "Full Name", key: "fullName", placeholder: "Extended product name" },
-                { label: "Store Name", key: "store", placeholder: "e.g. Sharma Agro Store" },
-                { label: "Distance", key: "distance", placeholder: "e.g. 2.3 km" },
-              ].map(({ label, key, placeholder }) => (
-                <div key={key}>
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">{label}</label>
-                  <input type="text" value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                </div>
-              ))}
-
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Category</label>
-                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                </select>
-              </div>
-
-              {/* Pack sizes & prices */}
-              <PackSizesEditor variants={variants} onChange={setVariants} disabled={saving} />
-
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Overall Stock Status</label>
-                <select value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none">
-                  {["In Stock", "Low Stock", "Out of Stock"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Description</label>
-                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  rows={3} placeholder="Product description…"
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none resize-none" />
-              </div>
-
-              {/* Images */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant">Images * (up to {MAX_IMAGES})</label>
-                  {images.length < MAX_IMAGES && (
-                    <button type="button" onClick={() => setImages(p => [...p, newSlot()])}
-                      className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-                      <Plus className="h-3.5 w-3.5" /> Add image
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {images.map((slot, i) => (
-                    <ImageCard key={i} slot={slot} index={i}
-                      onChange={patch => updateSlot(i, patch)}
-                      onClear={() => clearSlot(i)} />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
-                <button type="button" onClick={() => setShowForm(false)} className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 py-3 rounded-2xl bg-primary text-white text-sm font-bold hover:bg-primary-container transition-colors disabled:opacity-60">
-                  {saving ? "Saving…" : editId ? "Save Changes" : "Add Product"}
-                </button>
-              </div>
-            </form>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <AddProductInventoryForm
+                adminMode
+                initialProduct={editProduct}
+                userId={auth.currentUser?.uid ?? null}
+                role="manufacturer"
+                seatStats={ADMIN_SEAT_STATS}
+                onAdminSave={handleAdminSave}
+                onCreated={async () => { await load(); setShowForm(false); }}
+              />
+            </div>
           </div>
         </div>
       )}

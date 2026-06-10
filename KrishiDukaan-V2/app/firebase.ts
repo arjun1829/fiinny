@@ -794,19 +794,27 @@ export async function saveUserProfile(
   await setDoc(doc(db, 'uidIndex', uid), { phone, createdAt: now });
 
   // Step 2: now myPhone() resolves correctly, so users/{phone} write is allowed.
-  await setDoc(doc(db, 'users', phone), {
-    uid,
-    phone,
-    name: profile.name,
-    email: null,
-    role: profile.role,
-    roleUpgradeHistory: [],
-    isPaid: false,
-    totalSeats: 0,
-    productCount: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // If the doc already exists (admin pre-created the account), preserve every
+  // admin-set field (role, address, isPaid, etc.) — only link the real Auth UID.
+  // For a brand new user, create the full record as usual.
+  const existingSnap = await getDoc(doc(db, 'users', phone));
+  if (existingSnap.exists()) {
+    await updateDoc(doc(db, 'users', phone), { uid, updatedAt: now });
+  } else {
+    await setDoc(doc(db, 'users', phone), {
+      uid,
+      phone,
+      name: profile.name,
+      email: null,
+      role: profile.role,
+      roleUpgradeHistory: [],
+      isPaid: false,
+      totalSeats: 0,
+      productCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 }
 
 export async function getUserProfile(uid: string) {
@@ -2046,11 +2054,13 @@ export async function fetchAllProductsForAdmin(): Promise<MarketplaceProduct[]> 
 }
 
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {
+  // Firestore rejects explicit `undefined` field values — strip them before writing.
+  const clean = Object.fromEntries(
+    Object.entries(product).filter(([, v]) => v !== undefined),
+  );
   const ref = await addDoc(collection(db, 'products'), {
-    ...product,
+    ...clean,
     source: 'admin',
-    // Mark active so the product surfaces in every isActive-filtered query
-    // (assignment dropdown, marketplace feeds, etc.), not just the admin table.
     isActive: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -2059,7 +2069,8 @@ export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>
 }
 
 export async function adminUpdateProduct(productId: string, product: Partial<MarketplaceProduct>): Promise<void> {
-  await setDoc(doc(db, 'products', productId), { ...product, updatedAt: serverTimestamp() }, { merge: true });
+  const clean = Object.fromEntries(Object.entries(product).filter(([, v]) => v !== undefined));
+  await setDoc(doc(db, 'products', productId), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 export async function adminDeleteProduct(productId: string): Promise<void> {
@@ -3122,4 +3133,138 @@ export async function fetchFailedPayments(): Promise<any[]> {
       const tb = b.timestamp?.toMillis?.() ?? b.timestamp?.seconds ?? 0;
       return tb - ta;
     });
+}
+
+// ─── Admin profile save (phone-keyed — works before first OTP login) ──────────
+
+export interface AdminSaveProfileInput {
+  businessName: string;
+  ownerName: string;
+  email: string;
+  secondaryPhone: string;
+  gstin: string;
+  line1: string;
+  city: string;
+  state: string;
+  pincode: string;
+  website: string;
+  logoUrl: string;
+  bannerUrl: string;
+  social: { instagram: string; facebook: string; whatsapp: string; youtube: string };
+  geo: { latitude: number; longitude: number } | null;
+  onlineDelivery: boolean;
+}
+
+export async function adminSaveProfile(
+  phone: string,
+  role: string,
+  data: AdminSaveProfileInput,
+): Promise<void> {
+  const now = serverTimestamp();
+  const isSeller = role === "retailer" || role === "manufacturer";
+  const geoPoint = data.geo ? new GeoPoint(data.geo.latitude, data.geo.longitude) : null;
+  const addressObj = {
+    line1:   data.line1.trim()   || null,
+    city:    data.city.trim()    || null,
+    state:   data.state.trim()   || null,
+    pincode: data.pincode.trim() || null,
+  };
+
+  const userFields: Record<string, unknown> = {
+    businessName:   data.businessName.trim()              || null,
+    ownerName:      data.ownerName.trim()                 || null,
+    name:           data.ownerName.trim()                 || null,
+    email:          data.email.trim().toLowerCase()       || null,
+    secondaryPhone: data.secondaryPhone.trim()            || null,
+    gstin:          data.gstin.trim().toUpperCase()       || null,
+    address:        data.line1.trim()                     || null,
+    city:           data.city.trim()                      || null,
+    state:          data.state.trim()                     || null,
+    pincode:        data.pincode.trim()                   || null,
+    website:        data.website.trim()                   || null,
+    logoUrl:        data.logoUrl                          || null,
+    bannerUrl:      data.bannerUrl                        || null,
+    socialLinks:    data.social,
+    updatedAt: now,
+  };
+  if (geoPoint) { userFields.latitude = geoPoint.latitude; userFields.longitude = geoPoint.longitude; }
+  if (isSeller) {
+    userFields.onlineDelivery = data.onlineDelivery;
+    if (role === "retailer") userFields.shopName = data.businessName.trim() || null;
+  }
+  await setDoc(doc(db, "users", phone), userFields, { merge: true });
+
+  if (isSeller) {
+    const col = role === "manufacturer" ? "manufacturers" : "retailers";
+    const profileFields: Record<string, unknown> = {
+      ownerName:      data.ownerName.trim(),
+      phone,
+      email:          data.email.trim().toLowerCase()   || null,
+      secondaryPhone: data.secondaryPhone.trim()        || null,
+      gstin:          data.gstin.trim().toUpperCase()   || null,
+      address:        addressObj,
+      website:        data.website.trim()               || null,
+      logoUrl:        data.logoUrl                      || null,
+      bannerUrl:      data.bannerUrl                    || null,
+      socialLinks:    data.social,
+      onlineDelivery: data.onlineDelivery,
+      active: true,
+      updatedAt: now,
+    };
+    if (geoPoint) profileFields.geo = geoPoint;
+    if (role === "manufacturer") profileFields.businessName = data.businessName.trim();
+    else profileFields.shopName = data.businessName.trim();
+    await setDoc(doc(db, col, phone), profileFields, { merge: true });
+
+    await setDoc(doc(db, "profiles", phone), {
+      type: role, ownerPhone: phone,
+      businessName: data.businessName.trim(),
+      ownerName:    data.ownerName.trim(),
+      phone,
+      email:        data.email.trim().toLowerCase() || null,
+      address:      addressObj,
+      ...(geoPoint ? { geo: geoPoint } : {}),
+      website:        data.website.trim() || null,
+      logoUrl:        data.logoUrl        || null,
+      bannerUrl:      data.bannerUrl      || null,
+      socialLinks:    data.social,
+      onlineDelivery: data.onlineDelivery,
+      updatedAt: now,
+    }, { merge: true });
+  }
+}
+
+export async function adminFetchSubscriptionsByPhone(phone: string): Promise<any[]> {
+  const snap = await getDocs(
+    query(collection(db, "subscriptions"), where("ownerPhone", "==", phone))
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a: any, b: any) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+}
+
+export async function adminActivateSubscriptionForPhone(
+  phone: string,
+  role: string,
+  seats: number,
+  durationMonths: number,
+  callerUid: string,
+): Promise<void> {
+  const now = new Date();
+  const expiry = new Date(now);
+  expiry.setMonth(expiry.getMonth() + durationMonths);
+  const ts = serverTimestamp();
+  await setDoc(doc(db, "users", phone), {
+    isPaid: true, subscriptionStatus: "active", totalSeats: seats, updatedAt: ts,
+  }, { merge: true });
+  await addDoc(collection(db, "subscriptions"), {
+    ownerPhone: phone, ownerId: null,
+    ownerType: role === "manufacturer" ? "manufacturer" : "retailer",
+    planName: "Admin Assigned",
+    seatsPurchased: seats, durationMonths, amountPaid: 0, currency: "INR",
+    subscriptionStatus: "active",
+    startDate: Timestamp.fromDate(now), expiryDate: Timestamp.fromDate(expiry),
+    activatedByAdmin: true, createdByAdmin: callerUid,
+    createdAt: ts, updatedAt: ts,
+  });
 }

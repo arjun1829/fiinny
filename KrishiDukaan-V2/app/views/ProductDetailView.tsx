@@ -524,6 +524,7 @@ export default function ProductDetailView({
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
+  const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
 
   // Variant selection — default to the first variant (or the product itself if no variants)
   const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
@@ -987,8 +988,8 @@ export default function ProductDetailView({
               NOTE: this is a *block* container using space-y-3 (NOT flex). A flex column
               would let the cards shrink to fit the max-height and visually compress them;
               block layout keeps every card at its natural size and just scrolls. */}
-          <div className="space-y-3 md:max-h-[560px] md:overflow-y-auto md:pr-2 store-scrollbar">
-          {visibleStores.length > 0 ? visibleStores.map(store => {
+          <div className="space-y-2 md:space-y-3 md:max-h-[560px] md:overflow-y-auto md:pr-2 store-scrollbar">
+          {visibleStores.length > 0 ? visibleStores.map((store, storeIdx) => {
             const storePhone = (store as any).phone as string | undefined;
             const availability = product.availability?.find(
               (a) =>
@@ -1027,15 +1028,15 @@ export default function ProductDetailView({
                     : hasStoreOffer
                       ? 'border-green-400 bg-green-50/20 hover:border-green-500'
                       : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
-                }`}
+                }${storeIdx >= 3 && !mobileStoresExpanded ? ' hidden md:block' : ''}`}
               >
-                {/* Always-visible summary row */}
-                <div className="w-full flex items-center gap-2 p-4">
+                {/* Always-visible summary row — compact on mobile (no logo, tighter padding) */}
+                <div className="w-full flex items-center gap-1.5 md:gap-2 p-2.5 md:p-4">
                   <button
                     onClick={() => setExpandedStoreId(isExpanded ? null : store.id)}
                     className="flex-1 min-w-0 flex items-center gap-3 md:gap-4 text-left"
                   >
-                    <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
+                    <div className={`hidden md:block rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
                       {store.logo ? (
                         <img src={store.logo} alt={store.name} className="w-10 h-10 object-cover" />
                       ) : (
@@ -1277,6 +1278,19 @@ export default function ProductDetailView({
             </div>
           )}
           </div>
+
+          {/* Mobile-only expand/collapse toggle — shown when there are more than 3 stores */}
+          {visibleStores.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setMobileStoresExpanded(prev => !prev)}
+              className="md:hidden w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold text-primary border border-primary/30 rounded-xl hover:bg-primary/5 transition-colors"
+            >
+              {mobileStoresExpanded
+                ? <>{t('hideStores')} ▲</>
+                : <>{t('viewAllStores', { count: visibleStores.length })} ▼</>}
+            </button>
+          )}
 
           {/* Delivery option — temporarily hidden (restore by uncommenting) */}
           {/*
