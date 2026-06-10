@@ -171,6 +171,12 @@ class DashboardRepository {
   }
 
   Future<void> deleteListing(String listingId, {String collectionPath = 'products'}) async {
+    // Before deleting the copy, mark the seller as Out of Stock on the canonical
+    // doc so the marketplace product page immediately reflects the removal.
+    if (collectionPath == 'products') {
+      await syncMarketMirror(listingId, isProductActive: false);
+      await syncInventoryDoc(listingId, isProductActive: false);
+    }
     await _db.collection(collectionPath).doc(listingId).delete();
   }
 
@@ -237,6 +243,7 @@ class DashboardRepository {
     double? sellingPrice,
     String? stockLevel,
     double? discountPct,
+    bool? isProductActive,
   }) async {
     try {
       final sellerSnap =
@@ -271,7 +278,12 @@ class DashboardRepository {
           if (!matches) return entry;
           changed = true;
           if (sellingPrice != null) entry['sellingPrice'] = sellingPrice;
-          if (stockLevel != null) entry['stockLevel'] = stockLevel;
+          // isProductActive=false overrides everything — seller hidden from marketplace
+          if (isProductActive == false) {
+            entry['stockLevel'] = 'Out of Stock';
+          } else if (stockLevel != null) {
+            entry['stockLevel'] = stockLevel;
+          }
           if (discountPct != null) entry['discountPct'] = discountPct;
           return entry;
         }).toList();
@@ -292,6 +304,7 @@ class DashboardRepository {
     String sellerProductId, {
     double? sellingPrice,
     int? stockQuantity,
+    bool? isProductActive,
     bool? discountEnabled,
     double? discountPct,
     double? effectiveDiscountPct,
@@ -311,7 +324,10 @@ class DashboardRepository {
       if (sellingPrice != null) data['sellingPrice'] = sellingPrice;
       if (stockQuantity != null) {
         data['stockQuantity'] = stockQuantity;
-        data['isAvailable'] = stockQuantity > 0;
+        // isProductActive=false overrides stock-based availability
+        data['isAvailable'] = isProductActive == false ? false : stockQuantity > 0;
+      } else if (isProductActive != null) {
+        data['isAvailable'] = isProductActive;
       }
       if (discountEnabled != null) {
         data['discountEnabled'] = discountEnabled;

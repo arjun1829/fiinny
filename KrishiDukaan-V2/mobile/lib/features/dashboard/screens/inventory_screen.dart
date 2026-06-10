@@ -1466,11 +1466,13 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           sellingPrice: price,
           stockLevel: stock > 0 ? 'In Stock' : 'Out of Stock',
           discountPct: effectiveDiscountPct,
+          isProductActive: _isActive,
         );
         await repo.syncInventoryDoc(
           widget.listing.id,
           sellingPrice: price,
           stockQuantity: stock,
+          isProductActive: _isActive,
           discountEnabled: _discountActive,
           discountPct: _discountPct,
           effectiveDiscountPct: effectiveDiscountPct,
