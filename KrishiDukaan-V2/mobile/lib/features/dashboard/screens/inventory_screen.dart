@@ -17,6 +17,7 @@ import '../../../core/widgets/error_view.dart';
 import '../../marketplace/data/catalog_repository.dart';
 import '../data/dashboard_repository.dart';
 import '../providers/dashboard_provider.dart';
+// SeatStats is defined in dashboard_repository.dart
 
 class InventoryScreen extends ConsumerWidget {
   const InventoryScreen({super.key});
@@ -63,7 +64,6 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
   @override
   Widget build(BuildContext context) {
     final listingsAsync = ref.watch(myListingsProvider(widget.sellerPhone));
-    final userAsync = ref.watch(currentUserProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -92,73 +92,67 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
 
           return Column(
             children: [
-              // Seats Widget
-              userAsync.when(
-                data: (user) {
-                  if (user == null) return const SizedBox.shrink();
-                  final totalSeats = user.totalSeats;
-                  final usedSeats = listings.length;
-                  final leftSeats = (totalSeats - usedSeats).clamp(0, totalSeats);
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
-                      ),
-                      color: Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Listing Seats',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.onSurface,
-                                    ),
+              // Seats Widget — uses real subscription + seatListing counts
+              ref.watch(seatStatsProvider(widget.sellerPhone)).when(
+                data: (stats) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+                    ),
+                    color: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Listing Seats',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.onSurface,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '$leftSeats Left',
-                                    style: AppTextStyles.heading2.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$usedSeats / $totalSeats Used',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: AppColors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () => context.push('/subscription'),
-                              icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
-                              label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${stats.available} Left',
+                                  style: AppTextStyles.heading2.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${stats.activeUsed} / ${stats.totalPurchased} Used',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => context.push('/subscription'),
+                            icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
+                            label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
               ),

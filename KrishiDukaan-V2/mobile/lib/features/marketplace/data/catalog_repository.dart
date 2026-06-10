@@ -268,6 +268,9 @@ class CatalogRepository {
           reviewCount: reviewCount,
           sellerCount: sellerCount,
           price: lowestPrice ?? p.price,
+          // Web parity: surface the per-seller discount map so the product
+          // detail store tiles can show how much each store discounts.
+          sellerDiscounts: sellerDiscountsByKey[key] ?? const {},
         );
       }).toList();
 

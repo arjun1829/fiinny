@@ -11,6 +11,8 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../dashboard/data/dashboard_repository.dart';
+import '../../dashboard/providers/dashboard_provider.dart';
 import '../data/manufacturer_repository.dart';
 import '../providers/manufacturer_provider.dart';
 
@@ -57,7 +59,7 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
   Widget build(BuildContext context) {
     final catalogAsync =
         ref.watch(manufacturerCatalogProvider(widget.manufacturerPhone));
-    final userAsync = ref.watch(currentUserProvider);
+    final seatAsync = ref.watch(seatStatsProvider(widget.manufacturerPhone));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -85,73 +87,67 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
 
           return Column(
             children: [
-              // Seats Widget
-              userAsync.when(
-                data: (user) {
-                  if (user == null) return const SizedBox.shrink();
-                  final totalSeats = user.totalSeats;
-                  final usedSeats = products.length;
-                  final leftSeats = (totalSeats - usedSeats).clamp(0, totalSeats);
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
-                      ),
-                      color: Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Listing Seats',
-                                    style: AppTextStyles.bodyMedium.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.onSurface,
-                                    ),
+              // Seats Widget — real counts from subscriptions + seatListings
+              seatAsync.when(
+                data: (stats) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+                    ),
+                    color: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Listing Seats',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.onSurface,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '$leftSeats Left',
-                                    style: AppTextStyles.heading2.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$usedSeats / $totalSeats Used',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: AppColors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () => context.push('/subscription'),
-                              icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
-                              label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${stats.available} Left',
+                                  style: AppTextStyles.heading2.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${stats.activeUsed} / ${stats.totalPurchased} Used',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => context.push('/subscription'),
+                            icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
+                            label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
               ),
@@ -405,7 +401,26 @@ class _CatalogTile extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                TextButton.icon(
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20))),
+                      builder: (_) => _CatalogDiscountSheet(product: product),
+                    );
+                  },
+                  icon: const Icon(Icons.local_offer_outlined, size: 16),
+                  label: const Text('Discount'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.success,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 TextButton.icon(
                   onPressed: () {
                     showDialog(
@@ -834,8 +849,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     );
   }
 
-  Widget _npkField(TextEditingController ctrl, String label) =>
-      TextField(
+  Widget _npkField(TextEditingController ctrl, String label) => TextField(
         controller: ctrl,
         keyboardType: TextInputType.number,
         decoration: InputDecoration(
@@ -930,5 +944,196 @@ class _ProductSheetState extends State<_ProductSheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+// ── Catalog Discount Sheet ────────────────────────────────────────────────────
+
+class _CatalogDiscountSheet extends StatefulWidget {
+  final CatalogModel product;
+  const _CatalogDiscountSheet({required this.product});
+
+  @override
+  State<_CatalogDiscountSheet> createState() => _CatalogDiscountSheetState();
+}
+
+class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
+  late bool _isActive;
+  late double _percentage;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialise from the product's current effective discount
+    _isActive = widget.product.maxDiscountPct > 0;
+    _percentage = widget.product.maxDiscountPct > 0
+        ? widget.product.maxDiscountPct
+        : 10.0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Discount — ${widget.product.name}',
+              style: AppTextStyles.heading2),
+          const SizedBox(height: 4),
+          Text('Sets a discount on this product for all retailers.',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.onSurfaceVariant)),
+          const SizedBox(height: 16),
+
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Enable Discount'),
+            value: _isActive,
+            activeColor: AppColors.primary,
+            onChanged: (v) => setState(() => _isActive = v),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Text('Discount: ${_percentage.toInt()}%',
+                  style: AppTextStyles.bodyMedium),
+              Expanded(
+                child: Slider(
+                  value: _percentage,
+                  min: 1,
+                  max: 80,
+                  divisions: 79,
+                  activeColor: AppColors.primary,
+                  onChanged: _isActive
+                      ? (v) => setState(() => _percentage = v)
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              Expanded(
+                child: _DateField(
+                  label: 'Start Date',
+                  value: _startDate,
+                  enabled: _isActive,
+                  onPicked: (d) => setState(() => _startDate = d),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _DateField(
+                  label: 'End Date',
+                  value: _endDate,
+                  enabled: _isActive,
+                  onPicked: (d) => setState(() => _endDate = d),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary),
+              child: _saving
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Save Discount'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await DashboardRepository().setDiscount(
+        widget.product.id,
+        isActive: _isActive,
+        percentage: _percentage,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving discount: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+}
+
+class _DateField extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final bool enabled;
+  final ValueChanged<DateTime> onPicked;
+
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.enabled,
+    required this.onPicked,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled
+          ? () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: value ?? DateTime.now(),
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+              );
+              if (d != null) onPicked(d);
+            }
+          : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12)),
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16),
+        ),
+        child: Text(
+          value != null
+              ? DateFormat('MMM d, yyyy').format(value!)
+              : 'Optional',
+          style: AppTextStyles.bodyMedium.copyWith(
+              color: enabled
+                  ? AppColors.onSurface
+                  : AppColors.onSurfaceVariant),
+        ),
+      ),
+    );
   }
 }

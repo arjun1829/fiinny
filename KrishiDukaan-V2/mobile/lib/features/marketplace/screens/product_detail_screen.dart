@@ -508,6 +508,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               if (listings.isEmpty) {
                 return const _EmptyListings();
               }
+              final sellerDiscounts = catalog.sellerDiscounts;
               return Column(
                 children: listings
                     .map((listing) => _SellerTile(
@@ -516,6 +517,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           catalogName: catalog.name,
                           catalogImage: catalog.imageUrl,
                           displayPrice: displayPrice,
+                          // Match the store by phone first (reliable) then storeId.
+                          sellerDiscountPct:
+                              sellerDiscounts[listing.sellerPhone] ??
+                                  sellerDiscounts[listing.id] ??
+                                  0.0,
                         ))
                     .toList(),
               );
@@ -824,12 +830,18 @@ class _SellerTile extends ConsumerStatefulWidget {
   final String catalogImage;
   final double displayPrice;
 
+  /// This store's effective discount % resolved from the catalog's
+  /// `sellerDiscounts` map (web's source of truth). Used as a fallback when the
+  /// availability[] entry hasn't been mirrored with a discount yet.
+  final double sellerDiscountPct;
+
   const _SellerTile({
     required this.listing,
     required this.catalogId,
     required this.catalogName,
     required this.catalogImage,
     required this.displayPrice,
+    this.sellerDiscountPct = 0,
   });
 
   @override
@@ -839,14 +851,31 @@ class _SellerTile extends ConsumerStatefulWidget {
 class _SellerTileState extends ConsumerState<_SellerTile> {
   bool _expanded = false;
 
+  /// Effective (post-discount) % for this store — listing's own discount first,
+  /// then the catalog's per-seller discount map. Keeps the display and the
+  /// add-to-cart price in sync.
+  double get _discountPct {
+    final listing = widget.listing;
+    final listingPct =
+        (listing.discount != null && listing.discount!.isCurrentlyActive)
+            ? listing.discount!.percentage
+            : 0.0;
+    return listingPct > 0 ? listingPct : widget.sellerDiscountPct;
+  }
+
+  double get _effectivePrice =>
+      widget.listing.price * (1 - _discountPct / 100);
+
   @override
   Widget build(BuildContext context) {
     final listing = widget.listing;
-    final hasDiscount = listing.discount != null && listing.discount!.isCurrentlyActive;
-    final discountPct =
-        hasDiscount ? listing.discount!.percentage : 0.0;
-    final effectivePrice = listing.effectivePrice;
+    // Discount resolution (web parity): prefer the listing's own discount
+    // (mirrored into the availability[] entry); fall back to the per-seller
+    // discount map carried on the catalog so legacy/unmirrored data still shows.
+    final discountPct = _discountPct;
+    final hasDiscount = discountPct > 0;
     final originalPrice = listing.price;
+    final effectivePrice = hasDiscount ? _effectivePrice : originalPrice;
 
     return GestureDetector(
       onTap: () => setState(() => _expanded = !_expanded),
@@ -926,9 +955,11 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    listing.sellerName.isNotEmpty
-                                        ? listing.sellerName
-                                        : listing.sellerPhone,
+                                    listing.sellerName.trim().isNotEmpty
+                                        ? listing.sellerName.trim()
+                                        : (listing.sellerPhone.trim().isNotEmpty
+                                            ? listing.sellerPhone.trim()
+                                            : 'Store'),
                                     style: AppTextStyles.bodyMedium.copyWith(
                                         fontWeight: FontWeight.w700),
                                     maxLines: 2,
@@ -1238,7 +1269,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             listingId: listing.id,
             sellerPhone: listing.sellerPhone,
             sellerName: listing.sellerName,
-            price: listing.effectivePrice,
+            price: _effectivePrice,
             quantity: 1,
           ),
         );

@@ -8,6 +8,18 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 
+class SeatStats {
+  final int totalPurchased;
+  final int activeUsed;
+  final int available;
+
+  const SeatStats({
+    required this.totalPurchased,
+    required this.activeUsed,
+    required this.available,
+  });
+}
+
 class DashboardRepository {
   final _db = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
@@ -492,5 +504,96 @@ class DashboardRepository {
         .child('listings/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg');
     final task = await ref.putFile(imageFile);
     return await task.ref.getDownloadURL();
+  }
+
+  // ── Seat stats ────────────────────────────────────────────────────────────
+
+  /// Computes real seat stats from `subscriptions` + `retailerSeatListings`,
+  /// matching web's `computeSeatStats` logic exactly:
+  ///   totalPurchased = sum of seatsPurchased from active (non-expired) subs
+  ///   activeUsed     = count of seat listings with status=active & expiresAt > now
+  ///   available      = max(0, totalPurchased - activeUsed)
+  Future<SeatStats> fetchSeatStats(String ownerPhone) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final now = DateTime.now();
+
+    // Fetch subscriptions — try by phone and by uid in parallel
+    final subFutures = <Future<QuerySnapshot>>[
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('subscriptions')
+            .where('ownerPhone', isEqualTo: ownerPhone)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .get(),
+      if (uid.isNotEmpty)
+        _db
+            .collection('subscriptions')
+            .where('ownerId', isEqualTo: uid)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .get(),
+    ];
+
+    // Fetch seat listings — by ownerPhone, uid, and manufacturerPhone
+    final seatFutures = <Future<QuerySnapshot>>[
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('ownerPhone', isEqualTo: ownerPhone)
+            .where('status', isEqualTo: 'active')
+            .get(),
+      if (uid.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('ownerId', isEqualTo: uid)
+            .where('status', isEqualTo: 'active')
+            .get(),
+      if (ownerPhone.isNotEmpty)
+        _db
+            .collection('retailerSeatListings')
+            .where('manufacturerPhone', isEqualTo: ownerPhone)
+            .where('status', isEqualTo: 'active')
+            .get(),
+    ];
+
+    final results = await Future.wait([
+      Future.wait(subFutures),
+      Future.wait(seatFutures),
+    ]);
+
+    final subSnaps = results[0];
+    final seatSnaps = results[1];
+
+    // Deduplicate subscriptions by doc id
+    final seenSub = <String>{};
+    int totalPurchased = 0;
+    for (final snap in subSnaps) {
+      for (final doc in snap.docs) {
+        if (!seenSub.add(doc.id)) continue;
+        final d = doc.data() as Map<String, dynamic>? ?? {};
+        final expiry = d['expiryDate'] as Timestamp?;
+        if (expiry != null && expiry.toDate().isBefore(now)) continue;
+        final seats = (d['seatsPurchased'] as num?)?.toInt() ?? 0;
+        totalPurchased += seats;
+      }
+    }
+
+    // Deduplicate seat listings by doc id; count only active + non-expired
+    final seenSeat = <String>{};
+    int activeUsed = 0;
+    for (final snap in seatSnaps) {
+      for (final doc in snap.docs) {
+        if (!seenSeat.add(doc.id)) continue;
+        final d = doc.data() as Map<String, dynamic>? ?? {};
+        final expiry = d['expiresAt'] as Timestamp?;
+        if (expiry == null || expiry.toDate().isBefore(now)) continue;
+        activeUsed++;
+      }
+    }
+
+    return SeatStats(
+      totalPurchased: totalPurchased,
+      activeUsed: activeUsed,
+      available: (totalPurchased - activeUsed).clamp(0, totalPurchased),
+    );
   }
 }

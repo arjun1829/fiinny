@@ -13,12 +13,24 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Highest discount any seller offers for this product — drives the offer
+    // ribbon + discounted price (web parity with MarketView/HomeView cards).
+    final maxPct = product.maxDiscountPct;
+    final hasOffer = maxPct > 0;
+    final discountedPrice = hasOffer
+        ? product.price * (1 - maxPct / 100)
+        : product.price;
+    final savings = (product.price - discountedPrice).round();
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
+          border: hasOffer
+              ? Border.all(color: const Color(0xFF86EFAC))
+              : null,
           boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
@@ -30,28 +42,64 @@ class ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              child: SizedBox(
-                height: 120,
-                width: double.infinity,
-                child: product.hasImages
-                    ? CachedNetworkImage(
-                        imageUrl: product.imageUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (_, _) => Container(
-                          color: AppColors.surfaceVariant,
-                          child: const Center(
-                            child: Icon(Icons.grass,
-                                size: 40, color: AppColors.primaryLight),
-                          ),
+            // Image (with corner offer ribbon)
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
+                  child: SizedBox(
+                    height: 120,
+                    width: double.infinity,
+                    child: product.hasImages
+                        ? CachedNetworkImage(
+                            imageUrl: product.imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) => Container(
+                              color: AppColors.surfaceVariant,
+                              child: const Center(
+                                child: Icon(Icons.grass,
+                                    size: 40, color: AppColors.primaryLight),
+                              ),
+                            ),
+                            errorWidget: (_, _, _) => _placeholder(),
+                          )
+                        : _placeholder(),
+                  ),
+                ),
+                if (hasOffer)
+                  Positioned(
+                    top: 8,
+                    left: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF16A34A),
+                        borderRadius: BorderRadius.only(
+                          topRight: Radius.circular(6),
+                          bottomRight: Radius.circular(6),
                         ),
-                        errorWidget: (_, _, _) => _placeholder(),
-                      )
-                    : _placeholder(),
-              ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.local_offer,
+                              size: 10, color: Colors.white),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${maxPct.toStringAsFixed(0)}% OFF',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
             // Info
             Padding(
@@ -82,11 +130,42 @@ class ProductCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  // Price
-                  Text(
-                    CurrencyUtils.format(product.price),
-                    style: AppTextStyles.price,
-                  ),
+                  // Price — discounted block when an offer exists
+                  if (hasOffer) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            CurrencyUtils.format(discountedPrice),
+                            style: AppTextStyles.price.copyWith(
+                              color: const Color(0xFF15803D),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          CurrencyUtils.format(product.price),
+                          style: AppTextStyles.caption.copyWith(
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (savings > 0)
+                      Text(
+                        'Save ${CurrencyUtils.format(savings.toDouble())}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: const Color(0xFF16A34A),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ] else
+                    Text(
+                      CurrencyUtils.format(product.price),
+                      style: AppTextStyles.price,
+                    ),
                   const SizedBox(height: 4),
                   // Seller count
                   Row(
