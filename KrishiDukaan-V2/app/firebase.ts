@@ -2054,11 +2054,13 @@ export async function fetchAllProductsForAdmin(): Promise<MarketplaceProduct[]> 
 }
 
 export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>): Promise<string> {
+  // Firestore rejects explicit `undefined` field values — strip them before writing.
+  const clean = Object.fromEntries(
+    Object.entries(product).filter(([, v]) => v !== undefined),
+  );
   const ref = await addDoc(collection(db, 'products'), {
-    ...product,
+    ...clean,
     source: 'admin',
-    // Mark active so the product surfaces in every isActive-filtered query
-    // (assignment dropdown, marketplace feeds, etc.), not just the admin table.
     isActive: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -2067,7 +2069,8 @@ export async function adminCreateProduct(product: Omit<MarketplaceProduct, 'id'>
 }
 
 export async function adminUpdateProduct(productId: string, product: Partial<MarketplaceProduct>): Promise<void> {
-  await setDoc(doc(db, 'products', productId), { ...product, updatedAt: serverTimestamp() }, { merge: true });
+  const clean = Object.fromEntries(Object.entries(product).filter(([, v]) => v !== undefined));
+  await setDoc(doc(db, 'products', productId), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 export async function adminDeleteProduct(productId: string): Promise<void> {
