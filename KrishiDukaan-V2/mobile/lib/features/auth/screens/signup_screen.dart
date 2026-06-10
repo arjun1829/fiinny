@@ -1,26 +1,28 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/utils/phone_utils.dart';
 import '../../../core/widgets/loading_overlay.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../data/auth_repository.dart';
 import '../../manufacturer/data/manufacturer_repository.dart';
 
-class OnboardingScreen extends ConsumerStatefulWidget {
+class SignupScreen extends ConsumerStatefulWidget {
   final String? inviteCode;
 
-  const OnboardingScreen({super.key, this.inviteCode});
+  const SignupScreen({super.key, this.inviteCode});
 
   @override
-  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
+  ConsumerState<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
+class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _repo = AuthRepository();
 
   String _role = 'consumer'; // 'consumer', 'retailer', 'manufacturer'
@@ -30,6 +32,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   // Invite state
   bool _inviteLoading = false;
   Map<String, dynamic>? _inviteDetails;
+  bool _isInvitePhonePrefilled = false;
 
   @override
   void initState() {
@@ -42,6 +45,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -59,6 +63,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           final isClaimable = details['claimable'] == true || details['status'] == 'invited';
           if (isClaimable) {
             _role = 'retailer';
+            final prefilledPhone = details['retailerPhone'] as String? ?? '';
+            if (prefilledPhone.isNotEmpty) {
+              final digits = prefilledPhone.replaceAll(RegExp(r'\D'), '');
+              final tenDigit = (digits.length == 12 && digits.startsWith('91'))
+                  ? digits.substring(2)
+                  : digits;
+              _phoneController.text = tenDigit;
+              _isInvitePhonePrefilled = true;
+            }
           }
         });
       }
@@ -71,12 +84,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  Future<void> _createProfile() async {
+  Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      context.go('/login');
+    final name = _nameController.text.trim();
+    final rawPhone = _phoneController.text.trim();
+    late final String phone;
+    try {
+      phone = PhoneUtils.normalize(rawPhone);
+    } on FormatException {
+      setState(() => _error = 'Please enter a valid 10-digit mobile number.');
       return;
     }
 
@@ -85,30 +102,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       _error = null;
     });
 
-    try {
-      final phone = user.phoneNumber ?? '';
-      await _repo.createUser(
-        uid: user.uid,
-        phone: phone,
-        name: _nameController.text.trim(),
-        role: _role,
-      );
-
-      // Claim invite if present (Phase 5)
-      if (widget.inviteCode != null && widget.inviteCode!.isNotEmpty) {
-        await ManufacturerRepository()
-            .claimInvite(widget.inviteCode!, phone);
-      }
-
-      if (!mounted) return;
-      context.go('/');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _error = 'Failed to create profile. Please try again.';
-      });
-    }
+    await _repo.sendOtp(
+      phone: phone,
+      onCodeSent: (verificationId, resendToken) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        context.go('/login/otp', extra: {
+          'phone': phone,
+          'verificationId': verificationId,
+          'redirect': '/',
+          'isSignup': true,
+          'signupName': name,
+          'signupRole': _role,
+          'inviteCode': widget.inviteCode,
+        });
+      },
+      onError: (msg) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _error = msg;
+        });
+      },
+      onAutoVerified: (credential) async {
+        if (!mounted) return;
+        try {
+          final cred = await _repo.signInWithCredential(credential);
+          final user = cred.user;
+          if (user != null) {
+            await _repo.createUser(
+              uid: user.uid,
+              phone: phone,
+              name: name,
+              role: _role,
+            );
+            if (widget.inviteCode != null && widget.inviteCode!.isNotEmpty) {
+              await ManufacturerRepository().claimInvite(widget.inviteCode!, phone);
+            }
+          }
+        } catch (_) {
+          setState(() {
+            _isLoading = false;
+            _error = 'Auto-verification failed. Please enter OTP manually.';
+          });
+        }
+      },
+    );
   }
 
   @override
@@ -118,7 +157,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     return LoadingOverlay(
       isLoading: _isLoading || _inviteLoading,
-      message: _inviteLoading ? 'Loading invite details...' : 'Creating your profile...',
+      message: _inviteLoading ? 'Loading invite details...' : 'Sending OTP...',
       child: Scaffold(
         backgroundColor: AppColors.surface,
         body: SafeArea(
@@ -129,23 +168,50 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
+                  // Back to Store link
+                  TextButton.icon(
+                    onPressed: () => context.go('/'),
+                    icon: const Icon(Icons.arrow_back, size: 16, color: AppColors.primary),
+                    label: const Text(
+                      'Back to Store',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Logo / Brand
                   Center(
                     child: Column(
                       children: [
-                        const AppBrandIcon(size: 80, elevated: true),
-                        const SizedBox(height: 16),
-                        Text('Welcome!', style: AppTextStyles.heading1),
+                        const AppBrandIcon(size: 70, elevated: true),
+                        const SizedBox(height: 12),
+                        Text('KrishiDukaan', style: AppTextStyles.heading1),
                         const SizedBox(height: 4),
                         Text(
-                          'Let\'s set up your profile',
-                          style: AppTextStyles.body
-                              .copyWith(color: AppColors.onSurfaceVariant),
+                          'Agri Commerce Platform',
+                          style: AppTextStyles.bodySmall,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 32),
+                  Text('Create Account', style: AppTextStyles.heading2),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Join KrishiDukan to manage your agricultural business.',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
 
                   // Invite Banner
                   if (showInviteBanner) ...[
@@ -232,17 +298,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  Text('Your name', style: AppTextStyles.heading3),
-                  const SizedBox(height: 8),
+                  // Name field
                   TextFormField(
                     controller: _nameController,
                     keyboardType: TextInputType.name,
                     textCapitalization: TextCapitalization.words,
                     style: AppTextStyles.body,
                     decoration: InputDecoration(
-                      hintText: 'Enter your full name',
+                      labelText: 'Full Name',
+                      hintText: 'Your full name',
                       prefixIcon: const Icon(Icons.person_outline),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -267,6 +333,82 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       return null;
                     },
                   ),
+                  const SizedBox(height: 16),
+
+                  // Phone field
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    readOnly: _isInvitePhonePrefilled,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    style: AppTextStyles.heading3,
+                    decoration: InputDecoration(
+                      labelText: 'Mobile Number',
+                      prefixIcon: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('🇮🇳', style: TextStyle(fontSize: 20)),
+                            const SizedBox(width: 8),
+                            Text(
+                              '+91',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 1,
+                              height: 24,
+                              color: AppColors.divider,
+                            ),
+                          ],
+                        ),
+                      ),
+                      hintText: '10-digit mobile number',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.divider),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: AppColors.primary,
+                          width: 2,
+                        ),
+                      ),
+                      filled: true,
+                      fillColor: _isInvitePhonePrefilled
+                          ? AppColors.surfaceVariant
+                          : Colors.white,
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter your mobile number';
+                      }
+                      if (!PhoneUtils.isValid(value)) {
+                        return 'Enter a valid 10-digit mobile number';
+                      }
+                      return null;
+                    },
+                  ),
+                  if (_isInvitePhonePrefilled) ...[
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4.0),
+                      child: Text(
+                        'This number was pre-registered by the manufacturer.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Container(
@@ -274,20 +416,33 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.error.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3),
+                        ),
                       ),
-                      child: Text(
-                        _error!,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.error),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: AppColors.error, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: FilledButton(
-                      onPressed: _isLoading ? null : _createProfile,
+                      onPressed: _isLoading ? null : _sendOtp,
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         shape: RoundedRectangleBorder(
@@ -295,9 +450,34 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         ),
                       ),
                       child: const Text(
-                        'Get Started',
+                        'Send OTP',
                         style: AppTextStyles.button,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Link to Login Screen
+                  Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Already have an account? ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => context.go('/login'),
+                          child: Text(
+                            'Sign In',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

@@ -132,6 +132,9 @@ class ListingRepository {
       final stockLevel = av['stockLevel'] as String? ?? 'In Stock';
       final sellingPrice =
           (av['sellingPrice'] as num?)?.toDouble() ?? productPrice;
+      // Writers mirror the seller's effective discount into the entry so the
+      // seller tile shows the same discounted price as the marketplace grid.
+      final entryDiscount = DiscountModel.fromAvailabilityEntry(av);
 
       // Prefer explicit storePhone; fall back to storeId if it looks like a phone
       final phoneHint = storePhone.isNotEmpty
@@ -148,9 +151,10 @@ class ListingRepository {
       // Resolve the display name — fallback chain so we never drop a seller
       // just because their Firestore profile isn't readable or storeName wasn't
       // stored at assignment time.
-      final name = profile?['shopName']  as String? ??
-                   profile?['name']      as String? ??
-                   profile?['ownerName'] as String? ??
+      // Use _ne() so empty-string profile fields don't block the fallback chain.
+      final name = _ne(profile?['shopName'])  ??
+                   _ne(profile?['name'])      ??
+                   _ne(profile?['ownerName']) ??
                    (storeName.isNotEmpty ? storeName : null) ??
                    (phoneHint.isNotEmpty ? phoneHint : null) ??
                    storeId;
@@ -176,6 +180,7 @@ class ListingRepository {
         // Web doesn't track exact qty in availability — use stockLevel flag
         stockQuantity: stockLevel != 'Out of Stock' ? 99 : 0,
         variants:     [],
+        discount:     entryDiscount,
       ));
     }
 
@@ -208,9 +213,9 @@ class ListingRepository {
     // If no profile found, construct a minimal one from the product doc itself
     if (profile == null && storeName.isEmpty) return [];
 
-    final name = profile?['shopName']  as String? ??
-                 profile?['name']      as String? ??
-                 profile?['ownerName'] as String? ??
+    final name = _ne(profile?['shopName'])  ??
+                 _ne(profile?['name'])      ??
+                 _ne(profile?['ownerName']) ??
                  storeName;
 
     final address = _extractAddress(profile, d);
@@ -315,6 +320,10 @@ class ListingRepository {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
+  /// Returns [v] as a non-empty String, or null. Treats empty strings the same
+  /// as null so the ?? fallback chain works correctly when Firestore stores "".
+  static String? _ne(dynamic v) => v is String && v.isNotEmpty ? v : null;
+
   /// Returns true if [s] looks like an Indian phone number (10–13 digits,
   /// optionally prefixed with +91).
   static bool _isPhone(String s) {
@@ -357,15 +366,6 @@ class ListingRepository {
         ?.toDouble();
   }
 
-  static DiscountModel? _parseDiscount(Map<String, dynamic> d) {
-    final pct     = (d['discountPct'] as num?)?.toDouble();
-    final enabled = d['discountEnabled'] as bool? ?? false;
-    if (pct == null || pct == 0) return null;
-    return DiscountModel(
-      percentage: pct,
-      isActive:   enabled,
-      startDate:  (d['discountStartDate'] as Timestamp?)?.toDate(),
-      endDate:    (d['discountEndDate']   as Timestamp?)?.toDate(),
-    );
-  }
+  static DiscountModel? _parseDiscount(Map<String, dynamic> d) =>
+      DiscountModel.fromProductData(d);
 }

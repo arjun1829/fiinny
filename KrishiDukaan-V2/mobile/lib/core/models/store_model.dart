@@ -3,6 +3,9 @@ class StoreModel {
   final String name;
   final String? ownerName;
   final String? phone;
+  // Firebase Auth UID stored on the profile doc. Legacy availability entries
+  // key sellers by this UID (storeId == uid), so we match against it too.
+  final String? userId;
   final String? address;
   final String? logo;
   final double? lat;
@@ -18,6 +21,7 @@ class StoreModel {
     required this.name,
     this.ownerName,
     this.phone,
+    this.userId,
     this.address,
     this.logo,
     this.lat,

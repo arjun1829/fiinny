@@ -43,14 +43,14 @@ class AppShell extends ConsumerWidget {
       body: navigationShell,
       floatingActionButton: navigationShell.currentIndex != 4 && cartCount > 0
           ? Container(
-              margin: const EdgeInsets.only(bottom: 36, right: 12), // lift the FAB higher above bottom nav and inset from right
-              child: FloatingActionButton.small(
+              margin: const EdgeInsets.only(bottom: 12, right: 12), // lowered the FAB slightly and inset from right
+              child: FloatingActionButton(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 onPressed: () => context.push('/cart'),
                 child: Badge(
                   label: Text('$cartCount', style: const TextStyle(fontSize: 10)),
-                  child: const Icon(Icons.shopping_cart, size: 20),
+                  child: const Icon(Icons.shopping_cart, size: 24),
                 ),
               ),
             )

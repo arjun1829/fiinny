@@ -886,127 +886,147 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
         ),
         child: Column(
           children: [
-            // ── Summary row ───────────────────────────────────────────────
+            // ── Summary (tap anywhere on the card to expand) ──────────────
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Store icon
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _expanded
-                          ? AppColors.primary
-                          : AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.store_outlined,
-                      size: 20,
-                      color: _expanded
-                          ? Colors.white
-                          : AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Store icon
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _expanded
+                              ? AppColors.primary
+                              : AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.store_outlined,
+                          size: 20,
+                          color: _expanded
+                              ? Colors.white
+                              : AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
 
-                  // Store info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Name + discount badge
-                        Row(
+                      // Store name + meta — takes the full remaining width so
+                      // long names wrap to a second line instead of clipping.
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Flexible(
-                              child: Text(
-                                listing.sellerName.isNotEmpty
-                                    ? listing.sellerName
-                                    : listing.sellerPhone,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w700),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (hasDiscount) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF16A34A),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  '${discountPct.toStringAsFixed(0)}% OFF',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    listing.sellerName.isNotEmpty
+                                        ? listing.sellerName
+                                        : listing.sellerPhone,
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.w700),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-
-                        // Distance + status + rating
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 2,
-                          children: [
-                            if (listing.distanceKm != null)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.location_on,
-                                      size: 11,
-                                      color: AppColors.onSurfaceVariant),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    GeoUtils.formatDistance(
-                                        listing.distanceKm!),
-                                    style: AppTextStyles.caption,
+                                if (hasDiscount) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF16A34A),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      '${discountPct.toStringAsFixed(0)}% OFF',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+
+                            // Distance + status + rating
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF16A34A),
-                                    shape: BoxShape.circle,
+                                if (listing.distanceKm != null)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.location_on,
+                                          size: 11,
+                                          color: AppColors.onSurfaceVariant),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        GeoUtils.formatDistance(
+                                            listing.distanceKm!),
+                                        style: AppTextStyles.caption,
+                                      ),
+                                    ],
                                   ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF16A34A),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text('Active',
+                                        style: AppTextStyles.caption),
+                                  ],
                                 ),
-                                const SizedBox(width: 4),
-                                Text('Active',
-                                    style: AppTextStyles.caption),
                               ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                      const SizedBox(width: 8),
 
-                  // Right side: price + stock + actions
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                      // Expand/collapse chevron
+                      Icon(
+                        _expanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        size: 22,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Price + stock on their own row so they never crowd the name
+                  Row(
                     children: [
                       if (hasDiscount) ...[
                         Text(
                           CurrencyUtils.format(effectivePrice),
                           style: const TextStyle(
-                            fontSize: 14,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF15803D),
                           ),
                         ),
+                        const SizedBox(width: 6),
                         Text(
                           CurrencyUtils.format(originalPrice),
                           style: AppTextStyles.caption.copyWith(
@@ -1018,10 +1038,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                           CurrencyUtils.format(effectivePrice),
                           style: AppTextStyles.price,
                         ),
-                      const SizedBox(height: 4),
+                      const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: listing.isInStock
                               ? AppColors.success.withValues(alpha: 0.1)
@@ -1044,52 +1064,26 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
               ),
             ),
 
-            // ── Action row ────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Row(
-                children: [
-                  // Map button
-                  if (listing.hasLocation)
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _openMap(listing),
-                        icon: const Icon(Icons.map_outlined, size: 14),
-                        label: const Text('Map'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          textStyle: AppTextStyles.caption.copyWith(
-                              fontWeight: FontWeight.w700, fontSize: 11),
-                        ),
-                      ),
+            // ── "Tap for details" hint (collapsed only) ───────────────────
+            if (!_expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Tap for store details & order',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.primary),
                     ),
-                  if (listing.hasLocation && listing.isInStock && listing.isOnline)
-                    const SizedBox(width: 8),
-                  // Add to cart / Order button — only if seller sells online
-                  if (listing.isInStock && listing.isOnline)
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => _addToCart(context),
-                        icon: const Icon(Icons.shopping_cart_outlined,
-                            size: 14),
-                        label: const Text('Order'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          textStyle: AppTextStyles.caption.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              color: Colors.white),
-                        ),
-                      ),
-                    ),
-                ],
+                    const SizedBox(width: 2),
+                    const Icon(Icons.keyboard_arrow_down,
+                        size: 14, color: AppColors.primary),
+                  ],
+                ),
               ),
-            ),
 
-            // ── Expanded details ──────────────────────────────────────────
+            // ── Expanded details + actions (revealed on tap) ──────────────
             if (_expanded) ...[
               const Divider(height: 1, thickness: 1),
               Padding(
@@ -1101,6 +1095,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       detailRow(
                           Icons.location_on_outlined,
                           listing.sellerAddress!),
+                    if (listing.sellerPhone.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      detailRow(Icons.phone_outlined, listing.sellerPhone),
+                    ],
                     if (hasDiscount) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -1133,24 +1131,75 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                         ),
                       ),
                     ],
-                    if (listing.sellerPhone.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _callStore(listing.sellerPhone),
-                          icon: const Icon(Icons.phone_outlined, size: 14),
-                          label: const Text('Call Store'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.onSurface,
-                            side: const BorderSide(color: AppColors.divider),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            textStyle: AppTextStyles.caption.copyWith(
-                                fontWeight: FontWeight.w700, fontSize: 11),
+
+                    // ── Action buttons ────────────────────────────────────
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        // Map button
+                        if (listing.hasLocation) ...[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openMap(listing),
+                              icon: const Icon(Icons.map_outlined, size: 16),
+                              label: const Text('Map'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(
+                                    color: AppColors.primary),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                textStyle: AppTextStyles.caption.copyWith(
+                                    fontWeight: FontWeight.w700, fontSize: 12),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
+                          const SizedBox(width: 8),
+                        ],
+                        // Call button
+                        if (listing.sellerPhone.isNotEmpty) ...[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () =>
+                                  _callStore(listing.sellerPhone),
+                              icon:
+                                  const Icon(Icons.phone_outlined, size: 16),
+                              label: const Text('Call'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(
+                                    color: AppColors.primary),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                textStyle: AppTextStyles.caption.copyWith(
+                                    fontWeight: FontWeight.w700, fontSize: 12),
+                              ),
+                            ),
+                          ),
+                          if (listing.isInStock && listing.isOnline)
+                            const SizedBox(width: 8),
+                        ],
+                        // Order button — only if seller sells online
+                        if (listing.isInStock && listing.isOnline)
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => _addToCart(context),
+                              icon: const Icon(Icons.shopping_cart_outlined,
+                                  size: 16),
+                              label: const Text('Order'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                textStyle: AppTextStyles.caption.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: Colors.white),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),

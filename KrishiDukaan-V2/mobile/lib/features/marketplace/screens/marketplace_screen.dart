@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/providers/location_provider.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
@@ -13,16 +14,18 @@ import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
 
 const _categories = [
-  'Fertilizers',
-  'Seeds',
   'Pesticides',
-  'Irrigation',
+  'Fertilizers',
+  'Herbicides',
+  'Bio Pesticides',
+  'Sprayers',
+  'Seeds',
   'Tools',
-  'Organic',
 ];
 
 class MarketplaceScreen extends ConsumerStatefulWidget {
-  const MarketplaceScreen({super.key});
+  final String? initialCategory;
+  const MarketplaceScreen({super.key, this.initialCategory});
 
   @override
   ConsumerState<MarketplaceScreen> createState() => _MarketplaceScreenState();
@@ -41,6 +44,21 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialCategory != null) {
+        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MarketplaceScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialCategory != oldWidget.initialCategory) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+      });
+    }
   }
 
   @override
@@ -133,13 +151,65 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         titleSpacing: 16,
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const AppBrandIcon(size: 34),
-            const SizedBox(width: 10),
-            Text(
-              'Marketplace',
-              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+            Row(
+              children: [
+                const AppBrandIcon(size: 28),
+                const SizedBox(width: 8),
+                Text(
+                  'Marketplace',
+                  style: AppTextStyles.heading2.copyWith(color: Colors.white, fontSize: 18),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 36),
+              child: GestureDetector(
+                onTap: () {
+                  ref.invalidate(locationProvider);
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      size: 12,
+                      color: AppColors.secondary,
+                    ),
+                    const SizedBox(width: 2),
+                    Flexible(
+                      child: ref.watch(locationNameProvider).when(
+                        data: (loc) => Text(
+                          loc,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        loading: () => const Text(
+                          'Detecting location...',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        error: (_, __) => const Text(
+                          'Tap to retry location',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -276,7 +346,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                 ..._categories.map(
                   (cat) => _CategoryChip(
                     label: cat,
-                    selected: state.category == cat,
+                    selected: state.category?.toLowerCase() == cat.toLowerCase(),
                     onTap: () =>
                         ref.read(marketplaceProvider.notifier).setCategory(cat),
                   ),

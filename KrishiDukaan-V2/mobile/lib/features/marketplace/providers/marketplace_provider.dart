@@ -166,8 +166,11 @@ final listingsForCatalogProvider =
   // Build lookup maps for fast enrichment
   final storeByPhone = <String, StoreModel>{};
   final storeById = <String, StoreModel>{};
+  final storeByUid = <String, StoreModel>{}; // Firebase UID → store (legacy storeId)
   for (final s in storesList) {
     storeById[s.id] = s;
+    final uid = s.userId;
+    if (uid != null && uid.isNotEmpty) storeByUid[uid] = s;
     final p = s.phone;
     if (p != null && p.isNotEmpty) {
       storeByPhone[p] = s;
@@ -177,19 +180,30 @@ final listingsForCatalogProvider =
     }
   }
 
+  // Resolve a store from an availability entry the same robust way the web does:
+  // match by phone, by doc.id, by id-as-phone, OR by id-as-Firebase-UID. The last
+  // case covers legacy entries whose storeId is a UID while the store doc is keyed
+  // by phone — without it those sellers resolve to no profile (and a blank name).
   StoreModel? findStore(String? id, String? phone) {
     if (phone != null && phone.isNotEmpty) {
       final s = storeByPhone[phone];
       if (s != null) return s;
     }
     if (id != null && id.isNotEmpty) {
-      return storeById[id] ?? storeByPhone[id];
+      return storeById[id] ?? storeByPhone[id] ?? storeByUid[id];
     }
     return null;
   }
 
+  // Normalise to 10-digit so +919876543210 and 9876543210 dedup as the same seller
+  String normPhone(String p) {
+    if (p.startsWith('+91') && p.length > 3) return p.substring(3);
+    if (p.startsWith('91') && p.length == 12) return p.substring(2);
+    return p;
+  }
+
   final listings = <ListingModel>[];
-  final seenKeys = <String>{}; // deduplicate by phone, fallback to storeId
+  final seenKeys = <String>{}; // deduplicate by normalised phone, fallback to storeId
 
   void addListing({
     required String storeId,
@@ -201,7 +215,7 @@ final listingsForCatalogProvider =
     required List<VariantModel> variants,
     StoreModel? store,
   }) {
-    final key = phone.isNotEmpty ? phone : storeId;
+    final key = phone.isNotEmpty ? normPhone(phone) : storeId;
     if (key.isEmpty || !seenKeys.add(key)) return;
 
     final lat = store?.lat;
@@ -211,9 +225,12 @@ final listingsForCatalogProvider =
       distanceKm = GeoUtils.distanceKm(location.lat, location.lng, lat, lng);
     }
 
-    // Name resolution: store lookup → av.storeName → phone number (never blank)
-    final resolvedName = (store?.name?.isNotEmpty == true ? store!.name : null) ??
+    // Name resolution: store name → av.storeName → store owner name → phone.
+    // Each step skips empty strings so a blank profile field can't shadow a good
+    // fallback (this is what left some stores nameless before).
+    final resolvedName = (store?.name.isNotEmpty == true ? store!.name : null) ??
         (name.isNotEmpty ? name : null) ??
+        (store?.ownerName?.isNotEmpty == true ? store!.ownerName! : null) ??
         phone;
 
     listings.add(ListingModel(

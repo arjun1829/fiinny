@@ -678,8 +678,9 @@ class _StoreCard extends StatelessWidget {
                               color: isSelected
                                   ? AppColors.primary
                                   : AppColors.onSurface,
+                              fontWeight: FontWeight.bold,
                             ),
-                            maxLines: 1,
+                            maxLines: isSelected ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           if (store.ownerName != null &&
@@ -745,8 +746,8 @@ class _StoreCard extends StatelessWidget {
                   ],
                 ),
 
-                // Address
-                if (store.address != null && store.address!.isNotEmpty) ...[
+                // Address - only show when selected/expanded
+                if (isSelected && store.address != null && store.address!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -772,8 +773,8 @@ class _StoreCard extends StatelessWidget {
                   ),
                 ],
 
-                // Action buttons
-                if (onCall != null || onNavigate != null) ...[
+                // Action buttons - only show when selected/expanded
+                if (isSelected && (onCall != null || onNavigate != null)) ...[
                   const SizedBox(height: 10),
                   Row(
                     children: [

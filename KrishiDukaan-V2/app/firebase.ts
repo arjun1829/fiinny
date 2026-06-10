@@ -2313,6 +2313,57 @@ export async function adminUpdateAssignmentPricing(
     }));
     await batch.commit();
   }
+
+  // Mirror the new price/stock into the CANONICAL product's availability[] entry —
+  // that array (not the copy's own) is what the marketplace product page reads.
+  const rootId = (data.manufacturerProductId ?? data.originalProductId) as string | undefined;
+  if (rootId && rootId !== copyProductId) {
+    await syncAvailabilityPriceStock(
+      rootId,
+      {
+        ownerId: String(data.ownerId ?? data.retailerId ?? data.retailerDocId ?? ''),
+        phone: String(data.retailerPhone ?? data.ownerPhone ?? ''),
+      },
+      patch.sellingPrice,
+      stockLabel,
+    ).catch(() => {});
+  }
+}
+
+/**
+ * Updates the matching seller's entry in a canonical product's `availability[]`
+ * array with a new selling price and/or stock label. This keeps the
+ * marketplace product page in sync when a seller (or admin) changes the price
+ * on a product copy. Best-effort; matches by storeId/storePhone.
+ */
+export async function syncAvailabilityPriceStock(
+  rootProductId: string,
+  match: { ownerId: string; phone: string },
+  sellingPrice: number,
+  stockLevel: string,
+): Promise<void> {
+  const rootRef = doc(db, 'products', rootProductId);
+  const snap = await getDoc(rootRef);
+  if (!snap.exists()) return;
+  const data = snap.data() as Record<string, unknown>;
+  const availability = Array.isArray(data.availability)
+    ? [...(data.availability as Record<string, unknown>[])]
+    : [];
+  if (!availability.length) return;
+
+  let changed = false;
+  const updated = availability.map((entry) => {
+    const storeId = String(entry.storeId ?? '');
+    const storePhone = String(entry.storePhone ?? '');
+    const matches =
+      (match.ownerId && (storeId === match.ownerId || storePhone === match.ownerId)) ||
+      (match.phone && (storePhone === match.phone || storeId === match.phone));
+    if (!matches) return entry;
+    changed = true;
+    return { ...entry, sellingPrice, stockLevel };
+  });
+
+  if (changed) await updateDoc(rootRef, { availability: updated });
 }
 
 /** Loads inventory (price + stock) for a set of product copies, keyed by productId. */

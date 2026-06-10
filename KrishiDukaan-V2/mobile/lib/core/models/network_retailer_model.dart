@@ -11,6 +11,7 @@ class NetworkRetailerModel {
   final String status; // invited | active | revoked
   final String? city;
   final String? state;
+  final String? pincode;
   final DateTime? createdAt;
   final String onboardingStatus;
   final String retailerDocId;
@@ -27,6 +28,7 @@ class NetworkRetailerModel {
     required this.status,
     this.city,
     this.state,
+    this.pincode,
     this.createdAt,
     required this.onboardingStatus,
     required this.retailerDocId,
@@ -50,6 +52,7 @@ class NetworkRetailerModel {
       status: d['status'] as String? ?? 'invited',
       city: addr?['city'] as String?,
       state: addr?['state'] as String?,
+      pincode: addr?['pincode'] as String?,
       createdAt: (d['addedAt'] as Timestamp?)?.toDate() ?? (d['createdAt'] as Timestamp?)?.toDate(),
       onboardingStatus: d['onboardingStatus'] as String? ?? 'pending',
       retailerDocId: d['retailerDocId'] as String? ?? '',

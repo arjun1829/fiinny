@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/listing_model.dart';
 import '../../../core/models/network_retailer_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -99,6 +100,7 @@ class ManufacturerRepository {
     String? email,
     String? city,
     String? state,
+    String? pincode,
   }) async {
     final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final code = _generateInviteCode();
@@ -118,7 +120,7 @@ class ManufacturerRepository {
         'line1': '',
         'city': city?.trim() ?? '',
         'state': state?.trim() ?? '',
-        'pincode': '',
+        'pincode': pincode?.trim() ?? '',
       },
       'manufacturerId': manufacturerId,
       'manufacturerPhone': manufacturerPhone,
@@ -158,7 +160,7 @@ class ManufacturerRepository {
         'line1': '',
         'city': city?.trim() ?? '',
         'state': state?.trim() ?? '',
-        'pincode': '',
+        'pincode': pincode?.trim() ?? '',
       },
     };
     batch.set(inviteRef, invitePayload);
@@ -553,37 +555,50 @@ class ManufacturerRepository {
     double? nitrogen,
     double? phosphorus,
     double? potassium,
+    List<VariantModel> variants = const [],
+    List<String> images = const [],
+    bool isActive = true,
   }) async {
     final nameSearch = _buildNameSearch(name);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     await _db.collection('catalog').add({
       'name': name,
       'nameSearch': nameSearch,
       'category': category,
       'price': price,
-      'images': [],
+      'images': images,
+      if (images.isNotEmpty) 'imageUrl': images.first,
+      if (images.isNotEmpty) 'image': images.first,
       'description': description,
       'nitrogen': nitrogen,
       'phosphorus': phosphorus,
       'potassium': potassium,
       'createdByPhone': manufacturerPhone,
+      'manufacturerPhone': manufacturerPhone,
+      'ownerId': uid,
+      'ownerType': 'manufacturer',
+      'source': 'manufacturer_inventory',
+      'variants': variants.map((v) => v.toMap()).toList(),
+      'isActive': isActive,
       'sellerCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> updateCatalogProduct(
-      String productId, Map<String, dynamic> data) async {
+      String productId, Map<String, dynamic> data, {String collectionPath = 'catalog'}) async {
     if (data.containsKey('name')) {
       data['nameSearch'] = _buildNameSearch(data['name'] as String);
     }
-    await _db.collection('catalog').doc(productId).update({
+    await _db.collection(collectionPath).doc(productId).update({
       ...data,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  Future<void> deleteCatalogProduct(String productId) async {
-    await _db.collection('catalog').doc(productId).delete();
+  Future<void> deleteCatalogProduct(String productId, {String collectionPath = 'catalog'}) async {
+    await _db.collection(collectionPath).doc(productId).delete();
   }
 
   // ── Product assignment ────────────────────────────────────────────────────
@@ -723,6 +738,87 @@ class ManufacturerRepository {
     };
   }
 
+  /// Searches registered KrishiDukan users with role='retailer'.
+  /// Results are filtered client-side against [query] (name, shopName, email, phone).
+  Future<List<Map<String, dynamic>>> searchRegisteredRetailers(
+      String query) async {
+    final q = query.toLowerCase().trim();
+    if (q.isEmpty) return [];
+    final snap = await _db
+        .collection('users')
+        .where('role', isEqualTo: 'retailer')
+        .limit(100)
+        .get();
+    return snap.docs
+        .map((d) => <String, dynamic>{...d.data(), 'id': d.id})
+        .where((u) {
+          final name = (u['name'] as String? ?? '').toLowerCase();
+          final shop = (u['shopName'] as String? ?? '').toLowerCase();
+          final email = (u['email'] as String? ?? '').toLowerCase();
+          final phone = (u['phone'] as String? ?? '').toLowerCase();
+          return name.contains(q) ||
+              shop.contains(q) ||
+              email.contains(q) ||
+              phone.contains(q);
+        })
+        .toList();
+  }
+
+  /// Links an existing KrishiDukan retailer to the manufacturer's network.
+  /// Sets status=active immediately (no invite needed — account already exists).
+  Future<void> linkExistingRetailer({
+    required String manufacturerPhone,
+    required String manufacturerName,
+    required String retailerPhone,
+    required String shopName,
+    required String ownerName,
+    String? email,
+  }) async {
+    final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final normalized = PhoneUtils.normalize(retailerPhone);
+    final batch = _db.batch();
+    final now = FieldValue.serverTimestamp();
+
+    final inviteRef = _db.collection('manufacturerRetailers').doc();
+    batch.set(inviteRef, {
+      'id': inviteRef.id,
+      'manufacturerId': manufacturerId,
+      'manufacturerPhone': manufacturerPhone,
+      'retailerDocId': normalized,
+      'retailerId': '',
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'retailerEmail': email?.trim().toLowerCase() ?? '',
+      'retailerPhone': normalized,
+      'inviteCode': '',
+      'status': 'active',
+      'claimable': false,
+      'onboardingStatus': 'active',
+      'assignedSeat': false,
+      'linkedExisting': true,
+      'createdBy': manufacturerId,
+      'addedAt': now,
+      'address': {'line1': '', 'city': '', 'state': '', 'pincode': ''},
+    });
+
+    final mirrorRef = _db
+        .doc('manufacturers/$manufacturerPhone/retailers/$normalized');
+    batch.set(mirrorRef, {
+      'retailerDocId': normalized,
+      'retailerPhone': normalized,
+      'manufacturerPhone': manufacturerPhone,
+      'shopName': shopName.trim(),
+      'ownerName': ownerName.trim(),
+      'status': 'active',
+      'onboardingStatus': 'active',
+      'linkedExisting': true,
+      'addedAt': now,
+      'updatedAt': now,
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   String _generateInviteCode() {
@@ -774,4 +870,15 @@ class ManufacturerRepository {
       // Email failure is non-blocking
     }
   }
+
+  Future<Map<String, dynamic>?> fetchInviteDetails(String inviteCode) async {
+    final snap = await _db
+        .collection('manufacturerRetailers')
+        .where('inviteCode', isEqualTo: inviteCode.trim())
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return snap.docs.first.data();
+  }
 }
+
