@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/loading_overlay.dart';
+import '../../../core/widgets/app_brand_icon.dart';
 import '../data/auth_repository.dart';
 import '../../manufacturer/data/manufacturer_repository.dart';
 
@@ -22,13 +23,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _nameController = TextEditingController();
   final _repo = AuthRepository();
 
+  String _role = 'consumer'; // 'consumer', 'retailer', 'manufacturer'
   bool _isLoading = false;
   String? _error;
+
+  // Invite state
+  bool _inviteLoading = false;
+  Map<String, dynamic>? _inviteDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.inviteCode != null && widget.inviteCode!.trim().isNotEmpty) {
+      _loadInviteDetails(widget.inviteCode!.trim());
+    }
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInviteDetails(String code) async {
+    setState(() {
+      _inviteLoading = true;
+      _error = null;
+    });
+
+    try {
+      final details = await ManufacturerRepository().fetchInviteDetails(code);
+      if (details != null && mounted) {
+        setState(() {
+          _inviteDetails = details;
+          final isClaimable = details['claimable'] == true || details['status'] == 'invited';
+          if (isClaimable) {
+            _role = 'retailer';
+          }
+        });
+      }
+    } catch (e) {
+      // Non-blocking error
+    } finally {
+      if (mounted) {
+        setState(() => _inviteLoading = false);
+      }
+    }
   }
 
   Future<void> _createProfile() async {
@@ -51,6 +91,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         uid: user.uid,
         phone: phone,
         name: _nameController.text.trim(),
+        role: _role,
       );
 
       // Claim invite if present (Phase 5)
@@ -72,9 +113,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showInviteBanner = widget.inviteCode != null && widget.inviteCode!.trim().isNotEmpty;
+    final manufacturerName = _inviteDetails?['manufacturerName'] as String? ?? 'Manufacturer';
+
     return LoadingOverlay(
-      isLoading: _isLoading,
-      message: 'Creating your profile...',
+      isLoading: _isLoading || _inviteLoading,
+      message: _inviteLoading ? 'Loading invite details...' : 'Creating your profile...',
       child: Scaffold(
         backgroundColor: AppColors.surface,
         body: SafeArea(
@@ -85,23 +129,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
                   Center(
                     child: Column(
                       children: [
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Icon(
-                            Icons.person_add,
-                            size: 44,
-                            color: AppColors.primary,
-                          ),
-                        ),
+                        const AppBrandIcon(size: 80, elevated: true),
                         const SizedBox(height: 16),
                         Text('Welcome!', style: AppTextStyles.heading1),
                         const SizedBox(height: 4),
@@ -113,7 +145,95 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 56),
+                  const SizedBox(height: 40),
+
+                  // Invite Banner
+                  if (showInviteBanner) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.mail_outline, color: AppColors.primary, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Manufacturer Invite',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'You have been invited by $manufacturerName to join their network as a retailer.',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Your account type must be Retailer.',
+                            style: AppTextStyles.caption.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // Role Selection Header
+                  Text(
+                    'I am a…',
+                    style: AppTextStyles.caption.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Role Cards Row
+                  Row(
+                    children: [
+                      _RoleCard(
+                        title: 'Farmer',
+                        subtitle: 'Buy products',
+                        icon: Icons.agriculture_outlined,
+                        isSelected: _role == 'consumer',
+                        onTap: showInviteBanner ? () {} : () => setState(() => _role = 'consumer'),
+                      ),
+                      const SizedBox(width: 8),
+                      _RoleCard(
+                        title: 'Retailer',
+                        subtitle: 'Run a shop',
+                        icon: Icons.storefront_outlined,
+                        isSelected: _role == 'retailer',
+                        onTap: showInviteBanner ? () {} : () => setState(() => _role = 'retailer'),
+                      ),
+                      const SizedBox(width: 8),
+                      _RoleCard(
+                        title: 'Manufacturer',
+                        subtitle: 'Supply items',
+                        icon: Icons.factory_outlined,
+                        isSelected: _role == 'manufacturer',
+                        onTap: showInviteBanner ? () {} : () => setState(() => _role = 'manufacturer'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
                   Text('Your name', style: AppTextStyles.heading3),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -147,33 +267,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       return null;
                     },
                   ),
-                  if (widget.inviteCode != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryContainer.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle,
-                              color: AppColors.primary, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Invite code applied — you\'ll be added as a retailer',
-                              style: AppTextStyles.bodySmall
-                                  .copyWith(color: AppColors.onPrimaryContainer),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Container(
@@ -210,6 +303,80 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoleCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _RoleCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final activeBg = isSelected
+        ? AppColors.primary.withValues(alpha: 0.1)
+        : Colors.white;
+    final activeBorder = isSelected
+        ? AppColors.primary
+        : AppColors.divider;
+    final activeIconColor = isSelected
+        ? AppColors.primary
+        : AppColors.onSurfaceVariant;
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+          decoration: BoxDecoration(
+            color: activeBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: activeBorder,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 28,
+                color: activeIconColor,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? AppColors.primary : AppColors.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 9,
+                  color: AppColors.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),

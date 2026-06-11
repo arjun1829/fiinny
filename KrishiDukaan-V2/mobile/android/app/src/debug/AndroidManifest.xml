@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Allow plain HTTP in debug builds so local Next.js (http://10.0.2.2:3000
+         on emulator or http://<machine-ip>:3000 on physical device) works.
+         The main manifest keeps usesCleartextTraffic=false for release builds. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

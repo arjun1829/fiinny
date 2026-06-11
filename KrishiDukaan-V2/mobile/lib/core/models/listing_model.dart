@@ -14,6 +14,15 @@ class ListingModel {
   final List<VariantModel> variants;
   final DiscountModel? discount;
   final String? assignedByManufacturerPhone;
+  final String? productName;
+  final String? category;
+  final String? imageUrl;
+  final List<String> images;
+  final bool isActive;
+  final bool isOnline;
+  final DateTime? updatedAt;
+
+  final String collectionPath;
 
   // Set client-side after Haversine calculation
   double? distanceKm;
@@ -32,14 +41,22 @@ class ListingModel {
     required this.variants,
     this.discount,
     this.assignedByManufacturerPhone,
+    this.productName,
+    this.category,
+    this.imageUrl,
+    this.images = const [],
+    this.isActive = true,
+    this.isOnline = true,
+    this.updatedAt,
     this.distanceKm,
+    this.collectionPath = 'products',
   });
 
   bool get isInStock => stockQuantity > 0;
   bool get hasLocation => sellerLat != null && sellerLng != null;
 
   double get effectivePrice {
-    if (discount != null && discount!.isActive) {
+    if (discount != null && discount!.isCurrentlyActive) {
       return price * (1 - discount!.percentage / 100);
     }
     return price;
@@ -48,9 +65,25 @@ class ListingModel {
   factory ListingModel.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
     final geo = d['sellerGeo'] as Map<String, dynamic>?;
-    final discountData = d['discount'] as Map<String, dynamic>?;
+
+    // Parse images — web uses images[] array; legacy uses image string
+    List<String> imgs;
+    final rawImages = d['images'];
+    if (rawImages is List && rawImages.isNotEmpty) {
+      imgs = rawImages.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+    } else {
+      final single = d['image'] as String? ?? d['imageUrl'] as String?;
+      imgs = (single != null && single.isNotEmpty) ? [single] : [];
+    }
+
+    final updatedAtRaw = d['updatedAt'] ?? d['createdAt'];
+    final updatedAt = updatedAtRaw is Timestamp
+        ? updatedAtRaw.toDate()
+        : (updatedAtRaw is String ? DateTime.tryParse(updatedAtRaw) : null);
+
     return ListingModel(
       id: doc.id,
+      collectionPath: doc.reference.parent.id,
       // Web products use doc.id as the canonical product id; no separate catalogId
       catalogId: d['catalogId'] as String? ??
           d['originalProductId'] as String? ??
@@ -75,12 +108,16 @@ class ListingModel {
       variants: (d['variants'] as List? ?? [])
           .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
           .toList(),
-      discount: discountData != null
-          ? DiscountModel.fromMap(discountData)
-          : null,
+      discount: DiscountModel.fromProductData(d),
       assignedByManufacturerPhone:
-          d['assignedByManufacturerPhone'] as String? ??
           d['assignedByManufacturerPhone'] as String?,
+      productName: d['name'] as String? ?? d['fullName'] as String?,
+      category: d['category'] as String?,
+      imageUrl: imgs.isNotEmpty ? imgs.first : null,
+      images: imgs,
+      isActive: d['isActive'] as bool? ?? true,
+      isOnline: d['isOnline'] as bool? ?? true,
+      updatedAt: updatedAt,
     );
   }
 
@@ -149,4 +186,42 @@ class DiscountModel {
         endDate: (m['endDate'] as Timestamp?)?.toDate(),
         isActive: m['isActive'] as bool? ?? false,
       );
+
+  /// Parses a discount from a product/inventory doc using the canonical FLAT
+  /// schema shared with the web (`discountEnabled`, `discountPct`,
+  /// `discountStartDate`, `discountEndDate`). Falls back to the legacy nested
+  /// `discount: {isActive, percentage, ...}` map for old documents.
+  ///
+  /// This is the single source of truth for how mobile reads a seller's
+  /// discount — both the dashboard inventory list and the marketplace use it.
+  static DiscountModel? fromProductData(Map<String, dynamic> d) {
+    final hasFlat = d.containsKey('discountPct') ||
+        d.containsKey('discountEnabled') ||
+        d.containsKey('effectiveDiscountPct');
+    if (hasFlat) {
+      final pct = (d['discountPct'] as num?)?.toDouble() ??
+          (d['effectiveDiscountPct'] as num?)?.toDouble() ??
+          0.0;
+      if (pct <= 0) return null;
+      return DiscountModel(
+        percentage: pct,
+        isActive: d['discountEnabled'] as bool? ??
+            ((d['effectiveDiscountPct'] as num?)?.toDouble() ?? 0) > 0,
+        startDate: (d['discountStartDate'] as Timestamp?)?.toDate(),
+        endDate: (d['discountEndDate'] as Timestamp?)?.toDate(),
+      );
+    }
+    final m = d['discount'];
+    if (m is Map) return DiscountModel.fromMap(Map<String, dynamic>.from(m));
+    return null;
+  }
+
+  /// Builds a discount from a single `availability[]` entry. Writers (mobile +
+  /// web) mirror the *effective* (already date-filtered) percentage into the
+  /// entry's `discountPct`, so any positive value is currently active.
+  static DiscountModel? fromAvailabilityEntry(Map<String, dynamic> entry) {
+    final pct = (entry['discountPct'] as num?)?.toDouble() ?? 0.0;
+    if (pct <= 0) return null;
+    return DiscountModel(percentage: pct, isActive: true);
+  }
 }

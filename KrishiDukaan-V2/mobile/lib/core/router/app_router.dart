@@ -7,6 +7,7 @@ import '../widgets/app_shell.dart';
 import '../../features/auth/screens/phone_entry_screen.dart';
 import '../../features/auth/screens/otp_verification_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
+import '../../features/auth/screens/signup_screen.dart';
 import '../../features/marketplace/screens/home_screen.dart';
 import '../../features/marketplace/screens/marketplace_screen.dart';
 import '../../features/marketplace/screens/product_detail_screen.dart';
@@ -55,7 +56,8 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       final isAuthPath = path == '/login' ||
           path == '/login/otp' ||
-          path == '/signup';
+          path == '/signup' ||
+          path == '/onboarding';
 
       const protectedPaths = ['/checkout', '/orders', '/dashboard'];
       final needsAuth = protectedPaths.any((p) => path.startsWith(p));
@@ -66,7 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       if (isLoggedIn && isAuthPath) {
         final currentUser = ref.read(currentUserProvider).valueOrNull;
-        if (currentUser == null && path != '/signup') return '/signup';
+        if (currentUser == null && path != '/onboarding') return '/onboarding';
         if (currentUser != null) return '/';
       }
 
@@ -98,6 +100,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 phone: extra?['phone'] as String? ?? '',
                 verificationId: extra?['verificationId'] as String? ?? '',
                 redirectAfterLogin: extra?['redirect'] as String?,
+                isSignup: extra?['isSignup'] as bool? ?? false,
+                signupName: extra?['signupName'] as String?,
+                signupRole: extra?['signupRole'] as String?,
+                inviteCode: extra?['inviteCode'] as String?,
               );
             },
           ),
@@ -105,6 +111,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/signup',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => SignupScreen(
+          inviteCode: state.uri.queryParameters['inviteCode'],
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => OnboardingScreen(
           inviteCode: state.uri.queryParameters['inviteCode'],
@@ -187,7 +200,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/manufacturer/assign',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const AssignProductScreen(),
+        builder: (_, state) {
+          final phone = state.uri.queryParameters['retailerPhone'];
+          return AssignProductScreen(initialRetailerPhone: phone);
+        },
       ),
       GoRoute(
         path: '/dashboard/manufacturer/brand',
@@ -219,7 +235,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(navigatorKey: _marketKey, routes: [
             GoRoute(
                 path: '/marketplace',
-                builder: (_, _) => const MarketplaceScreen()),
+                builder: (context, state) {
+                  final category = state.uri.queryParameters['category'];
+                  return MarketplaceScreen(initialCategory: category);
+                }),
           ]),
           StatefulShellBranch(navigatorKey: _hubsKey, routes: [
             GoRoute(path: '/hubs', builder: (_, _) => const HubsScreen()),

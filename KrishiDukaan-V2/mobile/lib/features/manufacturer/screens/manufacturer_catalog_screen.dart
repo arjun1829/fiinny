@@ -1,8 +1,12 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/listing_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -31,14 +35,29 @@ class ManufacturerCatalogScreen extends ConsumerWidget {
   }
 }
 
-class _CatalogBody extends ConsumerWidget {
+class _CatalogBody extends ConsumerStatefulWidget {
   final String manufacturerPhone;
   const _CatalogBody({required this.manufacturerPhone});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CatalogBody> createState() => _CatalogBodyState();
+}
+
+class _CatalogBodyState extends ConsumerState<_CatalogBody> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final catalogAsync =
-        ref.watch(manufacturerCatalogProvider(manufacturerPhone));
+        ref.watch(manufacturerCatalogProvider(widget.manufacturerPhone));
+    final userAsync = ref.watch(currentUserProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,22 +79,138 @@ class _CatalogBody extends ConsumerWidget {
         error: (_, _) =>
             const ErrorView(message: 'Could not load catalog.'),
         data: (products) {
-          if (products.isEmpty) {
-            return EmptyState(
-              title: 'No products yet',
-              subtitle: 'Add products to your catalog',
-              icon: Icons.inventory_2_outlined,
-              actionLabel: 'Add Product',
-              onAction: () => _showAddSheet(context),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: products.length,
-            itemBuilder: (_, i) => _CatalogTile(
-              product: products[i],
-              manufacturerPhone: manufacturerPhone,
-            ),
+          final filteredProducts = products.where((p) {
+            return p.name.toLowerCase().contains(_searchQuery.toLowerCase());
+          }).toList();
+
+          return Column(
+            children: [
+              // Seats Widget
+              userAsync.when(
+                data: (user) {
+                  if (user == null) return const SizedBox.shrink();
+                  final totalSeats = user.totalSeats;
+                  final usedSeats = products.length;
+                  final leftSeats = (totalSeats - usedSeats).clamp(0, totalSeats);
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+                      ),
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Listing Seats',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.onSurface,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '$leftSeats Left',
+                                    style: AppTextStyles.heading2.copyWith(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '$usedSeats / $totalSeats Used',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () => context.push('/subscription'),
+                              icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
+                              label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by product name…',
+                    prefixIcon: const Icon(Icons.search, color: AppColors.onSurfaceVariant),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                    ),
+                    fillColor: Colors.white,
+                    filled: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: (val) {
+                    setState(() => _searchQuery = val.trim());
+                  },
+                ),
+              ),
+              // Products list
+              Expanded(
+                child: filteredProducts.isEmpty
+                    ? EmptyState(
+                        title: _searchQuery.isNotEmpty ? 'No matches' : 'No products yet',
+                        subtitle: _searchQuery.isNotEmpty
+                            ? 'Try another search query'
+                            : 'Add products to your catalog',
+                        icon: Icons.inventory_2_outlined,
+                        actionLabel: _searchQuery.isNotEmpty ? null : 'Add Product',
+                        onAction: _searchQuery.isNotEmpty ? null : () => _showAddSheet(context),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: filteredProducts.length,
+                        itemBuilder: (_, i) => _CatalogTile(
+                          product: filteredProducts[i],
+                          manufacturerPhone: widget.manufacturerPhone,
+                        ),
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -94,7 +229,7 @@ class _CatalogBody extends ConsumerWidget {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) =>
-          _ProductSheet(manufacturerPhone: manufacturerPhone),
+          _ProductSheet(manufacturerPhone: widget.manufacturerPhone),
     );
   }
 }
@@ -107,66 +242,205 @@ class _CatalogTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lastUpdatedStr = product.updatedAt != null
+        ? DateFormat('MMM d, yyyy, h:mm a').format(product.updatedAt!)
+        : (product.createdAt != null
+            ? DateFormat('MMM d, yyyy, h:mm a').format(product.createdAt!)
+            : 'Not updated');
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: const Icon(Icons.inventory_2_outlined,
-            color: AppColors.primaryLight),
-        title: Text(product.name, style: AppTextStyles.bodyMedium),
-        subtitle: Column(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+      ),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(product.category, style: AppTextStyles.caption),
-            Text(CurrencyUtils.format(product.price),
-                style: AppTextStyles.price),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (action) {
-            if (action == 'edit') {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(20))),
-                builder: (_) => _ProductSheet(
-                  manufacturerPhone: manufacturerPhone,
-                  product: product,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: product.imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: product.imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => const Icon(
+                                Icons.inventory_2_outlined,
+                                color: AppColors.primaryLight),
+                            errorWidget: (_, __, ___) => const Icon(
+                                Icons.inventory_2_outlined,
+                                color: AppColors.primaryLight),
+                          )
+                        : const Icon(Icons.inventory_2_outlined,
+                            color: AppColors.primaryLight),
+                  ),
                 ),
-              );
-            } else if (action == 'delete') {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Delete Product'),
-                  content: Text(
-                      'Remove "${product.name}" from catalog?'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Cancel')),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.error),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await ManufacturerRepository()
-                            .deleteCatalogProduct(product.id);
-                      },
-                      child: const Text('Delete'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              product.category,
+                              style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: product.isActive
+                                  ? AppColors.success.withValues(alpha: 0.1)
+                                  : AppColors.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              product.isActive ? 'Active' : 'Inactive',
+                              style: AppTextStyles.caption.copyWith(
+                                color: product.isActive ? AppColors.success : AppColors.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            
+            // Variants list
+            if (product.variants != null && product.variants!.isNotEmpty) ...[
+              Text(
+                'Variants:',
+                style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.bold, color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: product.variants!.map((v) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.divider.withValues(alpha: 0.5)),
                     ),
-                  ],
+                    child: Text(
+                      '${v.label} · ₹${v.price.toStringAsFixed(0)}',
+                      style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'MRP: ${CurrencyUtils.format(product.price)}',
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            
+            // Last updated
+            Text(
+              'Last Updated: $lastUpdatedStr',
+              style: AppTextStyles.caption.copyWith(color: AppColors.onSurfaceVariant.withValues(alpha: 0.8)),
+            ),
+            
+            const Divider(height: 24),
+            
+            // Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20))),
+                      builder: (_) => _ProductSheet(
+                        manufacturerPhone: manufacturerPhone,
+                        product: product,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text('Edit'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
                 ),
-              );
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete',
-                    style: TextStyle(color: AppColors.error))),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Product'),
+                        content: Text(
+                            'Remove "${product.name}" from catalog?'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel')),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.error),
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              await ManufacturerRepository()
+                                  .deleteCatalogProduct(product.id, collectionPath: product.collectionPath);
+                            },
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('Delete'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -193,8 +467,18 @@ class _ProductSheetState extends State<_ProductSheet> {
   late final TextEditingController _nCtrl;
   late final TextEditingController _pCtrl;
   late final TextEditingController _kCtrl;
+  final _customUnitCtrl = TextEditingController();
+  final _customSizeCtrl = TextEditingController();
+  final _stockCtrl = TextEditingController();
+
   String _category = 'Fertilizers';
+  String _selectedUnit = 'KG';
+  String _selectedSize = '1';
   bool _saving = false;
+  late bool _isActive;
+  
+  final List<VariantModel> _variants = [];
+  late List<TextEditingController> _imageUrlCtrls;
 
   static const _categories = [
     'Fertilizers',
@@ -203,6 +487,7 @@ class _ProductSheetState extends State<_ProductSheet> {
     'Irrigation',
     'Tools',
     'Organic',
+    'Herbicides',
   ];
 
   @override
@@ -226,7 +511,16 @@ class _ProductSheetState extends State<_ProductSheet> {
         text: p?.potassium != null
             ? p!.potassium!.toStringAsFixed(0)
             : '');
-    _category = p?.category ?? 'Fertilizers';
+    _category = _matchCategory(p?.category);
+    _isActive = p == null ? true : p.isActive;
+    
+    if (p?.variants != null) {
+      _variants.addAll(p!.variants!);
+    }
+
+    final existingImages = p?.images ?? [];
+    _imageUrlCtrls = List.generate(5, (i) =>
+        TextEditingController(text: i < existingImages.length ? existingImages[i] : ''));
   }
 
   @override
@@ -237,103 +531,306 @@ class _ProductSheetState extends State<_ProductSheet> {
     _nCtrl.dispose();
     _pCtrl.dispose();
     _kCtrl.dispose();
+    _customUnitCtrl.dispose();
+    _customSizeCtrl.dispose();
+    _stockCtrl.dispose();
+    for (final c in _imageUrlCtrls) { c.dispose(); }
     super.dispose();
+  }
+
+  void _addVariantSize() {
+    final price = double.tryParse(_priceCtrl.text.trim());
+    if (price == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid MRP price.')),
+      );
+      return;
+    }
+
+    final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
+    final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+    if (unit.isEmpty || size.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose unit and package size.')),
+      );
+      return;
+    }
+
+    final label = '$size $unit';
+    setState(() {
+      _variants.add(VariantModel(label: label, price: price, stock: 1));
+      _priceCtrl.clear();
+      _customSizeCtrl.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.product != null;
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(isEdit ? 'Edit Product' : 'Add Product',
-                style: AppTextStyles.heading2),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Product Name *',
-                border: OutlineInputBorder(),
-              ),
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 100,
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              // ignore: deprecated_member_use
-              value: _category,
-              decoration: const InputDecoration(
-                  labelText: 'Category', border: OutlineInputBorder()),
-              items: _categories
-                  .map((c) =>
-                      DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) =>
-                  setState(() => _category = v ?? _category),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _priceCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'MRP (₹) *',
-                border: OutlineInputBorder(),
-                prefixText: '₹ ',
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _descCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text('NPK Composition (%)',
-                style: AppTextStyles.bodyMedium),
-            const SizedBox(height: 6),
-            Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                    child: _npkField(_nCtrl, 'N (Nitrogen)')),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: _npkField(_pCtrl, 'P (Phosphorus)')),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: _npkField(_kCtrl, 'K (Potassium)')),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(isEdit ? 'Edit Catalog Product' : 'Add Catalog Product',
+                        style: AppTextStyles.heading2),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                if (isEdit) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      title: Text(_isActive ? 'Active' : 'Inactive',
+                          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        _isActive ? 'Visible to retailers' : 'Hidden from catalog',
+                        style: AppTextStyles.caption,
+                      ),
+                      value: _isActive,
+                      activeColor: AppColors.primary,
+                      onChanged: (v) => setState(() => _isActive = v),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                Text('Product Name *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _nameCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Bharat 2 In 1',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                Text('Category *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _category,
+                  decoration: InputDecoration(
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                  items: _categories
+                      .map((c) =>
+                          DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => _category = v ?? _category),
+                ),
+                const SizedBox(height: 16),
+                
+                Text('Description', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _descCtrl,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Crop suitability, yield, dosage...',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                Text('NPK Composition (%)',
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _npkField(_nCtrl, 'N')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _npkField(_pCtrl, 'P')),
+                    const SizedBox(width: 8),
+                    Expanded(child: _npkField(_kCtrl, 'K')),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Variants list
+                Text('Pack Sizes & MRPs', style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                const SizedBox(height: 12),
+                
+                if (_variants.isNotEmpty) ...[
+                  ..._variants.asMap().entries.map((e) {
+                    final i = e.key;
+                    final v = e.value;
+                    return Card(
+                      color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        title: Text(v.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('MRP: ₹${v.price.toStringAsFixed(0)}'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                          onPressed: () => setState(() => _variants.removeAt(i)),
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                ],
+
+                // Step 1: Unit
+                Text('Step 1 — Unit', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: ['gm', 'KG', 'ml', 'L', 'Packet', 'Piece', 'Bottle', 'Can', 'Custom'].map((u) {
+                    return ChoiceChip(
+                      label: Text(u),
+                      selected: _selectedUnit == u,
+                      selectedColor: AppColors.primaryContainer,
+                      onSelected: (_) => setState(() => _selectedUnit = u),
+                    );
+                  }).toList(),
+                ),
+                if (_selectedUnit == 'Custom') ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _customUnitCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Custom Unit',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+
+                // Step 2: Package Size
+                Text('Step 2 — Package Size', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((sz) {
+                    return ChoiceChip(
+                      label: Text(sz),
+                      selected: _selectedSize == sz,
+                      selectedColor: AppColors.primaryContainer,
+                      onSelected: (_) => setState(() => _selectedSize = sz),
+                    );
+                  }).toList(),
+                ),
+                if (_selectedSize == 'Custom') ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _customSizeCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Custom Package Size',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+
+                // Package MRP Price
+                TextField(
+                  controller: _priceCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'MRP Price (₹) *',
+                    prefixText: '₹ ',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                OutlinedButton.icon(
+                  onPressed: _addVariantSize,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add another size'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                Text('Product Images (up to 5)',
+                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                ...List.generate(5, (i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TextField(
+                    controller: _imageUrlCtrls[i],
+                    decoration: InputDecoration(
+                      labelText: i == 0 ? 'Main image URL' : 'Image ${i + 1} URL',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                )),
+                const SizedBox(height: 80),
               ],
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary),
-                child: _saving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Text(isEdit
-                        ? 'Save Changes'
-                        : 'Add to Catalog'),
+          ),
+          
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _saving
+                      ? const Center(
+                          child: SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white)))
+                      : Text(isEdit ? 'Save Changes' : 'Add to Catalog', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+  }
+
+  String _matchCategory(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Fertilizers';
+    return _categories.firstWhere(
+      (c) => c.toLowerCase() == raw.toLowerCase(),
+      orElse: () => 'Fertilizers',
     );
   }
 
@@ -343,46 +840,93 @@ class _ProductSheetState extends State<_ProductSheet> {
         keyboardType: TextInputType.number,
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
-          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
-    final price = double.tryParse(_priceCtrl.text.trim());
-    if (name.isEmpty || price == null) return;
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter product name.')),
+      );
+      return;
+    }
+
+    final priceInput = double.tryParse(_priceCtrl.text.trim());
+    if (priceInput != null) {
+      final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
+      final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+      if (unit.isNotEmpty && size.isNotEmpty) {
+        final label = '$size $unit';
+        if (!_variants.any((v) => v.label == label)) {
+          _variants.add(VariantModel(label: label, price: priceInput, stock: 1));
+        }
+      }
+    }
+
+    double basePrice = 0.0;
+    if (_variants.isNotEmpty) {
+      basePrice = _variants.first.price;
+    } else {
+      if (priceInput == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please add at least one MRP price.')),
+        );
+        return;
+      }
+      basePrice = priceInput;
+    }
 
     setState(() => _saving = true);
     try {
       final repo = ManufacturerRepository();
-      final data = {
+      final imageUrls = _imageUrlCtrls
+          .map((c) => c.text.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      final data = <String, dynamic>{
         'name': name,
         'category': _category,
-        'price': price,
+        'price': basePrice,
         'description': _descCtrl.text.trim().isNotEmpty
             ? _descCtrl.text.trim()
             : null,
         'nitrogen': double.tryParse(_nCtrl.text.trim()),
         'phosphorus': double.tryParse(_pCtrl.text.trim()),
         'potassium': double.tryParse(_kCtrl.text.trim()),
+        'images': imageUrls,
+        if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
+        if (imageUrls.isNotEmpty) 'image': imageUrls.first,
+        'variants': _variants.map((v) => v.toMap()).toList(),
+        'isActive': _isActive,
       };
 
       if (widget.product != null) {
-        await repo.updateCatalogProduct(widget.product!.id, data);
+        await repo.updateCatalogProduct(widget.product!.id, data, collectionPath: widget.product!.collectionPath);
       } else {
         await repo.addCatalogProduct(
           manufacturerPhone: widget.manufacturerPhone,
           name: name,
           category: _category,
-          price: price,
+          price: basePrice,
           description: data['description'] as String?,
           nitrogen: data['nitrogen'] as double?,
           phosphorus: data['phosphorus'] as double?,
           potassium: data['potassium'] as double?,
+          variants: _variants,
+          images: imageUrls,
+          isActive: _isActive,
         );
       }
       if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving product: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

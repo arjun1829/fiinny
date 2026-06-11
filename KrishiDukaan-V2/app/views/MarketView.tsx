@@ -10,7 +10,6 @@ import type { StoreWithDistance } from '../utils/nearby';
 import { useI18n } from '../i18n/I18nContext';
 import type { CartItem } from '../../types/order';
 import { Tag } from 'lucide-react';
-import { calcDiscount } from '../utils/discount';
 
 interface MarketViewProps {
   products?: MarketplaceProduct[];
@@ -184,7 +183,7 @@ export default function MarketView({
   // Rounded up to the next ₹100 and floored at ₹3000 so the control still has a
   // sensible range when the catalogue is small/cheap.
   const priceCeiling = useMemo(() => {
-    const maxPrice = products.reduce((m, p) => Math.max(m, p.price || 0), 0);
+    const maxPrice = products.reduce((m, p) => Math.max(m, (p.lowestPrice ?? p.price) || 0), 0);
     return Math.max(3000, Math.ceil(maxPrice / 100) * 100);
   }, [products]);
   const [priceMax, setPriceMax] = useState<number>(priceCeiling);
@@ -228,17 +227,17 @@ export default function MarketView({
     // catalogue ceiling. At the ceiling it's a no-op, so high-priced products are
     // never hidden by default.
     if (priceMax < priceCeiling) {
-      list = list.filter((p) => p.price <= priceMax);
+      list = list.filter((p) => (p.lowestPrice ?? p.price) <= priceMax);
     }
     if (Number.isFinite(maxDistanceKm)) {
       list = list.filter((p) => productDistance(p) <= maxDistanceKm);
     }
     switch (sortBy) {
       case 'price-asc':
-        list.sort((a, b) => a.price - b.price);
+        list.sort((a, b) => (a.lowestPrice ?? a.price) - (b.lowestPrice ?? b.price));
         break;
       case 'price-desc':
-        list.sort((a, b) => b.price - a.price);
+        list.sort((a, b) => (b.lowestPrice ?? b.price) - (a.lowestPrice ?? a.price));
         break;
       case 'name-asc':
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -449,9 +448,13 @@ export default function MarketView({
           visibleProducts.map((product, idx) => {
             const dist = productDistance(product);
             const distText = formatDistance(dist, t('nearby'));
-            const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
-            const hasOffer = maxPct > 0;
-            const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
+            // lowestFinalPrice = min(sellingPrice × (1 − discountPct/100)) across all sellers.
+            // lowestPrice      = min(sellingPrice) before discounts.
+            // Never mix lowestPrice with maxDiscountPct — they may belong to different sellers
+            // and produce a fictional price no seller actually charges.
+            const sellerBasePrice = product.lowestPrice ?? product.price;
+            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
+            const hasOffer = discountedPrice < sellerBasePrice;
             return (
               <motion.article
                 key={`${product.id}-${idx}`}
@@ -473,19 +476,24 @@ export default function MarketView({
                   />
 
                   {/* ── Corner offer ribbon (top-left) ── */}
-                  {hasOffer && (
-                    <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
-                      <div
-                        className="absolute bg-green-500 shadow-md text-white text-center"
-                        style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
-                      >
-                        <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
-                          <Tag className="h-2.5 w-2.5 shrink-0" />
-                          {maxPct}% OFF
-                        </span>
+                  {hasOffer && (() => {
+                    const savingsPct = sellerBasePrice > 0
+                      ? Math.round((1 - discountedPrice / sellerBasePrice) * 100)
+                      : 0;
+                    return (
+                      <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
+                        <div
+                          className="absolute bg-green-500 shadow-md text-white text-center"
+                          style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
+                        >
+                          <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
+                            <Tag className="h-2.5 w-2.5 shrink-0" />
+                            {savingsPct}% OFF
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Rating badge — bottom left */}
                   {(product.averageRating ?? 0) > 0 && (
@@ -526,20 +534,21 @@ export default function MarketView({
                   <div className={`mt-auto pt-2.5 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'} mt-2`}>
                     {hasOffer ? (
                       <div className="flex items-baseline gap-1.5">
+                        <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
                         <span className="text-xl font-black text-green-700 leading-none">
                           ₹{discountedPrice.toLocaleString('en-IN')}
                         </span>
                         <span className="text-sm font-semibold text-outline line-through leading-none">
-                          ₹{product.price.toLocaleString('en-IN')}
+                          ₹{sellerBasePrice.toLocaleString('en-IN')}
                         </span>
                       </div>
                     ) : (
                       <div className="flex items-baseline gap-1">
-                        {product.lowestPrice && product.lowestPrice < product.price ? (
+                        {sellerBasePrice < product.price ? (
                           <>
                             <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
                             <span className="text-lg font-bold text-secondary">
-                              ₹{product.lowestPrice.toLocaleString('en-IN')}
+                              ₹{sellerBasePrice.toLocaleString('en-IN')}
                             </span>
                             <span className="text-[10px] text-outline line-through">
                               ₹{product.price.toLocaleString('en-IN')}
@@ -548,9 +557,9 @@ export default function MarketView({
                         ) : (
                           <>
                             <span className="text-lg font-bold text-secondary">
-                              ₹{product.price.toLocaleString('en-IN')}
+                              ₹{sellerBasePrice.toLocaleString('en-IN')}
                             </span>
-                            {product.oldPrice && product.oldPrice > product.price && (
+                            {product.oldPrice && product.oldPrice > sellerBasePrice && (
                               <span className="text-[10px] text-outline line-through">
                                 ₹{product.oldPrice}
                               </span>

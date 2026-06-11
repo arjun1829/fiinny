@@ -25,6 +25,7 @@ service cloud.firestore {
     }
 
     // Returns caller's role, or '' if missing or not resolved.
+    // E.g., 'retailer', 'manufacturer', 'admin', 'customer', etc.
     function myRole() {
       return hasUserDoc() ? get(/databases/$(database)/documents/users/$(myPhone())).data.role : '';
     }
@@ -369,7 +370,7 @@ service cloud.firestore {
       ));
     }
     
-           // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
+       // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
     // Optional brand-page customization — public read, manufacturer owner write.
     // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
     match /brandPages/{manufacturerPhone} {

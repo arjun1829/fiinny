@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/utils/phone_utils.dart';
 import '../../../core/widgets/loading_overlay.dart';
+import '../../../core/widgets/app_brand_icon.dart';
 import '../data/auth_repository.dart';
 
 class PhoneEntryScreen extends ConsumerStatefulWidget {
@@ -96,24 +97,30 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 16),
+                  // Back to Store link
+                  TextButton.icon(
+                    onPressed: () => context.go('/'),
+                    icon: const Icon(Icons.arrow_back, size: 16, color: AppColors.primary),
+                    label: const Text(
+                      'Back to Store',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
                   // Logo / Brand
                   Center(
                     child: Column(
                       children: [
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Icon(
-                            Icons.grass,
-                            size: 48,
-                            color: AppColors.primary,
-                          ),
-                        ),
+                        const AppBrandIcon(size: 80, elevated: true),
                         const SizedBox(height: 16),
                         Text('KrishiDukaan', style: AppTextStyles.heading1),
                         const SizedBox(height: 4),
@@ -125,10 +132,10 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                     ),
                   ),
                   const SizedBox(height: 56),
-                  Text('Enter your mobile number', style: AppTextStyles.heading2),
-                  const SizedBox(height: 8),
+                  Text('Welcome Back', style: AppTextStyles.heading2),
+                  const SizedBox(height: 4),
                   Text(
-                    'We\'ll send you a one-time password to verify',
+                    'Sign in to your KrishiDukan account.',
                     style: AppTextStyles.body.copyWith(
                       color: AppColors.onSurfaceVariant,
                     ),
@@ -235,6 +242,31 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                         'Send OTP',
                         style: AppTextStyles.button,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Link to Signup Screen
+                  Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Don't have an account? ",
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => context.go('/signup'),
+                          child: Text(
+                            'Create Account',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
