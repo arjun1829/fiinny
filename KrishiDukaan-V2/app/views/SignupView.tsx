@@ -355,11 +355,13 @@ export default function SignupView({
                 <span className="text-sm font-bold text-on-surface-variant">+91</span>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   required
                   disabled={loading}
                   readOnly={Boolean(inviteDetails?.claimable && inviteDetails.retailerPhone)}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                   placeholder="10-digit mobile number"
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface"
                 />
@@ -367,11 +369,13 @@ export default function SignupView({
                   <span className="text-xs font-semibold text-primary shrink-0">Invite</span>
                 )}
               </div>
-              {inviteDetails?.claimable && inviteDetails.retailerPhone && (
+              {inviteDetails?.claimable && inviteDetails.retailerPhone ? (
                 <p className="ml-1 text-xs text-on-surface-variant">
                   This number was pre-registered by the manufacturer and cannot be changed.
                 </p>
-              )}
+              ) : phone.length > 0 && phone.length < 10 ? (
+                <p className="ml-1 text-xs text-red-600">Enter exactly 10 digits ({phone.length}/10)</p>
+              ) : null}
             </div>
 
             <button

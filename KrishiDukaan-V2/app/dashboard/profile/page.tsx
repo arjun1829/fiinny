@@ -202,6 +202,7 @@ function ProfilePageInner() {
   const autocompleteListenerRef = useRef<unknown>(null);
   const logoFileRef             = useRef<HTMLInputElement>(null);
   const bannerFileRef           = useRef<HTMLInputElement>(null);
+  const gstinInputRef           = useRef<HTMLInputElement>(null);
 
   const applyPlaceGeometry = useCallback((place: { geometry?: { location?: { lat: () => number; lng: () => number } } }) => {
     const lat = place?.geometry?.location?.lat?.();
@@ -614,8 +615,9 @@ function ProfilePageInner() {
       const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
       await setDoc(userTarget, {
         businessName: formToSave.businessName.trim(),
-        phone: formToSave.phone.trim(),
-        city: formToSave.city.trim(),
+        ownerName:    formToSave.ownerName.trim(),
+        phone:        formToSave.phone.trim(),
+        city:         formToSave.city.trim(),
         onlineDelivery,
         updatedAt: serverTimestamp(),
       }, { merge: true });
@@ -1154,16 +1156,26 @@ function ProfilePageInner() {
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">{t('phoneLabelDash')}</span>
-                <input required type="tel" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                  className={inputCls} placeholder={t('phonePlaceholder')} />
+                <input required type="tel" inputMode="numeric" maxLength={10}
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                  className={inputCls} placeholder="10-digit mobile number" />
+                {form.phone.length > 0 && form.phone.length < 10 && (
+                  <p className="text-xs text-red-600">Enter exactly 10 digits ({form.phone.length}/10)</p>
+                )}
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
                   Secondary Mobile
                   <span className="ml-1 font-normal text-on-surface-variant text-xs">(optional)</span>
                 </span>
-                <input type="tel" value={form.secondaryPhone} onChange={(e) => setForm((p) => ({ ...p, secondaryPhone: e.target.value }))}
-                  className={inputCls} placeholder="+91 98765 43210" />
+                <input type="tel" inputMode="numeric" maxLength={10}
+                  value={form.secondaryPhone}
+                  onChange={(e) => setForm((p) => ({ ...p, secondaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                  className={inputCls} placeholder="10-digit mobile number" />
+                {form.secondaryPhone.length > 0 && form.secondaryPhone.length < 10 && (
+                  <p className="text-xs text-red-600">Enter exactly 10 digits ({form.secondaryPhone.length}/10)</p>
+                )}
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-on-surface">
@@ -1179,7 +1191,7 @@ function ProfilePageInner() {
                   <span className="ml-1 font-normal text-on-surface-variant text-xs">(required for Online Delivery)</span>
                 </span>
                 <div className="relative">
-                  <input type="text" value={form.gstin ?? ""}
+                  <input ref={gstinInputRef} type="text" value={form.gstin ?? ""}
                     onChange={(e) => {
                       const val = e.target.value.toUpperCase();
                       setForm((p) => ({ ...p, gstin: val }));
@@ -1420,7 +1432,17 @@ function ProfilePageInner() {
               {gstInputError && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
-                  {gstInputError} Add your GST Number in the Business Info section above.
+                  <span>
+                    {gstInputError}{" "}
+                    <button type="button"
+                      onClick={() => {
+                        gstinInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        gstinInputRef.current?.focus();
+                      }}
+                      className="font-semibold underline hover:no-underline">
+                      Add GST Number
+                    </button>
+                  </span>
                 </div>
               )}
             </div>

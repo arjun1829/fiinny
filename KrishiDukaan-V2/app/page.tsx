@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ICONS, PRODUCTS, STORES, INVENTORY, MANUFACTURERS } from './constants';
 import HomeView from './views/HomeView';
 import MarketView from './views/MarketView';
@@ -35,6 +35,7 @@ import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
+import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
@@ -127,6 +128,9 @@ export default function App() {
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
+  /** True while auth state + Firestore cart are being resolved — blocks CartView render */
+  const [cartHydrating, setCartHydrating] = useState(true);
+  const firestoreSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
@@ -305,8 +309,14 @@ export default function App() {
 
   useEffect(() => {
     if (!cartLoaded) return;
-    window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
-  }, [cartItems, cartLoaded]);
+    if (userProfile.phone) {
+      // Logged-in users: cart lives in Firestore; keep localStorage clean to prevent
+      // stale guest items from being double-merged on the next login.
+      window.localStorage.removeItem("krishidukan_cart_v1");
+    } else {
+      window.localStorage.setItem("krishidukan_cart_v1", JSON.stringify(cartItems));
+    }
+  }, [cartItems, cartLoaded, userProfile.phone]);
 
   useEffect(() => {
     try {
@@ -318,6 +328,21 @@ export default function App() {
     } catch {}
     setCartLoaded(true);
   }, []);
+
+  // Debounced Firestore cart sync for logged-in users
+  useEffect(() => {
+    const phone = userProfile.phone;
+    if (!phone || !cartLoaded) return;
+    if (firestoreSaveTimerRef.current) clearTimeout(firestoreSaveTimerRef.current);
+    firestoreSaveTimerRef.current = setTimeout(() => {
+      saveCart(phone, cartItems).catch((e) =>
+        console.error('[Cart] Firestore save failed:', e)
+      );
+    }, 1500);
+    return () => {
+      if (firestoreSaveTimerRef.current) clearTimeout(firestoreSaveTimerRef.current);
+    };
+  }, [cartItems, userProfile.phone, cartLoaded]);
 
   useEffect(() => {
     if (currentView === 'become-retailer' && userRole === 'retailer') {
@@ -429,20 +454,59 @@ export default function App() {
           if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
             setCurrentView('subscription');
           }
+
+          // Cart: merge guest localStorage cart with Firestore cart, then clear localStorage.
+          // We read localStorage directly here (not from state) to avoid stale-closure issues.
+          const phone = profileData.phone || '';
+          if (phone) {
+            try {
+              const guestCart: CartItem[] = (() => {
+                try {
+                  const raw = window.localStorage.getItem("krishidukan_cart_v1");
+                  if (!raw) return [];
+                  const parsed = JSON.parse(raw);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch { return []; }
+              })();
+
+              const storedItems = await loadStoredCart(phone);
+              let merged: CartItem[];
+              if (storedItems.length > 0) {
+                const firestoreItems = await reconstructCartItems(storedItems);
+                merged = mergeCartItems(guestCart, firestoreItems);
+              } else {
+                merged = guestCart;
+              }
+
+              if (merged.length > 0 || storedItems.length > 0) {
+                setCartItems(merged);
+                await saveCart(phone, merged);
+              }
+              window.localStorage.removeItem("krishidukan_cart_v1");
+            } catch (e) {
+              console.error('[Cart] Failed to sync Firestore cart on login:', e);
+            }
+          }
         }
+        // Cart is fully hydrated — dismiss skeleton regardless of whether profile/phone existed
+        setCartHydrating(false);
       } else {
         setUser(null);
         setUserRole('customer');
         setUserProfile({ name: '', phone: '', email: '', isPaid: false });
-        setCheckoutInfo({ 
-          customerName: '', 
-          customerPhone: '', 
+        // Clear cart on logout — Firestore copy is preserved for next login.
+        setCartItems([]);
+        window.localStorage.removeItem("krishidukan_cart_v1");
+        setCheckoutInfo({
+          customerName: '',
+          customerPhone: '',
           addressArea: '',
           addressCity: '',
           addressDistrict: '',
           addressState: '',
           addressPincode: ''
         });
+        setCartHydrating(false);
       }
     });
 
@@ -968,32 +1032,41 @@ export default function App() {
             : i
         );
       }
-      // Use variant price if available, then passed price, then availability lookup with discount.
       const storePhone: string | undefined = (store as any).phone || undefined;
       let storePrice: number;
       let originalStorePrice: number | undefined;
       let storeDiscountPct = 0;
+
+      // Resolve base price: variant-specific → passed price → availability lookup
+      let baseStorePrice: number;
       if (variant && variant.price > 0) {
-        storePrice = variant.price;
+        baseStorePrice = variant.price;
       } else if (price && price > 0) {
-        storePrice = price;
+        baseStorePrice = price;
       } else {
         const availability = product.availability?.find(
           (a) => a.storeId === store.id || (storePhone && (a.storePhone === storePhone || a.storeId === storePhone))
         );
-        originalStorePrice = availability?.sellingPrice && availability.sellingPrice > 0
+        baseStorePrice = (availability?.sellingPrice && availability.sellingPrice > 0)
           ? availability.sellingPrice
           : product.price;
-        storeDiscountPct =
-          (sellerId && product.sellerDiscounts?.[sellerId])
-            ? product.sellerDiscounts[sellerId]
-            : (storePhone && product.sellerDiscounts?.[storePhone])
-              ? product.sellerDiscounts[storePhone]
-              : (store.id && product.sellerDiscounts?.[store.id])
-                ? product.sellerDiscounts[store.id]
-                : 0;
-        const { finalPrice } = calcDiscount(originalStorePrice, storeDiscountPct);
+      }
+
+      // Apply store discount — same lookup used by ProductDetailView and CartView
+      storeDiscountPct =
+        (sellerId && product.sellerDiscounts?.[sellerId])
+          ? product.sellerDiscounts[sellerId]
+          : (storePhone && product.sellerDiscounts?.[storePhone])
+            ? product.sellerDiscounts[storePhone]
+            : (store.id && product.sellerDiscounts?.[store.id])
+              ? product.sellerDiscounts[store.id]
+              : 0;
+      if (storeDiscountPct > 0) {
+        originalStorePrice = baseStorePrice;
+        const { finalPrice } = calcDiscount(baseStorePrice, storeDiscountPct);
         storePrice = finalPrice;
+      } else {
+        storePrice = baseStorePrice;
       }
 
       // Remove the existing pending item for THIS product + package size (prevents a
@@ -1200,7 +1273,18 @@ export default function App() {
             onRemove={(itemKey) =>
               setCartItems((prev) => prev.filter((item) => cartItemKey(item) === itemKey ? false : true))
             }
-            onAssignStore={(itemKey, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) =>
+            onAssignStore={(itemKey, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
+              // Resolve the store's phone so sellerPhone is always persisted in the
+              // cart item, enabling the storedPhone fallback in reconstructCartItems.
+              // Without this, admin-assigned products (whose copy docs are keyed by phone,
+              // not UID) lose their discount after Firestore hydration when storeId is a UID.
+              const assignedStore = storesWithDistance.find(s =>
+                (s as any).retailerId === sellerId ||
+                (s as any).userId === sellerId ||
+                s.id === sellerId
+              );
+              const resolvedSellerPhone: string | undefined = (assignedStore as any)?.phone || undefined;
+
               setCartItems((prev) => {
                 const pendingItem = prev.find(item => cartItemKey(item) === itemKey);
                 if (!pendingItem) return prev;
@@ -1228,6 +1312,7 @@ export default function App() {
                     ? {
                         ...item,
                         sellerId, sellerType, sellerName,
+                        ...(resolvedSellerPhone ? { sellerPhone: resolvedSellerPhone } : {}),
                         sellMode: "online_delivery" as const,
                         ...(storePrice != null ? { price: storePrice } : {}),
                         ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
@@ -1235,8 +1320,8 @@ export default function App() {
                       }
                     : item
                 );
-              })
-            }
+              });
+            }}
             onCheckout={placeOrders}
             onSaveAddress={async () => {
               if (!user) return;
@@ -1260,6 +1345,7 @@ export default function App() {
             onGoLogin={() => navigate("login")}
             onGoOrders={() => navigate("orders")}
             loading={checkoutLoading}
+            cartLoading={cartHydrating}
             message={checkoutMessage}
             storesWithDistance={storesWithDistance}
             allProducts={mergedProducts}

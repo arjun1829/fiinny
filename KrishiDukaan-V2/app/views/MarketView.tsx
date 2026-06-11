@@ -178,7 +178,23 @@ export default function MarketView({
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(Infinity);
   const [sortBy, setSortBy] = useState<SortKey>('default');
   const [brandFilter, setBrandFilter] = useState<string>('all');
-  const [priceMax, setPriceMax] = useState<number>(3000);
+  // Price ceiling is data-driven so the slider always spans the full catalogue and
+  // no product is silently hidden. A user only narrows the range; until they do,
+  // priceMax sits at the ceiling and the filter is a no-op (see visibleProducts).
+  // Rounded up to the next ₹100 and floored at ₹3000 so the control still has a
+  // sensible range when the catalogue is small/cheap.
+  const priceCeiling = useMemo(() => {
+    const maxPrice = products.reduce((m, p) => Math.max(m, p.price || 0), 0);
+    return Math.max(3000, Math.ceil(maxPrice / 100) * 100);
+  }, [products]);
+  const [priceMax, setPriceMax] = useState<number>(priceCeiling);
+
+  // Keep priceMax pinned to the ceiling while the user hasn't narrowed it, so a
+  // newly-loaded higher-priced product expands the range instead of being hidden.
+  const userSetPriceRef = useRef(false);
+  useEffect(() => {
+    if (!userSetPriceRef.current) setPriceMax(priceCeiling);
+  }, [priceCeiling]);
 
   const storeDistanceMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -208,7 +224,10 @@ export default function MarketView({
     if (brandFilter !== 'all') {
       list = list.filter((p) => inferBrand(p.name) === brandFilter);
     }
-    if (Number.isFinite(priceMax)) {
+    // Only apply the price cap when the user has actually narrowed it below the
+    // catalogue ceiling. At the ceiling it's a no-op, so high-priced products are
+    // never hidden by default.
+    if (priceMax < priceCeiling) {
       list = list.filter((p) => p.price <= priceMax);
     }
     if (Number.isFinite(maxDistanceKm)) {
@@ -228,14 +247,14 @@ export default function MarketView({
         list.sort((a, b) => productDistance(a) - productDistance(b));
     }
     return list;
-  }, [products, brandFilter, priceMax, maxDistanceKm, sortBy, storeDistanceMap]);
+  }, [products, brandFilter, priceMax, priceCeiling, maxDistanceKm, sortBy, storeDistanceMap]);
 
   const distanceLabel =
     DISTANCE_OPTIONS.find((o) => o.km === maxDistanceKm)?.label || t('within5km');
 
   const activeFilterCount =
     (brandFilter !== 'all' ? 1 : 0) +
-    (priceMax < 3000 ? 1 : 0) +
+    (priceMax < priceCeiling ? 1 : 0) +
     (sortBy !== 'default' ? 1 : 0);
 
   return (
@@ -341,17 +360,21 @@ export default function MarketView({
                     <input
                       type="range"
                       min={100}
-                      max={3000}
+                      max={priceCeiling}
                       step={50}
                       value={priceMax}
-                      onChange={(e) => setPriceMax(Number(e.target.value))}
+                      onChange={(e) => {
+                        userSetPriceRef.current = true;
+                        setPriceMax(Number(e.target.value));
+                      }}
                       className="w-full mt-1 accent-primary"
                     />
                   </div>
                   <button
                     onClick={() => {
                       setBrandFilter('all');
-                      setPriceMax(3000);
+                      userSetPriceRef.current = false;
+                      setPriceMax(priceCeiling);
                       setSortBy('default');
                     }}
                     className="text-xs font-bold text-primary hover:underline mt-2"
@@ -426,12 +449,6 @@ export default function MarketView({
           visibleProducts.map((product, idx) => {
             const dist = productDistance(product);
             const distText = formatDistance(dist, t('nearby'));
-            const brand = inferBrand(product.name);
-            // Try to derive size by stripping the brand-like prefix from fullName.
-            const size =
-              product.fullName && product.fullName !== product.name
-                ? product.fullName.replace(product.name, '').trim() || null
-                : null;
             const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
             const hasOffer = maxPct > 0;
             const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
@@ -470,13 +487,6 @@ export default function MarketView({
                     </div>
                   )}
 
-                  {/* Category badge — top right */}
-                  {product.category && product.category !== 'general' && (
-                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm uppercase capitalize">
-                      {product.category}
-                    </span>
-                  )}
-
                   {/* Rating badge — bottom left */}
                   {(product.averageRating ?? 0) > 0 && (
                     <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
@@ -487,43 +497,35 @@ export default function MarketView({
                   )}
                 </div>
 
-                <div className={`p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                <div className={`p-3 md:p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                  {/* Store badge + out-of-stock */}
                   <div className="flex items-center justify-between gap-1 mb-2">
-                    <div onClick={(e) => e.stopPropagation()} className="self-start">
+                    <div onClick={(e) => e.stopPropagation()} className="self-start min-w-0">
                       <HelperTooltip side="bottom" textKey="marketNearbyStore">
-                        <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help">
-                          <ICONS.Market className="w-3 h-3" />
-                          <span className="text-[10px] font-bold tracking-tight">
-                            {product.store} • {formatDistance(dist, t('nearby'))}
+                        <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help max-w-full">
+                          <ICONS.Market className="w-3 h-3 shrink-0" />
+                          <span className="text-[10px] font-bold tracking-tight truncate">
+                            {product.store} • {distText}
                           </span>
                         </div>
                       </HelperTooltip>
                     </div>
-                    {/* Out of Stock label — shown only when all known sellers report no stock */}
                     {product.stock && product.stock.toLowerCase().includes('out') && (
                       <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-red-500 border border-red-200 bg-red-50 px-1.5 py-0.5 rounded-full">
                         Out of Stock
                       </span>
                     )}
                   </div>
+
+                  {/* Product name */}
                   <h3 className="font-bold text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
                     {product.name}
                   </h3>
-                  {product.description && product.description.trim() && (
-                    <p className="text-on-surface-variant text-xs mt-1 line-clamp-2">
-                      {product.description}
-                    </p>
-                  )}
 
-                  {hasOffer ? (
-                    /* ── Offer price block ── */
-                    <div className="mt-auto pt-2.5 border-t border-green-100">
-                      {/* Unit label */}
-                      <span className="text-[10px] text-outline font-bold uppercase tracking-widest">
-                        {size || t('perUnitCaps')}
-                      </span>
-                      {/* Price row: big discounted + strikethrough original */}
-                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                  {/* Price */}
+                  <div className={`mt-auto pt-2.5 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'} mt-2`}>
+                    {hasOffer ? (
+                      <div className="flex items-baseline gap-1.5">
                         <span className="text-xl font-black text-green-700 leading-none">
                           ₹{discountedPrice.toLocaleString('en-IN')}
                         </span>
@@ -531,96 +533,89 @@ export default function MarketView({
                           ₹{product.price.toLocaleString('en-IN')}
                         </span>
                       </div>
-                      {/* Save badge */}
-                      <div className="mt-1.5 flex items-center justify-between gap-1">
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm shadow-green-600/30">
-                          <Tag className="h-2.5 w-2.5 shrink-0" />
-                          Save ₹{(product.price - discountedPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </span>
-                        {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
-                          <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                    ) : (
+                      <div className="flex items-baseline gap-1">
+                        {product.lowestPrice && product.lowestPrice < product.price ? (
+                          <>
+                            <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
+                            <span className="text-lg font-bold text-secondary">
+                              ₹{product.lowestPrice.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-outline line-through">
+                              ₹{product.price.toLocaleString('en-IN')}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-lg font-bold text-secondary">
+                              ₹{product.price.toLocaleString('en-IN')}
+                            </span>
+                            {product.oldPrice && product.oldPrice > product.price && (
+                              <span className="text-[10px] text-outline line-through">
+                                ₹{product.oldPrice}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
-                    </div>
-                  ) : (
-                    /* ── Regular price block ── */
-                    <div className={`mt-auto pt-3 flex justify-between items-end border-t border-surface-container`}>
-                      <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
-                        <HelperTooltip side="top" textKey="marketUnits">
-                          <span className="text-[10px] text-outline font-bold uppercase tracking-widest cursor-help">
-                            {size || t('perUnitCaps')}
-                          </span>
-                        </HelperTooltip>
-                        <HelperTooltip side="top" textKey="marketPriceInfo">
-                          <div className="flex items-baseline gap-1 cursor-help">
-                            {product.lowestPrice && product.lowestPrice < product.price ? (
-                              <>
-                                <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-                                <span className="text-lg font-bold text-secondary">
-                                  ₹{product.lowestPrice.toLocaleString('en-IN')}
-                                </span>
-                                <span className="text-[10px] text-outline line-through">
-                                  ₹{product.price.toLocaleString('en-IN')}
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-lg font-bold text-secondary">
-                                  ₹{product.price.toLocaleString('en-IN')}
-                                </span>
-                                {product.oldPrice && product.oldPrice > product.price && (
-                                  <span className="text-[10px] text-outline line-through">
-                                    ₹{product.oldPrice}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </HelperTooltip>
-                      </div>
-                      {brand.toLowerCase() !== product.name.toLowerCase().trim() && (
-                        <span className="text-[10px] text-outline font-semibold">{brand}</span>
-                      )}
-                    </div>
-                  )}
-                  {/* Cart CTA — hidden for in-store-only products */}
-                  {(() => { console.log("[MarketView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
+                    )}
+                  </div>
                   {product.sellMode !== "offline_store_only" && (() => {
                     const inCart = cartItems.some((ci) => ci.productId === product.id);
                     if (inCart) {
                       return (
-                        <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
+                        <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                          {/* Mobile: single compact in-cart button */}
                           <button
                             onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
-                            className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                            className="md:hidden w-full border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
                           >
-                            Go to Cart
+                            ✓ In Cart
                           </button>
+                          {/* Desktop: Go to Cart + Buy Now */}
+                          <div className="hidden md:flex gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
+                              className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                            >
+                              Go to Cart
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                              className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                            >
+                              Buy Now
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                        {/* Mobile: single + Add button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                          className="md:hidden w-full bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span className="text-sm font-black leading-none">+</span> Add
+                        </button>
+                        {/* Desktop: Add to Cart + Buy Now */}
+                        <div className="hidden md:flex gap-1">
+                          <HelperTooltip side="top" textKey="marketAddToCart">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                              className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                            >
+                              {t('addToCart')}
+                            </button>
+                          </HelperTooltip>
                           <button
-                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
                             className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
                           >
                             Buy Now
                           </button>
                         </div>
-                      );
-                    }
-                    return (
-                      <div onClick={(e) => e.stopPropagation()} className="mt-2 flex gap-1">
-                        <HelperTooltip side="top" textKey="marketAddToCart">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
-                            className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
-                          >
-                            {t('addToCart')}
-                          </button>
-                        </HelperTooltip>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
-                          className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
-                        >
-                          Buy Now
-                        </button>
                       </div>
                     );
                   })()}

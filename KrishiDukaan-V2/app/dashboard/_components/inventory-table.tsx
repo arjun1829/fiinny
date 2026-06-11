@@ -30,7 +30,7 @@ type InventoryTableProps = {
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
 };
 
-type RowDraft = { stockQuantity: number; sellingPrice: number };
+type RowDraft = { stockQuantity: string; sellingPrice: string };
 
 // ─── Style helpers ──────────────────────────────────────────────────────────
 
@@ -46,10 +46,16 @@ function sourceLabel(row: InventoryRow): string {
   if (row.assignedByManufacturer || row.source === "manufacturer_assigned") {
     return "Manufacturer Assigned";
   }
+  if (row.source === "admin_assigned") {
+    return "Admin Assigned";
+  }
   return "Own Catalogue";
 }
 
 function sourceCls(row: InventoryRow): string {
+  // Manufacturer-assigned products keep the muted chip. Admin-assigned products
+  // share the exact same chip styling as "Own Catalogue" for visual consistency —
+  // only the label text differs (handled in sourceLabel).
   return row.assignedByManufacturer || row.source === "manufacturer_assigned"
     ? "bg-on-surface/8 text-on-surface-variant"
     : "bg-primary/10 text-primary";
@@ -439,9 +445,9 @@ function MobileProductCard({
             <div className="flex items-center gap-2 mt-2">
               <span className={cn(
                 "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                row.assignedByManufacturer ? "bg-on-surface/8 text-on-surface-variant" : "bg-primary/10 text-primary",
+                sourceCls(row),
               )}>
-                {row.assignedByManufacturer ? "Manufacturer Assigned" : "Own Catalogue"}
+                {sourceLabel(row)}
               </span>
             </div>
           </div>
@@ -558,7 +564,7 @@ export function InventoryTable({
     const next: Record<string, RowDraft> = {};
     rows.forEach((r) => {
       if (r.inventoryId) {
-        next[r.inventoryId] = { stockQuantity: r.stockQuantity, sellingPrice: r.sellingPrice };
+        next[r.inventoryId] = { stockQuantity: String(r.stockQuantity), sellingPrice: String(r.sellingPrice) };
       }
     });
     setDrafts(next);
@@ -571,7 +577,10 @@ export function InventoryTable({
     const dirty: Record<string, boolean> = {};
     rows.forEach((r) => {
       const d = drafts[r.inventoryId];
-      dirty[r.inventoryId] = !!d && (d.stockQuantity !== r.stockQuantity || d.sellingPrice !== r.sellingPrice);
+      dirty[r.inventoryId] = !!d && (
+        (parseInt(d.stockQuantity, 10) || 0) !== r.stockQuantity ||
+        (parseFloat(d.sellingPrice) || 0) !== r.sellingPrice
+      );
     });
     return dirty;
   }, [rows, drafts]);
@@ -584,8 +593,8 @@ export function InventoryTable({
     try {
       // Preserve the existing reorder threshold — it isn't edited inline.
       await updateInventoryRecord(row.inventoryId, {
-        stockQuantity: Math.max(0, Math.floor(d.stockQuantity)),
-        sellingPrice: Math.max(0, d.sellingPrice),
+        stockQuantity: Math.max(0, Math.floor(parseInt(d.stockQuantity, 10) || 0)),
+        sellingPrice: Math.max(0, parseFloat(d.sellingPrice) || 0),
         reorderThreshold: Math.max(0, Math.floor(row.reorderThreshold)),
       });
       await onUpdated();
@@ -654,8 +663,8 @@ export function InventoryTable({
             <tbody className="divide-y divide-outline-variant/20">
               {rows.map((r) => {
                 const d = drafts[r.inventoryId];
-                const stock = d?.stockQuantity ?? r.stockQuantity;
-                const status = deriveStockStatus(Number.isFinite(stock) ? stock : 0, r.reorderThreshold);
+                const stockNum = d != null ? (parseInt(d.stockQuantity, 10) || 0) : r.stockQuantity;
+                const status = deriveStockStatus(stockNum, r.reorderThreshold);
                 const isInactive = !r.isActive;
                 const canEditInline = !!r.inventoryId && !isInactive && !disabled;
                 const updatedLabel = r.updatedAt
@@ -695,11 +704,20 @@ export function InventoryTable({
                     <td className="px-3 py-3 md:px-4">
                       <div className="flex flex-col gap-1">
                         <input
-                          type="number" min={0} step={1}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           disabled={!canEditInline || savingId === r.inventoryId}
                           className="w-20 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-                          value={d != null ? d.stockQuantity : r.stockQuantity}
-                          onChange={(e) => setDraft(r.inventoryId, { stockQuantity: e.target.value === "" ? 0 : Number(e.target.value) })}
+                          value={d != null ? d.stockQuantity : String(r.stockQuantity)}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, "");
+                            const clean = digits === "" ? "" : String(parseInt(digits, 10));
+                            setDraft(r.inventoryId, { stockQuantity: clean });
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value === "") setDraft(r.inventoryId, { stockQuantity: "0" });
+                          }}
                         />
                         <span className={cn(
                           "inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -714,11 +732,22 @@ export function InventoryTable({
                     <td className="px-3 py-3 md:px-4">
                       <div className="flex flex-col gap-1">
                         <input
-                          type="number" min={0} step={0.01}
+                          type="text"
+                          inputMode="decimal"
                           disabled={!canEditInline || savingId === r.inventoryId}
                           className="w-24 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-                          value={d != null ? d.sellingPrice : r.sellingPrice}
-                          onChange={(e) => setDraft(r.inventoryId, { sellingPrice: e.target.value === "" ? 0 : Number(e.target.value) })}
+                          value={d != null ? d.sellingPrice : String(r.sellingPrice)}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/[^\d.]/g, "");
+                            const parts = raw.split(".");
+                            const joined = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
+                            const clean = joined.replace(/^0+(\d)/, "$1");
+                            setDraft(r.inventoryId, { sellingPrice: clean });
+                          }}
+                          onBlur={(e) => {
+                            const n = parseFloat(e.target.value);
+                            setDraft(r.inventoryId, { sellingPrice: isNaN(n) || n < 0 ? "0" : String(n) });
+                          }}
                         />
                         {r.effectiveDiscountPct > 0 ? (
                           <span className="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">

@@ -1144,9 +1144,9 @@ export const HELPER_TEXTS = {
   csvRetailerTemplate: {
     title: { en: 'CSV template', mr: 'CSV टेम्पलेट', hi: 'CSV टेम्पलेट' },
     body: {
-      en: 'Download the template with the required columns. Shop name, owner name, phone, city and state are required; email and pincode are optional.',
-      mr: 'आवश्यक स्तंभांसह टेम्पलेट डाउनलोड करा. दुकानाचे नाव, मालकाचे नाव, फोन, शहर आणि राज्य आवश्यक आहेत; ईमेल आणि पिनकोड पर्यायी आहेत.',
-      hi: 'आवश्यक कॉलम वाला टेम्पलेट डाउनलोड करें। दुकान का नाम, मालिक का नाम, फ़ोन, शहर और राज्य आवश्यक हैं; ईमेल और पिनकोड वैकल्पिक हैं।',
+      en: 'Download the template with the required columns. Shop name, owner name, phone, city and state are required; Google Maps link and pincode are optional. Important: always wrap the googleMapsLink value in double quotes ("") — the URL contains a comma between lat and lng, and without quotes the comma is treated as a column separator, shifting city/state/pincode into the wrong columns.',
+      mr: 'आवश्यक स्तंभांसह टेम्पलेट डाउनलोड करा. दुकानाचे नाव, मालकाचे नाव, फोन, शहर आणि राज्य आवश्यक आहेत; Google Maps लिंक आणि पिनकोड पर्यायी आहेत. महत्त्वाचे: googleMapsLink मूल्य नेहमी दुहेरी अवतरण चिन्हांमध्ये ("") ठेवा — URL मध्ये अक्षांश आणि रेखांशाच्या मध्ये स्वल्पविराम असतो आणि अवतरणांशिवाय तो स्तंभ विभाजक म्हणून ओळखला जातो.',
+      hi: 'आवश्यक कॉलम वाला टेम्पलेट डाउनलोड करें। दुकान का नाम, मालिक का नाम, फ़ोन, शहर और राज्य आवश्यक हैं; Google Maps लिंक और पिनकोड वैकल्पिक हैं। महत्वपूर्ण: googleMapsLink मान को हमेशा दोहरे उद्धरण ("") में रखें — URL में अक्षांश और देशांतर के बीच अल्पविराम होता है और बिना उद्धरण के वह कॉलम विभाजक के रूप में पहचाना जाता है।',
     },
   },
   csvRetailerUploadZone: {

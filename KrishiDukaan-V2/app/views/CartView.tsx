@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CartItem, SellerType } from "../../types/order";
+import { cartItemKey } from "../../types/order";
 import type { MarketplaceProduct } from "../../types/product";
 import type { StoreWithDistance } from "../utils/nearby";
 import { fetchStoreOnlineDelivery } from "../firebase";
@@ -35,6 +36,8 @@ type CartViewProps = {
   onGoLogin: () => void;
   onGoOrders?: () => void;
   loading: boolean;
+  /** True while the Firestore cart is being loaded/reconstructed — show skeleton */
+  cartLoading?: boolean;
   message: string | null;
   storesWithDistance: StoreWithDistance[];
   allProducts: MarketplaceProduct[];
@@ -42,6 +45,46 @@ type CartViewProps = {
   subtotal: number;
   mapsApiKey?: string;
 };
+
+function CartSkeleton({ onGoOrders }: { onGoOrders?: () => void }) {
+  return (
+    <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
+      <div className="flex items-center justify-between gap-4 mb-2">
+        <div className="h-9 w-28 bg-surface-container animate-pulse rounded-xl" />
+        {onGoOrders && <div className="h-9 w-28 bg-surface-container animate-pulse rounded-xl" />}
+      </div>
+      <div className="h-4 w-52 bg-surface-container animate-pulse rounded mb-6" />
+      <div className="space-y-2 mb-8">
+        <div className="h-3 w-28 bg-surface-container animate-pulse rounded mb-2" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="rounded-2xl border border-outline-variant/10 bg-surface-container-lowest p-4 flex gap-4 animate-pulse">
+            <div className="w-20 h-20 rounded-xl bg-surface-container shrink-0" />
+            <div className="flex-1 space-y-2 py-1">
+              <div className="h-4 bg-surface-container rounded w-3/4" />
+              <div className="h-3 bg-surface-container rounded w-1/2" />
+              <div className="h-8 bg-surface-container rounded w-full mt-3" />
+            </div>
+            <div className="w-14 h-5 bg-surface-container rounded mt-1 shrink-0" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-3 animate-pulse">
+        <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">Order Summary</p>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex justify-between items-center">
+            <div className="h-4 bg-surface-container rounded w-1/3" />
+            <div className="h-4 bg-surface-container rounded w-1/5" />
+          </div>
+        ))}
+        <div className="pt-3 border-t border-outline-variant/10 flex justify-between items-center">
+          <div className="h-5 bg-surface-container rounded w-1/4" />
+          <div className="h-7 bg-surface-container rounded w-1/4" />
+        </div>
+        <div className="mt-4 h-12 bg-surface-container rounded-xl w-full" />
+      </div>
+    </div>
+  );
+}
 
 function formatDistance(km: number): string {
   if (!Number.isFinite(km) || km === Infinity) return "Nearby";
@@ -394,12 +437,14 @@ function StorePickerInline({
   stores,
   onSelect,
   currentSellerId,
+  variantUnit,
   t,
 }: {
   product: MarketplaceProduct;
   stores: StoreWithDistance[];
   onSelect: (sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   currentSellerId?: string;
+  variantUnit?: string;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const { loading, onlineStores, offlineStores } = useStoreAvailability(product, stores);
@@ -458,10 +503,15 @@ function StorePickerInline({
                   ? product.sellerDiscounts[store.id]
                   : 0;
 
-          // Resolve price: availability entry → product price
-          const rawPrice = availability?.sellingPrice && availability.sellingPrice > 0
-            ? availability.sellingPrice
-            : product.price;
+          // Resolve price: variant-specific entry → availability entry → product price
+          const variantEntry = variantUnit
+            ? availability?.variants?.find((v) => v.unit === variantUnit)
+            : undefined;
+          const rawPrice = (variantEntry?.price && variantEntry.price > 0)
+            ? variantEntry.price
+            : (availability?.sellingPrice && availability.sellingPrice > 0)
+              ? availability.sellingPrice
+              : product.price;
           const { finalPrice: discountedPrice } = calcDiscount(rawPrice, storeDiscountPct);
           const displayPrice = storeDiscountPct > 0 ? discountedPrice : rawPrice;
           const hasDiscount = storeDiscountPct > 0;
@@ -623,11 +673,11 @@ function CartItemCard({
               </button>
             )}
             <div className="flex items-center gap-1">
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), Math.max(1, item.qty - 1))} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>-</button>
               <span className={`${isPending ? "w-6" : "w-8"} text-center font-bold text-sm`}>{item.qty}</span>
-              <button onClick={() => onQtyChange(`${item.productId}_${item.sellerId}_${item.sellMode}`, item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
+              <button onClick={() => onQtyChange(cartItemKey(item), item.qty + 1)} className={`${isPending ? "w-7 h-7 text-sm" : "w-8 h-8"} rounded-lg border border-outline-variant/40`}>+</button>
             </div>
-            <button onClick={() => onRemove(`${item.productId}_${item.sellerId}_${item.sellMode}`)} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
+            <button onClick={() => onRemove(cartItemKey(item))} className="text-xs font-bold text-primary ml-1">{t('removeBtn')}</button>
           </div>
         </div>
         <div className="font-black text-on-surface text-right shrink-0">
@@ -642,8 +692,9 @@ function CartItemCard({
             stores={stores}
             t={t}
             currentSellerId={isPending ? undefined : item.sellerId}
+            variantUnit={item.variantUnit}
             onSelect={(sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice) => {
-              onAssignStore(`${item.productId}_${item.sellerId}_${item.sellMode}`, sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
+              onAssignStore(cartItemKey(item), sellerId, sellerType, sellerName, storePrice, discountPct, originalPrice);
               setShowPicker(false);
             }}
           />
@@ -674,6 +725,7 @@ export default function CartView({
   onGoLogin,
   onGoOrders,
   loading,
+  cartLoading,
   message,
   storesWithDistance,
   allProducts,
@@ -710,7 +762,10 @@ export default function CartView({
     if (!item.gstApplicable || !item.gstRate) return sum;
     return sum + item.price * item.qty * item.gstRate / 100;
   }, 0);
-  const grandTotal = discountedSubtotal + deliveryCharge + totalGst;
+  // grandTotal is undefined while delivery is being estimated to avoid showing stale figures
+  const grandTotal = estimatingDelivery
+    ? undefined
+    : discountedSubtotal + deliveryCharge + totalGst;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -870,6 +925,9 @@ export default function CartView({
     };
   }, [mapsApiKey, applyPlaceToFields]);
 
+  // All hooks are above — safe to do a conditional return here
+  if (cartLoading) return <CartSkeleton onGoOrders={onGoOrders} />;
+
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
       <div className="flex items-center justify-between gap-4 mb-2">
@@ -1025,7 +1083,9 @@ export default function CartView({
           <div className="flex items-center justify-between border-t border-outline-variant/20 pt-2 mt-1">
             <span className="text-base font-bold text-on-surface">Grand Total</span>
             <span className="text-xl font-black text-secondary">
-              ₹{grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {grandTotal !== undefined
+                ? `₹${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : <span className="text-sm text-on-surface-variant font-medium">Calculating…</span>}
             </span>
           </div>
         </div>
@@ -1148,12 +1208,12 @@ export default function CartView({
             {/* Pay & Place Order */}
             <div className="flex flex-col gap-2">
               <button
-                disabled={loading || !canCheckout || estimatingDelivery}
+                disabled={loading || !canCheckout || estimatingDelivery || grandTotal === undefined}
                 onClick={() => {
                   if (saveAddress && onSaveAddress) {
                     onSaveAddress(addressArea);
                   }
-                  void onCheckout(grandTotal);
+                  void onCheckout(grandTotal ?? 0);
                 }}
                 className="rounded-xl bg-gradient-to-r from-primary to-secondary text-white px-4 py-3.5 text-sm font-bold disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all"
               >
@@ -1162,8 +1222,13 @@ export default function CartView({
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     Processing Payment…
                   </>
+                ) : estimatingDelivery ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Calculating Total…
+                  </>
                 ) : canCheckout ? (
-                  <><CreditCard className="w-4 h-4" /> Pay ₹{grandTotal.toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
+                  <><CreditCard className="w-4 h-4" /> Pay ₹{(grandTotal ?? 0).toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
                 ) : (
                   t('cartSelectStoresToOrder')
                 )}

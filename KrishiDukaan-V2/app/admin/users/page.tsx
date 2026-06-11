@@ -3,24 +3,43 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
-  Instagram, Facebook, MessageCircle, Youtube, MapPin, Package,
-  ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
-  SlidersHorizontal, Calendar, RotateCcw,
+  Package, ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
+  SlidersHorizontal, Calendar, RotateCcw, MapPin,
 } from "lucide-react";
 import {
-  fetchAllUsers, promoteToAdmin, adminUpdateUser, fetchBusinessProfile,
+  fetchAllUsers, promoteToAdmin,
   fetchAllSellerProducts, selectUserProductDocs, collapseUserProductDocs,
   adminAssignProductToSeller, adminRemoveAssignment, ensureSellerStorefront,
   type UserProduct,
   db, auth,
 } from "../../firebase";
+import { AdminUserEditPanel } from "../_components/admin-user-edit-panel";
 import { SearchableDropdown } from "../_components/searchable-dropdown";
 import {
-  doc, setDoc, getDoc, serverTimestamp, collection,
+  addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp,
 } from "firebase/firestore";
 
 declare global {
   interface Window { google?: any }
+}
+
+function extractAddressFields(place: any) {
+  const out: { address?: string; city?: string; state?: string; pincode?: string; latitude?: number; longitude?: number } = {};
+  const parts: { long_name: string; types: string[] }[] = place?.address_components || [];
+  for (const want of ["locality", "postal_town", "sublocality_level_1", "administrative_area_level_2"]) {
+    const m = parts.find(p => p.types.includes(want));
+    if (m) { out.city = m.long_name; break; }
+  }
+  const st = parts.find(p => p.types.includes("administrative_area_level_1"));
+  if (st) out.state = st.long_name;
+  const pin = parts.find(p => p.types.includes("postal_code"));
+  if (pin) out.pincode = pin.long_name;
+  if (place?.formatted_address) out.address = place.formatted_address;
+  if (place?.geometry?.location) {
+    out.latitude  = typeof place.geometry.location.lat === "function" ? place.geometry.location.lat() : place.geometry.location.lat;
+    out.longitude = typeof place.geometry.location.lng === "function" ? place.geometry.location.lng() : place.geometry.location.lng;
+  }
+  return out;
 }
 
 const ROLE_BADGE: Record<string, string> = {
@@ -30,51 +49,6 @@ const ROLE_BADGE: Record<string, string> = {
   customer: "bg-gray-100 text-gray-600 border border-gray-200",
 };
 
-const EDITABLE_ROLES = ["customer", "retailer", "manufacturer"] as const;
-const SUB_STATUSES = ["", "paid", "unpaid", "revoked"];
-
-type SocialLinks = { instagram: string; facebook: string; whatsapp: string; youtube: string };
-
-type EditState = {
-  uid: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
-  isPaid: boolean;
-  subscriptionStatus: string;
-  // business
-  shopName: string;
-  businessName: string;
-  address: string;
-  city: string;
-  state: string;
-  pincode: string;
-  latitude: number | null;
-  longitude: number | null;
-  // social
-  social: SocialLinks;
-};
-
-function extractAddressFields(place: any): Partial<Pick<EditState, "city" | "state" | "pincode" | "address" | "latitude" | "longitude">> {
-  const out: ReturnType<typeof extractAddressFields> = {};
-  const parts: { long_name: string; types: string[] }[] = place?.address_components || [];
-  const cityPriority = ["locality", "postal_town", "sublocality_level_1", "administrative_area_level_2", "neighborhood"];
-  for (const want of cityPriority) {
-    const match = parts.find(p => p.types.includes(want));
-    if (match) { out.city = match.long_name; break; }
-  }
-  const stateComp = parts.find(p => p.types.includes("administrative_area_level_1"));
-  if (stateComp) out.state = stateComp.long_name;
-  const pinComp = parts.find(p => p.types.includes("postal_code"));
-  if (pinComp) out.pincode = pinComp.long_name;
-  if (place?.formatted_address) out.address = place.formatted_address;
-  if (place?.geometry?.location) {
-    out.latitude = typeof place.geometry.location.lat === "function" ? place.geometry.location.lat() : place.geometry.location.lat;
-    out.longitude = typeof place.geometry.location.lng === "function" ? place.geometry.location.lng() : place.geometry.location.lng;
-  }
-  return out;
-}
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -94,9 +68,7 @@ export default function AdminUsersPage() {
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
 
-  const [editTarget, setEditTarget] = useState<EditState | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [editUser, setEditUser] = useState<any | null>(null);
 
   const [showPromotePanel, setShowPromotePanel] = useState(false);
   const [promoteTarget, setPromoteTarget] = useState<any | null>(null);
@@ -111,7 +83,14 @@ export default function AdminUsersPage() {
     role: "consumer" as string,
     address: "", city: "", state: "", pincode: "",
     latitude: null as number | null, longitude: null as number | null,
+    gstin: "",
+    secondaryPhone: "",
+    subscriptionStatus: "inactive" as "inactive" | "active",
+    seats: 1,
+    durationMonths: 12 as 1 | 3 | 6 | 12,
   });
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [seatsInput, setSeatsInput] = useState("1");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
@@ -123,9 +102,7 @@ export default function AdminUsersPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [assignMsg, setAssignMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Google Maps autocomplete refs — one for edit modal, one for create modal
-  const addressInputRef       = useRef<HTMLInputElement>(null);
-  const acListenerRef         = useRef<any>(null);
+  // Google Maps autocomplete ref — create modal only
   const createAddressInputRef = useRef<HTMLInputElement>(null);
   const createAcListenerRef   = useRef<any>(null);
 
@@ -137,63 +114,6 @@ export default function AdminUsersPage() {
   };
 
   useEffect(() => { load(); }, []);
-
-  // Set up Google Places autocomplete whenever edit modal opens
-  useEffect(() => {
-    if (!editTarget) return;
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return;
-
-    const setup = () => {
-      if (!addressInputRef.current || !window.google?.maps?.places) return;
-      if (acListenerRef.current && window.google?.maps?.event)
-        window.google.maps.event.removeListener(acListenerRef.current);
-      const ac = new window.google.maps.places.Autocomplete(addressInputRef.current, {
-        fields: ["name", "formatted_address", "geometry", "address_components"],
-        types: ["establishment", "geocode"],
-      });
-      acListenerRef.current = ac.addListener("place_changed", () => {
-        const place = ac.getPlace();
-        if (!place) return;
-        const fields = extractAddressFields(place);
-        if (addressInputRef.current && fields.address)
-          addressInputRef.current.value = fields.address;
-        setEditTarget(prev => prev ? {
-          ...prev,
-          ...(place.name && (prev.role === "retailer" ? { shopName: place.name } : prev.role === "manufacturer" ? { businessName: place.name } : {})),
-          address: fields.address ?? prev.address,
-          city: fields.city ?? prev.city,
-          state: fields.state ?? prev.state,
-          pincode: fields.pincode ?? prev.pincode,
-          latitude: fields.latitude ?? prev.latitude,
-          longitude: fields.longitude ?? prev.longitude,
-        } : prev);
-      });
-    };
-
-    const scriptId = "google-maps-places-script";
-    const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
-    const run = () => requestAnimationFrame(() => setup());
-
-    if (window.google?.maps?.places) { run(); }
-    else if (existing) {
-      if (existing.dataset.loaded === "true") run();
-      else existing.addEventListener("load", run, { once: true });
-    } else {
-      const script = document.createElement("script");
-      script.id = scriptId;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      script.async = true; script.defer = true;
-      script.onload = () => { script.dataset.loaded = "true"; run(); };
-      document.head.appendChild(script);
-    }
-
-    return () => {
-      if (acListenerRef.current && window.google?.maps?.event)
-        window.google.maps.event.removeListener(acListenerRef.current);
-      acListenerRef.current = null;
-    };
-  }, [editTarget?.uid]);
 
   // Google Maps autocomplete for the Create User modal
   useEffect(() => {
@@ -248,6 +168,16 @@ export default function AdminUsersPage() {
         window.google.maps.event.removeListener(createAcListenerRef.current);
       createAcListenerRef.current = null;
     };
+  }, [showCreate]);
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    if (showCreate) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
   }, [showCreate]);
 
   const promoteCandidates = users.filter(u =>
@@ -427,112 +357,6 @@ export default function AdminUsersPage() {
     } finally { setRemovingId(null); }
   };
 
-  const openEdit = (u: any) => {
-    setEditTarget({
-      uid: u.id,
-      name: u.name || "",
-      email: u.email || "",
-      phone: u.phone || "",
-      role: u.role || "customer",
-      isPaid: !!u.isPaid,
-      subscriptionStatus: u.subscriptionStatus || "",
-      shopName: u.shopName || "",
-      businessName: u.businessName || "",
-      address: u.address || "",
-      city: u.city || "",
-      state: u.state || "",
-      pincode: u.pincode || "",
-      latitude: u.latitude ?? null,
-      longitude: u.longitude ?? null,
-      social: {
-        instagram: u.socialLinks?.instagram || "",
-        facebook: u.socialLinks?.facebook || "",
-        whatsapp: u.socialLinks?.whatsapp || "",
-        youtube: u.socialLinks?.youtube || "",
-      },
-    });
-    setSaveError(null);
-    // prime the uncontrolled address input when it mounts
-    requestAnimationFrame(() => {
-      if (addressInputRef.current) addressInputRef.current.value = u.address || "";
-    });
-
-    if (u.role === "retailer" || u.role === "manufacturer") {
-      fetchBusinessProfile(u.id, u.role, u.phone || u.id)
-        .then((profile) => {
-          if (!profile) return;
-          setEditTarget((prev) => {
-            if (!prev || prev.uid !== u.id) return prev;
-            const newAddress = profile.address?.line1 || prev.address || "";
-            if (addressInputRef.current) {
-              addressInputRef.current.value = newAddress;
-            }
-            return {
-              ...prev,
-              shopName: profile.shopName || prev.shopName,
-              businessName: profile.businessName || prev.businessName,
-              address: newAddress,
-              city: profile.address?.city || prev.city,
-              state: profile.address?.state || prev.state,
-              pincode: profile.address?.pincode || prev.pincode,
-              latitude: profile.latitude !== undefined ? profile.latitude : prev.latitude,
-              longitude: profile.longitude !== undefined ? profile.longitude : prev.longitude,
-              social: {
-                instagram: profile.socialLinks?.instagram || prev.social.instagram,
-                facebook: profile.socialLinks?.facebook || prev.social.facebook,
-                whatsapp: profile.socialLinks?.whatsapp || prev.social.whatsapp,
-                youtube: profile.socialLinks?.youtube || prev.social.youtube,
-              },
-            };
-          });
-        })
-        .catch((err) => {
-          console.error("Error loading business profile in openEdit:", err);
-        });
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editTarget) return;
-    setSaving(true);
-    setSaveError(null);
-    const currentAddress = addressInputRef.current?.value?.trim() || editTarget.address;
-    try {
-      await adminUpdateUser(editTarget.uid, {
-        name: editTarget.name,
-        email: editTarget.email,
-        phone: editTarget.phone,
-        role: editTarget.role,
-        isPaid: editTarget.isPaid,
-        subscriptionStatus: editTarget.subscriptionStatus || undefined,
-        shopName: editTarget.role === "retailer" ? editTarget.shopName : undefined,
-        businessName: editTarget.role === "manufacturer" ? editTarget.businessName : undefined,
-        address: currentAddress || undefined,
-        city: editTarget.city || undefined,
-        state: editTarget.state || undefined,
-        pincode: editTarget.pincode || undefined,
-        latitude: editTarget.latitude,
-        longitude: editTarget.longitude,
-        socialLinks: editTarget.social,
-      });
-      setUsers(prev => prev.map(u => u.id === editTarget.uid ? {
-        ...u,
-        name: editTarget.name, email: editTarget.email, phone: editTarget.phone,
-        role: editTarget.role, isPaid: editTarget.isPaid,
-        subscriptionStatus: editTarget.subscriptionStatus,
-        shopName: editTarget.shopName, businessName: editTarget.businessName,
-        address: currentAddress, city: editTarget.city,
-        state: editTarget.state, pincode: editTarget.pincode,
-        latitude: editTarget.latitude, longitude: editTarget.longitude,
-        socialLinks: editTarget.social,
-      } : u));
-      setEditTarget(null);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handlePromoteConfirm = async () => {
     if (!promoteTarget) return;
@@ -555,8 +379,17 @@ export default function AdminUsersPage() {
     }
   };
 
+  const BLANK_FORM = {
+    name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
+    address: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null,
+    gstin: "", secondaryPhone: "",
+    subscriptionStatus: "inactive" as "inactive" | "active",
+    seats: 1,
+    durationMonths: 12 as 1 | 3 | 6 | 12,
+  };
+
   const handleCreateUser = async () => {
-    const { name, email, phone, password, shopName, role } = createForm;
+    const { name, email, phone, password, shopName, role, gstin, secondaryPhone, subscriptionStatus, seats, durationMonths } = createForm;
 
     // ── Admin: server route (needs Firebase Auth createUser) ──────────────────
     if (role === "admin") {
@@ -573,8 +406,7 @@ export default function AdminUsersPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to create admin.");
         setCreateSuccess(data.message ?? "Admin account created.");
-        setCreateForm({ name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
-          address: "", city: "", state: "", pincode: "", latitude: null, longitude: null });
+        setCreateForm(BLANK_FORM);
         load();
       } catch (e) {
         setCreateError(e instanceof Error ? e.message : "Failed to create admin.");
@@ -583,12 +415,22 @@ export default function AdminUsersPage() {
     }
 
     // ── Retailer / Manufacturer / Consumer: write Firestore directly ──────────
-    // No server hop needed — admin's Firebase token satisfies Firestore rules.
-    if (!phone.trim()) { setCreateError("Phone number is required."); return; }
     const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) { setCreateError("Enter a valid 10-digit phone number."); return; }
-    const normalizedPhone = digits.length === 10 ? `+91${digits}` : `+${digits}`;
+    if (digits.length !== 10) {
+      setPhoneError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (!name.trim()) { setCreateError("Full Name is required."); return; }
+    if ((role === "retailer" || role === "manufacturer") && !shopName.trim()) {
+      setCreateError(`${role === "retailer" ? "Shop Name" : "Business Name"} is required.`);
+      return;
+    }
+    if (subscriptionStatus === "active" && seats < 1) {
+      setCreateError("Seats must be at least 1 for active subscriptions.");
+      return;
+    }
 
+    const normalizedPhone = `+91${digits}`;
     setCreating(true); setCreateError(null); setCreateSuccess(null);
     try {
       const existing = await getDoc(doc(db, "users", normalizedPhone));
@@ -598,15 +440,19 @@ export default function AdminUsersPage() {
       const callerUid = auth.currentUser?.uid ?? "admin";
       const currentAddress = createAddressInputRef.current?.value?.trim() || createForm.address;
 
+      const isPaid     = subscriptionStatus === "active";
+      const totalSeats = isPaid ? Math.max(1, seats) : 0;
+
       // users/{normalizedPhone}
       await setDoc(doc(db, "users", normalizedPhone), {
         phone: normalizedPhone,
         uid: null,
-        name: (name || "").trim(),
+        name: name.trim(),
         email: email ? email.trim().toLowerCase() : null,
         role,
-        isPaid: false,
-        totalSeats: 0,
+        isPaid,
+        subscriptionStatus,
+        totalSeats,
         productCount: 0,
         address: currentAddress || null,
         city: createForm.city || null,
@@ -614,6 +460,8 @@ export default function AdminUsersPage() {
         pincode: createForm.pincode || null,
         latitude:  createForm.latitude  ?? null,
         longitude: createForm.longitude ?? null,
+        ...(gstin.trim()          ? { gstin: gstin.trim().toUpperCase() }        : {}),
+        ...(secondaryPhone.trim() ? { secondaryPhone: secondaryPhone.trim() } : {}),
         preCreatedByAdmin: callerUid,
         createdAt: now,
         updatedAt: now,
@@ -624,8 +472,8 @@ export default function AdminUsersPage() {
         await setDoc(doc(db, "profiles", normalizedPhone), {
           type: role,
           ownerPhone: normalizedPhone,
-          businessName: (shopName || name || "").trim(),
-          ownerName: (name || "").trim(),
+          businessName: (shopName || name).trim(),
+          ownerName: name.trim(),
           phone: normalizedPhone,
           email: email ? email.trim().toLowerCase() : null,
           address: {
@@ -637,8 +485,9 @@ export default function AdminUsersPage() {
           geo: (createForm.latitude && createForm.longitude)
             ? { latitude: createForm.latitude, longitude: createForm.longitude }
             : null,
+          ...(gstin.trim() ? { gstin: gstin.trim().toUpperCase() } : {}),
           isActive: true,
-          subscriptionStatus: "free",
+          subscriptionStatus,
           catalogIds: [],
           retailerPhones: [],
           preCreatedByAdmin: callerUid,
@@ -646,10 +495,6 @@ export default function AdminUsersPage() {
           updatedAt: now,
         });
 
-        // Activate the seller's storefront immediately so admins don't have to
-        // wait for the seller's first OTP login. The record is keyed by phone;
-        // OTP login later merges the real uid onto the same doc. Without this the
-        // seller never shows in fetchStores() and assigned products have no store.
         await ensureSellerStorefront({
           phone: normalizedPhone, role, name, shopName,
           address: currentAddress || createForm.address,
@@ -659,27 +504,41 @@ export default function AdminUsersPage() {
         });
       }
 
-      const BLANK_FORM = { name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
-        address: "", city: "", state: "", pincode: "", latitude: null, longitude: null };
+      // Create subscription record for active sellers — mirrors updateSubscriptionStatus logic
+      if (isPaid && (role === "retailer" || role === "manufacturer")) {
+        const startDate = new Date();
+        const expiryDate = new Date(startDate);
+        expiryDate.setMonth(expiryDate.getMonth() + durationMonths);
+        await addDoc(collection(db, "subscriptions"), {
+          ownerPhone: normalizedPhone,
+          ownerId: null,
+          ownerType: role,
+          planName: "Admin Assigned",
+          seatsPurchased: totalSeats,
+          durationMonths,
+          amountPaid: 0,
+          currency: "INR",
+          subscriptionStatus: "active",
+          startDate: Timestamp.fromDate(startDate),
+          expiryDate: Timestamp.fromDate(expiryDate),
+          createdByAdmin: callerUid,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
       setCreateSuccess(
-        `Pre-registered ${normalizedPhone} as ${role}. When they sign in via OTP they will automatically get the ${role} role.`
+        `Pre-registered ${normalizedPhone} as ${role}${subscriptionStatus === "active" ? ` (active, ${durationMonths}mo)` : ""}. When they sign in via OTP they will automatically get the ${role} role.`
       );
       setCreateForm(BLANK_FORM);
+      setPhoneError(null);
+      setSeatsInput("1");
       if (createAddressInputRef.current) createAddressInputRef.current.value = "";
       load();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create user.");
     } finally { setCreating(false); }
   };
-
-  const set = (key: keyof EditState, value: any) =>
-    setEditTarget(prev => prev ? { ...prev, [key]: value } : prev);
-  const setSocial = (key: keyof SocialLinks, value: string) =>
-    setEditTarget(prev => prev ? { ...prev, social: { ...prev.social, [key]: value } } : prev);
-
-  const mapUrl = editTarget?.latitude && editTarget?.longitude
-    ? `https://maps.google.com/maps?q=${editTarget.latitude},${editTarget.longitude}&z=15&output=embed`
-    : null;
 
   return (
     <div className="space-y-6">
@@ -695,8 +554,7 @@ export default function AdminUsersPage() {
           type="button"
           onClick={() => {
             setShowCreate(true); setCreateError(null); setCreateSuccess(null);
-            setCreateForm({ name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
-              address: "", city: "", state: "", pincode: "", latitude: null, longitude: null });
+            setPhoneError(null); setSeatsInput("1"); setCreateForm(BLANK_FORM);
           }}
           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-opacity shrink-0"
         >
@@ -867,9 +725,20 @@ export default function AdminUsersPage() {
                 {filtered.map(u => (
                   <tr key={u.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
                     <td className="px-5 py-3">
-                      <p className="font-semibold text-on-surface">{u.name || "—"}</p>
-                      <p className="text-xs text-on-surface-variant truncate max-w-[200px]">{u.email || "—"}</p>
-                      {u.phone && <p className="text-xs text-on-surface-variant">{u.phone}</p>}
+                      {(u.role === "retailer" || u.role === "manufacturer") ? (
+                        <>
+                          <p className="font-semibold text-on-surface">{u.shopName || u.businessName || u.name || "—"}</p>
+                          {(u.name || u.ownerName) && (
+                            <p className="text-xs text-on-surface-variant">{u.ownerName || u.name}</p>
+                          )}
+                          {u.phone && <p className="text-xs text-on-surface-variant/70">{u.phone}</p>}
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-on-surface">{u.name || "—"}</p>
+                          {u.phone && <p className="text-xs text-on-surface-variant/70">{u.phone}</p>}
+                        </>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
@@ -903,7 +772,7 @@ export default function AdminUsersPage() {
                       <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button type="button" onClick={() => openEdit(u)}
+                      <button type="button" onClick={() => setEditUser(u)}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </button>
@@ -922,10 +791,22 @@ export default function AdminUsersPage() {
               <div key={u.id} className="px-4 py-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-on-surface truncate">{u.name || "—"}</p>
-                    <p className="text-[11px] text-on-surface-variant truncate">{u.email || u.phone || u.id}</p>
+                    {(u.role === "retailer" || u.role === "manufacturer") ? (
+                      <>
+                        <p className="text-sm font-semibold text-on-surface truncate">{u.shopName || u.businessName || u.name || "—"}</p>
+                        {(u.name || u.ownerName) && (
+                          <p className="text-[11px] text-on-surface-variant truncate">{u.ownerName || u.name}</p>
+                        )}
+                        {u.phone && <p className="text-[11px] text-on-surface-variant/70 truncate">{u.phone}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-on-surface truncate">{u.name || "—"}</p>
+                        {u.phone && <p className="text-[11px] text-on-surface-variant/70 truncate">{u.phone}</p>}
+                      </>
+                    )}
                   </div>
-                  <button type="button" onClick={() => openEdit(u)}
+                  <button type="button" onClick={() => setEditUser(u)}
                     className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container shrink-0">
                     <Pencil className="h-3 w-3" /> Edit
                   </button>
@@ -962,156 +843,13 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* ─── Edit User Modal ─────────────────────────────────────────────────────── */}
-      {editTarget && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4 sm:pt-20">
-          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-full">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
-              <div>
-                <h2 className="text-base font-semibold text-on-surface">Edit User</h2>
-                <p className="text-xs text-on-surface-variant mt-0.5 font-mono">{editTarget.uid.slice(0, 22)}…</p>
-              </div>
-              <button type="button" onClick={() => setEditTarget(null)}
-                className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto p-5 space-y-6 flex-1">
-              {saveError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{saveError}</div>
-              )}
-
-              {/* ── Basic Info ── */}
-              <div>
-                <SectionLabel>Basic Info</SectionLabel>
-                <div className="space-y-3">
-                  <Field label="Name" value={editTarget.name} onChange={v => set("name", v)} placeholder="Full name" />
-                  <Field label="Email" value={editTarget.email} onChange={v => set("email", v)} placeholder="user@example.com" type="email" />
-                  <Field label="Phone" value={editTarget.phone} onChange={v => set("phone", v)} placeholder="+91…" type="tel" />
-                  <div className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-on-surface">Role</span>
-                    <select value={editTarget.role} onChange={e => set("role", e.target.value)}
-                      className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none">
-                      {EDITABLE_ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Subscription ── */}
-              <div>
-                <SectionLabel>Subscription & Seats</SectionLabel>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2.5">
-                    <span className="text-sm font-medium text-on-surface">Paid / Active</span>
-                    <button type="button" onClick={() => set("isPaid", !editTarget.isPaid)}
-                      className={`w-10 h-6 rounded-full transition-colors flex items-center ${editTarget.isPaid ? "bg-green-500 justify-end" : "bg-gray-300 justify-start"}`}>
-                      <span className="w-5 h-5 bg-white rounded-full shadow mx-0.5" />
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-on-surface">Subscription Status</span>
-                    <select value={editTarget.subscriptionStatus} onChange={e => set("subscriptionStatus", e.target.value)}
-                      className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none">
-                      {SUB_STATUSES.map(s => <option key={s} value={s}>{s || "— not set —"}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Business Details (role-specific) ── */}
-              {(editTarget.role === "retailer" || editTarget.role === "manufacturer") && (
-                <div>
-                  <SectionLabel>Business Details</SectionLabel>
-                  <div className="space-y-3">
-                    {editTarget.role === "retailer" && (
-                      <Field label="Shop Name" value={editTarget.shopName} onChange={v => set("shopName", v)} placeholder="Shop name" />
-                    )}
-                    {editTarget.role === "manufacturer" && (
-                      <Field label="Business Name" value={editTarget.businessName} onChange={v => set("businessName", v)} placeholder="Business name" />
-                    )}
-
-                    {/* Google Maps Address */}
-                    <div className="flex flex-col gap-1.5 text-sm">
-                      <span className="font-medium text-on-surface flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 text-primary" />
-                        Search location on Google Maps
-                        <span className="text-xs font-normal text-on-surface-variant">(auto-fills address)</span>
-                      </span>
-                      {/* Uncontrolled input — Google Autocomplete sets value via DOM directly */}
-                      <input
-                        ref={addressInputRef}
-                        autoComplete="off"
-                        defaultValue={editTarget.address}
-                        placeholder="Type address, shop or landmark…"
-                        className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
-                      />
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <Field label="City" value={editTarget.city} onChange={v => set("city", v)} placeholder="City" />
-                      <Field label="State" value={editTarget.state} onChange={v => set("state", v)} placeholder="State" />
-                      <Field label="Pincode" value={editTarget.pincode} onChange={v => set("pincode", v)} placeholder="000000" />
-                    </div>
-
-                    {/* Map preview */}
-                    {mapUrl && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
-                          <MapPin className="h-3.5 w-3.5" /> Location pinned
-                        </div>
-                        <div className="overflow-hidden rounded-xl border border-outline-variant/30">
-                          <iframe title="Location preview" src={mapUrl} className="h-40 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Social Links ── */}
-              <div>
-                <SectionLabel>Social Links</SectionLabel>
-                <div className="space-y-3">
-                  {([
-                    { key: "instagram" as const, icon: Instagram, label: "Instagram", placeholder: "instagram.com/yourpage" },
-                    { key: "facebook"  as const, icon: Facebook,  label: "Facebook",  placeholder: "facebook.com/yourpage" },
-                    { key: "whatsapp"  as const, icon: MessageCircle, label: "WhatsApp", placeholder: "+91 98765 43210" },
-                    { key: "youtube"   as const, icon: Youtube,   label: "YouTube",   placeholder: "youtube.com/@channel" },
-                  ]).map(({ key, icon: Icon, label, placeholder }) => (
-                    <label key={key} className="flex flex-col gap-1.5 text-sm">
-                      <span className="font-medium text-on-surface flex items-center gap-1.5">
-                        <Icon className="h-3.5 w-3.5" /> {label}
-                      </span>
-                      <input type="text" value={editTarget.social[key]}
-                        onChange={e => setSocial(key, e.target.value)}
-                        placeholder={placeholder}
-                        className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex flex-col-reverse gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0 sm:flex-row sm:items-center sm:justify-end">
-              <button type="button" onClick={() => setEditTarget(null)} disabled={saving}
-                className="w-full rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60 sm:w-auto">
-                Cancel
-              </button>
-              <button type="button" onClick={handleSaveEdit} disabled={saving}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60 sm:w-auto">
-                {saving ? (
-                  <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> Saving…</>
-                ) : (
-                  <><Check className="h-4 w-4" /> Save changes</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* ─── Edit User Panel ─────────────────────────────────────────────────────── */}
+      {editUser && (
+        <AdminUserEditPanel
+          user={editUser}
+          onClose={() => setEditUser(null)}
+          onSaved={() => { load(); }}
+        />
       )}
 
       {/* ─── Products Panel (view + assign) ──────────────────────────────── */}
@@ -1325,18 +1063,20 @@ export default function AdminUsersPage() {
       {/* ─── Create User Modal ──────────────────────────────────────────────── */}
       {showCreate && (
         <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4">
-          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5 text-primary" />
                 <h2 className="text-base font-bold text-on-surface">Create New User</h2>
               </div>
-              <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
+              <button type="button" onClick={() => { setShowCreate(false); setPhoneError(null); setSeatsInput("1"); }}
+                className="rounded-xl p-1.5 text-on-surface-variant hover:bg-surface-container">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="overflow-y-auto p-5 space-y-4 flex-1">
+            <div className="overflow-y-auto p-5 space-y-5 flex-1">
               {createError && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 font-medium">{createError}</div>
               )}
@@ -1344,17 +1084,17 @@ export default function AdminUsersPage() {
                 <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-700 font-medium">{createSuccess}</div>
               )}
 
-              {/* Role selector first — drives which fields appear */}
-              <div className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-on-surface">Role</span>
+              {/* ── Role ── */}
+              <div>
+                <SectionLabel>Role</SectionLabel>
                 <select
                   value={createForm.role}
                   onChange={e => {
-                    setCreateForm(f => ({ ...f, role: e.target.value, phone: "", email: "", password: "", shopName: "",
-                      address: "", city: "", state: "", pincode: "", latitude: null, longitude: null }));
+                    setCreateForm({ ...BLANK_FORM, role: e.target.value });
+                    setPhoneError(null); setSeatsInput("1");
                     if (createAddressInputRef.current) createAddressInputRef.current.value = "";
                   }}
-                  className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
+                  className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
                 >
                   <option value="consumer">Consumer (Regular User)</option>
                   <option value="retailer">Retailer</option>
@@ -1363,9 +1103,9 @@ export default function AdminUsersPage() {
                 </select>
               </div>
 
-              {/* Admin path — email + password */}
+              {/* ── Admin path ── */}
               {createForm.role === "admin" ? (
-                <div className="rounded-xl border border-red-100 bg-red-50/50 p-3 space-y-3">
+                <div className="rounded-xl border border-red-100 bg-red-50/50 p-4 space-y-3">
                   <p className="text-xs font-bold text-red-700 flex items-center gap-1.5">
                     <ShieldCheck className="h-3.5 w-3.5" /> Admin — Email + Password login at /admin-login
                   </p>
@@ -1374,53 +1114,205 @@ export default function AdminUsersPage() {
                   <Field label="Password * (min 6 chars)" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} placeholder="Secure password" type="password" />
                 </div>
               ) : (
-                /* Non-admin path — phone OTP only */
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    <span className="font-bold">Phone OTP only</span> — pre-registers this number so when they sign in via OTP they get the <span className="font-bold capitalize">{createForm.role}</span> role automatically.
-                  </div>
-                  <Field label="Phone Number *" value={createForm.phone} onChange={v => setCreateForm(f => ({ ...f, phone: v }))} placeholder="98765 43210" type="tel" />
-                  <Field label="Full Name" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} placeholder="e.g. Raju Sharma" />
-                  <Field label="Email (optional)" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} placeholder="user@example.com" type="email" />
-                  {(createForm.role === "retailer" || createForm.role === "manufacturer") && (
-                    <Field
-                      label={createForm.role === "retailer" ? "Shop Name" : "Business Name"}
-                      value={createForm.shopName}
-                      onChange={v => setCreateForm(f => ({ ...f, shopName: v }))}
-                      placeholder={createForm.role === "retailer" ? "e.g. Sharma Agro Store" : "e.g. KisanBio Inputs Ltd"}
-                    />
-                  )}
+                /* Non-admin: phone OTP */
+                <>
+                  {/* ── Required Fields ── */}
+                  <div>
+                    <SectionLabel>Required</SectionLabel>
+                    <div className="space-y-3">
+                      {/* Phone with inline validation */}
+                      <div className="flex flex-col gap-1.5 text-sm">
+                        <span className="font-medium text-on-surface">Phone Number *</span>
+                        <div className={`flex items-center gap-2 rounded-xl border bg-surface-container-low px-3 py-2 ${phoneError ? "border-red-400 ring-2 ring-red-200" : "border-outline-variant/40 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary"}`}>
+                          <span className="text-sm font-bold text-on-surface-variant shrink-0">+91</span>
+                          <input
+                            type="tel"
+                            value={createForm.phone}
+                            onChange={e => {
+                              const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                              setCreateForm(f => ({ ...f, phone: digits }));
+                              setPhoneError(digits.length > 0 && digits.length < 10
+                                ? "Please enter a valid 10-digit mobile number."
+                                : null);
+                            }}
+                            onBlur={() => {
+                              const digits = createForm.phone.replace(/\D/g, "");
+                              setPhoneError(digits.length > 0 && digits.length !== 10
+                                ? "Please enter a valid 10-digit mobile number."
+                                : null);
+                            }}
+                            placeholder="98765 43210"
+                            maxLength={10}
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface"
+                          />
+                          {createForm.phone.length === 10 && (
+                            <Check className="h-4 w-4 text-green-500 shrink-0" />
+                          )}
+                        </div>
+                        {phoneError && (
+                          <p className="text-xs text-red-600 font-medium flex items-center gap-1 mt-0.5">
+                            <AlertTriangle className="h-3 w-3 shrink-0" /> {phoneError}
+                          </p>
+                        )}
+                      </div>
 
-                  {/* Address — Google Maps autocomplete */}
-                  <div className="flex flex-col gap-1.5 text-sm">
-                    <span className="font-medium text-on-surface flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-primary" /> Address
-                      <span className="text-xs font-normal text-on-surface-variant">(optional — type to search)</span>
-                    </span>
-                    <input
-                      ref={createAddressInputRef}
-                      autoComplete="off"
-                      placeholder="Type shop address, landmark or pincode…"
-                      className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
-                    />
+                      <Field
+                        label="Full Name *"
+                        value={createForm.name}
+                        onChange={v => setCreateForm(f => ({ ...f, name: v }))}
+                        placeholder="e.g. Raju Sharma"
+                      />
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Field label="City"    value={createForm.city}    onChange={v => setCreateForm(f => ({ ...f, city: v }))}    placeholder="City" />
-                    <Field label="State"   value={createForm.state}   onChange={v => setCreateForm(f => ({ ...f, state: v }))}   placeholder="State" />
-                    <Field label="Pincode" value={createForm.pincode} onChange={v => setCreateForm(f => ({ ...f, pincode: v }))} placeholder="000000" />
+
+                  {/* ── Optional Fields ── */}
+                  <div>
+                    <SectionLabel>Optional</SectionLabel>
+                    <div className="space-y-3">
+                      <Field label="Email" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} placeholder="user@example.com" type="email" />
+
+                      {/* Address — Google Maps autocomplete */}
+                      <div className="flex flex-col gap-1.5 text-sm">
+                        <span className="font-medium text-on-surface flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 text-primary" /> Address
+                          <span className="text-xs font-normal text-on-surface-variant">(type to search)</span>
+                        </span>
+                        <input
+                          ref={createAddressInputRef}
+                          autoComplete="off"
+                          placeholder="Type address, landmark or pincode…"
+                          className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <Field label="City"    value={createForm.city}    onChange={v => setCreateForm(f => ({ ...f, city: v }))}    placeholder="City" />
+                        <Field label="State"   value={createForm.state}   onChange={v => setCreateForm(f => ({ ...f, state: v }))}   placeholder="State" />
+                        <Field label="Pincode" value={createForm.pincode} onChange={v => setCreateForm(f => ({ ...f, pincode: v }))} placeholder="000000" />
+                      </div>
+                      {createForm.latitude && createForm.longitude && (
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          Location pinned ({createForm.latitude.toFixed(4)}, {createForm.longitude.toFixed(4)})
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {createForm.latitude && createForm.longitude && (
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      Location pinned ({createForm.latitude.toFixed(4)}, {createForm.longitude.toFixed(4)})
+
+                  {/* ── Business Details (retailer / manufacturer only) ── */}
+                  {(createForm.role === "retailer" || createForm.role === "manufacturer") && (
+                    <div>
+                      <SectionLabel>Business Details</SectionLabel>
+                      <div className="space-y-3">
+                        <Field
+                          label={`${createForm.role === "retailer" ? "Shop Name" : "Business Name"} *`}
+                          value={createForm.shopName}
+                          onChange={v => setCreateForm(f => ({ ...f, shopName: v }))}
+                          placeholder={createForm.role === "retailer" ? "e.g. Sharma Agro Store" : "e.g. KisanBio Inputs Ltd"}
+                        />
+                        <Field
+                          label="GSTIN (optional)"
+                          value={createForm.gstin}
+                          onChange={v => setCreateForm(f => ({ ...f, gstin: v.toUpperCase().replace(/[^A-Z0-9]/g, "") }))}
+                          placeholder="e.g. 27AAPFU0939F1ZV"
+                        />
+                        {/* Secondary mobile */}
+                        <div className="flex flex-col gap-1.5 text-sm">
+                          <span className="font-medium text-on-surface">Secondary Mobile (optional)</span>
+                          <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary">
+                            <span className="text-sm font-bold text-on-surface-variant shrink-0">+91</span>
+                            <input
+                              type="tel"
+                              value={createForm.secondaryPhone}
+                              onChange={e => setCreateForm(f => ({ ...f, secondaryPhone: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                              placeholder="Alternate number"
+                              maxLength={10}
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
-                </div>
+
+                  {/* ── Subscription Setup ── */}
+                  <div>
+                    <SectionLabel>Subscription Setup</SectionLabel>
+                    <div className="space-y-4">
+                      {/* Status pills */}
+                      <div className="flex gap-2">
+                        {(["inactive", "active"] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setCreateForm(f => ({ ...f, subscriptionStatus: s }))}
+                            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                              createForm.subscriptionStatus === s
+                                ? s === "active"
+                                  ? "bg-green-600 text-white border-green-600 shadow-sm"
+                                  : "bg-surface-container-high text-on-surface border-outline-variant shadow-sm"
+                                : "bg-surface-container-low text-on-surface-variant border-outline-variant/40 hover:bg-surface-container"
+                            }`}
+                          >
+                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Active-only fields */}
+                      {createForm.subscriptionStatus === "active" && (
+                        <div className="space-y-3 rounded-xl border border-green-200 bg-green-50/40 p-3">
+                          {/* Seats */}
+                          <div className="flex flex-col gap-1.5 text-sm">
+                            <span className="font-medium text-on-surface">Seats</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={seatsInput}
+                              onChange={e => {
+                                const raw = e.target.value.replace(/\D/g, "");
+                                setSeatsInput(raw);
+                                setCreateForm(f => ({ ...f, seats: raw === "" ? 0 : parseInt(raw, 10) }));
+                              }}
+                              placeholder="e.g. 1, 5, 20, 100"
+                              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 w-36"
+                            />
+                          </div>
+
+                          {/* Duration */}
+                          <div className="flex flex-col gap-1.5 text-sm">
+                            <span className="font-medium text-on-surface">Duration</span>
+                            <div className="flex gap-2">
+                              {([1, 3, 6, 12] as const).map(m => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => setCreateForm(f => ({ ...f, durationMonths: m }))}
+                                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                    createForm.durationMonths === m
+                                      ? "bg-primary text-white border-primary shadow-sm"
+                                      : "bg-white text-on-surface-variant border-outline-variant/40 hover:bg-surface-container"
+                                  }`}
+                                >
+                                  {m === 1 ? "1 Mo" : m === 12 ? "1 Yr" : `${m} Mo`}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
             <div className="flex flex-col-reverse gap-3 border-t border-outline-variant/20 px-5 py-4 shrink-0 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setShowCreate(false)} disabled={creating}
+              <button type="button" onClick={() => { setShowCreate(false); setPhoneError(null); setSeatsInput("1"); }} disabled={creating}
                 className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60 sm:w-auto w-full">
                 Cancel
               </button>

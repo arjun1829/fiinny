@@ -49,9 +49,10 @@ export default function DashboardLayout({
 
   // Pure function — only calls the stable setProfileIncomplete setter
   const applyCompletion = useCallback((profile: any) => {
-    const hasBusinessName = !!String(profile?.businessName ?? "").trim();
-    const hasCity         = !!String(profile?.city         ?? "").trim();
-    setProfileIncomplete(!hasBusinessName || !hasCity);
+    const hasBusinessName = !!String(profile?.businessName ?? profile?.shopName ?? "").trim();
+    const hasOwnerName    = !!String(profile?.ownerName ?? "").trim();
+    const hasCity         = !!String(profile?.city ?? "").trim();
+    setProfileIncomplete(!hasBusinessName || !hasOwnerName || !hasCity);
   }, []);
 
   // Auth guard — runs once on mount

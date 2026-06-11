@@ -36,12 +36,11 @@ function extractAddressFields(place: {
 export function EditRetailerModal({ row, onClose, onSaved }: {
   row: ManufacturerRetailerRow;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: () => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const [shopName,  setShopName]  = useState(row.shopName);
   const [ownerName, setOwnerName] = useState(row.ownerName);
-  const [phone,     setPhone]     = useState(row.retailerPhone);
   const [email,     setEmail]     = useState(row.retailerEmail);
 
   const [line1,    setLine1]    = useState(row.address?.line1    ?? "");
@@ -176,14 +175,15 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
       await updateNetworkRetailer(row.id, row.retailerDocId, {
         shopName,
         ownerName,
-        phone,
+        phone: row.retailerPhone,
         email,
         address: { line1, city, state, pincode },
         geo,
       });
-      onSaved();
+      await onSaved();
       onClose();
     } catch (e) {
+      console.error("[EditRetailerModal] save failed:", e);
       setError(e instanceof Error ? e.message : "Failed to save.");
     } finally {
       setSaving(false);
@@ -229,10 +229,13 @@ export function EditRetailerModal({ row, onClose, onSaved }: {
               </label>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className={labelCls}>
+              <div className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnPhoneLabel')}</span>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
-              </label>
+                <div className="rounded-xl border border-outline-variant/20 bg-surface-container-low/60 px-3 py-2.5 text-sm tabular-nums text-on-surface-variant">
+                  {row.retailerPhone || "—"}
+                </div>
+                <p className="text-[11px] text-on-surface-variant">Phone number cannot be changed after retailer creation.</p>
+              </div>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">{t('rnEmailLabel')}</span>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
