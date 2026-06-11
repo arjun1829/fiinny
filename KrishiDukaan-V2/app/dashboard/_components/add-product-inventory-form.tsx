@@ -116,10 +116,10 @@ type AdminProductPayload = {
   name: string; fullName?: string; category: string;
   price: number; unit: string; variants: { unit: string; price: number; stock?: number }[];
   description: string; image?: string; images: string[];
-  stock: string; isActive: true; source: "admin";
+  isActive: true; source: "admin";
   categoryInfo?: Record<string, string | string[]>;
   gstApplicable: boolean; gstRate: number;
-  sellMode: "online_delivery"; isOnline: true;
+  sellMode: "online_delivery" | "offline_store_only"; isOnline: boolean;
   editProductId: string | null;
 };
 
@@ -477,6 +477,9 @@ export function AddProductInventoryForm({
   const [gstApplicable, setGstApplicable] = useState(false);
   const [gstRate,       setGstRate]       = useState<GstRate>(0);
 
+  // Online delivery (admin mode only — derived from sellMode)
+  const [sellMode, setSellMode] = useState<"online_delivery" | "offline_store_only">("online_delivery");
+
   // Submit state
   const [submitting,    setSubmitting]    = useState(false);
   const [message,       setMessage]       = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -508,6 +511,7 @@ export function AddProductInventoryForm({
     setImages(urls.length ? urls.map((u: string) => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()]);
     setGstApplicable(!!p.gstApplicable);
     setGstRate(p.gstRate ?? 0);
+    setSellMode(p.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery");
     const ci = effectiveCategoryInfo(p as Record<string, unknown>);
     if (ci) {
       const flat: Record<string, string> = {};
@@ -687,10 +691,10 @@ export function AddProductInventoryForm({
           price: parsed[0].price, unit: parsed[0].unit,
           variants: parsed.map(({ unit, price }) => ({ unit, price })),
           description, image: imageUrls[0] ?? undefined, images: imageUrls,
-          stock: "In Stock", isActive: true, source: "admin",
+          isActive: true, source: "admin",
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable, gstRate: gstApplicable ? gstRate : 0,
-          sellMode: "online_delivery", isOnline: true,
+          sellMode, isOnline: sellMode === "online_delivery",
           editProductId: initialProduct?.id ?? null,
         };
         if (onAdminSave) {
@@ -705,7 +709,7 @@ export function AddProductInventoryForm({
           setName(""); setCategory(CATEGORIES[0]); setCustomCategory(""); setDescription("");
           setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
           setCategoryInfo({}); setShowAdditionalData(false);
-          setGstApplicable(false); setGstRate(0);
+          setGstApplicable(false); setGstRate(0); setSellMode("online_delivery");
           setVariants([newVariant()]); setImages([newSlot()]);
         }
         await onCreated();
@@ -979,12 +983,35 @@ export function AddProductInventoryForm({
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 
-        {/* ── Section 4: GST (not shown in admin/catalog mode) ─────────────── */}
-        {!adminMode && <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+        {/* ── Section 4: GST & Delivery ─────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-            <Receipt className="h-4 w-4 text-primary" /> GST Configuration
+            <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
           </div>
 
+          {/* Online Delivery toggle — admin mode only; seller flow controls this per-listing */}
+          {adminMode && (
+            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-on-surface">Online Delivery</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
+              </div>
+              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                {(["online_delivery", "offline_store_only"] as const).map((mode) => (
+                  <button key={mode} type="button" disabled={isDisabled}
+                    onClick={() => setSellMode(mode)}
+                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                      sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
+                    }`}
+                  >
+                    {mode === "online_delivery" ? "Yes" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* GST — shown for both admin and sellers */}
           <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
             <div>
               <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
@@ -995,9 +1022,7 @@ export function AddProductInventoryForm({
                 <button key={String(v)} type="button" disabled={isDisabled}
                   onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
                   className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                    gstApplicable === v
-                      ? "bg-primary text-white"
-                      : "text-on-surface-variant hover:bg-surface-container"
+                    gstApplicable === v ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
                   }`}
                 >
                   {v ? "Yes" : "No"}
@@ -1034,7 +1059,7 @@ export function AddProductInventoryForm({
               GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
             </div>
           )}
-        </div>}
+        </div>
 
         {/* Submit + inline success */}
         <div className="flex flex-wrap items-center gap-3">

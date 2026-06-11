@@ -5,7 +5,7 @@ import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Ta
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
-import { updateInventoryRecord } from "../_lib/inventory-firestore";
+import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import type { InventoryRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
 import {
@@ -414,6 +414,9 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [gstApplicable, setGstApplicable] = useState<boolean>(row.gstApplicable ?? false);
   const [gstRate, setGstRate]             = useState<GstRate>(row.gstRate ?? 0);
+  const [sellMode, setSellMode]           = useState<"online_delivery" | "offline_store_only">(
+    row.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
+  );
 
   // Category-specific info — initialise from categoryInfo or fall back to legacy flat fields
   const [categoryInfo, setCategoryInfo] = useState<Record<string, string>>(() => {
@@ -510,6 +513,11 @@ export function EditProductModal({ row, onClose, onSaved }: {
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
       });
+
+      // Update sellMode separately — this cascades to assigned retailer copies.
+      if (sellMode !== row.sellMode) {
+        await updateProductSellMode(row.productId, sellMode);
+      }
 
       // Update inventory: use first variant's stock; fall back to existing stockQuantity.
       // Preserve the existing reorder threshold so retailer low-stock alerts aren't wiped.
@@ -680,10 +688,30 @@ export function EditProductModal({ row, onClose, onSaved }: {
             </div>
           </div>
 
-          {/* ── GST ────────────────────────────────────────────────────────── */}
+          {/* ── Online Delivery + GST ──────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Receipt className="h-4 w-4 text-primary" /> GST Configuration
+              <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
+            </div>
+
+            {/* Online Delivery toggle */}
+            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-on-surface">Online Delivery</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
+              </div>
+              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                {(["online_delivery", "offline_store_only"] as const).map((mode) => (
+                  <button key={mode} type="button" disabled={saving}
+                    onClick={() => setSellMode(mode)}
+                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                      sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
+                    }`}
+                  >
+                    {mode === "online_delivery" ? "Yes" : "No"}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">

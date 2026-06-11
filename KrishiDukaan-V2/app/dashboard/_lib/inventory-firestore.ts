@@ -854,8 +854,9 @@ export async function updateInventoryRecord(
     updatedAt: serverTimestamp(),
   });
 
-  // Mirror price/stock into the CANONICAL product's availability[] entry, which
-  // is what the marketplace product page reads (fire-and-forget).
+  // Mirror price/stock into the CANONICAL product's availability[] entry AND keep
+  // the retailer's product copy price in sync so fetchMarketplaceProducts always
+  // has an up-to-date copy.price to fall back on (fire-and-forget).
   (async () => {
     try {
       const invSnap = await getDoc(doc(db, "inventory", inventoryId));
@@ -873,6 +874,17 @@ export async function updateInventoryRecord(
           rootId = (cd.manufacturerProductId ?? cd.originalProductId) as string | undefined;
         }
       }
+
+      // Keep the retailer's product copy price field in sync. fetchMarketplaceProducts
+      // uses copy.price as a fallback when no sellingPrice has been synced to the
+      // canonical product's availability[] yet (e.g. initial assignment state).
+      if (copyId) {
+        updateDoc(doc(db, "products", copyId), {
+          price: patch.sellingPrice,
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
+      }
+
       if (rootId && rootId !== copyId) {
         await syncAvailabilityPriceStock(
           rootId,
