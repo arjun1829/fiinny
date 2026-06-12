@@ -64,7 +64,9 @@ export function buildPreviewLabel(v: Variant): string {
   return `${size} ${ut.display}`;
 }
 
-function parseUnitToVariant(unit: string): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
+function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
+  unit = (unit ?? "").trim();
+  if (!unit) return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: "" };
   const match = unit.match(/^(\d+(?:\.\d+)?)(g|kg|ml|L)$/i);
   if (match) {
     const size = match[1];
