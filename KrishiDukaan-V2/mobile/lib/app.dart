@@ -22,7 +22,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     super.initState();
     // Initialize FCM when a logged-in user is first available
     ref.listenManual(currentUserProvider, (_, next) {
-      final user = next.valueOrNull;
+      final user = next.value;
       if (!kIsWeb && user != null && user.phone.isNotEmpty) {
         NotificationService().initialize(user.phone);
       }

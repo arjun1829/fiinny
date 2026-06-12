@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/user_provider.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/models/store_model.dart';
@@ -151,7 +153,7 @@ final storesListProvider = FutureProvider<List<StoreModel>>((ref) {
 
 final listingsForCatalogProvider =
     FutureProvider.family<List<ListingModel>, String>((ref, catalogId) async {
-  final location = ref.watch(locationProvider).valueOrNull;
+  final location = ref.watch(locationProvider).value;
   final product = await ref.watch(catalogDetailProvider(catalogId).future);
   if (product == null) return [];
 
@@ -284,12 +286,13 @@ final listingsForCatalogProvider =
       ownerPhone.isNotEmpty ? ownerPhone : null,
     );
     final isOnline = product.sellMode != 'offline_store_only';
+    final ownerStockQty = (product.stock?.toLowerCase() == 'out of stock') ? 0 : 99;
     addListing(
       storeId: ownerId,
       phone: ownerPhone,
       name: ownerStore?.name ?? product.store ?? '',
       price: product.price,
-      stockQty: 99,
+      stockQty: ownerStockQty,
       isOnline: isOnline,
       variants: [],
       store: ownerStore,
@@ -311,4 +314,25 @@ final _reviewRepo = ReviewRepository();
 final productReviewsProvider =
     FutureProvider.family<List<ReviewModel>, String>((ref, catalogId) {
   return _reviewRepo.fetchProductReviews(catalogId);
+});
+
+final storeReviewsProvider =
+    FutureProvider.family<List<ReviewModel>, String>((ref, storePhone) {
+  return _reviewRepo.fetchStoreReviews(storePhone);
+});
+
+final userProductReviewProvider =
+    FutureProvider.family<ReviewModel?, String>((ref, catalogId) {
+  final userAsync = ref.watch(currentUserProvider);
+  final phone = userAsync.value?.phone ?? '';
+  if (phone.isEmpty) return Future.value(null);
+  return _reviewRepo.getUserProductReview(catalogId, phone);
+});
+
+final userStoreReviewProvider =
+    FutureProvider.family<ReviewModel?, String>((ref, storePhone) {
+  final userAsync = ref.watch(currentUserProvider);
+  final phone = userAsync.value?.phone ?? '';
+  if (phone.isEmpty) return Future.value(null);
+  return _reviewRepo.getUserStoreReview(storePhone, phone);
 });

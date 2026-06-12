@@ -15,6 +15,7 @@ import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../../../core/widgets/error_view.dart';
 import '../providers/marketplace_provider.dart';
+import '../widgets/review_sheet.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String catalogId;
@@ -508,6 +509,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               if (listings.isEmpty) {
                 return const _EmptyListings();
               }
+              final sellerDiscounts = catalog.sellerDiscounts;
               return Column(
                 children: listings
                     .map((listing) => _SellerTile(
@@ -516,6 +518,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           catalogName: catalog.name,
                           catalogImage: catalog.imageUrl,
                           displayPrice: displayPrice,
+                          // Match the store by phone first (reliable) then storeId.
+                          sellerDiscountPct:
+                              sellerDiscounts[listing.sellerPhone] ??
+                                  sellerDiscounts[listing.id] ??
+                                  0.0,
                         ))
                     .toList(),
               );
@@ -545,6 +552,38 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   const SizedBox(width: 6),
                   Text('Customer Reviews', style: AppTextStyles.heading3),
                 ],
+              ),
+              ref.watch(userProductReviewProvider(widget.catalogId)).when(
+                data: (userReview) {
+                  return TextButton.icon(
+                    onPressed: () {
+                      showReviewBottomSheet(
+                        context: context,
+                        ref: ref,
+                        catalogId: widget.catalogId,
+                        existingReview: userReview,
+                      );
+                    },
+                    icon: Icon(
+                      userReview != null ? Icons.edit : Icons.rate_review,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    label: Text(
+                      userReview != null ? 'Edit Review' : 'Write Review',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                },
+                loading: () => const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                error: (e, s) => const SizedBox.shrink(),
               ),
             ],
           ),
@@ -824,12 +863,18 @@ class _SellerTile extends ConsumerStatefulWidget {
   final String catalogImage;
   final double displayPrice;
 
+  /// This store's effective discount % resolved from the catalog's
+  /// `sellerDiscounts` map (web's source of truth). Used as a fallback when the
+  /// availability[] entry hasn't been mirrored with a discount yet.
+  final double sellerDiscountPct;
+
   const _SellerTile({
     required this.listing,
     required this.catalogId,
     required this.catalogName,
     required this.catalogImage,
     required this.displayPrice,
+    this.sellerDiscountPct = 0,
   });
 
   @override
@@ -839,14 +884,42 @@ class _SellerTile extends ConsumerStatefulWidget {
 class _SellerTileState extends ConsumerState<_SellerTile> {
   bool _expanded = false;
 
+  /// Effective price for this store, resolving both percentage and fixed_amount
+  /// discounts. Uses listing's own discount first, then catalog per-seller map.
+  double get _effectivePrice {
+    final listing = widget.listing;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) {
+      return (listing.price - listing.discount!.discountAmount(listing.price))
+          .clamp(0.0, double.infinity);
+    }
+    // Fallback to catalog-level percentage discount map
+    final pct = widget.sellerDiscountPct;
+    return pct > 0 ? listing.price * (1 - pct / 100) : listing.price;
+  }
+
+  /// Percentage for display badge (0 when fixed_amount — shown differently).
+  double get _discountPct {
+    final listing = widget.listing;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) {
+      if (listing.discount!.type == 'fixed_amount') return 0.0;
+      return listing.discount!.percentage;
+    }
+    return widget.sellerDiscountPct;
+  }
+
+  bool get _hasDiscount {
+    final listing = widget.listing;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) return true;
+    return widget.sellerDiscountPct > 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final listing = widget.listing;
-    final hasDiscount = listing.discount != null && listing.discount!.isCurrentlyActive;
-    final discountPct =
-        hasDiscount ? listing.discount!.percentage : 0.0;
-    final effectivePrice = listing.effectivePrice;
+    final discountPct = _discountPct;
+    final hasDiscount = _hasDiscount;
     final originalPrice = listing.price;
+    final effectivePrice = hasDiscount ? _effectivePrice : originalPrice;
 
     return GestureDetector(
       onTap: () => setState(() => _expanded = !_expanded),
@@ -926,9 +999,11 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    listing.sellerName.isNotEmpty
-                                        ? listing.sellerName
-                                        : listing.sellerPhone,
+                                    listing.sellerName.trim().isNotEmpty
+                                        ? listing.sellerName.trim()
+                                        : (listing.sellerPhone.trim().isNotEmpty
+                                            ? listing.sellerPhone.trim()
+                                            : 'Store'),
                                     style: AppTextStyles.bodyMedium.copyWith(
                                         fontWeight: FontWeight.w700),
                                     maxLines: 2,
@@ -1095,7 +1170,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       detailRow(
                           Icons.location_on_outlined,
                           listing.sellerAddress!),
-                    if (listing.sellerPhone.isNotEmpty) ...[
+                    if (_isDialable(listing.sellerPhone)) ...[
                       const SizedBox(height: 6),
                       detailRow(Icons.phone_outlined, listing.sellerPhone),
                     ],
@@ -1136,8 +1211,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        // Map button
-                        if (listing.hasLocation) ...[
+                        // Map button — geo point or address search fallback
+                        if (listing.hasLocation ||
+                            (listing.sellerAddress?.trim().isNotEmpty ??
+                                false)) ...[
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () => _openMap(listing),
@@ -1156,8 +1233,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        // Call button
-                        if (listing.sellerPhone.isNotEmpty) ...[
+                        // Call button — only for dialable numbers (UIDs leak
+                        // into sellerPhone on some legacy docs)
+                        if (_isDialable(listing.sellerPhone)) ...[
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () =>
@@ -1210,6 +1288,12 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
     );
   }
 
+  static bool _isDialable(String phone) {
+    final stripped =
+        phone.startsWith('+91') ? phone.substring(3) : phone;
+    return RegExp(r'^\d{10,13}$').hasMatch(stripped);
+  }
+
   void _callStore(String phone) async {
     final url = Uri.parse('tel:$phone');
     if (await canLaunchUrl(url)) {
@@ -1218,10 +1302,15 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
   }
 
   void _openMap(ListingModel listing) async {
-    final lat = listing.sellerLat!;
-    final lng = listing.sellerLng!;
+    // Prefer exact coordinates; fall back to searching the store address/name.
+    final query = listing.hasLocation
+        ? '${listing.sellerLat},${listing.sellerLng}'
+        : Uri.encodeComponent(
+            [listing.sellerName, listing.sellerAddress ?? '']
+                .where((s) => s.trim().isNotEmpty)
+                .join(' '));
     final url =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }
@@ -1238,7 +1327,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             listingId: listing.id,
             sellerPhone: listing.sellerPhone,
             sellerName: listing.sellerName,
-            price: listing.effectivePrice,
+            price: _effectivePrice,
             quantity: 1,
           ),
         );

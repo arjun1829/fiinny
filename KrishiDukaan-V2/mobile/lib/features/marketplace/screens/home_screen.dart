@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/product_card.dart';
+import '../../notifications/notifications.dart';
 import '../providers/marketplace_provider.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -22,82 +22,22 @@ class HomeScreen extends ConsumerWidget {
         slivers: [
           SliverAppBar(
             floating: true,
-            backgroundColor: AppColors.primary,
+            toolbarHeight: AppTopBar.height,
             titleSpacing: 16,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const AppBrandIcon(size: 28),
-                    const SizedBox(width: 8),
-                    Text(
-                      'KrishiDukaan',
-                      style: AppTextStyles.heading2.copyWith(color: Colors.white, fontSize: 18),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 36),
-                  child: GestureDetector(
-                    onTap: () {
-                      ref.invalidate(locationProvider);
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.location_on,
-                          size: 12,
-                          color: AppColors.secondary,
-                        ),
-                        const SizedBox(width: 2),
-                        Flexible(
-                          child: ref.watch(locationNameProvider).when(
-                            data: (loc) => Text(
-                              loc,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            loading: () => const Text(
-                              'Detecting location...',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                              ),
-                            ),
-                            error: (_, __) => const Text(
-                              'Tap to retry location',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            flexibleSpace: Container(
+              decoration: BoxDecoration(gradient: topBarGradient()),
             ),
+            foregroundColor: Colors.white,
+            title: const TopBarTitle(title: 'KrishiDukaan'),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.search, color: Colors.white),
+              TopBarAction(
+                icon: Icons.search,
+                tooltip: 'Search products',
                 onPressed: () => context.go('/marketplace'),
               ),
-              IconButton(
-                icon: const Icon(
-                  Icons.notifications_outlined,
-                  color: Colors.white,
-                ),
-                onPressed: () {},
-              ),
+              const NotificationBell(),
             ],
           ),
           SliverToBoxAdapter(

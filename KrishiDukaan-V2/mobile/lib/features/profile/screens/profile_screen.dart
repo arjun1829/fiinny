@@ -7,6 +7,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -20,16 +21,21 @@ class ProfileScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(gradient: topBarGradient()),
+        ),
         titleSpacing: 16,
         title: Row(
           children: [
-            const AppBrandIcon(size: 34),
+            const AppBrandIcon(size: 30),
             const SizedBox(width: 10),
             Text(
               isHindi ? 'प्रोफ़ाइल' : 'Profile',
-              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+              style: AppTextStyles.heading2
+                  .copyWith(color: Colors.white, fontSize: 18),
             ),
           ],
         ),

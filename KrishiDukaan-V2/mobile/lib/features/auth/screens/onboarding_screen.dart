@@ -101,7 +101,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       }
 
       if (!mounted) return;
-      context.go('/');
+      // Business accounts need a subscription before the dashboard unlocks —
+      // take them straight to the plans page instead of dropping them on home.
+      if (_role == 'retailer' || _role == 'manufacturer') {
+        context.go('/subscription?reason=new_account');
+      } else {
+        context.go('/');
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {

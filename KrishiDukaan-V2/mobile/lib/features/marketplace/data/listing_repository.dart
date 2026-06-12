@@ -151,17 +151,25 @@ class ListingRepository {
       // Resolve the display name — fallback chain so we never drop a seller
       // just because their Firestore profile isn't readable or storeName wasn't
       // stored at assignment time.
-      // Use _ne() so empty-string profile fields don't block the fallback chain.
-      final name = _ne(profile?['shopName'])  ??
-                   _ne(profile?['name'])      ??
-                   _ne(profile?['ownerName']) ??
-                   (storeName.isNotEmpty ? storeName : null) ??
+      // Use _ne() so empty/whitespace profile fields don't block the chain.
+      // businessName included for web-schema profiles that only store that.
+      // A raw UID is never a useful display name or dialable phone — only
+      // fall back to storeId for these when it actually looks like a phone.
+      final name = _ne(profile?['shopName'])     ??
+                   _ne(profile?['businessName']) ??
+                   _ne(profile?['name'])         ??
+                   _ne(profile?['ownerName'])    ??
+                   _ne(storeName)                ??
                    (phoneHint.isNotEmpty ? phoneHint : null) ??
-                   storeId;
+                   (_isPhone(storeId) ? storeId : 'Store');
       if (name.isEmpty) continue;
 
-      final phone = (profile?['phone'] as String? ??
-                    (phoneHint.isNotEmpty ? phoneHint : storeId));
+      // _ne() here too: _fetchProfile can return phone: '' which would
+      // otherwise block the phoneHint/storeId fallback.
+      final phone = _ne(profile?['phone']) ??
+          (phoneHint.isNotEmpty
+              ? phoneHint
+              : (_isPhone(storeId) ? storeId : ''));
 
       final address = _extractAddress(profile, null);
       final lat     = _extractLat(profile, null);
@@ -213,10 +221,13 @@ class ListingRepository {
     // If no profile found, construct a minimal one from the product doc itself
     if (profile == null && storeName.isEmpty) return [];
 
-    final name = _ne(profile?['shopName'])  ??
-                 _ne(profile?['name'])      ??
-                 _ne(profile?['ownerName']) ??
-                 storeName;
+    final name = _ne(profile?['shopName'])     ??
+                 _ne(profile?['businessName']) ??
+                 _ne(profile?['name'])         ??
+                 _ne(profile?['ownerName'])    ??
+                 _ne(storeName)                ??
+                 _ne(retailerPhone)            ??
+                 'Store';
 
     final address = _extractAddress(profile, d);
     final lat     = _extractLat(profile, d);
@@ -260,35 +271,39 @@ class ListingRepository {
     String phoneHint = '',
   }) async {
     if (storeId.isEmpty) return null;
+
+    // Build candidate doc IDs in priority order: phoneHint first, then storeId.
+    // Each phone-like candidate is expanded into both formats (+91X and bare X)
+    // because profiles/retailers docs are keyed inconsistently across schemas.
+    final candidates = <String>[];
+    for (final raw in [phoneHint, storeId]) {
+      for (final v in _phoneVariants(raw)) {
+        if (!candidates.contains(v)) candidates.add(v);
+      }
+    }
+    if (!candidates.contains(storeId)) candidates.add(storeId);
+
     try {
-      // 1. Try profiles/{phoneHint} — primary new-schema source (public read)
-      if (phoneHint.isNotEmpty) {
-        final doc = await _db.collection('profiles').doc(phoneHint).get();
-        if (doc.exists) return {'phone': phoneHint, ...doc.data()!};
+      // 1. profiles/{id} — primary new-schema source (public read)
+      for (final id in candidates) {
+        final doc = await _db.collection('profiles').doc(id).get();
+        if (doc.exists) {
+          return {'phone': _isPhone(id) ? id : '', ...doc.data()!};
+        }
       }
 
-      // 1b. Try profiles/{storeId} if it looks like a phone
-      if (_isPhone(storeId) && storeId != phoneHint) {
-        final doc = await _db.collection('profiles').doc(storeId).get();
-        if (doc.exists) return {'phone': storeId, ...doc.data()!};
+      // 2. retailers/{id} — legacy phone-keyed AND uid-keyed docs
+      for (final id in candidates) {
+        final doc = await _db.collection('retailers').doc(id).get();
+        if (doc.exists) {
+          final d = doc.data()!;
+          final phone =
+              _ne(d['phone']) ?? (_isPhone(id) ? id : null);
+          return {'phone': phone ?? '', ...d};
+        }
       }
 
-      // 2. Try retailers/{phoneHint} — legacy phone-keyed docs
-      if (phoneHint.isNotEmpty && phoneHint != storeId) {
-        final doc = await _db.collection('retailers').doc(phoneHint).get();
-        if (doc.exists) return {'phone': phoneHint, ...doc.data()!};
-      }
-
-      // 3. Try retailers/{storeId} (covers phone-as-id AND uid-as-id legacy docs)
-      final retailerDoc = await _db.collection('retailers').doc(storeId).get();
-      if (retailerDoc.exists) {
-        final d = retailerDoc.data()!;
-        final phone = d['phone'] as String? ??
-            (_isPhone(storeId) ? storeId : null);
-        return {'phone': phone ?? '', ...d};
-      }
-
-      // 4. Try stores/{storeId}
+      // 3. stores/{storeId}
       final storeDoc = await _db.collection('stores').doc(storeId).get();
       if (storeDoc.exists) return storeDoc.data();
     } catch (_) {
@@ -320,15 +335,31 @@ class ListingRepository {
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
-  /// Returns [v] as a non-empty String, or null. Treats empty strings the same
-  /// as null so the ?? fallback chain works correctly when Firestore stores "".
-  static String? _ne(dynamic v) => v is String && v.isNotEmpty ? v : null;
+  /// Returns [v] as a trimmed non-empty String, or null. Treats empty and
+  /// whitespace-only strings the same as null so the ?? fallback chain works
+  /// correctly when Firestore stores "" or " " — otherwise a whitespace
+  /// shopName renders as an invisible seller name in the store list.
+  static String? _ne(dynamic v) {
+    if (v is! String) return null;
+    final t = v.trim();
+    return t.isEmpty ? null : t;
+  }
 
   /// Returns true if [s] looks like an Indian phone number (10–13 digits,
   /// optionally prefixed with +91).
   static bool _isPhone(String s) {
     final stripped = s.startsWith('+91') ? s.substring(3) : s;
     return RegExp(r'^\d{10,13}$').hasMatch(stripped);
+  }
+
+  /// Expands a phone-like string into both stored formats: "+919876543210"
+  /// and "9876543210". Non-phone strings (UIDs, empty) return empty.
+  static List<String> _phoneVariants(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty || !_isPhone(t)) return const [];
+    if (t.startsWith('+91')) return [t, t.substring(3)];
+    if (RegExp(r'^\d{10}$').hasMatch(t)) return [t, '+91$t'];
+    return [t];
   }
 
   /// Extracts a display address from profile + product doc fallback.

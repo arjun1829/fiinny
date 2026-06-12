@@ -68,6 +68,11 @@ class CatalogModel {
   /// Highest discount % offered by any seller for this product.
   final double maxDiscountPct;
 
+  /// Per-seller effective discount %, keyed by seller UID/storeId AND phone.
+  /// Mirrors web's `product.sellerDiscounts` — the source of truth for showing
+  /// how much each store discounts. Populated during the marketplace merge.
+  final Map<String, double> sellerDiscounts;
+
   // Merging / web schema fields
   final String? source;
   final String? retailerId;
@@ -101,6 +106,7 @@ class CatalogModel {
     this.isActive = true,
     this.variants,
     this.maxDiscountPct = 0,
+    this.sellerDiscounts = const {},
     this.source,
     this.retailerId,
     this.retailerPhone,
@@ -138,6 +144,7 @@ class CatalogModel {
     bool? isActive,
     List<VariantModel>? variants,
     double? maxDiscountPct,
+    Map<String, double>? sellerDiscounts,
     String? source,
     String? retailerId,
     String? retailerPhone,
@@ -169,6 +176,7 @@ class CatalogModel {
       isActive: isActive ?? this.isActive,
       variants: variants ?? this.variants,
       maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
+      sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
       source: source ?? this.source,
       retailerId: retailerId ?? this.retailerId,
       retailerPhone: retailerPhone ?? this.retailerPhone,

@@ -40,8 +40,9 @@ class PaymentService {
       body: jsonEncode({
         // Map mobile cart fields → web API contract
         'items': items.map((i) => {
-          // The web API uses 'productId' for the listing/inventory doc ID
-          'productId': i.listingId,
+          // catalogId is the canonical product doc ID; the server uses it to
+          // find the seller's product copy or read availability[] pricing.
+          'productId': i.catalogId,
           // sellerId and sellerPhone both carry the seller phone so the
           // server-side inventory lookup succeeds on either field
           'sellerId': i.sellerPhone,

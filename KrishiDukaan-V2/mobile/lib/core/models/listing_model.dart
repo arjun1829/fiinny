@@ -57,7 +57,7 @@ class ListingModel {
 
   double get effectivePrice {
     if (discount != null && discount!.isCurrentlyActive) {
-      return price * (1 - discount!.percentage / 100);
+      return (price - discount!.discountAmount(price)).clamp(0.0, double.infinity);
     }
     return price;
   }
@@ -161,12 +161,16 @@ class VariantModel {
 
 class DiscountModel {
   final double percentage;
+  final double fixedAmount;
+  final String type; // 'percentage' | 'fixed_amount'
   final DateTime? startDate;
   final DateTime? endDate;
   final bool isActive;
 
   const DiscountModel({
     required this.percentage,
+    this.fixedAmount = 0.0,
+    this.type = 'percentage',
     this.startDate,
     this.endDate,
     required this.isActive,
@@ -180,6 +184,13 @@ class DiscountModel {
     return true;
   }
 
+  /// The effective discount amount given [basePrice]. Works for both types.
+  double discountAmount(double basePrice) {
+    if (!isCurrentlyActive) return 0.0;
+    if (type == 'fixed_amount') return fixedAmount.clamp(0.0, basePrice);
+    return basePrice * percentage / 100;
+  }
+
   factory DiscountModel.fromMap(Map<String, dynamic> m) => DiscountModel(
         percentage: (m['percentage'] as num?)?.toDouble() ?? 0.0,
         startDate: (m['startDate'] as Timestamp?)?.toDate(),
@@ -189,24 +200,38 @@ class DiscountModel {
 
   /// Parses a discount from a product/inventory doc using the canonical FLAT
   /// schema shared with the web (`discountEnabled`, `discountPct`,
-  /// `discountStartDate`, `discountEndDate`). Falls back to the legacy nested
-  /// `discount: {isActive, percentage, ...}` map for old documents.
-  ///
-  /// This is the single source of truth for how mobile reads a seller's
-  /// discount — both the dashboard inventory list and the marketplace use it.
+  /// `discountStartDate`, `discountEndDate`, `discountFixedAmt`).
+  /// Falls back to the legacy nested `discount: {isActive, percentage, ...}` map.
   static DiscountModel? fromProductData(Map<String, dynamic> d) {
     final hasFlat = d.containsKey('discountPct') ||
         d.containsKey('discountEnabled') ||
-        d.containsKey('effectiveDiscountPct');
+        d.containsKey('effectiveDiscountPct') ||
+        d.containsKey('discountFixedAmt');
     if (hasFlat) {
+      final enabled = d['discountEnabled'] as bool? ??
+          ((d['effectiveDiscountPct'] as num?)?.toDouble() ?? 0) > 0;
+      if (!enabled) return null;
+      final discType = d['discountType'] as String? ?? 'percentage';
+      if (discType == 'fixed_amount') {
+        final amt = (d['discountFixedAmt'] as num?)?.toDouble() ?? 0.0;
+        if (amt <= 0) return null;
+        return DiscountModel(
+          percentage: 0.0,
+          fixedAmount: amt,
+          type: 'fixed_amount',
+          isActive: true,
+          startDate: (d['discountStartDate'] as Timestamp?)?.toDate(),
+          endDate: (d['discountEndDate'] as Timestamp?)?.toDate(),
+        );
+      }
       final pct = (d['discountPct'] as num?)?.toDouble() ??
           (d['effectiveDiscountPct'] as num?)?.toDouble() ??
           0.0;
       if (pct <= 0) return null;
       return DiscountModel(
         percentage: pct,
-        isActive: d['discountEnabled'] as bool? ??
-            ((d['effectiveDiscountPct'] as num?)?.toDouble() ?? 0) > 0,
+        type: 'percentage',
+        isActive: true,
         startDate: (d['discountStartDate'] as Timestamp?)?.toDate(),
         endDate: (d['discountEndDate'] as Timestamp?)?.toDate(),
       );
@@ -216,10 +241,14 @@ class DiscountModel {
     return null;
   }
 
-  /// Builds a discount from a single `availability[]` entry. Writers (mobile +
-  /// web) mirror the *effective* (already date-filtered) percentage into the
-  /// entry's `discountPct`, so any positive value is currently active.
+  /// Builds a discount from a single `availability[]` entry.
   static DiscountModel? fromAvailabilityEntry(Map<String, dynamic> entry) {
+    final discType = entry['discountType'] as String? ?? 'percentage';
+    if (discType == 'fixed_amount') {
+      final amt = (entry['discountFixedAmt'] as num?)?.toDouble() ?? 0.0;
+      if (amt <= 0) return null;
+      return DiscountModel(percentage: 0.0, fixedAmount: amt, type: 'fixed_amount', isActive: true);
+    }
     final pct = (entry['discountPct'] as num?)?.toDouble() ?? 0.0;
     if (pct <= 0) return null;
     return DiscountModel(percentage: pct, isActive: true);

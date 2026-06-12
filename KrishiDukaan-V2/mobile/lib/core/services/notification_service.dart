@@ -36,7 +36,7 @@ class NotificationService {
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     await _localNotifications.initialize(
-      const InitializationSettings(android: androidSettings),
+      settings: const InitializationSettings(android: androidSettings),
     );
 
     // Create notification channel (Android 8+)
@@ -65,10 +65,10 @@ class NotificationService {
     if (n == null) return;
 
     _localNotifications.show(
-      n.hashCode,
-      n.title,
-      n.body,
-      NotificationDetails(
+      id: n.hashCode,
+      title: n.title,
+      body: n.body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           _channelName,

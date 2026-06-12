@@ -10,7 +10,9 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/location_provider.dart' as loc;
 import '../../../core/models/store_model.dart';
 import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/widgets/app_top_bar.dart';
 import '../providers/marketplace_provider.dart';
+import '../widgets/review_sheet.dart';
 
 class StoreLocatorScreen extends ConsumerStatefulWidget {
   const StoreLocatorScreen({super.key});
@@ -89,26 +91,31 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
     final locationAsync = ref.watch(loc.locationProvider);
 
     // Always use a usable center — don't block on location
-    final userLat = locationAsync.valueOrNull?.lat ?? AppConfig.defaultLat;
-    final userLng = locationAsync.valueOrNull?.lng ?? AppConfig.defaultLng;
+    final userLat = locationAsync.value?.lat ?? AppConfig.defaultLat;
+    final userLng = locationAsync.value?.lng ?? AppConfig.defaultLng;
     final locationLoading = locationAsync.isLoading;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         titleSpacing: 16,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(gradient: topBarGradient()),
+        ),
         title: Row(
           children: [
-            const AppBrandIcon(size: 34),
+            const AppBrandIcon(size: 30),
             const SizedBox(width: 10),
             Text(
               'Store Locator',
-              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+              style: AppTextStyles.heading2
+                  .copyWith(color: Colors.white, fontSize: 18),
             ),
           ],
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       body: storesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -238,12 +245,19 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                 isSelected: isSelected,
                                 onTap: () => _selectStore(store),
                                 onMapTap: () => _openMapExpanded(store),
-                                onCall: store.phone != null
+                                onCall: store.phone != null && store.phone!.isNotEmpty
                                     ? () => _callStore(store.phone!)
                                     : null,
                                 onNavigate: store.hasLocation
                                     ? () => _navigate(store)
                                     : null,
+                                onReviewsTap: () {
+                                  showStoreReviewsBottomSheet(
+                                    context: context,
+                                    ref: ref,
+                                    store: store,
+                                  );
+                                },
                               );
                             },
                           ),
@@ -591,6 +605,7 @@ class _StoreCard extends StatelessWidget {
   final VoidCallback onMapTap;
   final VoidCallback? onCall;
   final VoidCallback? onNavigate;
+  final VoidCallback onReviewsTap;
 
   const _StoreCard({
     super.key,
@@ -600,6 +615,7 @@ class _StoreCard extends StatelessWidget {
     required this.onMapTap,
     this.onCall,
     this.onNavigate,
+    required this.onReviewsTap,
   });
 
   @override
@@ -774,11 +790,11 @@ class _StoreCard extends StatelessWidget {
                 ],
 
                 // Action buttons - only show when selected/expanded
-                if (isSelected && (onCall != null || onNavigate != null)) ...[
+                if (isSelected) ...[
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      if (onCall != null)
+                      if (onCall != null) ...[
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: onCall,
@@ -797,9 +813,28 @@ class _StoreCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                      if (onCall != null && onNavigate != null)
                         const SizedBox(width: 8),
-                      if (onNavigate != null)
+                      ],
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onReviewsTap,
+                          icon: const Icon(Icons.rate_review_outlined, size: 14),
+                          label: Text('Reviews (${store.totalReviews ?? 0})'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(
+                                color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            textStyle: AppTextStyles.caption.copyWith(
+                                fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      if (onNavigate != null) ...[
+                        const SizedBox(width: 8),
                         Expanded(
                           child: FilledButton.icon(
                             onPressed: onNavigate,
@@ -816,6 +851,7 @@ class _StoreCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ],

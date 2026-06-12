@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/models/order_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/utils/currency_utils.dart';
+import '../../dashboard/providers/dashboard_provider.dart';
+import '../../notifications/notifications.dart';
 import '../providers/manufacturer_provider.dart';
 
 class ManufacturerDashboardScreen extends ConsumerWidget {
@@ -37,6 +41,8 @@ class _ManufacturerBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final statsAsync = ref.watch(networkStatsProvider(phone));
     final analyticsAsync = ref.watch(manufacturerAnalyticsProvider(phone));
+    final ordersAsync = ref.watch(sellerOrdersProvider(phone));
+    final seatsAsync = ref.watch(seatStatsProvider(phone));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -46,6 +52,7 @@ class _ManufacturerBody extends ConsumerWidget {
         title: Text('Manufacturer Hub',
             style: AppTextStyles.heading2.copyWith(color: Colors.white)),
         actions: [
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.language, color: Colors.white),
             tooltip: 'Brand Page',
@@ -57,15 +64,68 @@ class _ManufacturerBody extends ConsumerWidget {
         onRefresh: () async {
           ref.invalidate(networkStatsProvider(phone));
           ref.invalidate(manufacturerAnalyticsProvider(phone));
+          ref.invalidate(seatStatsProvider(phone));
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Hello, ${name.split(' ').first}!',
-                style: AppTextStyles.heading2),
-            Text('Manufacturer Dashboard',
-                style: AppTextStyles.body
-                    .copyWith(color: AppColors.onSurfaceVariant)),
+            // Profile header — matches the main dashboard's overview style
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary,
+                    AppColors.primary.withValues(alpha: 0.82),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: Colors.white,
+                    child: const Icon(Icons.factory_outlined,
+                        color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hello, ${name.split(' ').first}!',
+                          style: AppTextStyles.heading2
+                              .copyWith(color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'MANUFACTURER',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 20),
 
             // Network stats
@@ -109,11 +169,107 @@ class _ManufacturerBody extends ConsumerWidget {
                       icon: Icons.assignment_outlined,
                       color: AppColors.info,
                     ),
+                    _StatCard(
+                      label: 'Pending Orders',
+                      value:
+                          '${(ordersAsync.value ?? []).where((o) => o.status == 'pending').length}',
+                      icon: Icons.pending_actions_outlined,
+                      color: AppColors.secondary,
+                    ),
+                    _StatCard(
+                      label: 'Revenue',
+                      value: CurrencyUtils.format(
+                        (ordersAsync.value ?? [])
+                            .where((o) => o.status != 'cancelled')
+                            .fold<double>(0, (sum, o) => sum + o.total),
+                      ),
+                      icon: Icons.currency_rupee,
+                      color: AppColors.primary,
+                    ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // Seats — real counts from subscriptions + seat listings
+            seatsAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+              data: (seats) {
+                final total = seats.totalPurchased;
+                final used = seats.activeUsed;
+                final fraction =
+                    total > 0 ? (used / total).clamp(0.0, 1.0) : 0.0;
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.cardShadow,
+                          blurRadius: 4,
+                          offset: const Offset(0, 2)),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.event_seat_outlined,
+                              size: 18, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          Text('Listing Seats',
+                              style: AppTextStyles.bodyMedium
+                                  .copyWith(fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          Text(
+                            '${seats.available} left · $used / $total used',
+                            style: AppTextStyles.caption
+                                .copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 8,
+                          backgroundColor: AppColors.surfaceVariant,
+                          valueColor: AlwaysStoppedAnimation(
+                            seats.available > 0
+                                ? AppColors.primary
+                                : AppColors.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+
+            // Recent incoming orders
+            Row(
+              children: [
+                Text('Recent Orders', style: AppTextStyles.heading3),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => context.push('/dashboard/orders'),
+                  child: const Text('View all'),
+                ),
+              ],
+            ),
+            ordersAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+              data: (orders) => _RecentOrdersList(orders: orders),
+            ),
+            const SizedBox(height: 20),
 
             // Quick actions
             Text('Manage', style: AppTextStyles.heading3),
@@ -242,6 +398,130 @@ class _StatCard extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentOrdersList extends StatelessWidget {
+  final List<OrderModel> orders;
+  const _RecentOrdersList({required this.orders});
+
+  static const _statusColors = {
+    'pending': AppColors.secondary,
+    'confirmed': AppColors.info,
+    'dispatched': AppColors.info,
+    'delivered': AppColors.success,
+    'cancelled': AppColors.error,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (orders.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Center(
+          child: Column(
+            children: [
+              const Icon(Icons.receipt_long_outlined,
+                  size: 36, color: AppColors.onSurfaceVariant),
+              const SizedBox(height: 8),
+              Text('No orders yet', style: AppTextStyles.bodyMedium),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final sorted = [...orders]..sort((a, b) {
+        final ad = a.createdAt ?? DateTime(2000);
+        final bd = b.createdAt ?? DateTime(2000);
+        return bd.compareTo(ad);
+      });
+    final recent = sorted.take(3).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.cardShadow,
+              blurRadius: 4,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < recent.length; i++) ...[
+            if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+            Builder(builder: (context) {
+              final order = recent[i];
+              final color =
+                  _statusColors[order.status] ?? AppColors.onSurfaceVariant;
+              final itemSummary = order.items.isNotEmpty
+                  ? '${order.items.first.name}${order.items.length > 1 ? ' +${order.items.length - 1} more' : ''}'
+                  : 'Order';
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 4),
+                onTap: () => context.push('/dashboard/orders'),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child:
+                      Icon(Icons.receipt_outlined, color: color, size: 20),
+                ),
+                title: Text(
+                  order.customerName.isNotEmpty
+                      ? order.customerName
+                      : 'Customer',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(itemSummary,
+                    style: AppTextStyles.caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(CurrencyUtils.format(order.total),
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        order.status.toUpperCase(),
+                        style: AppTextStyles.caption.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );
