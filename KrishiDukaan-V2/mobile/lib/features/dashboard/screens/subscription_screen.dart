@@ -33,7 +33,10 @@ class _Duration {
 }
 
 class SubscriptionScreen extends ConsumerStatefulWidget {
-  const SubscriptionScreen({super.key});
+  /// 'new_account' → just signed up; 'paywall' → bounced off the dashboard.
+  final String? reason;
+
+  const SubscriptionScreen({super.key, this.reason});
 
   @override
   ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -246,6 +249,42 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     });
   }
 
+  Widget _noticeBanner({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                        color: color, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: AppTextStyles.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserProvider);
@@ -263,6 +302,24 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (!isPaid && widget.reason == 'new_account')
+            _noticeBanner(
+              icon: Icons.celebration_outlined,
+              color: AppColors.primary,
+              title: 'Welcome to KrishiDukaan! 🎉',
+              subtitle:
+                  'Your account is ready. Subscribe to unlock your dashboard, '
+                  'list products and start selling.',
+            ),
+          if (!isPaid && widget.reason == 'paywall')
+            _noticeBanner(
+              icon: Icons.lock_outline,
+              color: AppColors.warning,
+              title: 'Subscription required',
+              subtitle:
+                  'The dashboard is locked until you have an active '
+                  'subscription. Pick a plan below to continue.',
+            ),
           if (isPaid)
             Container(
               margin: const EdgeInsets.only(bottom: 20),

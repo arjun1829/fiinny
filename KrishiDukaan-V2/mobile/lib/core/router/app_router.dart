@@ -177,7 +177,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/subscription',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const SubscriptionScreen(),
+        builder: (_, state) => SubscriptionScreen(
+          reason: state.uri.queryParameters['reason'],
+        ),
       ),
       GoRoute(
         path: '/notifications',
