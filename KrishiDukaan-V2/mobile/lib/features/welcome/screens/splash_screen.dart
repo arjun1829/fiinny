@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 
-/// Pref key marking that the user has already seen the first-install welcome
-/// pages. Shared with WelcomeScreen.
 const kWelcomeSeenPref = 'welcome_seen_v1';
 
-/// Animated launch screen shown on every app open. Plays the brand animation
-/// for ~2s, then routes to /welcome on first install or home otherwise.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -20,12 +17,20 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  late final AnimationController _intro;   // one-shot entrance
-  late final AnimationController _ripple;  // looping ripple rings
+  late final AnimationController _intro;
+  late final AnimationController _ripple;
 
   @override
   void initState() {
     super.initState();
+    // Go fully edge-to-edge so the gradient bleeds under status & nav bars.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ));
+
     _intro = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -38,10 +43,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateAfterDelay() async {
-    // Hold the animation ~2s, resolving the first-install flag meanwhile.
     final results = await Future.wait([
       SharedPreferences.getInstance(),
-      Future.delayed(const Duration(milliseconds: 2000)),
+      Future.delayed(const Duration(milliseconds: 2200)),
     ]);
     final prefs = results.first as SharedPreferences;
     if (!mounted) return;
@@ -63,29 +67,51 @@ class _SplashScreenState extends State<SplashScreen>
       parent: _intro,
       curve: const Interval(0.35, 1, curve: Curves.easeOut),
     );
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
+      extendBody: true,
+      extendBodyBehindAppBar: true,
+      backgroundColor: AppColors.primary,
       body: Container(
+        // Explicit fill — without this the Container shrinks to its child
+        // when placed inside a Stack, causing the half-screen bug.
+        width: double.infinity,
+        height: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
               AppColors.primary,
-              Color.lerp(AppColors.primary, Colors.black, 0.25)!,
+              Color.lerp(AppColors.primary, const Color(0xFF0D1B0A), 0.55)!,
             ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
         child: Stack(
-          alignment: Alignment.center,
+          // StackFit.expand forces the Stack to fill the Container instead of
+          // shrink-wrapping its non-positioned children.
+          fit: StackFit.expand,
           children: [
+            // ── Decorative background circles ────────────────────────────
+            Positioned(
+              top: -80,
+              right: -60,
+              child: _bgCircle(280, Colors.white.withValues(alpha: 0.04)),
+            ),
+            Positioned(
+              bottom: -60,
+              left: -80,
+              child: _bgCircle(240, Colors.white.withValues(alpha: 0.04)),
+            ),
+
+            // ── Centre: logo + ripple + text ─────────────────────────────
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo with expanding ripple rings behind it
                 SizedBox(
-                  width: 220,
-                  height: 220,
+                  width: 240,
+                  height: 240,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
@@ -101,12 +127,12 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       ScaleTransition(
                         scale: logoScale,
-                        child: const AppBrandIcon(size: 104, elevated: true),
+                        child: const AppBrandIcon(size: 108, elevated: true),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 20),
                 FadeTransition(
                   opacity: textFade,
                   child: SlideTransition(
@@ -120,15 +146,17 @@ class _SplashScreenState extends State<SplashScreen>
                           'KrishiDukaan',
                           style: AppTextStyles.heading1.copyWith(
                             color: Colors.white,
-                            fontSize: 30,
-                            letterSpacing: 0.5,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
                           'Everything your farm needs',
                           style: AppTextStyles.body.copyWith(
-                            color: Colors.white.withValues(alpha: 0.85),
+                            color: Colors.white.withValues(alpha: 0.78),
+                            fontSize: 15,
                           ),
                         ),
                       ],
@@ -138,18 +166,36 @@ class _SplashScreenState extends State<SplashScreen>
               ],
             ),
 
-            // Subtle loading indicator pinned near the bottom
+            // ── Bottom: spinner + brand tag ──────────────────────────────
             Positioned(
-              bottom: 48,
+              bottom: bottomPad + 44,
+              left: 0,
+              right: 0,
               child: FadeTransition(
                 opacity: textFade,
-                child: const SizedBox(
-                  width: 26,
-                  height: 26,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    valueColor: AlwaysStoppedAnimation(Colors.white70),
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor:
+                            AlwaysStoppedAnimation(Colors.white60),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'from Fiinny',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.38),
+                        fontSize: 11,
+                        letterSpacing: 1.4,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -159,19 +205,26 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  /// One expanding, fading ring. [t] runs 0→1.
   Widget _rippleRing(double t) {
-    final size = 110 + t * 110;
+    final size = 116 + t * 120;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: Colors.white.withValues(alpha: (1 - t) * 0.35),
-          width: 2,
+          color: Colors.white.withValues(alpha: (1 - t) * 0.30),
+          width: 1.8,
         ),
       ),
+    );
+  }
+
+  Widget _bgCircle(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
   }
 }

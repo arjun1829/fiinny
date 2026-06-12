@@ -1170,7 +1170,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       detailRow(
                           Icons.location_on_outlined,
                           listing.sellerAddress!),
-                    if (listing.sellerPhone.isNotEmpty) ...[
+                    if (_isDialable(listing.sellerPhone)) ...[
                       const SizedBox(height: 6),
                       detailRow(Icons.phone_outlined, listing.sellerPhone),
                     ],
@@ -1211,8 +1211,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        // Map button
-                        if (listing.hasLocation) ...[
+                        // Map button — geo point or address search fallback
+                        if (listing.hasLocation ||
+                            (listing.sellerAddress?.trim().isNotEmpty ??
+                                false)) ...[
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () => _openMap(listing),
@@ -1231,8 +1233,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        // Call button
-                        if (listing.sellerPhone.isNotEmpty) ...[
+                        // Call button — only for dialable numbers (UIDs leak
+                        // into sellerPhone on some legacy docs)
+                        if (_isDialable(listing.sellerPhone)) ...[
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () =>
@@ -1285,6 +1288,12 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
     );
   }
 
+  static bool _isDialable(String phone) {
+    final stripped =
+        phone.startsWith('+91') ? phone.substring(3) : phone;
+    return RegExp(r'^\d{10,13}$').hasMatch(stripped);
+  }
+
   void _callStore(String phone) async {
     final url = Uri.parse('tel:$phone');
     if (await canLaunchUrl(url)) {
@@ -1293,10 +1302,15 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
   }
 
   void _openMap(ListingModel listing) async {
-    final lat = listing.sellerLat!;
-    final lng = listing.sellerLng!;
+    // Prefer exact coordinates; fall back to searching the store address/name.
+    final query = listing.hasLocation
+        ? '${listing.sellerLat},${listing.sellerLng}'
+        : Uri.encodeComponent(
+            [listing.sellerName, listing.sellerAddress ?? '']
+                .where((s) => s.trim().isNotEmpty)
+                .join(' '));
     final url =
-        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }

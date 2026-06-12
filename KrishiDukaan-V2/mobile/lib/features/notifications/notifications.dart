@@ -134,12 +134,14 @@ class NotificationsScreen extends ConsumerWidget {
 
   static const _icons = {
     'order': Icons.receipt_long_outlined,
+    'order_update': Icons.local_shipping_outlined,
     'assignment': Icons.assignment_turned_in_outlined,
     'network': Icons.handshake_outlined,
   };
 
   static const _colors = {
     'order': AppColors.info,
+    'order_update': AppColors.success,
     'assignment': AppColors.primary,
     'network': AppColors.success,
   };
@@ -167,6 +169,9 @@ class NotificationsScreen extends ConsumerWidget {
     switch (n.type) {
       case 'order':
         context.push('/dashboard/orders');
+      case 'order_update':
+        final orderId = n.data['orderId'] as String?;
+        context.push(orderId != null ? '/orders/$orderId' : '/orders');
       case 'assignment':
         context.push('/dashboard/inventory');
       case 'network':
