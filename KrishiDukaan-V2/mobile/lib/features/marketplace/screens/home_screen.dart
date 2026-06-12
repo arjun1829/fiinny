@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/product_card.dart';
+import '../../notifications/notifications.dart';
 import '../providers/marketplace_provider.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -36,11 +37,7 @@ class HomeScreen extends ConsumerWidget {
                 tooltip: 'Search products',
                 onPressed: () => context.go('/marketplace'),
               ),
-              TopBarAction(
-                icon: Icons.notifications_outlined,
-                tooltip: 'Notifications',
-                onPressed: () {},
-              ),
+              const NotificationBell(),
             ],
           ),
           SliverToBoxAdapter(

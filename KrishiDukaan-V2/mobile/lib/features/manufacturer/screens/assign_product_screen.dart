@@ -187,7 +187,7 @@ class _AssignProductScreenState
     final product = _selectedProduct!;
     final networkAsync =
         ref.read(retailerNetworkProvider(manufacturerPhone));
-    final retailers = networkAsync.valueOrNull ?? [];
+    final retailers = networkAsync.value ?? [];
 
     setState(() => _saving = true);
     try {

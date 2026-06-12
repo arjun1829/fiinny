@@ -15,6 +15,7 @@ import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../../../core/widgets/error_view.dart';
 import '../providers/marketplace_provider.dart';
+import '../widgets/review_sheet.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String catalogId;
@@ -552,6 +553,38 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   Text('Customer Reviews', style: AppTextStyles.heading3),
                 ],
               ),
+              ref.watch(userProductReviewProvider(widget.catalogId)).when(
+                data: (userReview) {
+                  return TextButton.icon(
+                    onPressed: () {
+                      showReviewBottomSheet(
+                        context: context,
+                        ref: ref,
+                        catalogId: widget.catalogId,
+                        existingReview: userReview,
+                      );
+                    },
+                    icon: Icon(
+                      userReview != null ? Icons.edit : Icons.rate_review,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    label: Text(
+                      userReview != null ? 'Edit Review' : 'Write Review',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                },
+                loading: () => const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                error: (e, s) => const SizedBox.shrink(),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -851,29 +884,40 @@ class _SellerTile extends ConsumerStatefulWidget {
 class _SellerTileState extends ConsumerState<_SellerTile> {
   bool _expanded = false;
 
-  /// Effective (post-discount) % for this store — listing's own discount first,
-  /// then the catalog's per-seller discount map. Keeps the display and the
-  /// add-to-cart price in sync.
-  double get _discountPct {
+  /// Effective price for this store, resolving both percentage and fixed_amount
+  /// discounts. Uses listing's own discount first, then catalog per-seller map.
+  double get _effectivePrice {
     final listing = widget.listing;
-    final listingPct =
-        (listing.discount != null && listing.discount!.isCurrentlyActive)
-            ? listing.discount!.percentage
-            : 0.0;
-    return listingPct > 0 ? listingPct : widget.sellerDiscountPct;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) {
+      return (listing.price - listing.discount!.discountAmount(listing.price))
+          .clamp(0.0, double.infinity);
+    }
+    // Fallback to catalog-level percentage discount map
+    final pct = widget.sellerDiscountPct;
+    return pct > 0 ? listing.price * (1 - pct / 100) : listing.price;
   }
 
-  double get _effectivePrice =>
-      widget.listing.price * (1 - _discountPct / 100);
+  /// Percentage for display badge (0 when fixed_amount — shown differently).
+  double get _discountPct {
+    final listing = widget.listing;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) {
+      if (listing.discount!.type == 'fixed_amount') return 0.0;
+      return listing.discount!.percentage;
+    }
+    return widget.sellerDiscountPct;
+  }
+
+  bool get _hasDiscount {
+    final listing = widget.listing;
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) return true;
+    return widget.sellerDiscountPct > 0;
+  }
 
   @override
   Widget build(BuildContext context) {
     final listing = widget.listing;
-    // Discount resolution (web parity): prefer the listing's own discount
-    // (mirrored into the availability[] entry); fall back to the per-seller
-    // discount map carried on the catalog so legacy/unmirrored data still shows.
     final discountPct = _discountPct;
-    final hasDiscount = discountPct > 0;
+    final hasDiscount = _hasDiscount;
     final originalPrice = listing.price;
     final effectivePrice = hasDiscount ? _effectivePrice : originalPrice;
 

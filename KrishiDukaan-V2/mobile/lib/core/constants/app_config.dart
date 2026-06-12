@@ -1,6 +1,10 @@
 class AppConfig {
   AppConfig._();
 
+  // Defaults to production so payments work out of the box on devices —
+  // localhost on a phone/emulator points at the device itself, which silently
+  // breaks every payment call. Override for local dev:
+  //   flutter run --dart-define=API_BASE_URL=http://localhost:3001
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://krishidukan.com',

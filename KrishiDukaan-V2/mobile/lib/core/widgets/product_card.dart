@@ -43,63 +43,63 @@ class ProductCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image (with corner offer ribbon)
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: product.hasImages
-                        ? CachedNetworkImage(
-                            imageUrl: product.imageUrl,
-                            fit: BoxFit.cover,
-                            placeholder: (_, _) => Container(
-                              color: AppColors.surfaceVariant,
-                              child: const Center(
-                                child: Icon(Icons.grass,
-                                    size: 40, color: AppColors.primaryLight),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(12)),
+                      child: product.hasImages
+                          ? CachedNetworkImage(
+                              imageUrl: product.imageUrl,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => Container(
+                                color: AppColors.surfaceVariant,
+                                child: const Center(
+                                  child: Icon(Icons.grass,
+                                      size: 40, color: AppColors.primaryLight),
+                                ),
                               ),
-                            ),
-                            errorWidget: (_, _, _) => _placeholder(),
-                          )
-                        : _placeholder(),
-                  ),
-                ),
-                if (hasOffer)
-                  Positioned(
-                    top: 8,
-                    left: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF16A34A),
-                        borderRadius: BorderRadius.only(
-                          topRight: Radius.circular(6),
-                          bottomRight: Radius.circular(6),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.local_offer,
-                              size: 10, color: Colors.white),
-                          const SizedBox(width: 3),
-                          Text(
-                            '${maxPct.toStringAsFixed(0)}% OFF',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
+                              errorWidget: (_, _, _) => _placeholder(),
+                            )
+                          : _placeholder(),
                     ),
                   ),
-              ],
+                  if (hasOffer)
+                    Positioned(
+                      top: 8,
+                      left: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF16A34A),
+                          borderRadius: BorderRadius.only(
+                            topRight: Radius.circular(6),
+                            bottomRight: Radius.circular(6),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_offer,
+                                size: 10, color: Colors.white),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${maxPct.toStringAsFixed(0)}% OFF',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             // Info
             Padding(

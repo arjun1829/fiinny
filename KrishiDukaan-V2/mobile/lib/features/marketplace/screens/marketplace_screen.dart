@@ -93,7 +93,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       final prods = await repo.fetchPage(searchQuery: query, limit: 8);
 
       // Stores: filter from pre-loaded stores list in memory
-      final allStores = ref.read(storesListProvider).valueOrNull ?? [];
+      final allStores = ref.read(storesListProvider).value ?? [];
       final queryLower = query.toLowerCase();
       final stores = allStores
           .where((s) {

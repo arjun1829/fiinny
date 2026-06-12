@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class ReviewModel {
   final String id;
   final String catalogId;
+  final String storePhone;
   final double rating;
   final String? reviewText;
   final String reviewerPhone;
@@ -11,7 +12,8 @@ class ReviewModel {
 
   const ReviewModel({
     required this.id,
-    required this.catalogId,
+    this.catalogId = '',
+    this.storePhone = '',
     required this.rating,
     this.reviewText,
     required this.reviewerPhone,
@@ -24,6 +26,7 @@ class ReviewModel {
     return ReviewModel(
       id: doc.id,
       catalogId: d['catalogId'] as String? ?? '',
+      storePhone: d['storePhone'] as String? ?? '',
       rating: (d['rating'] as num?)?.toDouble() ?? 0.0,
       reviewText: d['reviewText'] as String?,
       reviewerPhone: d['reviewerPhone'] as String? ?? '',

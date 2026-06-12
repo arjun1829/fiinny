@@ -59,9 +59,14 @@ class AuthRepository {
     required String name,
     String role = 'consumer',
   }) async {
-    final batch = _db.batch();
+    // 1. Write uidIndex first (chicken-and-egg rule bootstrap)
+    await _db.collection('uidIndex').doc(uid).set({
+      'phone': phone,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-    batch.set(_db.collection('users').doc(phone), {
+    // 2. Write user document second (now myPhone() will resolve correctly)
+    await _db.collection('users').doc(phone).set({
       'uid': uid,
       'phone': phone,
       'name': name,
@@ -71,13 +76,6 @@ class AuthRepository {
       'productCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
-
-    batch.set(_db.collection('uidIndex').doc(uid), {
-      'phone': phone,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    await batch.commit();
   }
 
   /// Ensures uidIndex/{uid} exists — called on every login (not just signup).

@@ -62,7 +62,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   }
 
   Future<void> _startPayment() async {
-    final user = ref.read(currentUserProvider).valueOrNull;
+    final user = ref.read(currentUserProvider).value;
     if (user == null) return;
 
     setState(() {
@@ -150,7 +150,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       final verifiedSeatCount = (verifyData['seatCount'] as num?)?.toInt() ?? _seats;
 
       // 2. Update Subscription Status in Firestore directly (matches web SDK updateSubscriptionStatus)
-      final user = ref.read(currentUserProvider).valueOrNull!;
+      final user = ref.read(currentUserProvider).value!;
       final firebaseUser = FirebaseAuth.instance.currentUser!;
 
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.phone);
@@ -159,6 +159,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
       final batch = FirebaseFirestore.instance.batch();
 
+      // If user is still 'consumer', upgrade to 'retailer' so canAccessDashboard
+      // returns true after payment (consumers who pay should get seller access).
+      final roleUpdate = user.role == 'consumer' ? {'role': 'retailer'} : <String, dynamic>{};
       batch.update(userDocRef, {
         'isPaid': true,
         'subscriptionStatus': 'paid',
@@ -168,6 +171,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         },
         'totalSeats': currentSeats + seatsToAdd,
         'updatedAt': FieldValue.serverTimestamp(),
+        ...roleUpdate,
       });
 
       final pricePerSeat = _pricePerSeat[_duration.months] ?? 21;
@@ -245,7 +249,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserProvider);
-    final isPaid = userAsync.valueOrNull?.isPaid ?? false;
+    final isPaid = userAsync.value?.isPaid ?? false;
     final totalPrice = _duration.totalPrice(_seats);
 
     return Scaffold(

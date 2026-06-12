@@ -7,6 +7,7 @@ import '../../../core/models/order_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
+import '../../notifications/notifications.dart';
 import '../providers/manufacturer_provider.dart';
 
 class ManufacturerDashboardScreen extends ConsumerWidget {
@@ -51,6 +52,7 @@ class _ManufacturerBody extends ConsumerWidget {
         title: Text('Manufacturer Hub',
             style: AppTextStyles.heading2.copyWith(color: Colors.white)),
         actions: [
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.language, color: Colors.white),
             tooltip: 'Brand Page',
@@ -170,14 +172,14 @@ class _ManufacturerBody extends ConsumerWidget {
                     _StatCard(
                       label: 'Pending Orders',
                       value:
-                          '${(ordersAsync.valueOrNull ?? []).where((o) => o.status == 'pending').length}',
+                          '${(ordersAsync.value ?? []).where((o) => o.status == 'pending').length}',
                       icon: Icons.pending_actions_outlined,
                       color: AppColors.secondary,
                     ),
                     _StatCard(
                       label: 'Revenue',
                       value: CurrencyUtils.format(
-                        (ordersAsync.valueOrNull ?? [])
+                        (ordersAsync.value ?? [])
                             .where((o) => o.status != 'cancelled')
                             .fold<double>(0, (sum, o) => sum + o.total),
                       ),
