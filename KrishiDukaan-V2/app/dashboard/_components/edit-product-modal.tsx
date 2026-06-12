@@ -499,6 +499,18 @@ export function EditProductModal({ row, onClose, onSaved }: {
     setSaving(true);
     setMessage(null);
     try {
+      // ── OWNERSHIP AUDIT ────────────────────────────────────────────────────
+      console.log("[EditProductModal] handleSave", {
+        "Editing Product (productId)": row.productId,
+        "Source": row.source,
+        "Owner": row.ownerId,
+        "assignedByManufacturer": row.assignedByManufacturer,
+        "originalProductId": row.originalProductId ?? null,
+        "Inventory": row.inventoryId,
+        "Saving to (products)": row.productId,
+        "Saving to (inventory)": row.inventoryId,
+      });
+      // ───────────────────────────────────────────────────────────────────────
       await updateManufacturerProduct(row.productId, {
         name, category: savedCategory, description,
         unit: parsedVariants[0].unit,

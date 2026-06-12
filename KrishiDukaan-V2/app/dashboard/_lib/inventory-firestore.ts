@@ -845,6 +845,13 @@ export async function updateInventoryRecord(
   inventoryId: string,
   patch: InventoryUpdateInput,
 ): Promise<void> {
+  // ── OWNERSHIP AUDIT ──────────────────────────────────────────────────────
+  console.log("[updateInventoryRecord] Saving to inventory/" + inventoryId, {
+    stockQuantity: patch.stockQuantity,
+    sellingPrice: patch.sellingPrice,
+    reorderThreshold: patch.reorderThreshold,
+  });
+  // ────────────────────────────────────────────────────────────────────────
   const ref = doc(db, "inventory", inventoryId);
   await updateDoc(ref, {
     stockQuantity: patch.stockQuantity,
@@ -879,6 +886,7 @@ export async function updateInventoryRecord(
       // uses copy.price as a fallback when no sellingPrice has been synced to the
       // canonical product's availability[] yet (e.g. initial assignment state).
       if (copyId) {
+        console.log("[updateInventoryRecord] price sync → products/" + copyId, { price: patch.sellingPrice });
         updateDoc(doc(db, "products", copyId), {
           price: patch.sellingPrice,
           updatedAt: serverTimestamp(),
@@ -886,6 +894,12 @@ export async function updateInventoryRecord(
       }
 
       if (rootId && rootId !== copyId) {
+        console.log("[updateInventoryRecord] availability sync → products/" + rootId + ".availability[]", {
+          sellingPrice: patch.sellingPrice,
+          stockLevel: patch.stockQuantity > 0 ? "In Stock" : "Out of Stock",
+          matchOwnerId: String(inv.ownerId ?? inv.retailerId ?? inv.retailerDocId ?? ""),
+          matchPhone: String(inv.retailerPhone ?? inv.ownerPhone ?? ""),
+        });
         await syncAvailabilityPriceStock(
           rootId,
           {

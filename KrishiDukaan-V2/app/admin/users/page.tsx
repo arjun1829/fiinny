@@ -356,6 +356,19 @@ export default function AdminUsersPage() {
   const handleAdminProductSave = async (payload: any) => {
     const { editProductId, ...data } = payload;
     if (!editProductId) return;
+    // ── OWNERSHIP AUDIT ────────────────────────────────────────────────────
+    console.log("[AdminUsers] handleAdminProductSave", {
+      "Saving to (products)": editProductId,
+      "Loaded from (editingProductDoc.id)": editingProductDoc?.id ?? "unknown",
+      "Source of doc loaded": (editingProductDoc as any)?.source ?? "unknown",
+      "originalProductId in doc": (editingProductDoc as any)?.originalProductId ?? null,
+      "manufacturerProductId in doc": (editingProductDoc as any)?.manufacturerProductId ?? null,
+      "ownerId in doc": (editingProductDoc as any)?.ownerId ?? null,
+      "For seller": productsUser?.phone ?? productsUser?.id ?? "unknown",
+      "price": data.price,
+      "name": data.name,
+    });
+    // ────────────────────────────────────────────────────────────────────────
     const { doc: fDoc, setDoc: fSetDoc, serverTimestamp: fTs } = await import("firebase/firestore");
     const { db: fdb } = await import("../../firebase");
     const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));

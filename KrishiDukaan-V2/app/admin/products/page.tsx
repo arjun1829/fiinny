@@ -256,6 +256,17 @@ export default function AdminProductsPage() {
   const handleAdminSave = async (payload: any) => {
     const { editProductId, ...data } = payload;
     if (editProductId) {
+      // ── OWNERSHIP AUDIT ────────────────────────────────────────────────
+      const editingEntry = products.find(p => p.id === editProductId);
+      console.log("[AdminProducts] handleAdminSave (edit)", {
+        "Saving to (products)": editProductId,
+        "Source of canonical": (editingEntry as any)?.source ?? "unknown",
+        "allDocIds in group": (editingEntry as any)?.allDocIds ?? [editProductId],
+        "price": data.price,
+        "name": data.name,
+        "NOTE: duplicate docs will be deactivated": true,
+      });
+      // ────────────────────────────────────────────────────────────────────
       // Edit: update the product and deactivate any stale duplicate docs
       await adminUpdateProduct(editProductId, data);
       const original = products.find(p => p.id === editProductId);
