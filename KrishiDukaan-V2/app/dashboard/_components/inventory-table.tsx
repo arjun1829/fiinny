@@ -591,6 +591,19 @@ export function InventoryTable({
     setSavingId(row.inventoryId);
     setError(null);
     try {
+      // ── OWNERSHIP AUDIT ──────────────────────────────────────────────────
+      console.log("[InventoryTable] handleSaveRow (inline stock/price edit)", {
+        "Editing Product (productId)": row.productId,
+        "Source": row.source,
+        "Owner": row.ownerId,
+        "assignedByManufacturer": row.assignedByManufacturer,
+        "originalProductId": row.originalProductId ?? null,
+        "Saving to (inventory)": row.inventoryId,
+        "NOT updating products doc directly": true,
+        "sellingPrice": d.sellingPrice,
+        "stockQuantity": d.stockQuantity,
+      });
+      // ────────────────────────────────────────────────────────────────────
       // Preserve the existing reorder threshold — it isn't edited inline.
       await updateInventoryRecord(row.inventoryId, {
         stockQuantity: Math.max(0, Math.floor(parseInt(d.stockQuantity, 10) || 0)),

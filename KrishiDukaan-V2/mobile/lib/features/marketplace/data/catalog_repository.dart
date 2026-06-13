@@ -63,13 +63,27 @@ class CatalogRepository {
           p.price.isFinite &&
           !copySources.contains(p.source)).toList();
 
-      // Per-seller discount map: nameKey -> { sellerUidOrPhone: discountPct }
+      // Per-seller discount map: nameKey -> { normalizedPhone: discountPct }
+      // Phones are stored in both +91-prefixed and 10-digit forms; normalise to
+      // 10-digit so product_detail lookup (which also normalises) always matches.
+      String _normPhone(String? p) {
+        if (p == null || p.isEmpty) return '';
+        if (p.startsWith('+91') && p.length > 3) return p.substring(3);
+        if (p.startsWith('91') && p.length == 12) return p.substring(2);
+        return p;
+      }
+
       final sellerDiscountsByKey = <String, Map<String, double>>{};
       void recordSellerDiscount(String key, String? uid, String? phone, double pct) {
         if (pct <= 0.0) return;
         final map = sellerDiscountsByKey[key] ?? <String, double>{};
-        if (uid != null && uid.isNotEmpty) map[uid] = pct;
-        if (phone != null && phone.isNotEmpty) map[phone] = pct;
+        // Store by both normalized phone and original uid so callers using either key find it
+        final normPhone = _normPhone(phone);
+        if (normPhone.isNotEmpty) {
+          map[normPhone] = pct;
+          map['+91$normPhone'] = pct; // cover +91 variant too
+        }
+        if (uid != null && uid.isNotEmpty && !uid.startsWith('+')) map[uid] = pct;
         sellerDiscountsByKey[key] = map;
       }
 
@@ -332,10 +346,10 @@ class CatalogRepository {
       limit: limit,
     );
 
-    return models.map((m) {
-      final doc = _docCache[m.id] ?? _docCache.values.first;
-      return (model: m, doc: doc);
-    }).toList();
+    return models
+        .where((m) => _docCache.containsKey(m.id))
+        .map((m) => (model: m, doc: _docCache[m.id]!))
+        .toList();
   }
 
   Future<CatalogModel?> fetchById(String catalogId) async {

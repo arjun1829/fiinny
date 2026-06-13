@@ -93,7 +93,7 @@ export default function AdminProductsPage() {
 
   // ── Assignments viewer (which sellers carry a product) ──
   const [viewAssignmentsFor, setViewAssignmentsFor] = useState<MarketplaceProduct | null>(null);
-  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string }[]>([]);
+  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string; variants?: { unit: string; price: number; stock?: number }[] }[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [removingRow, setRemovingRow] = useState<string | null>(null);
@@ -256,6 +256,17 @@ export default function AdminProductsPage() {
   const handleAdminSave = async (payload: any) => {
     const { editProductId, ...data } = payload;
     if (editProductId) {
+      // ── OWNERSHIP AUDIT ────────────────────────────────────────────────
+      const editingEntry = products.find(p => p.id === editProductId);
+      console.log("[AdminProducts] handleAdminSave (edit)", {
+        "Saving to (products)": editProductId,
+        "Source of canonical": (editingEntry as any)?.source ?? "unknown",
+        "allDocIds in group": (editingEntry as any)?.allDocIds ?? [editProductId],
+        "price": data.price,
+        "name": data.name,
+        "NOTE: duplicate docs will be deactivated": true,
+      });
+      // ────────────────────────────────────────────────────────────────────
       // Edit: update the product and deactivate any stale duplicate docs
       await adminUpdateProduct(editProductId, data);
       const original = products.find(p => p.id === editProductId);

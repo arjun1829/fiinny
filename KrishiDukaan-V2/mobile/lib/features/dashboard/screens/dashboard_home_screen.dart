@@ -7,6 +7,7 @@ import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../notifications/notifications.dart';
 import '../data/dashboard_repository.dart' show SeatStats;
 import '../providers/dashboard_provider.dart';
 import '../../manufacturer/providers/manufacturer_provider.dart';
@@ -68,6 +69,7 @@ class _DashboardBody extends ConsumerWidget {
         title: Text('Dashboard',
             style: AppTextStyles.heading2.copyWith(color: Colors.white)),
         actions: [
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.person_outline, color: Colors.white),
             onPressed: () => context.go('/profile'),
@@ -337,9 +339,9 @@ class _OverviewGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final listings =
-        listingsAsync.valueOrNull?.cast<ListingModel>() ?? const <ListingModel>[];
+        listingsAsync.value?.cast<ListingModel>() ?? const <ListingModel>[];
     final orders =
-        ordersAsync.valueOrNull?.cast<OrderModel>() ?? const <OrderModel>[];
+        ordersAsync.value?.cast<OrderModel>() ?? const <OrderModel>[];
     final loading = listingsAsync.isLoading || ordersAsync.isLoading;
 
     if (loading) return _StatsShimmer();
@@ -356,13 +358,13 @@ class _OverviewGrid extends StatelessWidget {
       if (isManufacturer) ...[
         _StatCard(
           label: 'Catalog Products',
-          value: '${analyticsAsync?.valueOrNull?['catalogProducts'] ?? listings.length}',
+          value: '${analyticsAsync?.value?['catalogProducts'] ?? listings.length}',
           icon: Icons.inventory_2_outlined,
           color: AppColors.primary,
         ),
         _StatCard(
           label: 'Active Retailers',
-          value: '${analyticsAsync?.valueOrNull?['activeRetailers'] ?? 0}',
+          value: '${analyticsAsync?.value?['activeRetailers'] ?? 0}',
           icon: Icons.store_outlined,
           color: AppColors.success,
         ),

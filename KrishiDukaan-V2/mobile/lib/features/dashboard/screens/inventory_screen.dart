@@ -994,6 +994,18 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       return;
     }
 
+    // Enforce seat limit before writing
+    final seatStats = ref.read(seatStatsProvider(widget.sellerPhone)).value;
+    if (seatStats != null && seatStats.available <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No listing seats available. Purchase more seats from Subscription.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final priceInput = double.tryParse(_priceCtrl.text.trim());
     final stockInput = int.tryParse(_stockCtrl.text.trim());
     if (priceInput != null && stockInput != null) {

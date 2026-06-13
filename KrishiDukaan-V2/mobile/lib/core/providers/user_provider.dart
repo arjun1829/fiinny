@@ -38,15 +38,15 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) {
 
 /// Derived: current user's role string.
 final userRoleProvider = Provider<String>((ref) {
-  return ref.watch(currentUserProvider).valueOrNull?.role ?? 'consumer';
+  return ref.watch(currentUserProvider).value?.role ?? 'consumer';
 });
 
 /// Derived: whether the current user can access the seller dashboard.
 final canAccessDashboardProvider = Provider<bool>((ref) {
-  return ref.watch(currentUserProvider).valueOrNull?.canAccessDashboard ?? false;
+  return ref.watch(currentUserProvider).value?.canAccessDashboard ?? false;
 });
 
 /// Derived: whether the current user is a manufacturer.
 final isManufacturerProvider = Provider<bool>((ref) {
-  return ref.watch(currentUserProvider).valueOrNull?.isManufacturer ?? false;
+  return ref.watch(currentUserProvider).value?.isManufacturer ?? false;
 });

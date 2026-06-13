@@ -30,6 +30,9 @@ import '../../features/manufacturer/screens/manufacturer_catalog_screen.dart';
 import '../../features/manufacturer/screens/assign_product_screen.dart';
 import '../../features/manufacturer/screens/brand_editor_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/notifications/notifications.dart';
+import '../../features/welcome/screens/splash_screen.dart';
+import '../../features/welcome/screens/welcome_screen.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
@@ -45,14 +48,18 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootKey,
     refreshListenable: notifier,
-    initialLocation: '/',
+    initialLocation: '/splash',
     redirect: (context, state) {
+      final path = state.matchedLocation;
+
+      // Splash and first-install welcome run before any auth decisions.
+      if (path == '/splash' || path == '/welcome') return null;
+
       final authState = ref.read(authStateProvider);
       if (authState.isLoading) return null;
 
-      final user = authState.valueOrNull;
+      final user = authState.value;
       final isLoggedIn = user != null;
-      final path = state.matchedLocation;
 
       final isAuthPath = path == '/login' ||
           path == '/login/otp' ||
@@ -67,7 +74,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (isLoggedIn && isAuthPath) {
-        final currentUser = ref.read(currentUserProvider).valueOrNull;
+        final currentUser = ref.read(currentUserProvider).value;
         if (currentUser == null && path != '/onboarding') return '/onboarding';
         if (currentUser != null) return '/';
       }
@@ -84,6 +91,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // ── Launch (outside shell) ────────────────────────────────────────
+      GoRoute(
+        path: '/splash',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const SplashScreen(),
+      ),
+      GoRoute(
+        path: '/welcome',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const WelcomeScreen(),
+      ),
+
       // ── Auth (outside shell) ──────────────────────────────────────────
       GoRoute(
         path: '/login',
@@ -158,7 +177,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/subscription',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const SubscriptionScreen(),
+        builder: (_, state) => SubscriptionScreen(
+          reason: state.uri.queryParameters['reason'],
+        ),
+      ),
+      GoRoute(
+        path: '/notifications',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const NotificationsScreen(),
       ),
       // ── Dashboard routes ─────────────────────────────────────────────────
       GoRoute(
@@ -271,7 +297,7 @@ class _RouterRefreshNotifier extends ChangeNotifier {
     _userSub = ref.listen<AsyncValue>(
       currentUserProvider,
       (prev, next) {
-        if (prev?.valueOrNull == null && next.valueOrNull != null) {
+        if (prev?.value == null && next.value != null) {
           notifyListeners();
         }
       },

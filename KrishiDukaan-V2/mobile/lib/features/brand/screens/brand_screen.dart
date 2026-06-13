@@ -8,6 +8,9 @@ import '../../../core/models/brand_model.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/models/store_model.dart';
+import '../../marketplace/providers/marketplace_provider.dart';
+import '../../marketplace/widgets/review_sheet.dart';
 import '../data/brand_repository.dart';
 
 final _brandRepo = BrandRepository();
@@ -110,6 +113,80 @@ class BrandScreen extends ConsumerWidget {
                         Text(brand.description!,
                             style: AppTextStyles.body),
                       ],
+                      const SizedBox(height: 12),
+                      ref.watch(storeReviewsProvider(brand.phone)).when(
+                        data: (reviews) {
+                          final avg = reviews.isEmpty
+                              ? 0.0
+                              : reviews.fold<double>(0, (sum, r) => sum + r.rating) /
+                                  reviews.length;
+                          final count = reviews.length;
+
+                          return Row(
+                            children: [
+                              if (count > 0) ...[
+                                Row(
+                                  children: List.generate(
+                                    5,
+                                    (i) => Icon(
+                                      i < avg.round() ? Icons.star : Icons.star_border,
+                                      size: 16,
+                                      color: AppColors.secondary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  avg.toStringAsFixed(1),
+                                  style: AppTextStyles.bodyMedium
+                                      .copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '($count)',
+                                  style: AppTextStyles.bodyMedium
+                                      .copyWith(color: AppColors.onSurfaceVariant),
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                              TextButton.icon(
+                                onPressed: () {
+                                  final store = StoreModel(
+                                    id: brand.phone,
+                                    name: brand.businessName,
+                                    phone: brand.phone,
+                                    logo: brand.logo,
+                                    averageRating: avg,
+                                    totalReviews: count,
+                                  );
+                                  showStoreReviewsBottomSheet(
+                                    context: context,
+                                    ref: ref,
+                                    store: store,
+                                  );
+                                },
+                                icon: const Icon(Icons.rate_review, size: 16),
+                                label: Text(
+                                  count > 0 ? 'View Reviews' : 'Write a Review',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(50, 30),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                        loading: () => const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        error: (e, s) => const SizedBox.shrink(),
+                      ),
                       const SizedBox(height: 24),
 
                       // Products section
@@ -185,19 +262,21 @@ class _BrandProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              child: SizedBox(
-                height: 110,
-                width: double.infinity,
-                child: product.hasImages
-                    ? CachedNetworkImage(
-                        imageUrl: product.imageUrl,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => _placeholder(),
-                      )
-                    : _placeholder(),
+            Expanded(
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: product.hasImages
+                      ? CachedNetworkImage(
+                          imageUrl: product.imageUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, _, _) => _placeholder(),
+                        )
+                      : _placeholder(),
+                ),
               ),
             ),
             Padding(

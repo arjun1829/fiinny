@@ -459,39 +459,48 @@ class ManufacturerRepository {
         .where('inviteCode', isEqualTo: inviteCode)
         .limit(1)
         .get();
-    if (snap.docs.isEmpty) return;
+    if (snap.docs.isEmpty) throw Exception('Invite code not found.');
     final doc = snap.docs.first;
-    if (doc['status'] == 'invited') {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      await doc.reference.update({
+    if (doc['claimable'] == false) throw Exception('This invite has already been claimed.');
+    if (doc['status'] != 'invited') throw Exception('Invite is no longer valid.');
+
+    // Verify the claimer's phone matches the invited phone (prevent code theft)
+    final invitedPhone = PhoneUtils.normalize(doc['retailerPhone'] as String? ?? '');
+    final claimerPhone = PhoneUtils.normalize(userPhone);
+    if (invitedPhone.isNotEmpty && invitedPhone != claimerPhone) {
+      throw Exception('This invite was sent to a different phone number.');
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await doc.reference.update({
+      'status': 'active',
+      'retailerPhone': userPhone,
+      'retailerDocId': userPhone,
+      'claimable': false,
+      'retailerId': uid,
+      'onboardingStatus': 'active',
+      'claimedAt': FieldValue.serverTimestamp(),
+    });
+    // Promote user role to retailer — use set+merge in case the user doc doesn't exist yet
+    await _db.collection('users').doc(userPhone).set({
+      'role': 'retailer',
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // Update the mirror
+    final d = doc.data();
+    final manufacturerPhone = d['manufacturerPhone'] as String? ?? '';
+    if (manufacturerPhone.isNotEmpty) {
+      final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$userPhone');
+      await mirrorRef.set({
         'status': 'active',
         'retailerPhone': userPhone,
         'retailerDocId': userPhone,
-        'claimable': false,
         'retailerId': uid,
         'onboardingStatus': 'active',
         'claimedAt': FieldValue.serverTimestamp(),
-      });
-      // Promote user role to retailer
-      await _db.collection('users').doc(userPhone).update({
-        'role': 'retailer',
-      });
-
-      // Update the mirror
-      final d = doc.data();
-      final manufacturerPhone = d['manufacturerPhone'] as String? ?? '';
-      if (manufacturerPhone.isNotEmpty) {
-        final mirrorRef = _db.doc('manufacturers/$manufacturerPhone/retailers/$userPhone');
-        await mirrorRef.set({
-          'status': 'active',
-          'retailerPhone': userPhone,
-          'retailerDocId': userPhone,
-          'retailerId': uid,
-          'onboardingStatus': 'active',
-          'claimedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     }
   }
 
@@ -603,6 +612,14 @@ class ManufacturerRepository {
 
   // ── Product assignment ────────────────────────────────────────────────────
 
+  /// Assigns a manufacturer product to a retailer using the same atomic flow
+  /// as the web dashboard:
+  ///   1. Validates a seat is available from an active subscription.
+  ///   2. Creates a product copy in `products` (retailer manages stock).
+  ///   3. Creates an `inventory` record linked to the copy.
+  ///   4. Creates a `retailerSeatListings` entry (consumes the seat).
+  ///   5. Appends an `availability[]` entry to the canonical product doc so the
+  ///      marketplace "Available At" tab reflects the assignment immediately.
   Future<void> assignProductToRetailer({
     required String catalogId,
     required String catalogName,
@@ -611,26 +628,178 @@ class ManufacturerRepository {
     required String manufacturerPhone,
     required double price,
   }) async {
-    // Create a listing for the retailer
-    await _db.collection('listings').add({
-      'catalogId': catalogId,
-      'sellerPhone': retailerPhone,
-      'sellerName': retailerName,
-      'sellerType': 'retailer',
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final now = FieldValue.serverTimestamp();
+
+    // 1. Resolve manufacturer's active subscription expiry for seat lifetime
+    Timestamp? subExpiry;
+    final subQueries = <Future<QuerySnapshot>>[
+      if (manufacturerPhone.isNotEmpty)
+        _db.collection('subscriptions')
+            .where('ownerPhone', isEqualTo: manufacturerPhone)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .limit(1)
+            .get(),
+      if (uid.isNotEmpty)
+        _db.collection('subscriptions')
+            .where('ownerId', isEqualTo: uid)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .limit(1)
+            .get(),
+    ];
+    for (final snap in await Future.wait(subQueries)) {
+      if (snap.docs.isNotEmpty) {
+        final d = snap.docs.first.data() as Map<String, dynamic>? ?? {};
+        subExpiry = d['expiryDate'] as Timestamp?;
+        if (subExpiry != null) break;
+      }
+    }
+    if (subExpiry == null) {
+      throw Exception('No active subscription found. Purchase a plan to assign products.');
+    }
+
+    // 2. Guard against duplicate active assignment
+    final dupSnap = await _db
+        .collection('retailerSeatListings')
+        .where('manufacturerId', isEqualTo: uid.isNotEmpty ? uid : manufacturerPhone)
+        .where('retailerDocId', isEqualTo: retailerPhone)
+        .where('manufacturerProductId', isEqualTo: catalogId)
+        .where('status', isEqualTo: 'active')
+        .limit(1)
+        .get();
+    if (dupSnap.docs.isNotEmpty) {
+      throw Exception('This product is already assigned to this retailer.');
+    }
+
+    // 3. Fetch canonical product source data
+    final productSnap = await _db.collection('products').doc(catalogId).get();
+    if (!productSnap.exists) throw Exception('Product not found.');
+    final src = productSnap.data()!;
+
+    // 4. Resolve retailer store name from their profile doc
+    String storeName = retailerName;
+    try {
+      final rSnap = await _db.collection('retailers').doc(retailerPhone).get();
+      if (rSnap.exists) {
+        final d = rSnap.data()!;
+        storeName = (d['shopName'] ?? d['businessName'] ?? d['ownerName'] ?? retailerName) as String;
+      }
+    } catch (_) {}
+
+    final batch = _db.batch();
+
+    // 5. Product copy — retailer is owner; manufacturer is source reference
+    final retailerProductRef = _db.collection('products').doc();
+    final rawImages = src['images'];
+    final images = rawImages is List ? List<String>.from(rawImages.map((e) => e.toString())) : <String>[];
+    final imageUrl = images.isNotEmpty ? images.first : (src['imageUrl'] ?? src['image'] ?? '') as String;
+
+    batch.set(retailerProductRef, {
+      'id': retailerProductRef.id,
+      'name': src['name'] ?? catalogName,
+      'category': src['category'] ?? '',
+      'description': src['description'] ?? '',
+      'images': images,
+      'image': imageUrl,
+      'imageUrl': imageUrl,
       'price': price,
+      'isActive': true,
+      'ownerId': uid.isNotEmpty ? uid : retailerPhone,
+      'ownerPhone': retailerPhone,
+      'ownerType': 'retailer',
+      'createdBy': uid.isNotEmpty ? uid : manufacturerPhone,
+      'manufacturerId': uid.isNotEmpty ? uid : manufacturerPhone,
+      'manufacturerPhone': manufacturerPhone,
+      'manufacturerProductId': catalogId,
+      'originalProductId': catalogId,
+      'retailerDocId': retailerPhone,
+      'retailerId': '',
+      'retailerPhone': retailerPhone,
+      'source': 'manufacturer_assigned',
+      'store': storeName,
+      'stock': 'In Stock',
       'stockQuantity': 0,
-      'assignedByManufacturerPhone': manufacturerPhone,
-      'variants': [],
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'sellMode': src['sellMode'] ?? 'offline_store_only',
+      'isOnline': src['isOnline'] ?? false,
+      'variants': src['variants'] ?? [],
+      'createdAt': now,
+      'updatedAt': now,
     });
 
-    // Notify via API
-    final idToken =
-        await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (idToken != null) {
-      await http
-          .post(
+    // 6. Inventory record — zero stock until retailer sets it
+    final inventoryRef = _db.collection('inventory').doc();
+    batch.set(inventoryRef, {
+      'id': inventoryRef.id,
+      'ownerId': uid.isNotEmpty ? uid : retailerPhone,
+      'ownerPhone': retailerPhone,
+      'ownerType': 'retailer',
+      'manufacturerId': uid.isNotEmpty ? uid : manufacturerPhone,
+      'manufacturerPhone': manufacturerPhone,
+      'retailerDocId': retailerPhone,
+      'retailerId': '',
+      'retailerPhone': retailerPhone,
+      'productId': retailerProductRef.id,
+      'manufacturerProductId': catalogId,
+      'assignedByManufacturer': true,
+      'stockQuantity': 0,
+      'sellingPrice': price,
+      'reorderThreshold': 5,
+      'isAvailable': false,
+      'updatedAt': now,
+    });
+
+    // 7. Seat listing — tracks which subscription seat this consumes
+    final seatListingRef = _db.collection('retailerSeatListings').doc();
+    batch.set(seatListingRef, {
+      'id': seatListingRef.id,
+      'ownerId': uid.isNotEmpty ? uid : manufacturerPhone,
+      'ownerPhone': manufacturerPhone,
+      'ownerType': 'manufacturer',
+      'manufacturerId': uid.isNotEmpty ? uid : manufacturerPhone,
+      'manufacturerPhone': manufacturerPhone,
+      'retailerDocId': retailerPhone,
+      'retailerId': '',
+      'retailerPhone': retailerPhone,
+      'productId': retailerProductRef.id,
+      'manufacturerProductId': catalogId,
+      'listingType': 'assigned',
+      'status': 'active',
+      'expiresAt': subExpiry,
+      'createdAt': now,
+      'updatedAt': now,
+    });
+
+    // 8. Append to canonical product's availability[] so marketplace reflects this immediately
+    batch.update(_db.collection('products').doc(catalogId), {
+      'availability': FieldValue.arrayUnion([{
+        'storeId': retailerPhone,
+        'storePhone': retailerPhone,
+        'storeName': storeName,
+        'stockLevel': 'In Stock',
+        'sellingPrice': price,
+      }]),
+      'updatedAt': now,
+    });
+
+    await batch.commit();
+
+    // Fire-and-forget email notification
+    _sendProductAssignedNotification(
+      retailerPhone: retailerPhone,
+      productName: catalogName,
+      manufacturerPhone: manufacturerPhone,
+    );
+  }
+
+  Future<void> _sendProductAssignedNotification({
+    required String retailerPhone,
+    required String productName,
+    required String manufacturerPhone,
+  }) async {
+    try {
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null) return;
+      await http.post(
         Uri.parse('${AppConfig.apiBaseUrl}/api/email/product-assigned'),
         headers: {
           'Content-Type': 'application/json',
@@ -638,12 +807,11 @@ class ManufacturerRepository {
         },
         body: jsonEncode({
           'retailerPhone': retailerPhone,
-          'productName': catalogName,
+          'productName': productName,
           'manufacturerPhone': manufacturerPhone,
         }),
-      )
-          .timeout(const Duration(seconds: 10));
-    }
+      ).timeout(const Duration(seconds: 10));
+    } catch (_) {}
   }
 
   // ── Brand page editor ─────────────────────────────────────────────────────
@@ -852,7 +1020,7 @@ class ManufacturerRepository {
       if (idToken == null) return;
       await http
           .post(
-        Uri.parse('${AppConfig.apiBaseUrl}/api/email/invite-retailer'),
+        Uri.parse('${AppConfig.apiBaseUrl}/api/email/invite'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $idToken',

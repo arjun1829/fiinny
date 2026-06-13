@@ -380,7 +380,7 @@ class _RetailerTile extends ConsumerWidget {
   }
 
   void _handleMenuAction(BuildContext context, String action, WidgetRef ref) {
-    final uid = ref.read(currentUserProvider).valueOrNull?.uid ?? '';
+    final uid = ref.read(currentUserProvider).value?.uid ?? '';
     switch (action) {
       case 'details':
         _showDetailsDialog(context);

@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 flutter run
 
 # Run with overridden config (use for non-production API or Razorpay key)
-flutter run --dart-define=API_BASE_URL=http://localhost:3000 --dart-define=RAZORPAY_KEY_ID=rzp_test_SmPxtEcNJ25LUj
+flutter run --dart-define=API_BASE_URL=http://localhost:3001 --dart-define=RAZORPAY_KEY_ID=rzp_test_SmPxtEcNJ25LUj
 
 # Static analysis (run before every commit)
 flutter analyze

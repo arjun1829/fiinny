@@ -105,7 +105,14 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
           await ManufacturerRepository().claimInvite(widget.inviteCode!, phone);
         }
         if (!mounted) return;
-        context.go(widget.redirectAfterLogin ?? '/');
+        // New retailer/manufacturer → subscription page first; the dashboard
+        // stays locked behind the paywall until they subscribe.
+        final role = widget.signupRole ?? 'consumer';
+        if (role == 'retailer' || role == 'manufacturer') {
+          context.go('/subscription?reason=new_account');
+        } else {
+          context.go(widget.redirectAfterLogin ?? '/');
+        }
       } else {
         // Check if user profile exists
         final exists = await _repo.userExists(phone);

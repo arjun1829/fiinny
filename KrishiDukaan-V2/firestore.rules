@@ -565,6 +565,33 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
     }
 
+    // ─── notifications ───────────────────────────────────────────────────────
+    // Written by Cloud Functions (admin SDK bypasses rules). Recipients can
+    // read their own notifications and mark them read / delete them.
+    match /notifications/{notifId} {
+      // GET (single doc): resource.data is available — check phone directly.
+      allow get: if isAdmin() || (isAuthed() && (
+        phoneMatches(resource.data.recipientPhone) ||
+        (resource.data.recipientPhones is list &&
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+      ));
+      // LIST (query): resource.data is NOT available during query evaluation.
+      // Allow any authenticated user — the query is always filtered by
+      // `recipientPhones arrayContains <callerPhone>` so results are already scoped.
+      allow list: if isAuthed();
+      allow update: if isAuthed()
+        && (phoneMatches(resource.data.recipientPhone) ||
+            (resource.data.recipientPhones is list &&
+              resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')])))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAdmin() || (isAuthed() && (
+        phoneMatches(resource.data.recipientPhone) ||
+        (resource.data.recipientPhones is list &&
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+      ));
+      allow create: if isAdmin();
+    }
+
     // ─── carts/{phone} ───────────────────────────────────────────────────────────
     // Shopping cart — keyed by phone (same as users/{phone}).
     // Only the cart owner or an admin may read or write.

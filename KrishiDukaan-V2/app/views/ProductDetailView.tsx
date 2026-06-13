@@ -805,14 +805,22 @@ export default function ProductDetailView({
     }).filter((s) => s.original > 0);
 
     if (perStore.length === 0) {
-      // No stores stock this product — fall back to the variant's list price alone.
+      // No matched stores yet — derive price from availability[].sellingPrice directly.
+      // These entries are kept up to date by syncAvailabilityPriceStock whenever a
+      // retailer changes their inventory price, so they are authoritative even before
+      // the store list has been loaded/matched. Only fall back to the source product
+      // price (variantListPrice) when no seller has a price on record.
+      const availPrices = (product.availability ?? [])
+        .map((a) => a.sellingPrice)
+        .filter((v): v is number => typeof v === 'number' && v > 0);
+      const fallbackPrice = availPrices.length > 0 ? Math.min(...availPrices) : variantListPrice;
       return {
-        currentPrice: variantListPrice,
-        mrp: variantListPrice,
+        currentPrice: fallbackPrice,
+        mrp: fallbackPrice,
         discountPct: 0,
         savings: 0,
         hasOffer: false,
-        isLowestNearby: false,
+        isLowestNearby: availPrices.length > 1,
       };
     }
 

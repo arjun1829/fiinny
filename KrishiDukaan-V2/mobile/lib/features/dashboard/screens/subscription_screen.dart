@@ -33,7 +33,10 @@ class _Duration {
 }
 
 class SubscriptionScreen extends ConsumerStatefulWidget {
-  const SubscriptionScreen({super.key});
+  /// 'new_account' → just signed up; 'paywall' → bounced off the dashboard.
+  final String? reason;
+
+  const SubscriptionScreen({super.key, this.reason});
 
   @override
   ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
@@ -62,7 +65,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   }
 
   Future<void> _startPayment() async {
-    final user = ref.read(currentUserProvider).valueOrNull;
+    final user = ref.read(currentUserProvider).value;
     if (user == null) return;
 
     setState(() {
@@ -150,7 +153,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       final verifiedSeatCount = (verifyData['seatCount'] as num?)?.toInt() ?? _seats;
 
       // 2. Update Subscription Status in Firestore directly (matches web SDK updateSubscriptionStatus)
-      final user = ref.read(currentUserProvider).valueOrNull!;
+      final user = ref.read(currentUserProvider).value!;
       final firebaseUser = FirebaseAuth.instance.currentUser!;
 
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.phone);
@@ -159,6 +162,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
       final batch = FirebaseFirestore.instance.batch();
 
+      // If user is still 'consumer', upgrade to 'retailer' so canAccessDashboard
+      // returns true after payment (consumers who pay should get seller access).
+      final roleUpdate = user.role == 'consumer' ? {'role': 'retailer'} : <String, dynamic>{};
       batch.update(userDocRef, {
         'isPaid': true,
         'subscriptionStatus': 'paid',
@@ -168,6 +174,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         },
         'totalSeats': currentSeats + seatsToAdd,
         'updatedAt': FieldValue.serverTimestamp(),
+        ...roleUpdate,
       });
 
       final pricePerSeat = _pricePerSeat[_duration.months] ?? 21;
@@ -242,10 +249,46 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     });
   }
 
+  Widget _noticeBanner({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                        color: color, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: AppTextStyles.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserProvider);
-    final isPaid = userAsync.valueOrNull?.isPaid ?? false;
+    final isPaid = userAsync.value?.isPaid ?? false;
     final totalPrice = _duration.totalPrice(_seats);
 
     return Scaffold(
@@ -259,6 +302,24 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (!isPaid && widget.reason == 'new_account')
+            _noticeBanner(
+              icon: Icons.celebration_outlined,
+              color: AppColors.primary,
+              title: 'Welcome to KrishiDukaan! 🎉',
+              subtitle:
+                  'Your account is ready. Subscribe to unlock your dashboard, '
+                  'list products and start selling.',
+            ),
+          if (!isPaid && widget.reason == 'paywall')
+            _noticeBanner(
+              icon: Icons.lock_outline,
+              color: AppColors.warning,
+              title: 'Subscription required',
+              subtitle:
+                  'The dashboard is locked until you have an active '
+                  'subscription. Pick a plan below to continue.',
+            ),
           if (isPaid)
             Container(
               margin: const EdgeInsets.only(bottom: 20),
