@@ -108,8 +108,8 @@ function pad(s: string, n: number): string {
 
   // Build group objects
   const groups: Group[] = Array.from(groupMap.entries()).map(([key, docs]) => {
-    const sources = [...new Set(docs.map(d => d.source))];
-    const ownerIds = [...new Set(docs.map(d => d.ownerId).filter(Boolean))];
+    const sources = Array.from(new Set(docs.map(d => d.source)));
+    const ownerIds = Array.from(new Set(docs.map(d => d.ownerId).filter(Boolean)));
     const activeCount = docs.filter(d => d.isActive).length;
     const inactiveCount = docs.length - activeCount;
 
@@ -163,7 +163,7 @@ function pad(s: string, n: number): string {
   console.log(`  Multi-canonical groups    : ${multiCanonical.length}`);
   console.log('');
   console.log('  Docs by source:');
-  [...sourceCount.entries()].sort((a,b) => b[1]-a[1]).forEach(([src, n]) => {
+  Array.from(sourceCount.entries()).sort((a,b) => b[1]-a[1]).forEach(([src, n]) => {
     console.log(`    ${pad(src, 30)} ${n}`);
   });
   console.log('═══════════════════════════════════════════════════════════════\n');

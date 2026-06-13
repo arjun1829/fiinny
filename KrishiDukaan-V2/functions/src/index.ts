@@ -353,7 +353,7 @@ function phoneVariants(phone: string): string[] {
   v.add(p);
   if (p.startsWith("+91")) v.add(p.substring(3));
   else v.add(`+91${p}`);
-  return [...v];
+  return Array.from(v);
 }
 
 /**

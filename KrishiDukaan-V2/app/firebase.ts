@@ -2385,7 +2385,7 @@ export async function adminRemoveAssignment(
  */
 export async function adminUpdateAssignmentPricing(
   copyProductId: string,
-  patch: { sellingPrice: number; stockQuantity: number },
+  patch: { sellingPrice: number; stockQuantity: number; variants?: { unit: string; price: number; stock?: number }[] },
 ): Promise<void> {
   const now = serverTimestamp();
   const inStock = patch.stockQuantity > 0;
@@ -2396,21 +2396,27 @@ export async function adminUpdateAssignmentPricing(
   const data = (pSnap.exists() ? pSnap.data() : {}) as Record<string, any>;
   const av = Array.isArray(data.availability) && data.availability.length
     ? data.availability.map((a: any, i: number) =>
-        i === 0 ? { ...a, sellingPrice: patch.sellingPrice, stockLevel: stockLabel } : a)
+        i === 0 ? { ...a, sellingPrice: patch.sellingPrice, stockLevel: stockLabel, ...(patch.variants !== undefined ? { variants: patch.variants } : {}) } : a)
     : [{
         storeId: data.ownerId ?? data.retailerId ?? null,
         storePhone: data.retailerPhone ?? data.ownerPhone ?? null,
         storeName: data.store ?? null,
         stockLevel: stockLabel,
         sellingPrice: patch.sellingPrice,
+        ...(patch.variants !== undefined ? { variants: patch.variants } : {}),
       }];
 
-  await updateDoc(pRef, {
+  const updateFields: any = {
     price: patch.sellingPrice,
     stock: stockLabel,
     availability: av,
     updatedAt: now,
-  });
+  };
+  if (patch.variants !== undefined) {
+    updateFields.variants = patch.variants;
+  }
+
+  await updateDoc(pRef, updateFields);
 
   const invSnap = await getDocs(query(collection(db, 'inventory'), where('productId', '==', copyProductId)));
   if (!invSnap.empty) {
@@ -2436,6 +2442,7 @@ export async function adminUpdateAssignmentPricing(
       },
       patch.sellingPrice,
       stockLabel,
+      patch.variants,
     ).catch(() => {});
   }
 }
@@ -2451,6 +2458,7 @@ export async function syncAvailabilityPriceStock(
   match: { ownerId: string; phone: string },
   sellingPrice: number,
   stockLevel: string,
+  variants?: { unit: string; price: number; stock?: number }[],
 ): Promise<void> {
   const rootRef = doc(db, 'products', rootProductId);
   const snap = await getDoc(rootRef);
@@ -2470,7 +2478,11 @@ export async function syncAvailabilityPriceStock(
       (match.phone && (storePhone === match.phone || storeId === match.phone));
     if (!matches) return entry;
     changed = true;
-    return { ...entry, sellingPrice, stockLevel };
+    const nextEntry = { ...entry, sellingPrice, stockLevel };
+    if (variants !== undefined) {
+      (nextEntry as any).variants = variants;
+    }
+    return nextEntry;
   });
 
   if (changed) await updateDoc(rootRef, { availability: updated });
