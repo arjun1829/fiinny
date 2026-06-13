@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
-import { getAdminDb } from '../../../lib/firebase-admin';
+import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -43,6 +43,18 @@ function serverActiveDiscountPct(data: FirebaseFirestore.DocumentData): number {
  */
 export async function POST(request: Request) {
   try {
+    // Verify Firebase ID token from Authorization header
+    const authHeader = request.headers.get('Authorization') ?? '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) {
+      return NextResponse.json({ error: 'Missing authorization token' }, { status: 401 });
+    }
+    try {
+      await getAdminAuth().verifyIdToken(idToken);
+    } catch {
+      return NextResponse.json({ error: 'Invalid authorization token' }, { status: 401 });
+    }
+
     const body = await request.json();
     const {
       items,
@@ -122,19 +134,66 @@ export async function POST(request: Request) {
         const basePrice = Number(d.sellingPrice ?? d.price ?? 0);
         const discPct   = serverActiveDiscountPct(d);
         const discAmt   = Math.round((basePrice * discPct) / 100 * 100) / 100;
-        finalPrice      = Math.round((basePrice - discAmt) * 100) / 100;
+        const discFixed = d.discountType === 'fixed_amount' && d.discountEnabled
+          ? Math.max(0, Number(d.discountFixedAmt ?? 0))
+          : 0;
+        finalPrice = Math.round(Math.max(0, basePrice - discAmt - discFixed) * 100) / 100;
         console.log('[create-cart-order] inventory doc found for', item.productId,
-          '| base:', basePrice, 'disc:', discPct + '%', 'final:', finalPrice);
+          '| base:', basePrice, 'disc:', discPct + '%', 'fixed:', discFixed, 'final:', finalPrice);
       } else {
-        // Fallback: read price from the product document itself
-        const prodSnap = await db.collection('products').doc(item.productId).get();
-        if (!prodSnap.exists) {
-          console.warn('[create-cart-order] no product doc for', item.productId, '— skipping');
-          finalPrice = 0;
+        // Fallback 1: look up the seller's product copy by manufacturerProductId/originalProductId
+        // (this is what mobile sends as productId — the canonical doc ID)
+        const sellerCopyQueries: Promise<FirebaseFirestore.QuerySnapshot>[] = [];
+        const phoneKey = item.sellerPhone;
+        if (phoneKey) {
+          sellerCopyQueries.push(
+            db.collection('products')
+              .where('manufacturerProductId', '==', item.productId)
+              .where('retailerPhone', '==', phoneKey)
+              .limit(1).get(),
+            db.collection('products')
+              .where('originalProductId', '==', item.productId)
+              .where('retailerPhone', '==', phoneKey)
+              .limit(1).get(),
+          );
+        }
+        const copySnaps = sellerCopyQueries.length > 0 ? await Promise.all(sellerCopyQueries) : [];
+        const copyDoc = copySnaps.find(s => !s.empty)?.docs[0] ?? null;
+
+        if (copyDoc) {
+          const d = copyDoc.data();
+          const basePrice = Number(d.price ?? d.sellingPrice ?? 0);
+          const discPct   = serverActiveDiscountPct(d);
+          const discAmt   = Math.round((basePrice * discPct) / 100 * 100) / 100;
+          const discFixed = d.discountType === 'fixed_amount' && d.discountEnabled
+            ? Math.max(0, Number(d.discountFixedAmt ?? 0))
+            : 0;
+          finalPrice = Math.round(Math.max(0, basePrice - discAmt - discFixed) * 100) / 100;
+          console.log('[create-cart-order] seller copy found for', item.productId,
+            '| base:', basePrice, 'disc:', discPct + '%', 'final:', finalPrice);
         } else {
-          finalPrice = Number(prodSnap.data()!.price ?? 0);
-          console.log('[create-cart-order] product doc fallback for', item.productId,
-            '| price:', finalPrice);
+          // Fallback 2: read seller's sellingPrice from canonical product's availability[]
+          const prodSnap = await db.collection('products').doc(item.productId).get();
+          if (!prodSnap.exists) {
+            console.warn('[create-cart-order] no product doc for', item.productId, '— skipping');
+            finalPrice = 0;
+          } else {
+            const prodData = prodSnap.data()!;
+            const availability = Array.isArray(prodData.availability) ? prodData.availability : [];
+            const avEntry = phoneKey
+              ? availability.find((e: Record<string,unknown>) =>
+                  e.storePhone === phoneKey || e.storeId === phoneKey)
+              : null;
+            if (avEntry && Number(avEntry.sellingPrice) > 0) {
+              finalPrice = Number(avEntry.sellingPrice);
+              console.log('[create-cart-order] availability[] entry found for', item.productId,
+                '| price:', finalPrice);
+            } else {
+              finalPrice = Number(prodData.price ?? 0);
+              console.log('[create-cart-order] canonical price fallback for', item.productId,
+                '| price:', finalPrice);
+            }
+          }
         }
       }
 
