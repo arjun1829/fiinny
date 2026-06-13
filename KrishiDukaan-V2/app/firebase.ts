@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
   deleteDoc,
@@ -489,7 +490,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
 
       if (existing) {
-        existing.sellingPrice = copy.price;
+        // Prefer the sellingPrice already synced by updateInventoryRecord →
+        // syncAvailabilityPriceStock. copy.price is the stale assignment-time
+        // price and is never updated when a retailer changes their inventory price.
+        // Only fall back to copy.price when no price has been synced yet (0/undefined).
+        if (!existing.sellingPrice || existing.sellingPrice === 0) {
+          existing.sellingPrice = copy.price;
+        }
         // Carry the copy's isOnline into the existing entry so ProductDetailView
         // can use it for per-seller ordering eligibility.
         if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
@@ -520,6 +527,18 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         .map((a) => a.sellingPrice)
         .filter((v): v is number => typeof v === 'number' && v > 0);
       const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
+
+      // Lowest price a buyer would actually pay — each seller's sellingPrice after their
+      // own discountPct is applied. lowestPrice and maxDiscountPct belong to potentially
+      // different sellers; mixing them (calcDiscount(lowestPrice, maxPct)) produces a
+      // fictional price that no seller actually charges.
+      const finalPrices = (p.availability ?? []).flatMap((a) => {
+        const sp = a.sellingPrice;
+        if (typeof sp !== 'number' || sp <= 0) return [];
+        const pct = typeof a.discountPct === 'number' ? a.discountPct : 0;
+        return [Math.round(sp * (1 - pct / 100) * 100) / 100];
+      });
+      const lowestFinalPrice = finalPrices.length > 0 ? Math.min(...finalPrices) : undefined;
 
       let sum = 0, count = 0;
       for (const id of (idsByKey.get(key) ?? [p.id])) {
@@ -591,6 +610,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         sellMode: mergedSellMode,
         availability: finalAvailability.length > 0 ? finalAvailability : undefined,
         lowestPrice,
+        lowestFinalPrice,
         averageRating,
         totalReviews,
         sellerDiscounts,
@@ -3267,4 +3287,185 @@ export async function adminActivateSubscriptionForPhone(
     activatedByAdmin: true, createdByAdmin: callerUid,
     createdAt: ts, updatedAt: ts,
   });
+}
+
+// ─── Retailer → Manufacturer conversion ──────────────────────────────────────
+
+/**
+ * Converts a retailer account into a manufacturer account.
+ * Copies the retailer's storefront doc to manufacturers/{phone}, updates
+ * users/{phone}.role and profiles/{phone}.type, then deletes retailers/{phone}.
+ * Products, subscriptions, inventory, and seat listings are all phone-keyed and
+ * require no migration.
+ */
+export async function adminConvertRetailerToManufacturer(
+  phone: string,
+  callerUid: string,
+): Promise<void> {
+  const now = serverTimestamp();
+
+  // Read existing retailer doc to copy into manufacturers/
+  const retailerSnap = await getDoc(doc(db, "retailers", phone));
+  const retailerData = retailerSnap.exists() ? retailerSnap.data() : {};
+
+  const batch = writeBatch(db);
+
+  // 1. Create manufacturers/{phone} from existing retailer data
+  batch.set(doc(db, "manufacturers", phone), {
+    ...retailerData,
+    // Overwrite role-specific fields
+    businessName: retailerData.businessName || retailerData.shopName || "",
+    updatedAt: now,
+    convertedFromRetailer: true,
+    convertedByAdmin: callerUid,
+    convertedAt: now,
+  }, { merge: true });
+
+  // 2. Update users/{phone}
+  batch.set(doc(db, "users", phone), {
+    role: "manufacturer",
+    roleUpgradeHistory: arrayUnion({ from: "retailer", to: "manufacturer", at: now, byAdmin: callerUid }),
+    updatedAt: now,
+  }, { merge: true });
+
+  // 3. Update profiles/{phone}
+  batch.set(doc(db, "profiles", phone), {
+    type: "manufacturer",
+    updatedAt: now,
+  }, { merge: true });
+
+  await batch.commit();
+
+  // 4. Delete old retailers/{phone} (non-batched — not critical if it fails)
+  await deleteDoc(doc(db, "retailers", phone)).catch(() => {});
+}
+
+// ─── Admin user deletion ──────────────────────────────────────────────────────
+
+export type AdminDeleteUserResult = {
+  productsDeactivated: number;
+  inventoryDeactivated: number;
+  seatsReleased: number;
+  subscriptionsCancelled: number;
+};
+
+/**
+ * Soft-deletes a user from the platform:
+ *  - Deactivates their products and inventory (preserves order history)
+ *  - Releases active seat listings
+ *  - Marks subscriptions cancelled
+ *  - Removes user, profile, and role-specific documents
+ *  - Removes uidIndex entry
+ *
+ * Firebase Auth deletion is handled separately by POST /api/admin/delete-user
+ * (requires Admin SDK) and should be called after this succeeds.
+ */
+export async function adminDeleteUser(
+  phone: string,
+  uid: string | null,
+  role: string,
+): Promise<AdminDeleteUserResult> {
+  const now = serverTimestamp();
+  let productsDeactivated = 0;
+  let inventoryDeactivated = 0;
+  let seatsReleased = 0;
+  let subscriptionsCancelled = 0;
+
+  // ── 1. Deactivate products owned by this user ─────────────────────────────
+  const productQueries = [
+    getDocs(query(collection(db, "products"), where("ownerPhone", "==", phone))),
+  ];
+  if (uid) {
+    productQueries.push(getDocs(query(collection(db, "products"), where("ownerId", "==", uid))));
+  }
+  const productSnaps = await Promise.all(productQueries);
+  const productIds = new Set<string>();
+  const productBatch = writeBatch(db);
+  for (const snap of productSnaps) {
+    for (const d of snap.docs) {
+      if (productIds.has(d.id)) continue;
+      productIds.add(d.id);
+      if (d.data().isActive !== false) {
+        productBatch.update(d.ref, { isActive: false, updatedAt: now });
+        productsDeactivated++;
+      }
+    }
+  }
+  if (productsDeactivated > 0) await productBatch.commit();
+
+  // ── 2. Deactivate inventory records ──────────────────────────────────────
+  const invQueries = [
+    getDocs(query(collection(db, "inventory"), where("ownerPhone", "==", phone))),
+  ];
+  if (uid) {
+    invQueries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", uid))));
+  }
+  const invSnaps = await Promise.all(invQueries);
+  const invIds = new Set<string>();
+  const invBatch = writeBatch(db);
+  for (const snap of invSnaps) {
+    for (const d of snap.docs) {
+      if (invIds.has(d.id)) continue;
+      invIds.add(d.id);
+      if (d.data().isAvailable !== false) {
+        invBatch.update(d.ref, { isAvailable: false, updatedAt: now });
+        inventoryDeactivated++;
+      }
+    }
+  }
+  if (inventoryDeactivated > 0) await invBatch.commit();
+
+  // ── 3. Release active seat listings ──────────────────────────────────────
+  const seatQueries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
+    getDocs(query(collection(db, "retailerSeatListings"), where("ownerPhone", "==", phone), where("status", "==", "active"))),
+    getDocs(query(collection(db, "retailerSeatListings"), where("retailerPhone", "==", phone), where("status", "==", "active"))),
+  ];
+  if (uid) {
+    seatQueries.push(getDocs(query(collection(db, "retailerSeatListings"), where("ownerId", "==", uid), where("status", "==", "active"))));
+  }
+  const seatSnaps = await Promise.all(seatQueries);
+  const seatIds = new Set<string>();
+  const seatBatch = writeBatch(db);
+  for (const snap of seatSnaps) {
+    for (const d of snap.docs) {
+      if (seatIds.has(d.id)) continue;
+      seatIds.add(d.id);
+      seatBatch.update(d.ref, { status: "released", releasedAt: now });
+      seatsReleased++;
+    }
+  }
+  if (seatsReleased > 0) await seatBatch.commit();
+
+  // ── 4. Cancel subscriptions ───────────────────────────────────────────────
+  const subSnap = await getDocs(
+    query(collection(db, "subscriptions"), where("ownerPhone", "==", phone), where("subscriptionStatus", "==", "active")),
+  );
+  if (!subSnap.empty) {
+    const subBatch = writeBatch(db);
+    for (const d of subSnap.docs) {
+      subBatch.update(d.ref, { subscriptionStatus: "cancelled", updatedAt: now });
+      subscriptionsCancelled++;
+    }
+    await subBatch.commit();
+  }
+
+  // ── 5. Remove user-level Firestore documents ──────────────────────────────
+  const deletions: Promise<void>[] = [
+    deleteDoc(doc(db, "users", phone)).catch(() => {}),
+    deleteDoc(doc(db, "profiles", phone)).catch(() => {}),
+  ];
+  if (uid) {
+    deletions.push(deleteDoc(doc(db, "uidIndex", uid)).catch(() => {}));
+    // Admin accounts are keyed by uid, not phone
+    deletions.push(deleteDoc(doc(db, "users", uid)).catch(() => {}));
+  }
+  if (role === "retailer") {
+    deletions.push(deleteDoc(doc(db, "retailers", phone)).catch(() => {}));
+  }
+  if (role === "manufacturer") {
+    deletions.push(deleteDoc(doc(db, "manufacturers", phone)).catch(() => {}));
+  }
+  await Promise.all(deletions);
+
+  return { productsDeactivated, inventoryDeactivated, seatsReleased, subscriptionsCancelled };
 }

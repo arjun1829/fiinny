@@ -7,7 +7,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import {
   X, Save, Loader2, MapPin, LocateFixed, ExternalLink, Camera, Upload,
   Truck, Globe, Instagram, Facebook, MessageCircle, Youtube,
-  AlertTriangle,
+  AlertTriangle, RefreshCw, Trash2,
 } from "lucide-react";
 import {
   db, storage, auth,
@@ -17,6 +17,8 @@ import {
   adminExtendSubscription,
   adminUpdateSubscriptionSeats,
   adminActivateSubscriptionForPhone,
+  adminConvertRetailerToManufacturer,
+  adminDeleteUser,
   type AdminSaveProfileInput,
 } from "../../firebase";
 import { isValidGstinFormat } from "../../dashboard/_lib/profile-persistence";
@@ -128,6 +130,15 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
   // ── Profile save ───────────────────────────────────────────────────────────
   const [saving,   setSaving]  = useState(false);
   const [saveMsg,  setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // ── Role conversion ──────────────────────────────────────────────────────────
+  const [converting,    setConverting]    = useState(false);
+  const [convertMsg,    setConvertMsg]    = useState<{ ok: boolean; text: string } | null>(null);
+
+  // ── User deletion ────────────────────────────────────────────────────────────
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting,      setDeleting]      = useState(false);
+  const [deleteMsg,     setDeleteMsg]     = useState<{ ok: boolean; text: string } | null>(null);
 
   // ── Subscription ────────────────────────────────────────────────────────────
   const [subs,       setSubs]      = useState<any[]>([]);
@@ -301,6 +312,53 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
     setUploadingBanner(true);
     try { const url = await uploadImage(file, "profile-images/banners"); setForm(p => ({ ...p, bannerUrl: url })); }
     catch { /* silent */ } finally { setUploadingBanner(false); }
+  };
+
+  // ── Role conversion ────────────────────────────────────────────────────────
+  const handleConvertToManufacturer = async () => {
+    if (!phone) return;
+    if (!window.confirm(`Convert ${form.businessName || phone} from Retailer → Manufacturer?\n\nProducts, subscriptions and inventory are preserved. The retailers/${phone} doc will be migrated to manufacturers/${phone}.`)) return;
+    setConverting(true); setConvertMsg(null);
+    try {
+      await adminConvertRetailerToManufacturer(phone, callerUid);
+      setConvertMsg({ ok: true, text: "Converted to Manufacturer. Close and reopen to see the updated role." });
+      onSaved();
+    } catch (e) {
+      setConvertMsg({ ok: false, text: e instanceof Error ? e.message : "Conversion failed." });
+    } finally { setConverting(false); }
+  };
+
+  // ── User deletion ──────────────────────────────────────────────────────────
+  const handleDeleteUser = async () => {
+    if (!phone) return;
+    const confirmPhrase = phone;
+    if (deleteConfirm.trim() !== confirmPhrase) {
+      setDeleteMsg({ ok: false, text: `Type the phone number "${confirmPhrase}" exactly to confirm.` });
+      return;
+    }
+    setDeleting(true); setDeleteMsg(null);
+    try {
+      const uid = user.uid || null;
+      const result = await adminDeleteUser(phone, uid, role);
+
+      // Delete Firebase Auth account via server route if uid is known
+      if (uid) {
+        await fetch("/api/admin/delete-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetUid: uid, callerUid }),
+        });
+      }
+
+      setDeleteMsg({
+        ok: true,
+        text: `Deleted. Products deactivated: ${result.productsDeactivated}, inventory: ${result.inventoryDeactivated}, seats released: ${result.seatsReleased}, subs cancelled: ${result.subscriptionsCancelled}.`,
+      });
+      onSaved();
+      setTimeout(onClose, 2500);
+    } catch (e) {
+      setDeleteMsg({ ok: false, text: e instanceof Error ? e.message : "Deletion failed." });
+    } finally { setDeleting(false); }
   };
 
   // ── Profile save ───────────────────────────────────────────────────────────
@@ -862,6 +920,96 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
                     )}
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* ── Role Conversion (retailer → manufacturer) ── */}
+            {role === "retailer" && (
+              <section className="rounded-2xl border-2 border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-blue-600 shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-widest text-blue-700">Convert to Manufacturer</p>
+                </div>
+                <p className="text-xs text-blue-800">
+                  Migrates this retailer into a manufacturer account. Products, subscriptions, and inventory are preserved.
+                  The <code className="font-mono bg-blue-100 px-1 rounded">retailers/{phone}</code> doc is copied to{" "}
+                  <code className="font-mono bg-blue-100 px-1 rounded">manufacturers/{phone}</code>.
+                </p>
+                {convertMsg && (
+                  <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-medium ${
+                    convertMsg.ok
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                  }`}>
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    {convertMsg.text}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleConvertToManufacturer}
+                  disabled={converting}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                >
+                  {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  {converting ? "Converting…" : "Convert to Manufacturer"}
+                </button>
+              </section>
+            )}
+
+            {/* ── Danger Zone: Delete User ── */}
+            {role !== "admin" && (
+              <section className="rounded-2xl border-2 border-red-200 bg-red-50/40 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="h-4 w-4 text-red-600 shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-widest text-red-700">Delete User</p>
+                </div>
+
+                <div className="text-xs text-red-800 space-y-1">
+                  <p className="font-semibold">What will happen:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-red-700">
+                    <li>User account and profile docs removed</li>
+                    <li>Products deactivated (not deleted — preserves order history)</li>
+                    <li>Inventory records deactivated</li>
+                    <li>Active seat listings released</li>
+                    <li>Active subscriptions cancelled</li>
+                    <li>Firebase Auth account deleted</li>
+                  </ul>
+                  <p className="text-red-600 font-semibold pt-1">Orders and reviews are preserved.</p>
+                </div>
+
+                {deleteMsg && (
+                  <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-medium ${
+                    deleteMsg.ok
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-red-200 bg-red-50 text-red-700"
+                  }`}>
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    {deleteMsg.text}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-xs text-red-700">
+                    Type <strong className="font-mono">{phone}</strong> to confirm deletion:
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirm}
+                    onChange={e => { setDeleteConfirm(e.target.value); setDeleteMsg(null); }}
+                    placeholder={phone}
+                    className="w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-sm font-mono text-red-800 outline-none focus:ring-2 focus:ring-red-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleDeleteUser}
+                    disabled={deleting || deleteConfirm.trim() !== phone}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-40 transition-colors"
+                  >
+                    {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {deleting ? "Deleting…" : "Delete User Permanently"}
+                  </button>
+                </div>
               </section>
             )}
 

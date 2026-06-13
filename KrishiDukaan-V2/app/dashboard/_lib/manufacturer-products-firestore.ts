@@ -244,6 +244,13 @@ export async function updateManufacturerProduct(
   productId: string,
   input: Partial<ManufacturerProductInput>,
 ): Promise<void> {
+  // ── OWNERSHIP AUDIT ──────────────────────────────────────────────────────
+  console.log("[updateManufacturerProduct] Saving to products/" + productId, {
+    fields: Object.keys(input).filter(k => (input as any)[k] !== undefined),
+    price: input.price,
+    name: input.name,
+  });
+  // ────────────────────────────────────────────────────────────────────────
   const ref = doc(db, "products", productId);
   const patch: Record<string, unknown> = { updatedAt: serverTimestamp() };
   if (input.name !== undefined)        patch.name        = input.name.trim();

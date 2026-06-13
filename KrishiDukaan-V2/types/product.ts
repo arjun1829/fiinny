@@ -57,8 +57,10 @@ export type MarketplaceProduct = {
     variants?: { unit: string; price: number; stock?: number }[];
   }[];
 
-  /** Lowest selling price across all stores that stock this product */
+  /** Lowest selling price across all stores that stock this product (pre-discount) */
   lowestPrice?: number;
+  /** Lowest final price after each seller's own discount is applied */
+  lowestFinalPrice?: number;
 
   /** Variants — package sizes with per-variant price and stock */
   variants?: { unit: string; price: number; stock?: number }[];

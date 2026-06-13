@@ -8,13 +8,15 @@ import {
 } from "lucide-react";
 import {
   fetchAllUsers, promoteToAdmin,
-  fetchAllSellerProducts, selectUserProductDocs, collapseUserProductDocs,
+  fetchAllSellerProducts, fetchAllSubscriptions,
+  selectUserProductDocs, collapseUserProductDocs,
   adminAssignProductToSeller, adminRemoveAssignment, ensureSellerStorefront,
   type UserProduct,
   db, auth,
 } from "../../firebase";
 import { AdminUserEditPanel } from "../_components/admin-user-edit-panel";
 import { SearchableDropdown } from "../_components/searchable-dropdown";
+import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
 import {
   addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp,
 } from "firebase/firestore";
@@ -53,6 +55,7 @@ const ROLE_BADGE: Record<string, string> = {
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [allSubs, setAllSubs] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [filterRole, setFilterRole] = useState("all");
@@ -95,6 +98,10 @@ export default function AdminUsersPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
+  // Product edit from within the users panel
+  const [editingProductDoc, setEditingProductDoc] = useState<any | null>(null);
+  const [loadingEditProduct, setLoadingEditProduct] = useState(false);
+
   // Products panel (products derived from allProducts — see memos below)
   const [productsUser, setProductsUser] = useState<any | null>(null);
   const [assignProductId, setAssignProductId] = useState("");
@@ -108,8 +115,12 @@ export default function AdminUsersPage() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([fetchAllUsers(), fetchAllSellerProducts().catch(() => [])])
-      .then(([us, ps]) => { setUsers(us); setAllProducts(ps); })
+    Promise.all([
+      fetchAllUsers(),
+      fetchAllSellerProducts().catch(() => []),
+      fetchAllSubscriptions().catch(() => []),
+    ])
+      .then(([us, ps, ss]) => { setUsers(us); setAllProducts(ps); setAllSubs(ss); })
       .finally(() => setLoading(false));
   };
 
@@ -201,6 +212,22 @@ export default function AdminUsersPage() {
     }
     return m;
   }, [users, allProducts]);
+
+  // Total active seats per user — sum of seatsPurchased across all non-expired active subs.
+  // Keyed by ownerPhone. Editing seats still targets the latest active sub record (unchanged).
+  const activeSeatsByPhone = useMemo(() => {
+    const now = new Date();
+    const m = new Map<string, number>();
+    for (const sub of allSubs) {
+      if (sub.subscriptionStatus !== "active") continue;
+      const expiry: Date | undefined = sub.expiryDate?.toDate?.();
+      if (expiry && expiry < now) continue;
+      const phone = sub.ownerPhone as string | undefined;
+      if (!phone) continue;
+      m.set(phone, (m.get(phone) ?? 0) + (Number(sub.seatsPurchased) || 0));
+    }
+    return m;
+  }, [allSubs]);
 
   // Utility: format a Firestore timestamp or date string nicely
   const fmtDate = (val: any): string => {
@@ -314,6 +341,38 @@ export default function AdminUsersPage() {
 
   const refreshProducts = async () => {
     try { setAllProducts(await fetchAllSellerProducts()); } catch { /* keep current */ }
+  };
+
+  const handleEditProduct = async (entry: UserProduct) => {
+    const docId = entry.docIds[0] || entry.id;
+    if (!docId) return;
+    setLoadingEditProduct(true);
+    try {
+      const snap = await getDoc(doc(db, "products", docId));
+      if (snap.exists()) setEditingProductDoc({ id: snap.id, ...snap.data() });
+    } finally { setLoadingEditProduct(false); }
+  };
+
+  const handleAdminProductSave = async (payload: any) => {
+    const { editProductId, ...data } = payload;
+    if (!editProductId) return;
+    // ── OWNERSHIP AUDIT ────────────────────────────────────────────────────
+    console.log("[AdminUsers] handleAdminProductSave", {
+      "Saving to (products)": editProductId,
+      "Loaded from (editingProductDoc.id)": editingProductDoc?.id ?? "unknown",
+      "Source of doc loaded": (editingProductDoc as any)?.source ?? "unknown",
+      "originalProductId in doc": (editingProductDoc as any)?.originalProductId ?? null,
+      "manufacturerProductId in doc": (editingProductDoc as any)?.manufacturerProductId ?? null,
+      "ownerId in doc": (editingProductDoc as any)?.ownerId ?? null,
+      "For seller": productsUser?.phone ?? productsUser?.id ?? "unknown",
+      "price": data.price,
+      "name": data.name,
+    });
+    // ────────────────────────────────────────────────────────────────────────
+    const { doc: fDoc, setDoc: fSetDoc, serverTimestamp: fTs } = await import("firebase/firestore");
+    const { db: fdb } = await import("../../firebase");
+    const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+    await fSetDoc(fDoc(fdb, "products", editProductId), { ...clean, updatedAt: fTs() }, { merge: true });
   };
 
   const handleAssign = async () => {
@@ -767,7 +826,13 @@ export default function AdminUsersPage() {
                         );
                       })()}
                     </td>
-                    <td className="px-5 py-3 text-sm text-on-surface">{u.totalSeats ?? "—"}</td>
+                    <td className="px-5 py-3 text-sm text-on-surface">
+                      {(() => {
+                        const phone = u.phone || u.id;
+                        const aggSeats = activeSeatsByPhone.get(phone);
+                        return aggSeats !== undefined ? aggSeats : (u.totalSeats ?? "—");
+                      })()}
+                    </td>
                     <td className="px-5 py-3">
                       <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
                     </td>
@@ -825,9 +890,13 @@ export default function AdminUsersPage() {
                       <Package className="h-3 w-3" /> {productCounts.get(u.id) ?? 0}
                     </button>
                   )}
-                  {(u.totalSeats ?? 0) > 0 && (
-                    <span className="text-[11px] text-on-surface-variant">{u.totalSeats} seats</span>
-                  )}
+                  {(() => {
+                    const phone = u.phone || u.id;
+                    const aggSeats = activeSeatsByPhone.get(phone) ?? u.totalSeats ?? 0;
+                    return aggSeats > 0 ? (
+                      <span className="text-[11px] text-on-surface-variant">{aggSeats} seats</span>
+                    ) : null;
+                  })()}
                   {u.createdAt && (
                     <span className="text-[11px] text-on-surface-variant flex items-center gap-0.5">
                       <Calendar className="h-2.5 w-2.5" />{fmtDate(u.createdAt)}
@@ -975,6 +1044,11 @@ export default function AdminUsersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => handleEditProduct(p)} disabled={loadingEditProduct}
+                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors disabled:opacity-50"
+                      title="Edit product">
+                      {loadingEditProduct ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                    </button>
                     <a href={`/?view=product&product=${p.id}`} target="_blank" rel="noopener noreferrer"
                       className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors" title="View product">
                       <ExternalLink className="h-3.5 w-3.5" />
@@ -992,6 +1066,34 @@ export default function AdminUsersPage() {
         </div>
         );
       })()}
+
+      {/* ─── Product Edit Modal (from Users panel) ──────────────────────── */}
+      {editingProductDoc && (
+        <div className="fixed inset-x-0 bottom-0 top-16 z-[90] flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 shrink-0">
+              <h2 className="text-base font-bold text-on-surface">Edit Product</h2>
+              <button onClick={() => setEditingProductDoc(null)} className="p-2 rounded-xl hover:bg-surface-container transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <AddProductInventoryForm
+                adminMode
+                initialProduct={editingProductDoc}
+                userId={auth.currentUser?.uid ?? null}
+                role="manufacturer"
+                seatStats={{ totalPurchased: 99, activeUsed: 0, available: 99, expiringSoon: 0 }}
+                onAdminSave={handleAdminProductSave}
+                onCreated={async () => {
+                  await refreshProducts();
+                  setEditingProductDoc(null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── Guarded Admin Promotion Section ─────────────────────────────── */}
       <div className="rounded-2xl border-2 border-dashed border-red-200 bg-red-50/40 overflow-hidden">
