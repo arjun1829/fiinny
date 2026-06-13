@@ -894,9 +894,19 @@ export default function App() {
       // Step 1: Create Razorpay order on server.
       // We send clientGrandTotal (includes delivery) so the server uses it as the
       // Razorpay amount when its own inventory lookup can't find a matching price.
+      // The route requires a Firebase ID token (Authorization: Bearer …).
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        setCheckoutMessage("Please login again to place your order.");
+        setCheckoutLoading(false);
+        return;
+      }
       const orderRes = await fetch("/api/payment/create-cart-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           items: readyItems.map((i) => ({
             productId:   i.productId,
