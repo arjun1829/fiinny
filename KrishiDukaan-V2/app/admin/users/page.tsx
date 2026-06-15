@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: "", email: "", phone: "", password: "", shopName: "",
-    role: "consumer" as string,
+    role: "customer" as string,
     address: "", city: "", state: "", pincode: "",
     latitude: null as number | null, longitude: null as number | null,
     gstin: "",
@@ -439,7 +439,7 @@ export default function AdminUsersPage() {
   };
 
   const BLANK_FORM = {
-    name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
+    name: "", email: "", phone: "", password: "", shopName: "", role: "customer",
     address: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null,
     gstin: "", secondaryPhone: "",
     subscriptionStatus: "inactive" as "inactive" | "active",
@@ -1198,7 +1198,7 @@ export default function AdminUsersPage() {
                   }}
                   className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
                 >
-                  <option value="consumer">Consumer (Regular User)</option>
+                  <option value="customer">Customer (Regular User)</option>
                   <option value="retailer">Retailer</option>
                   <option value="manufacturer">Manufacturer</option>
                   <option value="admin">Admin</option>

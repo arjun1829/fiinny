@@ -439,6 +439,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
                (secondaryPhone && a.storePhone === secondaryPhone),
       );
       if (!alreadyPresent && (secondaryStoreId || secondaryPhone)) {
+        const secondaryDiscountPct = secondary.effectiveDiscountPct ?? 0;
         av.push({
           storeId: secondaryStoreId,
           storePhone: secondaryPhone,
@@ -446,6 +447,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
           isOnline: secondary.isOnline,
+          discountPct: secondaryDiscountPct > 0 ? secondaryDiscountPct : undefined,
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
@@ -502,6 +504,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
         // Mirror this store's own per-package-size prices onto the entry.
         if (Array.isArray(copy.variants)) existing.variants = copy.variants;
+        // Always carry the copy's live discount into the entry so lowestFinalPrice
+        // is computed correctly on the marketplace card.
+        if (copyDiscountPct > 0) existing.discountPct = copyDiscountPct;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -510,6 +515,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
           isOnline: copy.isOnline,
+          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(copy.variants) ? copy.variants : undefined,
@@ -2813,7 +2819,7 @@ export async function fetchManufacturerNetworkStores(manufacturerPhone: string):
       const r = d.data();
       return (
         String(r.status ?? '') === 'active' &&
-        String(r.onboardingStatus ?? 'active') !== 'pending'
+        String(r.onboardingStatus ?? 'active') === 'active'
       );
     });
 

@@ -457,15 +457,26 @@ export default function BrandView({
 
               {/* Retailer store cards */}
               {retailersWithDistance.length > 0 && (
-                <div className="md:flex-1 flex flex-col gap-3 max-h-80 overflow-y-auto pr-0.5">
-                  {retailersWithDistance.map((r) => (
-                    <RetailerStoreCard
-                      key={r.phone}
-                      retailer={r}
-                      isExpanded={expandedStoreId === r.phone}
-                      onToggle={() => setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)}
-                    />
-                  ))}
+                <div className="md:flex-1 flex flex-col gap-2">
+                  <div className={`flex flex-col gap-3 ${
+                    retailersWithDistance.length > 4
+                      ? 'max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-outline-variant/40 scrollbar-track-transparent'
+                      : ''
+                  }`}>
+                    {retailersWithDistance.map((r) => (
+                      <RetailerStoreCard
+                        key={r.phone}
+                        retailer={r}
+                        isExpanded={expandedStoreId === r.phone}
+                        onToggle={() => setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)}
+                      />
+                    ))}
+                  </div>
+                  {retailersWithDistance.length > 4 && (
+                    <p className="text-[10px] text-on-surface-variant/60 text-center pt-0.5">
+                      Scroll to see all {retailersWithDistance.length} stores
+                    </p>
+                  )}
                 </div>
               )}
 
