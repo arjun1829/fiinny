@@ -7,6 +7,8 @@ export interface ProductDoc {
   category: string;
   description: string;
   image: string;
+  /** Full ordered gallery. `image` is the main/first image, kept for backward compat. */
+  images?: string[];
   unit: string;
   price: number;
   createdAt?: Timestamp | null;
