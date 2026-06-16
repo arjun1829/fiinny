@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckSquare, ChevronLeft, ChevronRight, CreditCard, Filter, Loader2, RefreshCw, Search, Square, Trash2, X } from "lucide-react";
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
-import { auth, db, getUserProfile } from "../../firebase";
+import { db } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import {
   computeSeatStats,
@@ -571,6 +571,7 @@ function ActiveListingsSection({
 export default function SubscriptionPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [access, setAccess] = useState<AccessState>("checking");
   const [uid, setUid] = useState<string | null>(null);
   const [role, setRole] = useState<Role>("retailer");
@@ -701,27 +702,16 @@ export default function SubscriptionPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setAccess("denied");
-        router.replace("/");
-        return;
-      }
-      try {
-        const profile = await getUserProfile(user.uid);
-        const userRole: Role =
-          profile?.role === "manufacturer" ? "manufacturer" : "retailer";
-        setUid(user.uid);
-        setRole(userRole);
-        setAccess("ready");
-        await loadAll(user.uid, userRole);
-      } catch {
-        setAccess("denied");
-        router.replace("/dashboard");
-      }
+    if (!effectiveUid || !effectiveProfile) return;
+    const userRole: Role =
+      effectiveProfile?.role === "manufacturer" ? "manufacturer" : "retailer";
+    setUid(effectiveUid);
+    setRole(userRole);
+    setAccess("ready");
+    loadAll(effectiveUid, userRole).catch(() => {
+      setAccess("denied");
     });
-    return () => unsub();
-  }, [router, loadAll]);
+  }, [effectiveUid, effectiveProfile, loadAll]);
 
   if (access === "checking") {
     return (

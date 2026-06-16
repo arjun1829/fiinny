@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import {
   Loader2, Building2, Package, Store,
   Plus, Save, X, Check,
@@ -10,7 +10,6 @@ import {
   Tag, Info, ImageIcon,
 } from "lucide-react";
 import {
-  auth, getUserProfile,
   fetchManufacturerProducts, fetchManufacturerNetworkStores,
   type RetailerNetworkStore,
 } from "../../firebase";
@@ -471,6 +470,7 @@ function StoresTab({ userPhone }: { userPhone: string }) {
 
 export default function CompanyDashboardPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("brand");
@@ -483,22 +483,19 @@ export default function CompanyDashboardPage() {
   const [customization, setCustomization] = useState<Partial<BrandPageCustomization>>({});
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { setLoading(false); return; }
+    if (!effectiveUid || !effectiveProfile) return;
+    (async () => {
       try {
-        const profile = await getUserProfile(user.uid);
-        if ((profile as any)?.role !== "manufacturer") {
+        if ((effectiveProfile as any)?.role !== "manufacturer") {
           setError(t("cpOnlyManufacturer"));
           setLoading(false);
           return;
         }
-        setUid(user.uid);
+        setUid(effectiveUid);
 
-        // Resolve phone-based doc ID
-        const phone = await resolveManufacturerDocId(user.uid);
+        const phone = await resolveManufacturerDocId(effectiveUid);
         setManufacturerPhone(phone);
 
-        // Parallel fetch: manufacturer profile + brand customization
         const [mfrDoc, custom] = await Promise.all([
           fetchManufacturerProfile(phone),
           fetchBrandPageCustomization(phone),
@@ -525,10 +522,8 @@ export default function CompanyDashboardPage() {
       } finally {
         setLoading(false);
       }
-    });
-    return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    })();
+  }, [effectiveUid, effectiveProfile]);
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "brand", label: t("cpTabBrandInfo"), icon: Building2 },

@@ -260,9 +260,12 @@ async function fetchInventoryForManufacturer(
   // Admin-assigned inventory keys ownership by phone (ownerId == phone), never the
   // UID — query that axis too so the join below finds them. Matched on ownerId so
   // every returned doc passes the inventory read rule's phoneMatches(ownerId) clause.
+  // Also covers the admin-view case where uid is already the phone (phone == ownerPhone).
   if (ownerPhone && ownerPhone !== uid) {
     queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", ownerPhone))));
   }
+  // When uid IS the phone (admin-created user, uid:null), the first two queries already
+  // cover it — no extra query needed since ownerPhone === uid in that case.
 
   const snaps = await Promise.all(queries);
   snaps.forEach((snap) => {
