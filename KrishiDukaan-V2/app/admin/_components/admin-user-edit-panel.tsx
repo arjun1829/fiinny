@@ -80,7 +80,7 @@ export interface AdminUserEditPanelProps {
 
 export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPanelProps) {
   const phone    = String(user.phone || (/^\+?\d{10,13}$/.test(user.id) ? user.id : "")).trim();
-  const role     = String(user.role || "consumer").toLowerCase();
+  const role     = String(user.role || "customer").toLowerCase();
   const isSeller = role === "retailer" || role === "manufacturer";
 
   // ── Form state ──────────────────────────────────────────────────────────────
@@ -458,7 +458,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
               <h2 className="text-base font-bold text-on-surface truncate">
                 {form.businessName || form.ownerName || phone || "User"}
               </h2>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${ROLE_BADGE[role] || ROLE_BADGE.consumer}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${ROLE_BADGE[role] || ROLE_BADGE.customer}`}>
                 {role}
               </span>
             </div>

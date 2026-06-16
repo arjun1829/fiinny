@@ -394,7 +394,11 @@ export async function fetchRetailerInventoryRows(
         assignedByManufacturer: inv.assignedByManufacturer === true,
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
-        originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
+        // manufacturer_assigned copies use manufacturerProductId instead of originalProductId —
+        // fall back to it so syncAvailabilityDiscount + recomputeMaxDiscount find the root.
+        originalProductId: (raw.originalProductId || raw.manufacturerProductId)
+          ? String(raw.originalProductId || raw.manufacturerProductId)
+          : null,
         updatedAt: timestampToDate(inv.updatedAt),
         discountEnabled:   inv.discountEnabled ?? false,
         discountType:      inv.discountType ?? "percentage",
@@ -1306,12 +1310,21 @@ async function syncAvailabilityPriceStock(
  * updates maxDiscountPct on the root doc with the highest active discount.
  */
 async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
-  const [rootSnap, copiesSnap] = await Promise.all([
+  // Query both link fields: admin_assigned copies use originalProductId,
+  // manufacturer_assigned copies use manufacturerProductId.
+  const [rootSnap, byOriginalSnap, byMfgSnap] = await Promise.all([
     getDoc(doc(db, "products", rootProductId)),
     getDocs(
       query(
         collection(db, "products"),
         where("originalProductId", "==", rootProductId),
+        where("isActive", "==", true),
+      ),
+    ),
+    getDocs(
+      query(
+        collection(db, "products"),
+        where("manufacturerProductId", "==", rootProductId),
         where("isActive", "==", true),
       ),
     ),
@@ -1322,7 +1335,8 @@ async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
     const d = rootSnap.data() as Record<string, unknown>;
     if (d.isActive !== false) pcts.push(toNum(d.effectiveDiscountPct, 0));
   }
-  copiesSnap.docs.forEach((d) =>
+  const allCopies = [...byOriginalSnap.docs, ...byMfgSnap.docs];
+  allCopies.forEach((d) =>
     pcts.push(toNum((d.data() as Record<string, unknown>).effectiveDiscountPct, 0)),
   );
 
