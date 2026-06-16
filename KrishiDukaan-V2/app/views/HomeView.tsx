@@ -8,7 +8,6 @@ import { Hub } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { Tag } from 'lucide-react';
-import { calcDiscount } from '../utils/discount';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -325,10 +324,20 @@ export default function HomeView({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {products.length > 0 ? products.slice(0, 10).map((product) => {
-            const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
-            const hasOffer = maxPct > 0;
-            const { finalPrice: discountedPrice } = calcDiscount(product.price, maxPct);
-            const savings = Math.round(product.price - discountedPrice);
+            // Mirror MarketView's discount model: a discount is either a seller promo
+            // (lowestFinalPrice below lowestPrice) OR the selling price being below the
+            // catalog price (lowestPrice < product.price). Previously this card only
+            // used maxDiscountPct, so catalog markdowns showed neither price nor label.
+            const sellerBasePrice = product.lowestPrice ?? product.price;
+            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
+            const promo = discountedPrice < sellerBasePrice;
+            const ribbonOriginal = promo ? sellerBasePrice : product.price;
+            const ribbonFinal = promo ? discountedPrice : sellerBasePrice;
+            const hasOffer = ribbonFinal < ribbonOriginal;
+            const maxPct = ribbonOriginal > 0
+              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
+              : 0;
+            const savings = Math.round(ribbonOriginal - ribbonFinal);
             return (
             <motion.div
               key={product.id}
@@ -345,7 +354,7 @@ export default function HomeView({
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
                 />
                 {/* Corner offer ribbon */}
-                {hasOffer && (
+                {hasOffer && maxPct > 0 && (
                   <div className="absolute top-0 left-0 w-20 h-20 overflow-hidden pointer-events-none">
                     <div
                       className="absolute bg-green-500 shadow text-white text-center"
@@ -370,8 +379,8 @@ export default function HomeView({
                 {hasOffer ? (
                   <div className="mt-auto">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-base font-black text-green-700">₹{discountedPrice.toLocaleString('en-IN')}</span>
-                      <span className="text-[11px] text-outline line-through">₹{product.price.toLocaleString('en-IN')}</span>
+                      <span className="text-base font-black text-green-700">₹{ribbonFinal.toLocaleString('en-IN')}</span>
+                      <span className="text-[11px] text-outline line-through">₹{ribbonOriginal.toLocaleString('en-IN')}</span>
                     </div>
                     <span className="inline-flex items-center gap-1 mt-1 rounded-md bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">
                       <Tag className="h-2 w-2 shrink-0" />Save ₹{savings}
@@ -379,8 +388,8 @@ export default function HomeView({
                   </div>
                 ) : (
                   <div className="mt-auto flex items-baseline gap-1.5">
-                    <span className="text-base font-bold text-secondary">₹{product.price}</span>
-                    {product.oldPrice && product.oldPrice > product.price && (
+                    <span className="text-base font-bold text-secondary">₹{sellerBasePrice.toLocaleString('en-IN')}</span>
+                    {product.oldPrice && product.oldPrice > sellerBasePrice && (
                       <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
                     )}
                   </div>

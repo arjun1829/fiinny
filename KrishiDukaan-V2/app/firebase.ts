@@ -502,6 +502,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
         // Mirror this store's own per-package-size prices onto the entry.
         if (Array.isArray(copy.variants)) existing.variants = copy.variants;
+        // Mirror the active discount so lowestFinalPrice is computed correctly.
+        existing.discountPct = copyDiscountPct > 0 ? copyDiscountPct : existing.discountPct;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -513,6 +515,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(copy.variants) ? copy.variants : undefined,
+          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
@@ -538,6 +541,13 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         const pct = typeof a.discountPct === 'number' ? a.discountPct : 0;
         return [Math.round(sp * (1 - pct / 100) * 100) / 100];
       });
+      // When availability[] is empty (e.g. manufacturer with no retailer copies), the
+      // canonical product IS the only seller — include its own price + discount so
+      // lowestFinalPrice reflects any discount set via the admin/dashboard panel.
+      if (finalPrices.length === 0 && typeof p.price === 'number' && p.price > 0) {
+        const pct = p.effectiveDiscountPct ?? 0;
+        finalPrices.push(Math.round(p.price * (1 - pct / 100) * 100) / 100);
+      }
       const lowestFinalPrice = finalPrices.length > 0 ? Math.min(...finalPrices) : undefined;
 
       let sum = 0, count = 0;
@@ -1515,10 +1525,37 @@ export async function fetchOrdersForCustomer(customerId: string): Promise<OrderD
 export async function fetchStoreOnlineDelivery(phone: string): Promise<boolean> {
   if (!phone) return false;
   try {
+    // Primary: profiles/{phone} is the unified public profile and is ALWAYS
+    // phone-keyed by the write path (dashboard profile page). The legacy
+    // retailers/{phone} doc can be keyed by a UID/GUID instead of phone, so
+    // reading it alone misses the flag for those sellers (Order button never
+    // appears). users/{phone} is the same always-phone-keyed mirror.
+    const profileSnap = await getDoc(doc(db, "profiles", phone));
+    if (profileSnap.exists() && typeof (profileSnap.data() as any).onlineDelivery === "boolean") {
+      return !!(profileSnap.data() as any).onlineDelivery;
+    }
+    const userSnap = await getDoc(doc(db, "users", phone));
+    if (userSnap.exists() && typeof (userSnap.data() as any).onlineDelivery === "boolean") {
+      return !!(userSnap.data() as any).onlineDelivery;
+    }
+    // Fallback: legacy account docs keyed BY phone (older data written before the mirror existed).
     const retailerSnap = await getDoc(doc(db, "retailers", phone));
     if (retailerSnap.exists()) return !!(retailerSnap.data() as any).onlineDelivery;
     const mfrSnap = await getDoc(doc(db, "manufacturers", phone));
     if (mfrSnap.exists()) return !!(mfrSnap.data() as any).onlineDelivery;
+
+    // Last resort: GUID-keyed legacy retailers — the role doc id is a UID/GUID,
+    // not phone, so the flag was never reachable by any phone-keyed lookup above.
+    // Query the collection by the `phone` field instead (both E164 and 10-digit
+    // formats), mirroring fetchRetailerPublicProfile. Self-heals old data with
+    // no migration. Only runs when every cheap getDoc above missed.
+    const phoneDigits = phone.replace(/^\+91/, "");
+    const [byE164, byDigits] = await Promise.all([
+      getDocs(query(collection(db, "retailers"), where("phone", "==", phone))),
+      getDocs(query(collection(db, "retailers"), where("phone", "==", phoneDigits))),
+    ]);
+    const legacyRetailer = byE164.docs[0] ?? byDigits.docs[0];
+    if (legacyRetailer) return !!(legacyRetailer.data() as any).onlineDelivery;
   } catch { /* silent fail */ }
   return false;
 }
@@ -2334,6 +2371,41 @@ export async function adminAssignProductToSeller(
 }
 
 /**
+ * Toggles online delivery for a product from the admin panel.
+ * Updates the product doc (sellMode + isOnline), syncs all availability[].isOnline
+ * entries, and — when enabling — flips the account-level onlineDelivery flag on
+ * the seller's retailers/manufacturers doc so ProductDetailView's canOrder passes.
+ */
+export async function adminUpdateProductSellMode(
+  productId: string,
+  sellMode: "online_delivery" | "offline_store_only",
+  sellerPhone?: string,
+): Promise<void> {
+  const isOnline = sellMode === "online_delivery";
+  const productSnap = await getDoc(doc(db, "products", productId));
+  if (!productSnap.exists()) throw new Error("Product not found");
+  const productData = productSnap.data() as Record<string, unknown>;
+  const currentAv = Array.isArray(productData.availability) ? (productData.availability as any[]) : [];
+
+  const patch: Record<string, unknown> = { sellMode, isOnline, updatedAt: serverTimestamp() };
+  if (currentAv.length > 0) {
+    patch.availability = currentAv.map((entry: any) => ({ ...entry, isOnline }));
+  }
+  await updateDoc(doc(db, "products", productId), patch);
+
+  if (isOnline && sellerPhone) {
+    const [rSnap, mSnap] = await Promise.all([
+      getDoc(doc(db, "retailers", sellerPhone)),
+      getDoc(doc(db, "manufacturers", sellerPhone)),
+    ]);
+    await Promise.all([
+      rSnap.exists() ? setDoc(doc(db, "retailers", sellerPhone), { onlineDelivery: true, updatedAt: serverTimestamp() }, { merge: true }) : null,
+      mSnap.exists() ? setDoc(doc(db, "manufacturers", sellerPhone), { onlineDelivery: true, updatedAt: serverTimestamp() }, { merge: true }) : null,
+    ].filter(Boolean) as Promise<void>[]);
+  }
+}
+
+/**
  * Reverses an assignment: deactivates the seller's product copy and its
  * inventory record (looked up by productId), and logs the removal. Only used
  * for admin-assigned copies — never deletes a seller's self-created products.
@@ -2581,6 +2653,11 @@ export function collapseUserProductDocs(docs: RawProductDoc[]): UserProduct[] {
       store: String(data.store ?? ''),
       distance: String(data.distance ?? 'Nearby'),
       source: data.source ? String(data.source) : undefined,
+      effectiveDiscountPct: Number(data.effectiveDiscountPct ?? 0),
+      sellMode: data.sellMode as "online_delivery" | "offline_store_only" | undefined,
+      isOnline: Boolean(data.isOnline),
+      gstApplicable: Boolean(data.gstApplicable),
+      gstRate: (data.gstRate ?? 0) as 0 | 5 | 12 | 18 | 28,
       copies: 1,
       docIds: [data.id],
       assignedDocIds: isAssigned ? [data.id] : [],
@@ -3350,6 +3427,53 @@ export async function adminConvertRetailerToManufacturer(
 
   // 4. Delete old retailers/{phone} (non-batched — not critical if it fails)
   await deleteDoc(doc(db, "retailers", phone)).catch(() => {});
+}
+
+/**
+ * Copies the manufacturer's storefront doc to retailers/{phone}, updates
+ * users/{phone}.role and profiles/{phone}.type, then deletes manufacturers/{phone}.
+ * Products, subscriptions, inventory, and seat listings are all phone-keyed and
+ * require no migration.
+ */
+export async function adminConvertManufacturerToRetailer(
+  phone: string,
+  callerUid: string,
+): Promise<void> {
+  const now = serverTimestamp();
+
+  // Read existing manufacturer doc to copy into retailers/
+  const mfrSnap = await getDoc(doc(db, "manufacturers", phone));
+  const mfrData = mfrSnap.exists() ? mfrSnap.data() : {};
+
+  const batch = writeBatch(db);
+
+  // 1. Create retailers/{phone} from existing manufacturer data
+  batch.set(doc(db, "retailers", phone), {
+    ...mfrData,
+    shopName: mfrData.shopName || mfrData.businessName || "",
+    updatedAt: now,
+    convertedFromManufacturer: true,
+    convertedByAdmin: callerUid,
+    convertedAt: now,
+  }, { merge: true });
+
+  // 2. Update users/{phone}
+  batch.set(doc(db, "users", phone), {
+    role: "retailer",
+    roleUpgradeHistory: arrayUnion({ from: "manufacturer", to: "retailer", at: now, byAdmin: callerUid }),
+    updatedAt: now,
+  }, { merge: true });
+
+  // 3. Update profiles/{phone}
+  batch.set(doc(db, "profiles", phone), {
+    type: "retailer",
+    updatedAt: now,
+  }, { merge: true });
+
+  await batch.commit();
+
+  // 4. Delete old manufacturers/{phone} (non-batched — not critical if it fails)
+  await deleteDoc(doc(db, "manufacturers", phone)).catch(() => {});
 }
 
 // ─── Admin user deletion ──────────────────────────────────────────────────────
