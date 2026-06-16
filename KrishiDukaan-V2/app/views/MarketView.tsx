@@ -455,6 +455,17 @@ export default function MarketView({
             const sellerBasePrice = product.lowestPrice ?? product.price;
             const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
             const hasOffer = discountedPrice < sellerBasePrice;
+            // A discount is shown either as a seller promo (hasOffer: lowestFinalPrice
+            // below lowestPrice) OR when the seller's selling price is below the
+            // catalog price (sellerBasePrice < product.price). The ribbon + green theme
+            // must cover BOTH; the % is computed against the price actually struck
+            // through in the block below so the label always matches the numbers.
+            const ribbonOriginal = hasOffer ? sellerBasePrice : product.price;
+            const ribbonFinal = hasOffer ? discountedPrice : sellerBasePrice;
+            const showsDiscount = ribbonFinal < ribbonOriginal;
+            const savingsPct = ribbonOriginal > 0
+              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
+              : 0;
             return (
               <motion.article
                 key={`${product.id}-${idx}`}
@@ -463,7 +474,7 @@ export default function MarketView({
                 transition={{ delay: Math.min(idx * 0.03, 0.6) }}
                 onClick={() => onProductClick(product.id)}
                 className={`bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-ambient transition-all duration-300 flex flex-col border group cursor-pointer ${
-                  hasOffer
+                  showsDiscount
                     ? 'border-green-400 shadow-green-100 hover:shadow-green-200'
                     : 'border-surface-container'
                 }`}
@@ -476,24 +487,19 @@ export default function MarketView({
                   />
 
                   {/* ── Corner offer ribbon (top-left) ── */}
-                  {hasOffer && (() => {
-                    const savingsPct = sellerBasePrice > 0
-                      ? Math.round((1 - discountedPrice / sellerBasePrice) * 100)
-                      : 0;
-                    return (
-                      <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
-                        <div
-                          className="absolute bg-green-500 shadow-md text-white text-center"
-                          style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
-                        >
-                          <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
-                            <Tag className="h-2.5 w-2.5 shrink-0" />
-                            {savingsPct}% OFF
-                          </span>
-                        </div>
+                  {showsDiscount && savingsPct > 0 && (
+                    <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
+                      <div
+                        className="absolute bg-green-500 shadow-md text-white text-center"
+                        style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
+                      >
+                        <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
+                          <Tag className="h-2.5 w-2.5 shrink-0" />
+                          {savingsPct}% OFF
+                        </span>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
 
                   {/* Rating badge — bottom left */}
                   {(product.averageRating ?? 0) > 0 && (
@@ -505,7 +511,7 @@ export default function MarketView({
                   )}
                 </div>
 
-                <div className={`p-3 md:p-4 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                <div className={`p-3 md:p-4 flex flex-col flex-1 ${showsDiscount ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
                   {/* Store badge + out-of-stock */}
                   <div className="flex items-center justify-between gap-1 mb-2">
                     <div onClick={(e) => e.stopPropagation()} className="self-start min-w-0">
@@ -531,7 +537,7 @@ export default function MarketView({
                   </h3>
 
                   {/* Price */}
-                  <div className={`mt-auto pt-2.5 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'} mt-2`}>
+                  <div className={`mt-auto pt-2.5 border-t ${showsDiscount ? 'border-green-100' : 'border-surface-container'} mt-2`}>
                     {hasOffer ? (
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
