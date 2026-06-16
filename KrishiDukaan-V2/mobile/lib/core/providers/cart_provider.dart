@@ -63,6 +63,46 @@ class CartNotifier extends StateNotifier<List<CartItemModel>> {
     _save();
   }
 
+  /// Re-points a cart line to a different store, applying that store's price and
+  /// discount. If the target store is already a separate line for the same
+  /// product + variant, the two lines are merged (quantities summed) so we never
+  /// end up with two lines for the same listing.
+  void updateStore(
+    CartItemModel item, {
+    required String listingId,
+    required String sellerPhone,
+    required String sellerName,
+    required double price,
+    required double originalPrice,
+    required double discountPct,
+  }) {
+    final updated = item.copyWith(
+      listingId: listingId,
+      sellerPhone: sellerPhone,
+      sellerName: sellerName,
+      price: price,
+      originalPrice: originalPrice,
+      discountPct: discountPct,
+    );
+    final result = <CartItemModel>[];
+    for (final e in state) {
+      final isTarget =
+          e.listingId == item.listingId && e.variantLabel == item.variantLabel;
+      final candidate = isTarget ? updated : e;
+      final existing = result.indexWhere((r) =>
+          r.listingId == candidate.listingId &&
+          r.variantLabel == candidate.variantLabel);
+      if (existing >= 0) {
+        result[existing] = result[existing]
+            .copyWith(quantity: result[existing].quantity + candidate.quantity);
+      } else {
+        result.add(candidate);
+      }
+    }
+    state = result;
+    _save();
+  }
+
   void clear() {
     state = [];
     _save();
@@ -80,4 +120,9 @@ final cartCountProvider = Provider<int>((ref) {
 
 final cartTotalProvider = Provider<double>((ref) {
   return ref.watch(cartProvider).fold(0.0, (sum, item) => sum + item.lineTotal);
+});
+
+/// Total money saved across the cart from store discounts (sum of line savings).
+final cartSavingsProvider = Provider<double>((ref) {
+  return ref.watch(cartProvider).fold(0.0, (sum, item) => sum + item.lineSavings);
 });
