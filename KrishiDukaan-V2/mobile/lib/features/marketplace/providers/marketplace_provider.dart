@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/constants/app_config.dart';
 import '../../../core/providers/user_provider.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/catalog_model.dart';
@@ -63,6 +64,13 @@ class MarketplaceState {
 class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   final CatalogRepository _repo;
 
+  static const _pageSize = AppConfig.firestorePageSize;
+
+  /// The full merged + filtered catalog for the current query. Fetched once per
+  /// query; [loadMore] just reveals more of it so the grid keeps growing as the
+  /// user scrolls instead of stopping after the first page.
+  List<CatalogModel> _all = [];
+
   MarketplaceNotifier(this._repo) : super(const MarketplaceState()) {
     loadProducts();
   }
@@ -74,22 +82,20 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
       isLoading: true,
       error: () => null,
       products: refresh ? [] : null,
-      lastDoc: refresh ? () => null : null,
       hasMore: refresh ? true : null,
     );
 
     try {
-      final results = await _repo.fetchPageWithDocs(
+      _all = await _repo.fetchFiltered(
         category: state.category,
         searchQuery: state.searchQuery,
       );
 
+      final firstPage = _all.take(_pageSize).toList();
       state = state.copyWith(
-        products: results.map((r) => r.model).toList(),
+        products: firstPage,
         isLoading: false,
-        // Since we query all products and filter in memory, we don't paginate page-by-page from firestore anymore
-        hasMore: false,
-        lastDoc: results.isNotEmpty ? () => results.last.doc : () => null,
+        hasMore: firstPage.length < _all.length,
       );
     } catch (e) {
       state = state.copyWith(
@@ -99,8 +105,19 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
     }
   }
 
-  Future<void> loadMore() async {
-    // No-op since we load all products at once to perform accurate in-memory merging/deduping
+  /// Reveals the next page from the already-fetched in-memory list.
+  void loadMore() {
+    if (state.isLoading || state.isLoadingMore || !state.hasMore) return;
+    final current = state.products.length;
+    if (current >= _all.length) {
+      state = state.copyWith(hasMore: false);
+      return;
+    }
+    final next = _all.take(current + _pageSize).toList();
+    state = state.copyWith(
+      products: next,
+      hasMore: next.length < _all.length,
+    );
   }
 
   void setCategory(String? category) {
@@ -287,7 +304,11 @@ final listingsForCatalogProvider =
         name: av.storeName ?? store?.name ?? '',
         price: price,
         stockQty: stockQty,
-        isOnline: av.isOnline ?? true,
+        // Online ordering (Buy Now / Add to Cart) is shown ONLY when the seller
+        // has explicitly turned on online delivery (isOnline == true). A missing
+        // flag means they never enabled it, so default to offline — otherwise
+        // every store would wrongly get buy buttons.
+        isOnline: av.isOnline == true,
         variants: av.variants ?? [],
         store: store,
       );
