@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
+import { compressImage } from "../../utils/compressImage";
 import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
 import { createProductAndInventory, retailerHasProduct } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
@@ -229,8 +230,9 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
     if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
     onChange({ uploading: true, error: "" });
     try {
+      const toUpload = await compressImage(file);
       const path = `product-images/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), file);
+      const snap = await uploadBytes(storageRef(storage, path), toUpload);
       onChange({ url: await getDownloadURL(snap.ref), uploading: false });
     } catch {
       onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
@@ -238,12 +240,13 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
   };
 
   return (
-    <div className={`flex flex-col rounded-2xl border-2 overflow-hidden transition-colors ${
+    <div className={`flex-shrink-0 w-40 flex flex-col rounded-2xl border-2 overflow-hidden transition-colors ${
       slot.url ? "border-primary/20 bg-surface-container-low" : "border-dashed border-outline-variant/40 bg-surface-container-low/50 hover:border-primary/40"
     }`}>
+      {/* Preview area */}
       {slot.url ? (
-        <div className="relative">
-          <img src={slot.url} alt="" className="h-28 w-full object-cover"
+        <div className="relative h-32 bg-surface-container">
+          <img src={slot.url} alt="" className="h-full w-full object-cover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           <button type="button" onClick={onClear}
             className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500 transition-colors">
@@ -254,25 +257,30 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
           )}
         </div>
       ) : (
-        <div className="flex h-28 flex-col items-center justify-center gap-1 text-on-surface-variant/50">
+        <div className="flex h-32 flex-col items-center justify-center gap-1.5 text-on-surface-variant/40">
           <ImageIcon className="h-7 w-7" />
-          <span className="text-[10px]">{index === 0 ? t('formMainImage') : `${t('formImageLabel')} ${index + 1}`}</span>
+          <span className="text-[10px] font-medium">{index === 0 ? t('formMainImage') : `${t('formImageLabel')} ${index + 1}`}</span>
         </div>
       )}
-      <div className="flex flex-col gap-2 p-2.5">
+
+      {/* Controls */}
+      <div className="flex flex-col gap-2 p-2.5 bg-white/70">
+        {/* Mode toggle */}
         <div className="flex rounded-lg border border-outline-variant/30 text-[11px] overflow-hidden">
           {(["url", "upload"] as const).map((m) => (
             <button key={m} type="button" disabled={disabled}
               onClick={() => onChange({ mode: m, error: "" })}
-              className={`flex flex-1 items-center justify-center gap-1 py-1.5 font-medium transition-colors ${
+              className={`flex flex-1 items-center justify-center gap-1 py-1.5 font-semibold whitespace-nowrap transition-colors ${
                 slot.mode === m ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
               } disabled:opacity-50`}
             >
-              {m === "url" ? <LinkIcon className="h-3 w-3" /> : <Upload className="h-3 w-3" />}
-              {m === "url" ? t('formLinkLabel') : t('formUploadLabel')}
+              {m === "url" ? <LinkIcon className="h-3 w-3 flex-shrink-0" /> : <Upload className="h-3 w-3 flex-shrink-0" />}
+              <span>{m === "url" ? t('formLinkLabel') : t('formUploadLabel')}</span>
             </button>
           ))}
         </div>
+
+        {/* Input */}
         {slot.mode === "url" ? (
           <input type="url" disabled={disabled} placeholder="https://…"
             className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-2.5 py-1.5 text-[11px] outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
@@ -283,14 +291,14 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
             <button type="button" disabled={disabled || slot.uploading}
               onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50 transition-colors">
+              className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] font-medium text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors">
               {slot.uploading
-                ? <><Loader2 className="h-3 w-3 animate-spin" />{t('formUploadingLabel')}</>
-                : <><Upload className="h-3 w-3" />{t('formChooseFile')}</>}
+                ? <><Loader2 className="h-3 w-3 animate-spin flex-shrink-0" /><span>{t('formUploadingLabel')}</span></>
+                : <><Upload className="h-3 w-3 flex-shrink-0" /><span>{t('formChooseFile')}</span></>}
             </button>
           </>
         )}
-        {slot.error && <p className="text-[10px] text-red-500">{slot.error}</p>}
+        {slot.error && <p className="text-[10px] text-red-500 leading-tight">{slot.error}</p>}
       </div>
     </div>
   );
@@ -975,27 +983,29 @@ export function AddProductInventoryForm({
         </div>
 
         {/* ── Section 3: Images ─────────────────────────────────────────────── */}
-        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
               <ImageIcon className="h-4 w-4 text-primary" /> {t('formProductImages')}
               <HelperIcon size="xs" variant="ghost" side="right" textKey="dashFormProductImages" ariaLabel={`${t('formProductImages')} help`} />
             </div>
-            <span className="text-xs text-on-surface-variant">{t('formUploadOrPaste')} {MAX_IMAGES}</span>
+            <span className="text-xs text-on-surface-variant">{images.length}/{MAX_IMAGES} images</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {/* Horizontal scroll gallery */}
+          <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "thin" }}>
             {images.map((slot, i) => (
               <ImageCard key={i} slot={slot} index={i} disabled={isDisabled}
                 onChange={(p) => setImg(i, p)} onClear={() => clearImg(i)} />
             ))}
+            {images.length < MAX_IMAGES && (
+              <button type="button" disabled={isDisabled}
+                onClick={() => setImages((imgs) => [...imgs, newSlot()])}
+                className="flex-shrink-0 w-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-outline-variant/40 bg-white/50 text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors min-h-[11rem]">
+                <Plus className="h-5 w-5" />
+                <span className="text-[11px] font-medium text-center px-2">Add image</span>
+              </button>
+            )}
           </div>
-          {images.length < MAX_IMAGES && (
-            <button type="button" disabled={isDisabled}
-              onClick={() => setImages((imgs) => [...imgs, newSlot()])}
-              className="flex w-fit items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors">
-              <Plus className="h-4 w-4" /> Add another image
-            </button>
-          )}
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 

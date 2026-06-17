@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
+import { compressImage } from "../../utils/compressImage";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import type { InventoryRow } from "../_types/inventory";
@@ -324,8 +325,9 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
     if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
     onChange({ uploading: true, error: "" });
     try {
+      const toUpload = await compressImage(file);
       const path = `product-images/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), file);
+      const snap = await uploadBytes(storageRef(storage, path), toUpload);
       onChange({ url: await getDownloadURL(snap.ref), uploading: false });
     } catch {
       onChange({ uploading: false, error: "Upload failed. Paste URL instead." });

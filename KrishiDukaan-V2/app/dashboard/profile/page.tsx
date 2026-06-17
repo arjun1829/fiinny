@@ -32,6 +32,7 @@ import { useI18n } from "../../i18n/I18nContext";
 import { StatusToast } from "../../components/shared/status-toast";
 import { fetchManufacturerCatalogueRows } from "../_lib/inventory-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
+import { compressImage } from "../../utils/compressImage";
 
 declare global { interface Window { google?: any; } }
 
@@ -148,8 +149,9 @@ function OnlineDeliveryToggle({ value, onChange }: { value: boolean; onChange: (
 // ─── Image Upload helpers ──────────────────────────────────────────────────────
 
 async function uploadImageToStorage(file: File, pathPrefix: string): Promise<string> {
+  const toUpload = await compressImage(file);
   const path = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), file);
+  const snap = await uploadBytes(storageRef(storage, path), toUpload);
   return getDownloadURL(snap.ref);
 }
 
