@@ -93,7 +93,7 @@ export default function AdminProductsPage() {
 
   // ── Assignments viewer (which sellers carry a product) ──
   const [viewAssignmentsFor, setViewAssignmentsFor] = useState<MarketplaceProduct | null>(null);
-  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string }[]>([]);
+  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string; variants?: { unit: string; price: number; stock?: number }[] }[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [removingRow, setRemovingRow] = useState<string | null>(null);
