@@ -238,7 +238,39 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Heads-up for business roles: the seller dashboard stays
+                  // locked until they pick a seat plan on the next screen.
+                  if (_role == 'retailer' || _role == 'manufacturer') ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondaryContainer.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.secondary.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.workspace_premium_outlined,
+                              size: 20, color: AppColors.secondary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Next, choose a seat plan to unlock your seller '
+                              'dashboard. You can still browse & buy without it.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
 
                   Text('Your name', style: AppTextStyles.heading3),
                   const SizedBox(height: 8),

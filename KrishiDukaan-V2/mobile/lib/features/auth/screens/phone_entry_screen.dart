@@ -12,7 +12,16 @@ import '../data/auth_repository.dart';
 class PhoneEntryScreen extends ConsumerStatefulWidget {
   final String? redirectAfterLogin;
 
-  const PhoneEntryScreen({super.key, this.redirectAfterLogin});
+  /// Optional manufacturer-invite code carried in from an invite link. Threaded
+  /// through OTP → onboarding so an invited retailer still lands on the right
+  /// (pre-filled, retailer) onboarding even though there's no separate signup.
+  final String? inviteCode;
+
+  const PhoneEntryScreen({
+    super.key,
+    this.redirectAfterLogin,
+    this.inviteCode,
+  });
 
   @override
   ConsumerState<PhoneEntryScreen> createState() => _PhoneEntryScreenState();
@@ -58,6 +67,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
           'phone': phone,
           'verificationId': verificationId,
           'redirect': widget.redirectAfterLogin,
+          'inviteCode': widget.inviteCode,
         });
       },
       onError: (msg) {
@@ -132,10 +142,11 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                     ),
                   ),
                   const SizedBox(height: 56),
-                  Text('Welcome Back', style: AppTextStyles.heading2),
+                  Text('Sign in to continue', style: AppTextStyles.heading2),
                   const SizedBox(height: 4),
                   Text(
-                    'Sign in to your KrishiDukan account.',
+                    'Enter your mobile number to get an OTP. New here? '
+                    'We\'ll set up your account in the next step.',
                     style: AppTextStyles.body.copyWith(
                       color: AppColors.onSurfaceVariant,
                     ),
@@ -242,31 +253,6 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                         'Send OTP',
                         style: AppTextStyles.button,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Link to Signup Screen
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "Don't have an account? ",
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => context.go('/signup'),
-                          child: Text(
-                            'Create Account',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                   const SizedBox(height: 24),

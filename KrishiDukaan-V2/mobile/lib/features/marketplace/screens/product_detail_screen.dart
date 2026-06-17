@@ -14,6 +14,7 @@ import '../../../core/models/cart_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/widgets/expandable_text.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
 import '../widgets/store_selector_sheet.dart';
@@ -615,7 +616,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         children: [
           Text('Description', style: AppTextStyles.heading3),
           const SizedBox(height: 8),
-          Text(catalog.description!, style: AppTextStyles.body),
+          ExpandableText(catalog.description!, trimLines: 4),
         ],
       ),
     );

@@ -138,8 +138,25 @@ final marketplaceProvider =
   return MarketplaceNotifier(ref.read(catalogRepositoryProvider));
 });
 
-final featuredProductsProvider = FutureProvider<List<CatalogModel>>((ref) {
-  return ref.read(catalogRepositoryProvider).fetchFeatured();
+/// All merged catalog products, fetched once. Home-page rails (featured + top
+/// deals) derive from this so the screen makes a single Firestore round-trip
+/// instead of one per section.
+final allMergedProductsProvider = FutureProvider<List<CatalogModel>>((ref) {
+  return ref.read(catalogRepositoryProvider).fetchAllMergedProducts();
+});
+
+final featuredProductsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+  final all = await ref.watch(allMergedProductsProvider.future);
+  return all.take(6).toList();
+});
+
+/// Products with the biggest seller discounts, highest first — powers the
+/// "Top Deals" rail on the home page.
+final topDealsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+  final all = await ref.watch(allMergedProductsProvider.future);
+  final deals = all.where((p) => p.maxDiscountPct > 0).toList()
+    ..sort((a, b) => b.maxDiscountPct.compareTo(a.maxDiscountPct));
+  return deals.take(10).toList();
 });
 
 final catalogDetailProvider =
