@@ -247,8 +247,8 @@ async function parseAndValidate(
 
     if (!description)
       err("Description is required");
-    else if (description.length > 300)
-      err(`Description too long (${description.length} chars) — max 300`);
+    else if (description.length < 20 || description.length > 300)
+      err(`Description must be between 20 and 300 characters (row ${rowNum} has ${description.length})`);
 
     if (!imageUrl) {
       err("Image URL is required");

@@ -525,6 +525,7 @@ export default function ProductDetailView({
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
   const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   // Variant selection — default to the first variant (or the product itself if no variants)
   const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
@@ -1387,7 +1388,7 @@ export default function ProductDetailView({
             : undefined;
 
           return (
-        <div className={`flex flex-col sm:flex-row sm:items-center gap-6 pt-4 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'}`}>
+        <div className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 pt-3 border-t ${hasOffer ? 'border-green-100' : 'border-surface-container'}`}>
           <HelperTooltip side="top" textKey="marketPriceInfo">
             <div className="flex flex-col gap-1.5 cursor-help">
               {hasOffer ? (
@@ -1438,13 +1439,13 @@ export default function ProductDetailView({
             </div>
           </HelperTooltip>
 
-          <div className="flex items-center gap-3 sm:ml-auto flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 sm:ml-auto flex-wrap">
             {product.sellMode === "offline_store_only" ? (
-              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+              <span className="inline-flex items-center gap-2 h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-xs sm:text-sm">
                 In-Store Only
               </span>
             ) : visibleStores.length === 0 ? (
-              <span className="inline-flex items-center gap-2 h-12 px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-sm">
+              <span className="inline-flex items-center gap-2 h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-xs sm:text-sm">
                 Currently unavailable
               </span>
             ) : (
@@ -1452,15 +1453,15 @@ export default function ProductDetailView({
                 <button
                   onClick={() => onAddToCart?.(product, cartVariant)}
                   disabled={displayStock === 0}
-                  className="h-12 px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="h-10 sm:h-12 px-4 sm:px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-1.5 sm:gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
                 >
-                  <ICONS.AddToCart className="w-5 h-5" />
+                  <ICONS.AddToCart className="w-4 h-4 sm:w-5 sm:h-5" />
                   {displayStock === 0 ? "Out of Stock" : t('addToCart')}
                 </button>
                 {onBuyNow && displayStock !== 0 && (
                   <button
                     onClick={() => onBuyNow(product, cartVariant)}
-                    className="h-12 px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2"
+                    className="h-10 sm:h-12 px-5 sm:px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
                   >
                     Buy Now
                   </button>
@@ -1473,9 +1474,21 @@ export default function ProductDetailView({
         })()}
 
         {/* Product description — moved below the pricing & action section */}
-        <p className="text-on-surface-variant leading-relaxed pt-4 border-t border-surface-container">
-          {product.description} {t('productDescSuffix')}
-        </p>
+        {product.description && (
+          <div className="pt-4 border-t border-surface-container">
+            <p className={`text-on-surface-variant leading-relaxed text-sm ${descExpanded ? "" : "line-clamp-3"}`}>
+              {product.description} {t('productDescSuffix')}
+            </p>
+            {product.description.length > 120 && (
+              <button
+                onClick={() => setDescExpanded((v) => !v)}
+                className="mt-1 text-xs font-semibold text-primary hover:underline focus:outline-none"
+              >
+                {descExpanded ? "Show Less" : "Read More"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Product Info — renders from categoryInfo (new) or legacy flat fields */}
