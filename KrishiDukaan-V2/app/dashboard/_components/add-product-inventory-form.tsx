@@ -138,6 +138,8 @@ type AddProductInventoryFormProps = {
   initialProduct?: any;
   /** Admin-only: custom save handler; receives validated payload. If omitted, falls back to adminCreateProduct/adminUpdateProduct. */
   onAdminSave?: (payload: AdminProductPayload) => Promise<void>;
+  /** When true, shows the Online Delivery toggle for non-admin sellers. */
+  accountDeliveryEnabled?: boolean;
 };
 
 const newVariant = (): Variant => ({
@@ -443,6 +445,7 @@ export function AddProductInventoryForm({
   adminMode,
   initialProduct,
   onAdminSave,
+  accountDeliveryEnabled,
 }: AddProductInventoryFormProps) {
   const { t } = useI18n();
 
@@ -730,6 +733,7 @@ export function AddProductInventoryForm({
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable,
           gstRate: gstApplicable ? gstRate : 0,
+          sellMode,
         });
       } else {
         await createProductAndInventory(userId, {
@@ -741,7 +745,7 @@ export function AddProductInventoryForm({
           description,
           imageUrl: imageUrls[0] ?? undefined,
           storeName: storeName || "My Store",
-          sellMode: "offline_store_only",
+          sellMode,
           existingProductId: existingProductId ?? undefined,
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable,
@@ -991,8 +995,8 @@ export function AddProductInventoryForm({
             <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
           </div>
 
-          {/* Online Delivery toggle — admin mode only; seller flow controls this per-listing */}
-          {adminMode && (
+          {/* Online Delivery toggle — visible for admin always; for sellers when account-level delivery is ON */}
+          {(adminMode || accountDeliveryEnabled) && (
             <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-on-surface">Online Delivery</p>

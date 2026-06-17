@@ -661,13 +661,7 @@ export async function createProductAndInventory(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
-    // Legacy fertilizer flat fields — preserved for backward compat reads
-    nitrogen: input.nitrogen?.trim() || null,
-    phosphorus: input.phosphorus?.trim() || null,
-    potassium: input.potassium?.trim() || null,
-    applicationDesc: input.applicationDesc?.trim() || null,
-    dosage: input.dosage?.trim() || null,
-    bestForCrops: input.bestForCrops || null,
+    // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 
   if (isCopy && input.existingProductId) {

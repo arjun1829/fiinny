@@ -575,6 +575,7 @@ export default function InventoryPage() {
                 onCreated={async () => { setAddModalOpen(false); await refresh(); }}
                 seatStats={seatStats}
                 storeName={profile?.shopName}
+                accountDeliveryEnabled={accountDeliveryEnabled}
               />
               <BulkProductUpload
                 userId={userId}
@@ -582,6 +583,7 @@ export default function InventoryPage() {
                 seatStats={seatStats}
                 onDone={async () => { setAddModalOpen(false); await refresh(); }}
                 storeName={profile?.shopName}
+                accountDeliveryEnabled={accountDeliveryEnabled}
               />
             </div>
           </div>
