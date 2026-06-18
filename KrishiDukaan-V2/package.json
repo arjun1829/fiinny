@@ -5,9 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "dev:local": "next dev -H 0.0.0.0",
+    "dev:uat": "node scripts/dev-uat.js",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "deploy:prod": "bash scripts/deploy-prod.sh",
+    "deploy:uat": "bash scripts/deploy-uat.sh",
+    "seed:uat": "npx tsx scripts/seed-uat.ts",
+    "copy:prod-to-uat": "npx tsx scripts/copy-prod-to-uat.ts"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",

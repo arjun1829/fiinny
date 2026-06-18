@@ -5,9 +5,11 @@ class AppConfig {
   // localhost on a phone/emulator points at the device itself, which silently
   // breaks every payment call. Override for local dev:
   //   flutter run --dart-define=API_BASE_URL=http://localhost:3001
+  static const _isUat = String.fromEnvironment('APP_FLAVOR') == 'uat';
+
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://krishidukan.com',
+    defaultValue: _isUat ? 'https://karan-arjun-uat.web.app' : 'https://krishidukan.com',
   );
 
   // Razorpay test key — swap with live key via --dart-define in release build

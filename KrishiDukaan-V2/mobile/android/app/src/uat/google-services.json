@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "823396858694",
+    "project_id": "karan-arjun-uat",
+    "storage_bucket": "karan-arjun-uat.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:823396858694:android:9d30ebc8c69fb2ea328347",
+        "android_client_info": {
+          "package_name": "com.karanarjuntechnologies.krishidukan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJHplQrjXKVpPOfqr7hBcjU93iPKwVu2g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
