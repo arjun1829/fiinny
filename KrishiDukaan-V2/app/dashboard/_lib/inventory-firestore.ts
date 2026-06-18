@@ -69,6 +69,15 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     category: String(data.category ?? ""),
     description: String(data.description ?? ""),
     image: String(data.image ?? data.imageUrl ?? ""),
+    // Carry the full gallery so the edit form can rehydrate every slot.
+    // Falls back to the single `image` for legacy products with no `images[]`.
+    images: (() => {
+      const main = String(data.image ?? data.imageUrl ?? "");
+      const arr = Array.isArray(data.images)
+        ? data.images.filter((u): u is string => typeof u === "string" && u.trim() !== "")
+        : [];
+      return arr.length ? arr : (main ? [main] : []);
+    })(),
     unit: String(data.unit ?? ""),
     price: toNum(data.price ?? data.defaultPrice, 0),
     createdAt: (data.createdAt as Timestamp) ?? null,
@@ -374,7 +383,7 @@ export async function fetchRetailerInventoryRows(
         unit: p.unit,
         description: p.description ?? "",
         image: p.image ?? "",
-        images: Array.isArray(raw.images) ? (raw.images as string[]) : (p.image ? [p.image] : []),
+        images: p.images?.length ? p.images : (p.image ? [p.image] : []),
         variants: p.variants ?? [{ unit: p.unit, price: inv.sellingPrice }],
         price: p.price ?? inv.sellingPrice,
         stockQuantity: inv.stockQuantity,
@@ -482,7 +491,7 @@ export async function fetchManufacturerCatalogueRows(
       unit: p.unit,
       description: p.description ?? "",
       image: p.image ?? "",
-      images: Array.isArray(raw.images) ? raw.images : (p.image ? [p.image] : []),
+      images: p.images?.length ? p.images : (p.image ? [p.image] : []),
       variants: Array.isArray(raw.variants) ? raw.variants : [{ unit: p.unit, price: p.price }],
       price: p.price,
       sellingPrice: inv?.sellingPrice ?? p.price,
