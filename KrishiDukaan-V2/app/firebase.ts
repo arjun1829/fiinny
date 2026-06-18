@@ -518,7 +518,6 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(copy.variants) ? copy.variants : undefined,
-          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
