@@ -52,6 +52,38 @@ const PROD_PROJECT = 'krishidukan-e8315';
 const UAT_PROJECT  = 'karan-arjun-uat';
 const BATCH_SIZE   = 400; // Firestore max is 500 ops/batch
 
+// ─── Per-document transforms ──────────────────────────────────────────────────
+// Firebase Auth UIDs do NOT transfer between projects. A user who logs into UAT
+// with the same phone gets a brand-new UID, so any ownership field that stores a
+// production UID will fail the Firestore rules' phoneMatches() check.
+//
+// Products store ownership in legacy UID fields (ownerId / manufacturerId /
+// retailerId) alongside phone fields (ownerPhone / manufacturerPhone /
+// retailerPhone). We rewrite the UID fields to their phone equivalents so that
+// phoneMatches() succeeds for whoever logs in with that phone — making copied
+// products editable in UAT without weakening the security rules.
+
+function looksLikePhone(v: unknown): boolean {
+  return typeof v === 'string' && /^\+?\d{10,15}$/.test(v);
+}
+
+const TRANSFORMS: Record<string, (data: any) => any> = {
+  products: (data) => {
+    const { ownerPhone, manufacturerPhone, retailerPhone } = data;
+    // Only overwrite a UID-shaped value when a real phone is available.
+    if (looksLikePhone(ownerPhone) && !looksLikePhone(data.ownerId)) {
+      data.ownerId = ownerPhone;
+    }
+    if (looksLikePhone(manufacturerPhone) && !looksLikePhone(data.manufacturerId)) {
+      data.manufacturerId = manufacturerPhone;
+    }
+    if (looksLikePhone(retailerPhone) && !looksLikePhone(data.retailerId)) {
+      data.retailerId = retailerPhone;
+    }
+    return data;
+  },
+};
+
 // ─── Init two separate Admin SDK apps ────────────────────────────────────────
 function initApp(projectId: string, name: string): App {
   const existing = getApps().find(a => a.name === name);
@@ -83,9 +115,11 @@ async function copyCollection(
   let batch: WriteBatch = dst.batch();
   let batchCount = 0;
   let totalWritten = 0;
+  const transform = TRANSFORMS[collectionName];
 
   for (const doc of snapshot.docs) {
-    batch.set(dst.collection(collectionName).doc(doc.id), doc.data());
+    const data = transform ? transform(doc.data()) : doc.data();
+    batch.set(dst.collection(collectionName).doc(doc.id), data);
     batchCount++;
     totalWritten++;
 
