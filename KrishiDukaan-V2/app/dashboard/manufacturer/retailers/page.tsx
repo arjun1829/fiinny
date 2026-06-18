@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, PackagePlus, PowerOff, Trash2, UserPlus, X } from "lucide-react";
-import { auth, getUserProfile, fetchManufacturerProducts } from "../../../firebase";
+import { fetchManufacturerProducts } from "../../../firebase";
+import { useEffectiveUser } from "../../_context/effective-user-context";
 import { PageHeader } from "../../_components/page-header";
 import { HelperIcon, HelperTooltip } from "../../../../components/helpers";
 import { RetailerTable } from "../../_components/manufacturer/retailer-table";
@@ -49,6 +49,7 @@ type ToastPayload = {
 export default function ManufacturerRetailersPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [access, setAccess] = useState<AccessState>("checking");
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
   const [manufacturerName, setManufacturerName] = useState<string>("");
@@ -96,30 +97,17 @@ export default function ManufacturerRetailersPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setAccess("denied");
-        router.replace("/");
-        return;
-      }
-      try {
-        const profile = await getUserProfile(user.uid);
-        if (profile?.role === "manufacturer") {
-          setManufacturerId(user.uid);
-          setManufacturerName((profile as any).name || (profile as any).shopName || "");
-          setAccess("allowed");
-          await loadAll(user.uid);
-        } else {
-          setAccess("denied");
-          router.replace("/dashboard");
-        }
-      } catch {
-        setAccess("denied");
-        router.replace("/dashboard");
-      }
-    });
-    return () => unsub();
-  }, [router, loadAll]);
+    if (!effectiveUid || !effectiveProfile) return;
+    if (effectiveProfile.role === "manufacturer") {
+      setManufacturerId(effectiveUid);
+      setManufacturerName((effectiveProfile as any).name || (effectiveProfile as any).shopName || "");
+      setAccess("allowed");
+      loadAll(effectiveUid);
+    } else {
+      setAccess("denied");
+      router.replace("/dashboard");
+    }
+  }, [effectiveUid, effectiveProfile, router, loadAll]);
 
   const totalPurchased = getTotalPurchasedSeats(subs);
   const seatsRemaining =

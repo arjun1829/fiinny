@@ -23,6 +23,7 @@ import {
   type AdminSaveProfileInput,
 } from "../../firebase";
 import { isValidGstinFormat } from "../../dashboard/_lib/profile-persistence";
+import { compressImage } from "../../utils/compressImage";
 
 declare global { interface Window { google?: any } }
 
@@ -59,8 +60,9 @@ function extractAddressFields(place: any): Partial<ProfileForm> {
 }
 
 async function uploadImage(file: File, prefix: string): Promise<string> {
+  const toUpload = await compressImage(file);
   const path = `${prefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), file);
+  const snap = await uploadBytes(storageRef(storage, path), toUpload);
   return getDownloadURL(snap.ref);
 }
 

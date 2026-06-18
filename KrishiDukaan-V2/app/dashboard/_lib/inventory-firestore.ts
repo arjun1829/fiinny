@@ -269,9 +269,12 @@ async function fetchInventoryForManufacturer(
   // Admin-assigned inventory keys ownership by phone (ownerId == phone), never the
   // UID — query that axis too so the join below finds them. Matched on ownerId so
   // every returned doc passes the inventory read rule's phoneMatches(ownerId) clause.
+  // Also covers the admin-view case where uid is already the phone (phone == ownerPhone).
   if (ownerPhone && ownerPhone !== uid) {
     queries.push(getDocs(query(collection(db, "inventory"), where("ownerId", "==", ownerPhone))));
   }
+  // When uid IS the phone (admin-created user, uid:null), the first two queries already
+  // cover it — no extra query needed since ownerPhone === uid in that case.
 
   const snaps = await Promise.all(queries);
   snaps.forEach((snap) => {
@@ -667,13 +670,7 @@ export async function createProductAndInventory(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
-    // Legacy fertilizer flat fields — preserved for backward compat reads
-    nitrogen: input.nitrogen?.trim() || null,
-    phosphorus: input.phosphorus?.trim() || null,
-    potassium: input.potassium?.trim() || null,
-    applicationDesc: input.applicationDesc?.trim() || null,
-    dosage: input.dosage?.trim() || null,
-    bestForCrops: input.bestForCrops || null,
+    // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 
   if (isCopy && input.existingProductId) {

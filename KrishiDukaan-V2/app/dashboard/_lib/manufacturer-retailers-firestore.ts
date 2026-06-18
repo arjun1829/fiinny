@@ -219,12 +219,16 @@ export async function generateUniqueInviteCode(maxAttempts = 8): Promise<string>
 export async function fetchManufacturerRetailers(
   manufacturerId: string,
 ): Promise<ManufacturerRetailerRow[]> {
-  // Dual query: legacy manufacturerId (UID) + manufacturerPhone (E164)
-  let manufacturerPhone: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", manufacturerId));
-    if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
-  } catch { /* ignore */ }
+  // Dual query: legacy manufacturerId (UID) + manufacturerPhone (E164).
+  // If the id is already an E164 phone (admin-created users with uid:null), use it
+  // directly; otherwise resolve via uidIndex.
+  let manufacturerPhone: string | null = manufacturerId.startsWith('+') ? manufacturerId : null;
+  if (!manufacturerPhone) {
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", manufacturerId));
+      if (idxSnap.exists()) manufacturerPhone = String(idxSnap.data().phone ?? "") || null;
+    } catch { /* ignore */ }
+  }
 
   // Use getDocsFromServer to bypass the SDK's local query cache.
   // After a write (updateNetworkRetailer) the document is updated on the server,
@@ -233,7 +237,10 @@ export async function fetchManufacturerRetailers(
   const queries = [
     getDocsFromServer(query(collection(db, COLLECTION), where("manufacturerId", "==", manufacturerId))),
   ];
-  if (manufacturerPhone && manufacturerPhone !== manufacturerId) {
+  // Always add the manufacturerPhone query when a phone is known — even when
+  // phone == manufacturerId (admin view with phone-as-uid) — because the two
+  // queries target different fields and deduplication handles overlaps.
+  if (manufacturerPhone) {
     queries.push(getDocsFromServer(query(collection(db, COLLECTION), where("manufacturerPhone", "==", manufacturerPhone))));
   }
 

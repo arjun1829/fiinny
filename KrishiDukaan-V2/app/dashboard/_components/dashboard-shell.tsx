@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, Menu, Package, ReceiptText, UserCircle2, X, Home } from "lucide-react";
+import { LayoutDashboard, Menu, Package, ReceiptText, ShieldAlert, UserCircle2, X, Home } from "lucide-react";
 import { Sidebar } from "./sidebar";
 import { useI18n } from "../../i18n/I18nContext";
+import { useEffectiveUser } from "../_context/effective-user-context";
 
 export function DashboardShell({ children, banner }: { children: React.ReactNode; banner?: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { t } = useI18n();
+  const { isAdminView, displayName, uid: effectiveUid } = useEffectiveUser();
 
   // Primary bottom-nav items (most-used pages) — "Menu" opens the full sidebar
   const mobileNav = [
@@ -42,6 +44,31 @@ export function DashboardShell({ children, banner }: { children: React.ReactNode
             <Home className="h-3 w-3" /> App
           </Link>
         </header>
+
+        {/* Admin impersonation banner */}
+        {isAdminView && (
+          <div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <ShieldAlert className="h-4 w-4 shrink-0 text-blue-600" />
+              <span className="text-xs font-semibold text-blue-800 truncate">
+                Admin View — <span className="font-bold">{displayName}</span>
+              </span>
+              {effectiveUid && (
+                <span className="hidden sm:inline text-[10px] font-mono text-blue-500 truncate">({effectiveUid})</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                try { sessionStorage.removeItem('kd_admin_view_uid'); } catch {}
+                window.location.href = '/admin/users';
+              }}
+              className="shrink-0 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+            >
+              ← Back to Admin
+            </button>
+          </div>
+        )}
 
         {banner && <div className="border-b border-amber-200">{banner}</div>}
         <main className="mx-auto w-full max-w-7xl p-4 pb-24 md:p-8 md:pb-8">{children}</main>

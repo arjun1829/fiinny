@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Loader2, Pencil, Power, PowerOff, Save, Tag, Trash2, Truck,
+  AlertTriangle, CheckCircle2, ExternalLink, Loader2, Pencil, Power, PowerOff, Tag, Trash2, Truck,
 } from "lucide-react";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
-import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
+import { updateProductSellMode } from "../_lib/inventory-firestore";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 import { EditProductModal } from "./edit-product-modal";
@@ -29,8 +29,6 @@ type InventoryTableProps = {
   /** Delete own product or remove an assigned product. */
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
 };
-
-type RowDraft = { stockQuantity: string; sellingPrice: string };
 
 // ─── Style helpers ──────────────────────────────────────────────────────────
 
@@ -61,24 +59,33 @@ function sourceCls(row: InventoryRow): string {
     : "bg-primary/10 text-primary";
 }
 
-// ─── Variant chips ──────────────────────────────────────────────────────────
+// ─── Variant + price list ────────────────────────────────────────────────────
 
-function VariantChips({ variants }: { variants: InventoryRow["variants"] }) {
-  if (!variants || variants.length <= 1) {
-    return <span className="text-on-surface-variant text-xs">—</span>;
-  }
+function VariantPriceList({
+  variants,
+  sellingPrice,
+  unit,
+}: {
+  variants: InventoryRow["variants"];
+  sellingPrice: number;
+  unit: string;
+}) {
+  // Normalise: use variants array if populated, otherwise build one from the
+  // top-level unit + sellingPrice so single-variant products always show a row.
+  const rows =
+    variants && variants.length > 0
+      ? variants
+      : [{ unit, price: sellingPrice }];
+
   return (
-    <div className="flex flex-wrap gap-1 max-w-[180px]">
-      {variants.slice(0, 3).map((v, i) => (
-        <span key={i} className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-medium text-on-surface-variant">
-          {v.unit} · ₹{v.price}
+    <div className="flex flex-col gap-0.5 min-w-[110px]">
+      {rows.map((v, i) => (
+        <span key={i} className="text-xs text-on-surface tabular-nums whitespace-nowrap">
+          <span className="text-on-surface-variant">{v.unit}</span>
+          {" · "}
+          <span className="font-semibold">₹{v.price.toLocaleString("en-IN")}</span>
         </span>
       ))}
-      {variants.length > 3 && (
-        <span className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] text-on-surface-variant">
-          +{variants.length - 3}
-        </span>
-      )}
     </div>
   );
 }
@@ -203,12 +210,9 @@ function SellModeToggleButton({
 // ─── Actions cell ───────────────────────────────────────────────────────────
 
 function ActionsCell({
-  row, dirty, saving, onSave, onEdit, onToggleDiscount, onDelete, onUpdated, accountDeliveryEnabled,
+  row, onEdit, onToggleDiscount, onDelete, onUpdated, accountDeliveryEnabled,
 }: {
   row: InventoryRow;
-  dirty: boolean;
-  saving: boolean;
-  onSave: () => void;
   onEdit: () => void;
   onToggleDiscount: () => void;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
@@ -238,19 +242,9 @@ function ActionsCell({
   };
 
   return (
-    <div className="flex flex-col gap-1 min-w-[150px]">
+    <div className="flex flex-col gap-1 min-w-[120px]">
       {err && <p className="text-[10px] text-red-600">{err}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
-        {dirty && (
-          <button
-            type="button" onClick={onSave} disabled={saving}
-            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-95 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            {t('saveBtn')}
-          </button>
-        )}
-
         {/* Edit — own products only (name, images, specs) */}
         {isOwn && (
           <button
@@ -274,6 +268,17 @@ function ActionsCell({
           <Tag className="h-3 w-3" />
           {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
         </button>
+
+        {/* View on Marketplace */}
+        <a
+          href={`/?view=product&product=${row.productId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
+          title="View how this product appears to customers"
+        >
+          <ExternalLink className="h-3 w-3" /> View
+        </a>
 
         {/* Online Delivery toggle — hidden when account-level delivery is OFF */}
         {accountDeliveryEnabled !== false && (
@@ -419,20 +424,15 @@ function MobileProductCard({
             {/* Category */}
             <p className="text-xs text-on-surface-variant mt-0.5">{row.category}</p>
 
-            {/* Variants pill */}
-            {row.variants && row.variants.length > 1 && (
-              <p className="text-[10px] text-primary font-semibold mt-0.5">
-                {row.variants.length} variants
-              </p>
-            )}
+            {/* Variants + prices */}
+            <div className="mt-1.5">
+              <VariantPriceList variants={row.variants} sellingPrice={row.sellingPrice} unit={row.unit} />
+            </div>
 
             {/* Stats row */}
-            <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
               <span className="text-xs text-on-surface-variant">
                 Stock: <span className="font-semibold text-on-surface">{row.stockQuantity}</span>
-              </span>
-              <span className="text-xs text-on-surface-variant">
-                Price: <span className="font-semibold text-on-surface">₹{row.sellingPrice.toFixed(0)}</span>
               </span>
               {row.effectiveDiscountPct > 0 && (
                 <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">
@@ -483,6 +483,16 @@ function MobileProductCard({
             {row.effectiveDiscountPct > 0 ? `${row.effectiveDiscountPct}% OFF` : "Discount"}
           </button>
         )}
+
+        {/* View on Marketplace */}
+        <a
+          href={`/?view=product&product=${row.productId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
+        >
+          <ExternalLink className="h-3 w-3" /> View
+        </a>
 
         {/* Online Delivery toggle — hidden when account-level delivery is OFF */}
         {accountDeliveryEnabled !== false && (
@@ -552,73 +562,9 @@ export function InventoryTable({
   rows, role, userId, disabled, accountDeliveryEnabled, onUpdated, onToggleActive, onDelete,
 }: InventoryTableProps) {
   const { t } = useI18n();
-  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<InventoryRow | null>(null);
   const [discountId, setDiscountId] = useState<string | null>(null);
-
-  // Reset inline drafts whenever the rows change.
-  useEffect(() => {
-    const next: Record<string, RowDraft> = {};
-    rows.forEach((r) => {
-      if (r.inventoryId) {
-        next[r.inventoryId] = { stockQuantity: String(r.stockQuantity), sellingPrice: String(r.sellingPrice) };
-      }
-    });
-    setDrafts(next);
-  }, [rows]);
-
-  const setDraft = (inventoryId: string, patch: Partial<RowDraft>) =>
-    setDrafts((prev) => ({ ...prev, [inventoryId]: { ...prev[inventoryId], ...patch } }));
-
-  const rowDirty = useMemo(() => {
-    const dirty: Record<string, boolean> = {};
-    rows.forEach((r) => {
-      const d = drafts[r.inventoryId];
-      dirty[r.inventoryId] = !!d && (
-        (parseInt(d.stockQuantity, 10) || 0) !== r.stockQuantity ||
-        (parseFloat(d.sellingPrice) || 0) !== r.sellingPrice
-      );
-    });
-    return dirty;
-  }, [rows, drafts]);
-
-  const handleSaveRow = async (row: InventoryRow) => {
-    const d = drafts[row.inventoryId];
-    if (!d || !row.inventoryId) return;
-    setSavingId(row.inventoryId);
-    setError(null);
-    try {
-      // ── OWNERSHIP AUDIT ──────────────────────────────────────────────────
-      console.log("[InventoryTable] handleSaveRow (inline stock/price edit)", {
-        "Editing Product (productId)": row.productId,
-        "Source": row.source,
-        "Owner": row.ownerId,
-        "assignedByManufacturer": row.assignedByManufacturer,
-        "originalProductId": row.originalProductId ?? null,
-        "Saving to (inventory)": row.inventoryId,
-        "NOT updating products doc directly": true,
-        "sellingPrice": d.sellingPrice,
-        "stockQuantity": d.stockQuantity,
-      });
-      // ────────────────────────────────────────────────────────────────────
-      // Preserve the existing reorder threshold — it isn't edited inline.
-      await updateInventoryRecord(row.inventoryId, {
-        stockQuantity: Math.max(0, Math.floor(parseInt(d.stockQuantity, 10) || 0)),
-        sellingPrice: Math.max(0, parseFloat(d.sellingPrice) || 0),
-        reorderThreshold: Math.max(0, Math.floor(row.reorderThreshold)),
-      });
-      await onUpdated();
-      setSavedId(row.inventoryId);
-      setTimeout(() => setSavedId((p) => (p === row.inventoryId ? null : p)), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update inventory.");
-    } finally {
-      setSavingId(null);
-    }
-  };
 
   const emptyMsg = role === "manufacturer"
     ? t('noCatalogueYet')
@@ -665,8 +611,6 @@ export function InventoryTable({
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catProductName')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catCategory')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catVariants')}</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catStock')}</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catPriceCol')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catSource')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catStatus')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catLastUpdated')}</th>
@@ -675,11 +619,8 @@ export function InventoryTable({
             </thead>
             <tbody className="divide-y divide-outline-variant/20">
               {rows.map((r) => {
-                const d = drafts[r.inventoryId];
-                const stockNum = d != null ? (parseInt(d.stockQuantity, 10) || 0) : r.stockQuantity;
-                const status = deriveStockStatus(stockNum, r.reorderThreshold);
+                const status = deriveStockStatus(r.stockQuantity, r.reorderThreshold);
                 const isInactive = !r.isActive;
-                const canEditInline = !!r.inventoryId && !isInactive && !disabled;
                 const updatedLabel = r.updatedAt
                   ? r.updatedAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
                   : "—";
@@ -710,68 +651,9 @@ export function InventoryTable({
                       <span className="text-xs text-on-surface-variant/70">{r.unit}</span>
                     </td>
 
-                    {/* Variants */}
-                    <td className="px-3 py-3 md:px-4"><VariantChips variants={r.variants} /></td>
-
-                    {/* Stock (inline editable) + status badge */}
+                    {/* Variants + price */}
                     <td className="px-3 py-3 md:px-4">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          disabled={!canEditInline || savingId === r.inventoryId}
-                          className="w-20 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-                          value={d != null ? d.stockQuantity : String(r.stockQuantity)}
-                          onChange={(e) => {
-                            const digits = e.target.value.replace(/\D/g, "");
-                            const clean = digits === "" ? "" : String(parseInt(digits, 10));
-                            setDraft(r.inventoryId, { stockQuantity: clean });
-                          }}
-                          onBlur={(e) => {
-                            if (e.target.value === "") setDraft(r.inventoryId, { stockQuantity: "0" });
-                          }}
-                        />
-                        <span className={cn(
-                          "inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                          isInactive ? "bg-surface-container text-on-surface-variant" : statusStyles(status),
-                        )}>
-                          {isInactive ? "Inactive" : stockStatusLabel(status)}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Price (inline editable) + discount badge */}
-                    <td className="px-3 py-3 md:px-4">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          disabled={!canEditInline || savingId === r.inventoryId}
-                          className="w-24 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 tabular-nums text-on-surface outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-                          value={d != null ? d.sellingPrice : String(r.sellingPrice)}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/[^\d.]/g, "");
-                            const parts = raw.split(".");
-                            const joined = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
-                            const clean = joined.replace(/^0+(\d)/, "$1");
-                            setDraft(r.inventoryId, { sellingPrice: clean });
-                          }}
-                          onBlur={(e) => {
-                            const n = parseFloat(e.target.value);
-                            setDraft(r.inventoryId, { sellingPrice: isNaN(n) || n < 0 ? "0" : String(n) });
-                          }}
-                        />
-                        {r.effectiveDiscountPct > 0 ? (
-                          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
-                            <Tag className="h-2.5 w-2.5" /> {r.effectiveDiscountPct}% OFF
-                          </span>
-                        ) : r.discountEnabled && r.discountPct > 0 ? (
-                          <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                            {r.discountPct}% (inactive)
-                          </span>
-                        ) : null}
-                      </div>
+                      <VariantPriceList variants={r.variants} sellingPrice={r.sellingPrice} unit={r.unit} />
                     </td>
 
                     {/* Source */}
@@ -781,9 +663,17 @@ export function InventoryTable({
                       </span>
                     </td>
 
-                    {/* Status / Accept */}
+                    {/* Status / Accept + stock badge */}
                     <td className="px-3 py-3 md:px-4">
-                      <StatusCell row={r} userId={userId} onToggleActive={onToggleActive} onUpdated={onUpdated} />
+                      <div className="flex flex-col gap-1">
+                        <span className={cn(
+                          "inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          isInactive ? "bg-surface-container text-on-surface-variant" : statusStyles(status),
+                        )}>
+                          {isInactive ? "Inactive" : stockStatusLabel(status)}
+                        </span>
+                        <StatusCell row={r} userId={userId} onToggleActive={onToggleActive} onUpdated={onUpdated} />
+                      </div>
                     </td>
 
                     {/* Updated */}
@@ -793,20 +683,12 @@ export function InventoryTable({
                     <td className="px-3 py-3 md:px-4">
                       <ActionsCell
                         row={r}
-                        dirty={!!rowDirty[r.inventoryId]}
-                        saving={savingId === r.inventoryId}
-                        onSave={() => handleSaveRow(r)}
                         onEdit={() => setEditing(r)}
                         onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
                         onDelete={onDelete}
                         onUpdated={onUpdated}
                         accountDeliveryEnabled={accountDeliveryEnabled}
                       />
-                      {savedId === r.inventoryId && (
-                        <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Saved
-                        </span>
-                      )}
                       {/* Inline discount panel — own and assigned products */}
                       {discountId === r.productId && (
                         r.inventoryId ? (
@@ -844,8 +726,7 @@ export function InventoryTable({
       </div>
 
       <p className="text-xs text-on-surface-variant">
-        Edit stock and price inline, then Save. Use Edit for full product details and variants.
-        Inactive products are hidden from the marketplace and do not consume a seat.
+        Use Edit to update stock, price, and variants. Inactive products are hidden from the marketplace and do not consume a seat.
       </p>
 
       {editing && (

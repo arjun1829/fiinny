@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import {
   Package,
   Truck,
@@ -16,7 +16,7 @@ import {
   Download,
   RefreshCw,
 } from "lucide-react";
-import { auth, fetchOrdersForCustomer } from "../../firebase";
+import { fetchOrdersForCustomer } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { generateInvoicePDF } from "../../utils/invoice-generator";
@@ -143,6 +143,7 @@ const FILTER_LABELS: { key: FilterTab; label: string; color: string }[] = [
 ];
 
 export default function MyOrdersPage() {
+  const { uid: effectiveUid } = useEffectiveUser();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,18 +165,10 @@ export default function MyOrdersPage() {
   };
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setUid(null);
-        setOrders([]);
-        setLoading(false);
-        return;
-      }
-      setUid(user.uid);
-      await loadOrders(user.uid);
-    });
-    return () => unsub();
-  }, []);
+    if (!effectiveUid) { setLoading(false); return; }
+    setUid(effectiveUid);
+    loadOrders(effectiveUid);
+  }, [effectiveUid]);
 
   const filteredOrders =
     activeFilter === "all"
