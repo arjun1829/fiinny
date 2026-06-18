@@ -21,6 +21,7 @@ import {
 import { auth, getUserProfile } from "../../firebase";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
+import { useEffectiveUser } from "../_context/effective-user-context";
 
 const baseNav = [
   { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
@@ -77,10 +78,19 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
 
   useEffect(() => {
+    if (effectiveUid && effectiveProfile) {
+      // Use context when available (normal user or admin view)
+      const r = effectiveProfile?.role;
+      setRole(r === "manufacturer" || r === "retailer" ? r : null);
+      setOnlineDelivery(!!(effectiveProfile as any)?.onlineDelivery);
+      return;
+    }
+    // Fallback to auth listener when context is not yet populated
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole(null);
@@ -98,7 +108,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
       }
     });
     return () => unsub();
-  }, []);
+  }, [effectiveUid, effectiveProfile]);
 
   type NavItem = { href: string; labelKey: string; icon: React.ElementType };
 

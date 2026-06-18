@@ -44,6 +44,8 @@ export type ManufacturerProductInput = {
   /** GST configuration for this product. */
   gstApplicable?: boolean;
   gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Whether this product is available for online home delivery. Defaults to online_delivery. */
+  sellMode?: "online_delivery" | "offline_store_only";
   /** @deprecated Legacy fertilizer fields — still accepted for backward compat. */
   nitrogen?: string;
   phosphorus?: string;
@@ -102,8 +104,8 @@ export async function createManufacturerProduct(
     image: (input.image ?? "").trim(),
     images: input.images ?? [],
     isActive: true,
-    sellMode: "online_delivery",
-    isOnline: true,
+    sellMode: input.sellMode ?? "online_delivery",
+    isOnline: (input.sellMode ?? "online_delivery") === "online_delivery",
     ownerId: manufacturerId,
     ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
@@ -118,13 +120,8 @@ export async function createManufacturerProduct(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
-    // Legacy fertilizer flat fields — preserved for existing product reads
-    nitrogen: input.nitrogen?.trim() || null,
-    phosphorus: input.phosphorus?.trim() || null,
-    potassium: input.potassium?.trim() || null,
-    applicationDesc: input.applicationDesc?.trim() || null,
-    dosage: input.dosage?.trim() || null,
-    bestForCrops: input.bestForCrops || null,
+    // Note: legacy fertilizer flat fields (nitrogen, phosphorus, etc.) are no longer
+    // written here — category-specific data lives in categoryInfo only.
   });
 
   // Inventory record for the manufacturer's own stock
@@ -267,12 +264,7 @@ export async function updateManufacturerProduct(
     patch.gstApplicable = input.gstApplicable;
     patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;
   }
-  if (input.nitrogen !== undefined)        patch.nitrogen        = input.nitrogen ? input.nitrogen.trim() : null;
-  if (input.phosphorus !== undefined)      patch.phosphorus      = input.phosphorus ? input.phosphorus.trim() : null;
-  if (input.potassium !== undefined)       patch.potassium       = input.potassium ? input.potassium.trim() : null;
-  if (input.applicationDesc !== undefined)  patch.applicationDesc  = input.applicationDesc ? input.applicationDesc.trim() : null;
-  if (input.dosage !== undefined)          patch.dosage          = input.dosage ? input.dosage.trim() : null;
-  if (input.bestForCrops !== undefined)    patch.bestForCrops    = input.bestForCrops || null;
+  // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   await updateDoc(ref, patch);
 }
 

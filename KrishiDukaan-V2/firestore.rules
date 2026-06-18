@@ -58,7 +58,7 @@ service cloud.firestore {
     // Maps Firebase Auth UID → normalized phone. Written once on first login.
     // Rule deliberately avoids myPhone() to break the bootstrap chicken-and-egg.
     match /uidIndex/{uid} {
-      allow read:   if isAuthed() && request.auth.uid == uid;
+      allow read:   if isAuthed() && (request.auth.uid == uid || isAdmin());
       allow create: if isAuthed() && request.auth.uid == uid
                        && request.resource.data.keys().hasAll(['phone', 'createdAt'])
                        && request.resource.data.phone is string;
@@ -264,21 +264,21 @@ service cloud.firestore {
     // Public list/count — needed for brand page retailer count (unauthenticated visitors).
       // Individual doc reads still restricted to the manufacturer or the retailer themselves.
       allow list: if true;
-      allow get: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
+      allow get: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer reads their roster; retailer reads their own entry.
-      allow read: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
+      allow read: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer manages their roster; retailer can update their own entry
       // (e.g. backfill sets status:"active" after onboarding).
       allow write: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/products/{pid} {
-      allow read: if isAuthed() && myPhone() == mPhone;
+      allow read: if isAuthed() && (myPhone() == mPhone || isAdmin());
       allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/inventory/{iid} {
-      allow read: if isAuthed() && myPhone() == mPhone;
+      allow read: if isAuthed() && (myPhone() == mPhone || isAdmin());
       allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
     }
 
@@ -290,7 +290,7 @@ service cloud.firestore {
     }
 
     match /retailers/{rPhone}/inventory/{iid} {
-      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
       allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
     }
 
@@ -438,6 +438,7 @@ service cloud.firestore {
 
     match /manufacturerRetailers/{docId} {
       allow get: if isAuthed() && (
+        isAdmin() ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         resource.data.retailerId == request.auth.uid ||

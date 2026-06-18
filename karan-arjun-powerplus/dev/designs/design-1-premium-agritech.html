@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design 1 — Premium Agritech | Karan Arjun Power Plus</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Mukta:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --green-900: #052e0d;
+    --green-700: #0a4d0e;
+    --green-500: #16a34a;
+    --green-400: #22c55e;
+    --gold: #f1c40f;
+    --cream: #fef9e7;
+  }
+  * { font-family: 'Outfit', sans-serif; }
+  .marathi, .hindi { font-family: 'Mukta', sans-serif; }
+  body { background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%); }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #052e0d 0%, #16a34a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .glass {
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.55);
+  }
+  .glow-bottle {
+    filter: drop-shadow(0 30px 60px rgba(22,163,74,0.4));
+  }
+  .pulse-dot {
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.4); }
+  }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    z-index: 0;
+  }
+  .hero-grid-pattern {
+    background-image:
+      linear-gradient(rgba(22,163,74,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(22,163,74,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .product-card {
+    transition: all 0.3s ease;
+  }
+  .product-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 30px 60px rgba(22,163,74,0.2);
+  }
+  .stat-number {
+    background: linear-gradient(135deg, #16a34a, #f1c40f);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .crop-emoji {
+    font-size: 3rem;
+    transition: transform 0.3s;
+  }
+  .crop-card:hover .crop-emoji {
+    transform: scale(1.3) rotate(10deg);
+  }
+  .testimonial-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+    border-left: 4px solid #16a34a;
+  }
+  .scroll-anim {
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+  }
+</style>
+</head>
+<body class="text-gray-800">
+
+<!-- Top Trust Bar -->
+<div class="bg-green-900 text-white text-sm py-2 text-center">
+  <div class="container mx-auto px-4 flex items-center justify-center gap-6 flex-wrap">
+    <span>🛡️ ISO 9001:2015 Certified</span>
+    <span class="hidden md:inline">|</span>
+    <span>📞 Call: <strong>9307199040</strong></span>
+    <span class="hidden md:inline">|</span>
+    <span>🚚 PAN India Delivery</span>
+  </div>
+</div>
+
+<!-- Navbar -->
+<nav class="sticky top-0 z-50 glass border-b border-green-100">
+  <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-12 h-12 bg-gradient-to-br from-green-700 to-green-500 rounded-xl flex items-center justify-center text-white font-black text-xl">K</div>
+      <div>
+        <div class="font-bold text-green-900 text-lg leading-tight">Karan Arjun</div>
+        <div class="text-xs text-green-600 font-bold tracking-wider">POWER PLUS™</div>
+      </div>
+    </div>
+    <div class="hidden md:flex gap-8 items-center">
+      <a href="#benefits" class="hover:text-green-600">Benefits</a>
+      <a href="#how" class="hover:text-green-600">How to Use</a>
+      <a href="#crops" class="hover:text-green-600">Crops</a>
+      <a href="#story" class="hover:text-green-600">Our Story</a>
+      <button class="px-3 py-1 border border-green-600 rounded-full text-sm font-bold text-green-700">🌐 EN</button>
+      <a href="#buy" class="bg-gradient-to-r from-green-600 to-green-500 text-white px-6 py-3 rounded-full font-bold hover:shadow-lg transition">Order Now →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="relative overflow-hidden hero-grid-pattern py-20 md:py-32">
+  <div class="blob bg-green-300 w-96 h-96 -top-20 -left-20"></div>
+  <div class="blob bg-yellow-200 w-96 h-96 top-40 right-0"></div>
+
+  <div class="container mx-auto px-4 relative z-10 grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <div class="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-green-200 mb-6">
+        <span class="w-2 h-2 bg-green-500 rounded-full pulse-dot"></span>
+        <span class="text-sm font-semibold text-green-800">India's #1 Biostimulant</span>
+      </div>
+
+      <h1 class="text-5xl md:text-7xl font-black leading-tight mb-4">
+        <span class="marathi text-green-900">करण अर्जुन</span><br/>
+        <span class="gradient-text">POWER<em class="text-yellow-500 not-italic">+</em></span>
+      </h1>
+
+      <p class="text-xl md:text-2xl text-gray-700 mb-2 font-semibold">
+        22% Humates &amp; Fulvates <span class="text-green-600">(Liquid)</span>
+      </p>
+      <p class="text-lg text-gray-600 mb-8 leading-relaxed">
+        India's trusted biostimulant for <strong>premium yield quality</strong>, <strong>drought resilience</strong>, and <strong>higher market returns</strong>. Used by 75,000+ farmers nationwide.
+      </p>
+
+      <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-r-lg mb-8">
+        <p class="marathi text-lg font-bold text-green-900">"नातं विश्वासचं, एक पाऊल आधुनिकतेचं ✌️"</p>
+        <p class="text-sm text-gray-600 mt-1">— Savita Tanpure, Karan Arjun KSK, Karjat</p>
+      </div>
+
+      <div class="flex gap-4 flex-wrap mb-10">
+        <a href="#buy" class="bg-gradient-to-r from-green-600 to-green-500 text-white px-8 py-4 rounded-full font-bold text-lg hover:shadow-2xl hover:scale-105 transition">
+          🛒 Order Now from ₹500
+        </a>
+        <a href="#benefits" class="bg-white border-2 border-green-600 text-green-700 px-8 py-4 rounded-full font-bold text-lg hover:bg-green-50 transition">
+          See All Benefits ↓
+        </a>
+      </div>
+
+      <div class="grid grid-cols-3 gap-6 pt-6 border-t border-gray-200">
+        <div>
+          <div class="stat-number text-3xl md:text-4xl font-black">75.8K+</div>
+          <div class="text-sm text-gray-600">Farmers Trust Us</div>
+        </div>
+        <div>
+          <div class="stat-number text-3xl md:text-4xl font-black">3 Yr</div>
+          <div class="text-sm text-gray-600">Shelf Life</div>
+        </div>
+        <div>
+          <div class="stat-number text-3xl md:text-4xl font-black">22%</div>
+          <div class="text-sm text-gray-600">Active Content</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Product Visual -->
+    <div class="relative">
+      <div class="absolute inset-0 bg-gradient-radial from-green-200/50 to-transparent rounded-full blur-3xl"></div>
+      <div class="relative scroll-anim">
+        <!-- Bottle illustration using divs -->
+        <div class="mx-auto w-80 h-96 relative">
+          <div class="absolute inset-x-12 top-0 h-12 bg-gradient-to-b from-gray-700 to-gray-900 rounded-t-lg"></div>
+          <div class="absolute inset-x-4 top-12 bottom-0 bg-gradient-to-b from-green-600 to-green-800 rounded-3xl shadow-2xl glow-bottle">
+            <div class="absolute inset-x-4 top-8 bg-white/95 rounded-2xl p-6 text-center">
+              <div class="text-xs font-bold text-green-700 mb-1">करण अर्जुन</div>
+              <div class="text-3xl font-black text-green-900">POWER</div>
+              <div class="text-2xl font-black text-yellow-500 -mt-1">PLUS</div>
+              <div class="mt-2 text-xs text-gray-600">22% Humates &amp; Fulvates</div>
+              <div class="mt-2 inline-block bg-yellow-400 text-green-900 text-xs font-bold px-2 py-1 rounded-full">3L</div>
+            </div>
+            <div class="absolute bottom-6 left-0 right-0 text-center text-white text-xs">
+              ISO 9001:2015 Certified
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="absolute -bottom-4 -right-4 bg-yellow-400 text-green-900 px-6 py-4 rounded-2xl font-black shadow-2xl rotate-6">
+        <div class="text-xs">Starting at</div>
+        <div class="text-3xl">₹500</div>
+        <div class="text-xs">/ 1L</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ANTI-COUNTERFEIT STRIP -->
+<section class="bg-red-50 border-y-2 border-red-200 py-4">
+  <div class="container mx-auto px-4 flex items-center gap-4 flex-wrap justify-center md:justify-between">
+    <div class="flex items-center gap-3">
+      <div class="text-3xl">⚠️</div>
+      <div>
+        <div class="font-bold text-red-700 marathi">डुब्लिकेट पासून सावधान!</div>
+        <div class="text-sm text-red-600">Always verify the holographic logo + QR code before purchasing.</div>
+      </div>
+    </div>
+    <a href="tel:9307199040" class="bg-red-600 text-white px-5 py-2 rounded-full font-bold text-sm hover:bg-red-700">Report Fakes: 9307199040</a>
+  </div>
+</section>
+
+<!-- BENEFITS COMPARISON BAR (NEW) -->
+<section class="py-16 bg-gradient-to-br from-green-50 to-white">
+  <div class="container mx-auto px-4">
+    <div class="text-center mb-12">
+      <span class="text-green-600 font-bold text-sm tracking-widest">RESULTS AT A GLANCE</span>
+      <h2 class="text-4xl md:text-5xl font-black gradient-text mt-2">Without vs. With Power Plus</h2>
+    </div>
+    <div class="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div class="text-sm text-gray-500 mb-2">Crop Yield</div>
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <div class="text-3xl font-black text-gray-400">70%</div>
+            <div class="text-xs text-gray-400">Without</div>
+          </div>
+          <div class="text-3xl">→</div>
+          <div>
+            <div class="text-4xl font-black text-green-600">92%</div>
+            <div class="text-xs text-green-600 font-semibold">With Power Plus</div>
+          </div>
+        </div>
+        <div class="bg-gray-200 rounded-full h-3"><div class="bg-gradient-to-r from-green-500 to-green-400 h-3 rounded-full" style="width: 92%"></div></div>
+      </div>
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div class="text-sm text-gray-500 mb-2">Drought Survival</div>
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <div class="text-3xl font-black text-gray-400">45%</div>
+            <div class="text-xs text-gray-400">Without</div>
+          </div>
+          <div class="text-3xl">→</div>
+          <div>
+            <div class="text-4xl font-black text-green-600">85%</div>
+            <div class="text-xs text-green-600 font-semibold">With Power Plus</div>
+          </div>
+        </div>
+        <div class="bg-gray-200 rounded-full h-3"><div class="bg-gradient-to-r from-green-500 to-green-400 h-3 rounded-full" style="width: 85%"></div></div>
+      </div>
+      <div class="bg-white rounded-2xl p-6 shadow-lg">
+        <div class="text-sm text-gray-500 mb-2">Market Price Realization</div>
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <div class="text-3xl font-black text-gray-400">₹100</div>
+            <div class="text-xs text-gray-400">Per kg</div>
+          </div>
+          <div class="text-3xl">→</div>
+          <div>
+            <div class="text-4xl font-black text-green-600">₹140</div>
+            <div class="text-xs text-green-600 font-semibold">+40% premium</div>
+          </div>
+        </div>
+        <div class="bg-gray-200 rounded-full h-3"><div class="bg-gradient-to-r from-yellow-500 to-yellow-400 h-3 rounded-full" style="width: 100%"></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BENEFITS GRID -->
+<section id="benefits" class="py-20">
+  <div class="container mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-green-600 font-bold text-sm tracking-widest">WHY POWER PLUS</span>
+      <h2 class="text-4xl md:text-5xl font-black gradient-text mt-2">6 Proven Benefits</h2>
+      <p class="text-lg text-gray-600 mt-4">Lab-verified formula. Field-proven results.</p>
+    </div>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-blue-100 rounded-xl flex items-center justify-center text-3xl mb-4">💧</div>
+        <h3 class="text-xl font-bold mb-2">Drought Resistance</h3>
+        <p class="text-gray-600">Significantly increases the plant's ability to withstand water stress and drought — critical for India's erratic monsoons.</p>
+      </div>
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-yellow-100 rounded-xl flex items-center justify-center text-3xl mb-4">✨</div>
+        <h3 class="text-xl font-bold mb-2">Premium Fruit Quality</h3>
+        <p class="text-gray-600">Fruits get better color, shine, and weight. Premium produce sells for higher prices.</p>
+      </div>
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-red-100 rounded-xl flex items-center justify-center text-3xl mb-4">🛡️</div>
+        <h3 class="text-xl font-bold mb-2">Disease Resistance</h3>
+        <p class="text-gray-600">Boosts crop's natural immunity against fungal and bacterial diseases.</p>
+      </div>
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-green-100 rounded-xl flex items-center justify-center text-3xl mb-4">🌱</div>
+        <h3 class="text-xl font-bold mb-2">Stronger Roots</h3>
+        <p class="text-gray-600">Promotes deep root formation and increases soil organic matter.</p>
+      </div>
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-purple-100 rounded-xl flex items-center justify-center text-3xl mb-4">⏳</div>
+        <h3 class="text-xl font-bold mb-2">Longer Shelf Life</h3>
+        <p class="text-gray-600">Produce lasts longer after harvest — reducing post-harvest losses.</p>
+      </div>
+      <div class="bg-white rounded-2xl p-8 shadow-md hover:shadow-2xl transition border border-green-100">
+        <div class="w-16 h-16 bg-pink-100 rounded-xl flex items-center justify-center text-3xl mb-4">🍬</div>
+        <h3 class="text-xl font-bold mb-2">Higher Sweetness</h3>
+        <p class="text-gray-600">Helps fruits develop higher natural sugar content — tastier, marketable.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CROPS -->
+<section id="crops" class="py-20 bg-gradient-to-br from-green-900 to-green-700 text-white">
+  <div class="container mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-green-300 font-bold text-sm tracking-widest">SUITABLE CROPS</span>
+      <h2 class="text-4xl md:text-5xl font-black mt-2">Works Across All Major Indian Cash Crops</h2>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🍇</div>
+        <div class="font-bold mt-2">Grapes</div>
+        <div class="text-xs text-green-200">द्राक्ष / अंगूर</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🧅</div>
+        <div class="font-bold mt-2">Onion</div>
+        <div class="text-xs text-green-200">कांदे / प्याज</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🍌</div>
+        <div class="font-bold mt-2">Banana</div>
+        <div class="text-xs text-green-200">केळी / केला</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🍉</div>
+        <div class="font-bold mt-2">Watermelon</div>
+        <div class="text-xs text-green-200">कलिंगड / तरबूज</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🥜</div>
+        <div class="font-bold mt-2">Groundnut</div>
+        <div class="text-xs text-green-200">भुईमूग</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🥦</div>
+        <div class="font-bold mt-2">Vegetables</div>
+        <div class="text-xs text-green-200">भाजीपाला</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🍎</div>
+        <div class="font-bold mt-2">Pomegranate</div>
+        <div class="text-xs text-green-200">डाळिंब / अनार</div>
+      </div>
+      <div class="crop-card bg-white/10 backdrop-blur rounded-2xl p-6 text-center border border-white/20 hover:bg-white/20 transition cursor-pointer">
+        <div class="crop-emoji">🌿</div>
+        <div class="font-bold mt-2">Cotton</div>
+        <div class="text-xs text-green-200">कापूस / कपास</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW TO USE -->
+<section id="how" class="py-20">
+  <div class="container mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-green-600 font-bold text-sm tracking-widest">USAGE GUIDE</span>
+      <h2 class="text-4xl md:text-5xl font-black gradient-text mt-2">How to Use Power Plus</h2>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+      <div class="relative bg-gradient-to-br from-blue-50 to-white p-8 rounded-3xl shadow-lg border border-blue-100">
+        <div class="absolute -top-4 -left-4 w-12 h-12 bg-blue-500 text-white rounded-full flex items-center justify-center font-black text-xl">1</div>
+        <div class="text-5xl mb-4">🌍</div>
+        <h3 class="text-xl font-bold mb-2">Soil Application</h3>
+        <div class="text-3xl font-black text-blue-600 mb-2">3 L / hectare</div>
+        <p class="text-gray-600">Mix with water and apply through drip or irrigation. Best at early crop growth stages.</p>
+      </div>
+
+      <div class="relative bg-gradient-to-br from-green-50 to-white p-8 rounded-3xl shadow-lg border border-green-100">
+        <div class="absolute -top-4 -left-4 w-12 h-12 bg-green-500 text-white rounded-full flex items-center justify-center font-black text-xl">2</div>
+        <div class="text-5xl mb-4">🌿</div>
+        <h3 class="text-xl font-bold mb-2">Foliar Spray</h3>
+        <div class="text-3xl font-black text-green-600 mb-2">1.5–2 ml / Litre</div>
+        <p class="text-gray-600">Spray evenly on leaves — morning or evening. Repeat every 2–3 weeks.</p>
+      </div>
+
+      <div class="relative bg-gradient-to-br from-yellow-50 to-white p-8 rounded-3xl shadow-lg border border-yellow-100">
+        <div class="absolute -top-4 -left-4 w-12 h-12 bg-yellow-500 text-white rounded-full flex items-center justify-center font-black text-xl">3</div>
+        <div class="text-5xl mb-4">🧤</div>
+        <h3 class="text-xl font-bold mb-2">Safety First</h3>
+        <ul class="text-sm text-gray-600 space-y-1 mt-3">
+          <li>✓ Shake well before use</li>
+          <li>✓ Wear gloves &amp; full sleeves</li>
+          <li>✓ Use safety goggles</li>
+          <li>✓ Wash hands after</li>
+          <li>✓ Keep away from children</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="py-20 bg-gradient-to-br from-green-50 to-yellow-50">
+  <div class="container mx-auto px-4">
+    <div class="text-center mb-16">
+      <span class="text-green-600 font-bold text-sm tracking-widest">FARMER VOICES</span>
+      <h2 class="text-4xl md:text-5xl font-black gradient-text mt-2">What Farmers Say</h2>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+      <div class="testimonial-card rounded-2xl p-6 shadow-lg">
+        <div class="text-yellow-400 text-xl mb-3">★★★★★</div>
+        <p class="marathi text-gray-700 italic mb-4">"माझ्या द्राक्षाच्या बागेत Power Plus वापरल्यानंतर फळांचा आकार आणि चमक लक्षणीय वाढली. बाजारात ₹40/kg जास्त भाव मिळाला."</p>
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 bg-gradient-to-br from-green-500 to-green-700 rounded-full flex items-center justify-center text-white font-bold">RP</div>
+          <div>
+            <div class="font-bold">Rajesh Patil</div>
+            <div class="text-xs text-gray-600">Grape Farmer · Nashik, MH</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card rounded-2xl p-6 shadow-lg">
+        <div class="text-yellow-400 text-xl mb-3">★★★★★</div>
+        <p class="hindi text-gray-700 italic mb-4">"प्याज की फसल में सूखे के दिनों में भी Power Plus ने बचाव किया। पैदावार 30% बढ़ी और बाज़ार में अच्छा दाम मिला।"</p>
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">SY</div>
+          <div>
+            <div class="font-bold">Sunita Yadav</div>
+            <div class="text-xs text-gray-600">Onion Farmer · Pune, MH</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card rounded-2xl p-6 shadow-lg">
+        <div class="text-yellow-400 text-xl mb-3">★★★★★</div>
+        <p class="text-gray-700 italic mb-4">"Watermelons grew sweeter and bigger. Got ₹15/kg vs ₹10/kg last year. Best investment for my farm."</p>
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">AK</div>
+          <div>
+            <div class="font-bold">Ankush Kumbhar</div>
+            <div class="text-xs text-gray-600">Watermelon Farmer · Solapur</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instagram Reels Strip -->
+    <div class="mt-16 max-w-5xl mx-auto">
+      <h3 class="text-center text-lg font-bold text-gray-700 mb-6">📸 Watch Real Farmers on Instagram <span class="text-green-600">@karanarjun_ksk_priyanka_mall</span></h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="aspect-[9/16] bg-gradient-to-br from-green-700 to-green-900 rounded-2xl shadow-lg flex items-center justify-center text-white text-4xl hover:scale-105 transition cursor-pointer">▶</div>
+        <div class="aspect-[9/16] bg-gradient-to-br from-yellow-600 to-orange-700 rounded-2xl shadow-lg flex items-center justify-center text-white text-4xl hover:scale-105 transition cursor-pointer">▶</div>
+        <div class="aspect-[9/16] bg-gradient-to-br from-blue-700 to-green-800 rounded-2xl shadow-lg flex items-center justify-center text-white text-4xl hover:scale-105 transition cursor-pointer">▶</div>
+        <div class="aspect-[9/16] bg-gradient-to-br from-purple-700 to-pink-700 rounded-2xl shadow-lg flex items-center justify-center text-white text-4xl hover:scale-105 transition cursor-pointer">▶</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUY SECTION (Simplified - just CTA, full form on /order page) -->
+<section id="buy" class="py-20 bg-gradient-to-br from-green-900 via-green-800 to-green-700 text-white relative overflow-hidden">
+  <div class="blob bg-yellow-400 w-96 h-96 -top-20 right-0 opacity-20"></div>
+  <div class="container mx-auto px-4 relative z-10 text-center max-w-3xl">
+    <h2 class="text-5xl md:text-6xl font-black mb-4">Ready to Transform Your Farm?</h2>
+    <p class="text-xl text-green-100 mb-10">Join 75,000+ farmers across India. Direct from Karan Arjun KSK to your farm.</p>
+
+    <div class="grid md:grid-cols-3 gap-6 mb-10">
+      <div class="product-card bg-white text-gray-900 rounded-3xl p-6 shadow-2xl">
+        <div class="text-5xl mb-3">🍶</div>
+        <h3 class="text-xl font-bold">1 Litre</h3>
+        <div class="text-3xl font-black text-green-700 mt-2">₹500</div>
+        <p class="text-xs text-gray-500 mt-1">Best for trial</p>
+      </div>
+      <div class="product-card bg-yellow-400 text-gray-900 rounded-3xl p-6 shadow-2xl ring-4 ring-yellow-300 scale-105 relative">
+        <div class="absolute -top-3 right-6 bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold">MOST POPULAR</div>
+        <div class="text-5xl mb-3">🍾</div>
+        <h3 class="text-xl font-bold">3 Litre</h3>
+        <div class="text-3xl font-black text-green-800 mt-2">₹1,350</div>
+        <p class="text-xs text-gray-700 mt-1">Save ₹150</p>
+      </div>
+      <div class="product-card bg-white text-gray-900 rounded-3xl p-6 shadow-2xl">
+        <div class="text-5xl mb-3">🛢️</div>
+        <h3 class="text-xl font-bold">5 Litre</h3>
+        <div class="text-3xl font-black text-green-700 mt-2">₹2,150</div>
+        <p class="text-xs text-gray-500 mt-1">Save ₹350</p>
+      </div>
+    </div>
+
+    <div class="flex gap-4 justify-center flex-wrap">
+      <a href="/order" class="bg-yellow-400 text-green-900 px-10 py-4 rounded-full font-black text-lg hover:bg-yellow-300 hover:scale-105 transition shadow-2xl">
+        🛒 Order Now →
+      </a>
+      <a href="https://wa.me/919307199040" class="bg-white/20 backdrop-blur border-2 border-white text-white px-10 py-4 rounded-full font-bold text-lg hover:bg-white hover:text-green-900 transition">
+        💬 WhatsApp Us
+      </a>
+    </div>
+
+    <div class="flex gap-6 justify-center mt-8 text-sm flex-wrap">
+      <span>🚚 PAN India Delivery</span>
+      <span>🔒 Secure Razorpay Payment</span>
+      <span>📞 Call Support: 9307199040</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOUNDER STORY -->
+<section id="story" class="py-20">
+  <div class="container mx-auto px-4 max-w-6xl">
+    <div class="grid md:grid-cols-2 gap-12 items-center">
+      <div>
+        <div class="aspect-square bg-gradient-to-br from-green-300 to-yellow-300 rounded-3xl shadow-2xl relative overflow-hidden">
+          <div class="absolute inset-0 flex items-center justify-center text-white text-9xl">👩‍🌾</div>
+          <div class="absolute bottom-4 left-4 right-4 bg-white/95 rounded-2xl p-4">
+            <div class="text-sm font-bold text-green-700">📸 75.8K Followers</div>
+            <div class="text-xs text-gray-600">@karanarjun_ksk_priyanka_mall</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <span class="text-green-600 font-bold text-sm tracking-widest">OUR STORY</span>
+        <h2 class="text-4xl md:text-5xl font-black gradient-text mt-2 mb-6">Savita Tanpure &amp; Karan Arjun KSK</h2>
+        <p class="text-lg text-gray-700 mb-4 leading-relaxed">
+          Savita Tanpure runs <strong>Karan Arjun Krushi Seva Kendra, Karjat</strong> — a trusted name in Maharashtra's agriculture sector. With over <strong>3,791 posts and 75,800+ followers</strong>, farmers across India turn to her for trusted agri-inputs.
+        </p>
+        <p class="text-lg text-gray-700 mb-6 leading-relaxed">
+          <strong>Karan Arjun Power Plus</strong> is her flagship product — born from years of hands-on farming experience.
+        </p>
+        <div class="flex gap-4 flex-wrap">
+          <a href="https://www.instagram.com/karanarjun_ksk_priyanka_mall/" class="bg-gradient-to-r from-pink-500 to-purple-600 text-white px-6 py-3 rounded-full font-bold">📸 Follow on Instagram</a>
+          <a href="#" class="border-2 border-green-600 text-green-700 px-6 py-3 rounded-full font-bold">📍 Visit Our Store</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SPECS -->
+<section class="py-16 bg-gray-50">
+  <div class="container mx-auto px-4">
+    <h2 class="text-3xl font-black text-center mb-12 gradient-text">Product Specifications</h2>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">Active Ingredient</div>
+        <div class="font-bold mt-1">Humates &amp; Fulvates 22%</div>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">pH</div>
+        <div class="font-bold mt-1">9.0 (Min.)</div>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">Specific Gravity</div>
+        <div class="font-bold mt-1">1.05</div>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">CIN No.</div>
+        <div class="font-bold mt-1 text-sm">U24299PN2021PTC200850</div>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">DRC LIC No.</div>
+        <div class="font-bold mt-1 text-sm">LCBWD0620250025</div>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm">
+        <div class="text-xs text-gray-500 uppercase font-bold">Shelf Life</div>
+        <div class="font-bold mt-1">3 Years from Mfg.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="bg-green-900 text-white py-16">
+  <div class="container mx-auto px-4">
+    <div class="grid md:grid-cols-4 gap-8">
+      <div>
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-12 h-12 bg-yellow-400 rounded-xl flex items-center justify-center text-green-900 font-black text-xl">K</div>
+          <div>
+            <div class="font-bold">Karan Arjun</div>
+            <div class="text-xs text-yellow-300">POWER PLUS™</div>
+          </div>
+        </div>
+        <p class="text-sm text-green-200">Trademark-registered agriculture product by Savita Popat Tanpure — Karan Arjun KSK, Karjat, Maharashtra.</p>
+      </div>
+      <div>
+        <h4 class="font-bold mb-4">Quick Links</h4>
+        <ul class="space-y-2 text-sm text-green-200">
+          <li><a href="#benefits" class="hover:text-yellow-400">Benefits</a></li>
+          <li><a href="#how" class="hover:text-yellow-400">How to Use</a></li>
+          <li><a href="#crops" class="hover:text-yellow-400">Crops</a></li>
+          <li><a href="#buy" class="hover:text-yellow-400">Order Online</a></li>
+          <li><a href="/track" class="hover:text-yellow-400">Track Order</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-4">Contact</h4>
+        <ul class="space-y-2 text-sm text-green-200">
+          <li>📞 9307199040</li>
+          <li>📍 Karjat, Maharashtra 414402</li>
+          <li>In front of 132 KV, Swami Samarth Nagar</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-bold mb-4">Follow Us</h4>
+        <div class="flex gap-3">
+          <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-yellow-400 hover:text-green-900 transition">📸</a>
+          <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-yellow-400 hover:text-green-900 transition">📺</a>
+          <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-yellow-400 hover:text-green-900 transition">📍</a>
+        </div>
+      </div>
+    </div>
+    <div class="border-t border-green-800 mt-12 pt-6 text-center text-sm text-green-300">
+      Mfg. by Unimax Agri Bio-Technologies (I) Pvt. Ltd. · CIN: U24299PN2021PTC200850 · DRC Lic: LCBWD0620250025<br/>
+      © 2026 Savita Popat Tanpure · TM: Karan Arjun POWER Plus · All Rights Reserved
+    </div>
+  </div>
+</footer>
+
+<!-- Sticky Mobile CTA -->
+<div class="md:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl border-t-2 border-green-500 p-3 z-50 flex items-center gap-3">
+  <div>
+    <div class="text-xs text-gray-500">Starting at</div>
+    <div class="font-black text-green-700 text-lg">₹500</div>
+  </div>
+  <a href="#buy" class="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white py-3 rounded-full font-bold text-center">🛒 Order Now</a>
+</div>
+
+<!-- WhatsApp Float -->
+<a href="https://wa.me/919307199040" class="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 bg-green-500 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl z-40 hover:scale-110 transition">💬</a>
+
+</body>
+</html>

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import {
   Globe, MapPin, Weight, Plus, Trash2, Save,
   Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info, Lock,
 } from "lucide-react";
 import Link from "next/link";
-import { auth } from "../../firebase";
 import { getUserProfile } from "../../firebase";
 import {
   fetchDeliverySettings,
@@ -271,6 +270,7 @@ function StatePicker({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function DeliverySettingsPage() {
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
   const [sellerPhone, setSellerPhone] = useState<string | null>(null);
 
@@ -293,11 +293,12 @@ export function DeliverySettingsPage() {
 
   // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { setLoading(false); return; }
-      setUid(user.uid);
+    if (!effectiveUid) { setLoading(false); return; }
+    setUid(effectiveUid);
+    (async () => {
       try {
-        const profile = await getUserProfile(user.uid);
+        // Use profile from context if available, otherwise fetch
+        const profile = effectiveProfile ?? await getUserProfile(effectiveUid);
         const phone = String((profile as any)?.phone ?? "").trim();
         const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
         setProfileOnlineDelivery(hasOnlineDelivery);
@@ -317,9 +318,8 @@ export function DeliverySettingsPage() {
       } finally {
         setLoading(false);
       }
-    });
-    return () => unsub();
-  }, []);
+    })();
+  }, [effectiveUid, effectiveProfile]);
 
   // ── Slab helpers ───────────────────────────────────────────────────────────
   const addSlab = () => {

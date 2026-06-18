@@ -73,6 +73,7 @@ const CustomerFeedbackPage   = lazy(() => import('./pages/CustomerFeedbackPage')
 const CustomerFeedbackSubmitPage = lazy(() => import('./pages/CustomerFeedbackSubmitPage'));
 const VCheckoutPage          = lazy(() => import('./pages/VCheckoutPage'));
 const KrishiDukanPage        = lazy(() => import('./pages/KrishiDukanPage'));
+const SupplierLedgerPage     = lazy(() => import('./pages/SupplierLedgerPage'));
 
 // Full-page spinner shown while a lazy chunk is loading
 function PageLoader() {
@@ -138,6 +139,7 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
     { path: '/quotations', icon: <ClipboardList size={19} />, label: 'Quotations', screenKey: 'worklist' },
     { path: '/payment-reminders', icon: <Bell size={19} />, label: 'Payment Reminders', screenKey: 'worklist' },
     { path: '/purchase-orders', icon: <ShoppingCart size={19} />, label: 'Purchase Orders', screenKey: 'worklist' },
+    { path: '/supplier-ledger', icon: <Truck size={19} />, label: 'Supplier Ledger', screenKey: 'worklist' },
     { path: '/delivery-challans', icon: <Truck size={19} />, label: 'Delivery Challans', screenKey: 'worklist' },
     { path: '/gst-reports', icon: <FileText size={19} />, label: 'GST Reports', screenKey: 'analytics' },
     { path: '/financial-reports', icon: <BarChart3 size={19} />, label: 'Financial Reports', screenKey: 'analytics' },
@@ -437,6 +439,7 @@ function AppRoutes() {
       <Route path="/quotations" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><QuotationsPage /></ProtectedRoute>} />
       <Route path="/payment-reminders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PaymentRemindersPage /></ProtectedRoute>} />
       <Route path="/purchase-orders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PurchaseOrdersPage /></ProtectedRoute>} />
+      <Route path="/supplier-ledger" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerPage /></ProtectedRoute>} />
       <Route path="/delivery-challans" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DeliveryChallansPage /></ProtectedRoute>} />
       <Route path="/gst-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><GSTReportsPage /></ProtectedRoute>} />
       <Route path="/financial-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><FinancialReportsPage /></ProtectedRoute>} />

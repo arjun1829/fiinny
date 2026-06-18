@@ -179,17 +179,21 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
 
 export async function fetchSubscriptions(ownerId: string): Promise<Subscription[]> {
   // Dual query: legacy ownerId (UID) + new ownerPhone (E164).
-  // Resolves phone via uidIndex; falls back to UID-only if not found.
-  let ownerPhone: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
-    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
-  } catch { /* ignore */ }
+  // If the id is already E164, use it directly; otherwise resolve via uidIndex.
+  let ownerPhone: string | null = ownerId.startsWith('+') ? ownerId : null;
+  if (!ownerPhone) {
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+      if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+    } catch { /* ignore */ }
+  }
 
   const queries = [
     getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerId", "==", ownerId))),
   ];
-  if (ownerPhone && ownerPhone !== ownerId) {
+  // Always add the ownerPhone query when a phone is known — the two queries target
+  // different fields (ownerId vs ownerPhone) and deduplication handles overlaps.
+  if (ownerPhone) {
     queries.push(getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerPhone", "==", ownerPhone))));
   }
 
@@ -226,15 +230,20 @@ export function getActiveSubscriptions(subs: Subscription[]): Subscription[] {
  */
 export async function fetchSeatListingsForOwner(ownerId: string): Promise<RetailerSeatListing[]> {
   // Resolve phone via uidIndex so admin-assigned (phone-keyed) listings are found.
-  let ownerPhone: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
-    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
-  } catch { /* ignore — phone is optional enrichment */ }
+  // If the id is already E164, use it directly; otherwise resolve via uidIndex.
+  let ownerPhone: string | null = ownerId.startsWith('+') ? ownerId : null;
+  if (!ownerPhone) {
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+      if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+    } catch { /* ignore — phone is optional enrichment */ }
+  }
 
   const queries = [
     getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerId))),
   ];
+  // Always add the phone-keyed query when a phone is known. When ownerId IS the
+  // phone (admin-created users), the two queries are identical and dedup handles it.
   if (ownerPhone && ownerPhone !== ownerId) {
     queries.push(getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerPhone))));
   }

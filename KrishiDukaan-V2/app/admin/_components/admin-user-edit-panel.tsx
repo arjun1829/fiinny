@@ -18,10 +18,12 @@ import {
   adminUpdateSubscriptionSeats,
   adminActivateSubscriptionForPhone,
   adminConvertRetailerToManufacturer,
+  adminConvertManufacturerToRetailer,
   adminDeleteUser,
   type AdminSaveProfileInput,
 } from "../../firebase";
 import { isValidGstinFormat } from "../../dashboard/_lib/profile-persistence";
+import { compressImage } from "../../utils/compressImage";
 
 declare global { interface Window { google?: any } }
 
@@ -58,8 +60,9 @@ function extractAddressFields(place: any): Partial<ProfileForm> {
 }
 
 async function uploadImage(file: File, prefix: string): Promise<string> {
+  const toUpload = await compressImage(file);
   const path = `${prefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), file);
+  const snap = await uploadBytes(storageRef(storage, path), toUpload);
   return getDownloadURL(snap.ref);
 }
 
@@ -80,7 +83,7 @@ export interface AdminUserEditPanelProps {
 
 export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPanelProps) {
   const phone    = String(user.phone || (/^\+?\d{10,13}$/.test(user.id) ? user.id : "")).trim();
-  const role     = String(user.role || "consumer").toLowerCase();
+  const role     = String(user.role || "customer").toLowerCase();
   const isSeller = role === "retailer" || role === "manufacturer";
 
   // ── Form state ──────────────────────────────────────────────────────────────
@@ -328,6 +331,19 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
     } finally { setConverting(false); }
   };
 
+  const handleConvertToRetailer = async () => {
+    if (!phone) return;
+    if (!window.confirm(`Convert ${form.businessName || phone} from Manufacturer → Retailer?\n\nProducts, subscriptions and inventory are preserved. The manufacturers/${phone} doc will be migrated to retailers/${phone}.`)) return;
+    setConverting(true); setConvertMsg(null);
+    try {
+      await adminConvertManufacturerToRetailer(phone, callerUid);
+      setConvertMsg({ ok: true, text: "Converted to Retailer. Close and reopen to see the updated role." });
+      onSaved();
+    } catch (e) {
+      setConvertMsg({ ok: false, text: e instanceof Error ? e.message : "Conversion failed." });
+    } finally { setConverting(false); }
+  };
+
   // ── User deletion ──────────────────────────────────────────────────────────
   const handleDeleteUser = async () => {
     if (!phone) return;
@@ -458,7 +474,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
               <h2 className="text-base font-bold text-on-surface truncate">
                 {form.businessName || form.ownerName || phone || "User"}
               </h2>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${ROLE_BADGE[role] || ROLE_BADGE.consumer}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${ROLE_BADGE[role] || ROLE_BADGE.customer}`}>
                 {role}
               </span>
             </div>
@@ -923,18 +939,14 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
               </section>
             )}
 
-            {/* ── Role Conversion (retailer → manufacturer) ── */}
-            {role === "retailer" && (
+            {/* ── Role Conversion ── */}
+            {(role === "retailer" || role === "manufacturer") && (
               <section className="rounded-2xl border-2 border-blue-200 bg-blue-50/40 p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="h-4 w-4 text-blue-600 shrink-0" />
-                  <p className="text-xs font-black uppercase tracking-widest text-blue-700">Convert to Manufacturer</p>
+                  <p className="text-xs font-black uppercase tracking-widest text-blue-700">Change Role</p>
                 </div>
-                <p className="text-xs text-blue-800">
-                  Migrates this retailer into a manufacturer account. Products, subscriptions, and inventory are preserved.
-                  The <code className="font-mono bg-blue-100 px-1 rounded">retailers/{phone}</code> doc is copied to{" "}
-                  <code className="font-mono bg-blue-100 px-1 rounded">manufacturers/{phone}</code>.
-                </p>
+
                 {convertMsg && (
                   <div className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-medium ${
                     convertMsg.ok
@@ -945,15 +957,44 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
                     {convertMsg.text}
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={handleConvertToManufacturer}
-                  disabled={converting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
-                >
-                  {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  {converting ? "Converting…" : "Convert to Manufacturer"}
-                </button>
+
+                {role === "retailer" && (
+                  <>
+                    <p className="text-xs text-blue-800">
+                      Migrates this retailer into a manufacturer account. Products, subscriptions, and inventory are preserved.
+                      The <code className="font-mono bg-blue-100 px-1 rounded">retailers/{phone}</code> doc is copied to{" "}
+                      <code className="font-mono bg-blue-100 px-1 rounded">manufacturers/{phone}</code>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleConvertToManufacturer}
+                      disabled={converting}
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                    >
+                      {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      {converting ? "Converting…" : "Convert to Manufacturer"}
+                    </button>
+                  </>
+                )}
+
+                {role === "manufacturer" && (
+                  <>
+                    <p className="text-xs text-blue-800">
+                      Migrates this manufacturer into a retailer account. Products, subscriptions, and inventory are preserved.
+                      The <code className="font-mono bg-blue-100 px-1 rounded">manufacturers/{phone}</code> doc is copied to{" "}
+                      <code className="font-mono bg-blue-100 px-1 rounded">retailers/{phone}</code>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleConvertToRetailer}
+                      disabled={converting}
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors"
+                    >
+                      {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      {converting ? "Converting…" : "Convert to Retailer"}
+                    </button>
+                  </>
+                )}
               </section>
             )}
 

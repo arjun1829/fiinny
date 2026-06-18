@@ -4,21 +4,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
   Package, ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
-  SlidersHorizontal, Calendar, RotateCcw, MapPin,
+  SlidersHorizontal, Calendar, RotateCcw, MapPin, Truck, WifiOff, Tag, Receipt, LayoutDashboard,
 } from "lucide-react";
 import {
   fetchAllUsers, promoteToAdmin,
   fetchAllSellerProducts, fetchAllSubscriptions,
   selectUserProductDocs, collapseUserProductDocs,
   adminAssignProductToSeller, adminRemoveAssignment, ensureSellerStorefront,
+  adminUpdateProductSellMode,
   type UserProduct,
   db, auth,
 } from "../../firebase";
 import { AdminUserEditPanel } from "../_components/admin-user-edit-panel";
 import { SearchableDropdown } from "../_components/searchable-dropdown";
 import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
+import { DiscountPanel } from "../../dashboard/_components/discount-panel";
 import {
   addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp,
+  query, where, getDocs, limit,
 } from "firebase/firestore";
 
 declare global {
@@ -51,6 +54,49 @@ const ROLE_BADGE: Record<string, string> = {
   customer: "bg-gray-100 text-gray-600 border border-gray-200",
 };
 
+function AdminSellModeToggle({
+  productId, sellMode, sellerPhone, onRefresh,
+}: {
+  productId: string;
+  sellMode: string | undefined;
+  sellerPhone: string | undefined;
+  onRefresh: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const isOnline = sellMode !== "offline_store_only";
+
+  const handleToggle = async () => {
+    if (!productId) return;
+    setBusy(true);
+    try {
+      const next: "online_delivery" | "offline_store_only" = isOnline ? "offline_store_only" : "online_delivery";
+      await adminUpdateProductSellMode(productId, next, sellerPhone);
+      await onRefresh();
+    } catch (e) {
+      console.error("Failed to toggle sell mode", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <label className={`flex items-center gap-1 cursor-pointer select-none ${busy ? "opacity-60 pointer-events-none" : ""}`} title={isOnline ? "Online delivery — click to disable" : "Offline only — click to enable"}>
+      {isOnline
+        ? <Truck className="h-2.5 w-2.5 text-blue-500 shrink-0" />
+        : <WifiOff className="h-2.5 w-2.5 text-orange-500 shrink-0" />}
+      <span className={`text-[10px] font-semibold ${isOnline ? "text-blue-600" : "text-orange-600"}`}>
+        {isOnline ? "Online" : "Offline"}
+      </span>
+      <div className="relative shrink-0">
+        <input type="checkbox" className="sr-only" checked={isOnline} disabled={busy} onChange={handleToggle} />
+        <div className={`h-4 w-7 rounded-full transition-colors duration-200 ${isOnline ? "bg-blue-500" : "bg-surface-container-highest"}`} />
+        <div className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${isOnline ? "translate-x-3" : "translate-x-0"}`}>
+          {busy && <Loader2 className="h-2 w-2 animate-spin text-outline absolute inset-0.5" />}
+        </div>
+      </div>
+    </label>
+  );
+}
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -83,7 +129,7 @@ export default function AdminUsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: "", email: "", phone: "", password: "", shopName: "",
-    role: "consumer" as string,
+    role: "customer" as string,
     address: "", city: "", state: "", pincode: "",
     latitude: null as number | null, longitude: null as number | null,
     gstin: "",
@@ -100,6 +146,7 @@ export default function AdminUsersPage() {
 
   // Product edit from within the users panel
   const [editingProductDoc, setEditingProductDoc] = useState<any | null>(null);
+  const [editingInventoryDoc, setEditingInventoryDoc] = useState<any | null>(null);
   const [loadingEditProduct, setLoadingEditProduct] = useState(false);
 
   // Products panel (products derived from allProducts — see memos below)
@@ -348,31 +395,59 @@ export default function AdminUsersPage() {
     if (!docId) return;
     setLoadingEditProduct(true);
     try {
-      const snap = await getDoc(doc(db, "products", docId));
-      if (snap.exists()) setEditingProductDoc({ id: snap.id, ...snap.data() });
+      const [productSnap, invSnap] = await Promise.all([
+        getDoc(doc(db, "products", docId)),
+        getDocs(query(collection(db, "inventory"), where("productId", "==", docId), limit(1))),
+      ]);
+      if (productSnap.exists()) setEditingProductDoc({ id: productSnap.id, ...productSnap.data() });
+      const invDoc = invSnap.docs[0];
+      setEditingInventoryDoc(invDoc ? { id: invDoc.id, ...invDoc.data() } : null);
     } finally { setLoadingEditProduct(false); }
   };
 
   const handleAdminProductSave = async (payload: any) => {
     const { editProductId, ...data } = payload;
     if (!editProductId) return;
-    // ── OWNERSHIP AUDIT ────────────────────────────────────────────────────
-    console.log("[AdminUsers] handleAdminProductSave", {
-      "Saving to (products)": editProductId,
-      "Loaded from (editingProductDoc.id)": editingProductDoc?.id ?? "unknown",
-      "Source of doc loaded": (editingProductDoc as any)?.source ?? "unknown",
-      "originalProductId in doc": (editingProductDoc as any)?.originalProductId ?? null,
-      "manufacturerProductId in doc": (editingProductDoc as any)?.manufacturerProductId ?? null,
-      "ownerId in doc": (editingProductDoc as any)?.ownerId ?? null,
-      "For seller": productsUser?.phone ?? productsUser?.id ?? "unknown",
-      "price": data.price,
-      "name": data.name,
-    });
-    // ────────────────────────────────────────────────────────────────────────
-    const { doc: fDoc, setDoc: fSetDoc, serverTimestamp: fTs } = await import("firebase/firestore");
+
+    const { doc: fDoc, setDoc: fSetDoc, getDoc: fGetDoc, serverTimestamp: fTs } = await import("firebase/firestore");
     const { db: fdb } = await import("../../firebase");
-    const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+
+    // Strip internal/ownership fields the form should never overwrite.
+    // In particular, "source" must not be changed (admin_assigned would become "admin").
+    const IMMUTABLE = new Set(["source", "id", "originalProductId", "manufacturerProductId",
+      "ownerId", "ownerPhone", "ownerType", "retailerId", "retailerPhone",
+      "manufacturerId", "manufacturerPhone", "assignedByAdmin", "assignedAt", "createdAt"]);
+    const clean: Record<string, unknown> = Object.fromEntries(
+      Object.entries(data).filter(([k, v]) => v !== undefined && !IMMUTABLE.has(k)),
+    );
+
+    // Sync isOnline into every availability[] entry so ProductDetailView's
+    // per-store canOrder check (availEntry.isOnline !== false) stays in sync.
+    const currentAv = (editingProductDoc as any)?.availability as any[] | undefined;
+    if (typeof data.isOnline === 'boolean' && Array.isArray(currentAv) && currentAv.length > 0) {
+      clean.availability = currentAv.map((entry: any) => ({ ...entry, isOnline: data.isOnline }));
+    }
+
     await fSetDoc(fDoc(fdb, "products", editProductId), { ...clean, updatedAt: fTs() }, { merge: true });
+
+    // When enabling online delivery, also flip the account-level flag so
+    // ProductDetailView's canOrder (storeOnlineMap[phone] === true) passes.
+    // fetchStoreOnlineDelivery checks retailers/ first then manufacturers/,
+    // so update whichever docs already exist to avoid creating spurious records.
+    if (data.isOnline === true && productsUser) {
+      const sellerPhone = productsUser.phone || productsUser.id;
+      if (sellerPhone) {
+        const now = fTs();
+        const [rSnap, mSnap] = await Promise.all([
+          fGetDoc(fDoc(fdb, "retailers", sellerPhone)),
+          fGetDoc(fDoc(fdb, "manufacturers", sellerPhone)),
+        ]);
+        await Promise.all([
+          rSnap.exists() ? fSetDoc(fDoc(fdb, "retailers", sellerPhone), { onlineDelivery: true, updatedAt: now }, { merge: true }) : null,
+          mSnap.exists() ? fSetDoc(fDoc(fdb, "manufacturers", sellerPhone), { onlineDelivery: true, updatedAt: now }, { merge: true }) : null,
+        ].filter(Boolean) as Promise<void>[]);
+      }
+    }
   };
 
   const handleAssign = async () => {
@@ -439,7 +514,7 @@ export default function AdminUsersPage() {
   };
 
   const BLANK_FORM = {
-    name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
+    name: "", email: "", phone: "", password: "", shopName: "", role: "customer",
     address: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null,
     gstin: "", secondaryPhone: "",
     subscriptionStatus: "inactive" as "inactive" | "active",
@@ -837,10 +912,23 @@ export default function AdminUsersPage() {
                       <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button type="button" onClick={() => setEditUser(u)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
-                        <Pencil className="h-3.5 w-3.5" /> Edit
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        {(u.role === "retailer" || u.role === "manufacturer") && (
+                          <a
+                            href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                            title={`Open ${u.shopName || u.name || u.id}'s dashboard`}
+                          >
+                            <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard
+                          </a>
+                        )}
+                        <button type="button" onClick={() => setEditUser(u)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -871,10 +959,22 @@ export default function AdminUsersPage() {
                       </>
                     )}
                   </div>
-                  <button type="button" onClick={() => setEditUser(u)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container shrink-0">
-                    <Pencil className="h-3 w-3" /> Edit
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(u.role === "retailer" || u.role === "manufacturer") && (
+                      <a
+                        href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                      >
+                        <LayoutDashboard className="h-3 w-3" />
+                      </a>
+                    )}
+                    <button type="button" onClick={() => setEditUser(u)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container">
+                      <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
@@ -926,7 +1026,7 @@ export default function AdminUsersPage() {
         const isSeller = productsUser.role === "retailer" || productsUser.role === "manufacturer";
         return (
         <div className="fixed inset-0 z-[70] flex items-end justify-end bg-black/40 backdrop-blur-sm pt-16">
-          <div className="w-full max-w-md h-full bg-white flex flex-col shadow-2xl">
+          <div className="w-full max-w-xl h-full bg-white flex flex-col shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
               <div>
@@ -1015,49 +1115,80 @@ export default function AdminUsersPage() {
                 </div>
               ) : panelProducts.map(p => (
                 <div key={p.id}
-                  className="flex items-start gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
-                  {p.image ? (
-                    <img src={p.image} alt={p.name} className="h-12 w-12 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
-                  ) : (
-                    <div className="h-12 w-12 rounded-lg bg-surface-container shrink-0 flex items-center justify-center">
-                      <Package className="h-5 w-5 text-on-surface-variant opacity-40" />
+                  className="rounded-xl border border-outline-variant/30 bg-surface-container-low overflow-hidden">
+                  {/* Top row: image + name + actions */}
+                  <div className="flex items-start gap-3 p-3">
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="h-14 w-14 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                    ) : (
+                      <div className="h-14 w-14 rounded-lg bg-surface-container shrink-0 flex items-center justify-center">
+                        <Package className="h-6 w-6 text-on-surface-variant opacity-40" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold text-sm text-on-surface truncate">{p.name || "—"}</p>
+                        {p.copies > 1 && (
+                          <span className="shrink-0 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[9px] font-black">×{p.copies}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs text-on-surface-variant capitalize">{p.category || "—"}</span>
+                        {p.price > 0 && (
+                          <span className="text-xs font-bold text-secondary">· ₹{p.price.toLocaleString("en-IN")}</span>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-semibold text-sm text-on-surface truncate">{p.name || "—"}</p>
-                      {p.copies > 1 && (
-                        <span className="shrink-0 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[9px] font-black">×{p.copies}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-xs text-on-surface-variant">{p.category || "—"}</span>
-                      {p.price > 0 && (
-                        <span className="text-xs font-bold text-secondary">₹{p.price.toLocaleString("en-IN")}</span>
-                      )}
-                      <span className={`text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
-                        p.stock === "In Stock" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
-                      }`}>{p.stock || "—"}</span>
-                      {p.source && (
-                        <span className="text-[10px] text-on-surface-variant font-mono">{p.source}</span>
-                      )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" onClick={() => handleEditProduct(p)} disabled={loadingEditProduct}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors disabled:opacity-50"
+                        title="Edit product">
+                        {loadingEditProduct ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                      </button>
+                      <a href={`/?view=product&product=${p.id}`} target="_blank" rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors" title="View product">
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                      <button type="button" onClick={() => handleRemove(p)} disabled={removingId === p.id}
+                        className="p-1.5 rounded-lg text-on-surface-variant hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        title={p.assignedDocIds.length > 0 ? "Remove assignment" : "Remove product"}>
+                        {removingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => handleEditProduct(p)} disabled={loadingEditProduct}
-                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors disabled:opacity-50"
-                      title="Edit product">
-                      {loadingEditProduct ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
-                    </button>
-                    <a href={`/?view=product&product=${p.id}`} target="_blank" rel="noopener noreferrer"
-                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors" title="View product">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                    <button type="button" onClick={() => handleRemove(p)} disabled={removingId === p.id}
-                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
-                      title={p.assignedDocIds.length > 0 ? "Remove assignment" : "Remove product"}>
-                      {removingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
+                  {/* Bottom info bar */}
+                  <div className="flex items-center gap-1.5 flex-wrap px-3 pb-3">
+                    {/* Stock */}
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                      p.stock === "In Stock" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                    }`}>{p.stock || "—"}</span>
+                    {/* Discount */}
+                    {(p.effectiveDiscountPct ?? 0) > 0 ? (
+                      <span className="flex items-center gap-0.5 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <Tag className="h-2.5 w-2.5" />{p.effectiveDiscountPct}% OFF
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-on-surface-variant/50 px-2 py-0.5 rounded-full border border-dashed border-outline-variant/30">No discount</span>
+                    )}
+                    {/* Online delivery — inline toggle */}
+                    <AdminSellModeToggle
+                      productId={p.docIds[0] || p.id}
+                      sellMode={p.sellMode}
+                      sellerPhone={productsUser?.phone || productsUser?.id}
+                      onRefresh={refreshProducts}
+                    />
+                    {/* GST */}
+                    {p.gstApplicable ? (
+                      <span className="flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant border border-outline-variant/30">
+                        <Receipt className="h-2.5 w-2.5" />GST {p.gstRate}%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-on-surface-variant/50 px-2 py-0.5 rounded-full border border-dashed border-outline-variant/30">No GST</span>
+                    )}
+                    {/* Source */}
+                    {p.source && (
+                      <span className="text-[9px] text-on-surface-variant/40 font-mono px-1.5">{p.source}</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1073,11 +1204,11 @@ export default function AdminUsersPage() {
           <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 shrink-0">
               <h2 className="text-base font-bold text-on-surface">Edit Product</h2>
-              <button onClick={() => setEditingProductDoc(null)} className="p-2 rounded-xl hover:bg-surface-container transition-colors">
+              <button onClick={() => { setEditingProductDoc(null); setEditingInventoryDoc(null); }} className="p-2 rounded-xl hover:bg-surface-container transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
               <AddProductInventoryForm
                 adminMode
                 initialProduct={editingProductDoc}
@@ -1088,8 +1219,35 @@ export default function AdminUsersPage() {
                 onCreated={async () => {
                   await refreshProducts();
                   setEditingProductDoc(null);
+                  setEditingInventoryDoc(null);
                 }}
               />
+              {editingInventoryDoc && (
+                <div className="border-t border-outline-variant/20 pt-5">
+                  <p className="text-sm font-semibold text-on-surface mb-3">Discount Settings</p>
+                  <DiscountPanel
+                    inventoryId={editingInventoryDoc.id}
+                    productId={editingProductDoc.id}
+                    originalProductId={editingProductDoc.originalProductId ?? null}
+                    sellingPrice={editingInventoryDoc.sellingPrice ?? editingProductDoc.price ?? 0}
+                    discountEnabled={editingInventoryDoc.discountEnabled ?? false}
+                    discountType={editingInventoryDoc.discountType ?? "percentage"}
+                    discountPct={editingInventoryDoc.discountPct ?? 0}
+                    discountFixedAmt={editingInventoryDoc.discountFixedAmt ?? 0}
+                    discountStartDate={editingInventoryDoc.discountStartDate?.toDate?.() ?? null}
+                    discountEndDate={editingInventoryDoc.discountEndDate?.toDate?.() ?? null}
+                    bulkDiscountEnabled={editingInventoryDoc.bulkDiscountEnabled ?? false}
+                    bulkDiscountTiers={editingInventoryDoc.bulkDiscountTiers ?? []}
+                    isActive={editingProductDoc.isActive ?? true}
+                    onSaved={async () => {
+                      const freshInv = await getDocs(query(collection(db, "inventory"), where("productId", "==", editingProductDoc.id), limit(1)));
+                      const invDoc = freshInv.docs[0];
+                      if (invDoc) setEditingInventoryDoc({ id: invDoc.id, ...invDoc.data() });
+                      await refreshProducts();
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1198,7 +1356,7 @@ export default function AdminUsersPage() {
                   }}
                   className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
                 >
-                  <option value="consumer">Consumer (Regular User)</option>
+                  <option value="customer">Customer (Regular User)</option>
                   <option value="retailer">Retailer</option>
                   <option value="manufacturer">Manufacturer</option>
                   <option value="admin">Admin</option>
