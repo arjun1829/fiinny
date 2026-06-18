@@ -1,0 +1,74 @@
+{
+  "functions": {
+    "source": "functions",
+    "codebase": "default",
+    "ignore": ["node_modules", ".git", "firebase-debug.log"]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "hosting": [
+    {
+      "target": "main",
+      "source": ".",
+      "ignore": [
+        "firebase.json",
+        "firebase.uat.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "frameworksBackend": {
+        "region": "us-central1",
+        "runConfig": {
+          "concurrency": 20,
+          "maxInstances": 1,
+          "environmentVariables": {
+            "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "karan-arjun-uat",
+            "NEXT_PUBLIC_FIREBASE_API_KEY": "AIzaSyAG7Q5QIhI0awPbyrmK0eGWd7-eatwmpNw",
+            "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN": "karan-arjun-uat.firebaseapp.com",
+            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET": "karan-arjun-uat.firebasestorage.app",
+            "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823396858694",
+            "NEXT_PUBLIC_FIREBASE_APP_ID": "1:823396858694:web:647ee169b50a6f06328347",
+            "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-KPJCC681D5",
+            "FIREBASE_PROJECT_ID": "karan-arjun-uat",
+            "NEXT_PUBLIC_BASE_URL": "https://karan-arjun-uat.web.app",
+            "NEXT_PUBLIC_RAZORPAY_KEY_ID": "rzp_test_SmPxtEcNJ25LUj",
+            "RAZORPAY_KEY_ID": "rzp_test_SmPxtEcNJ25LUj",
+            "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778",
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_SECURE": "false",
+            "SMTP_FROM": "KrishiDukan UAT <vinay.sharma@fiinny.com>",
+            "CRON_SECRET": "krishidukan-uat-cron-secret",
+            "NEXT_PUBLIC_CRON_SECRET": "krishidukan-uat-cron-secret"
+          },
+          "secrets": [
+            "RAZORPAY_KEY_SECRET",
+            "FIREBASE_CLIENT_EMAIL",
+            "FIREBASE_PRIVATE_KEY",
+            "SMTP_USER",
+            "SMTP_PASS"
+          ]
+        }
+      },
+      "rewrites": [
+        {
+          "source": "/admin",
+          "destination": "/404.html"
+        },
+        {
+          "source": "/admin/**",
+          "destination": "/404.html"
+        },
+        {
+          "source": "/admin-login",
+          "destination": "/404.html"
+        }
+      ]
+    }
+  ]
+}

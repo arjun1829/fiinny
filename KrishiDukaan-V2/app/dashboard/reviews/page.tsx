@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import { Star, RefreshCw, MessageSquare, Store, Package } from "lucide-react";
-import { auth, getUserProfile } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { fetchOwnerReviews, type ReviewDoc } from "../_lib/reviews-firestore";
 import { useI18n } from "../../i18n/I18nContext";
@@ -58,6 +57,7 @@ function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
 
 export default function ReviewsPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
   const [reviews, setReviews] = useState<ReviewDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,13 +77,10 @@ export default function ReviewsPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { setLoading(false); return; }
-      setUid(user.uid);
-      await load(user.uid);
-    });
-    return () => unsub();
-  }, [load]);
+    if (!effectiveUid) { setLoading(false); return; }
+    setUid(effectiveUid);
+    load(effectiveUid);
+  }, [effectiveUid, load]);
 
   return (
     <>

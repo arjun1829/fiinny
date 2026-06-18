@@ -119,7 +119,12 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
         if (!mounted) return;
 
         if (!exists) {
-          context.go('/onboarding');
+          // New user → onboarding (role + name). Carry any invite code so an
+          // invited retailer still lands on the right pre-filled onboarding.
+          final invite = widget.inviteCode;
+          context.go((invite != null && invite.isNotEmpty)
+              ? '/onboarding?inviteCode=${Uri.encodeComponent(invite)}'
+              : '/onboarding');
         } else {
           // Ensure uidIndex entry exists so myPhone()-based security rules work
           // for users who registered on the web app before the Flutter app existed.

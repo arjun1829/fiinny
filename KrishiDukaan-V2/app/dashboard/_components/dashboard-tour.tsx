@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth, getUserProfile } from '../../firebase';
+import { useMemo } from 'react';
 import { GuidedTour, TourStep } from '../../../components/helpers';
+import { useEffectiveUser } from '../_context/effective-user-context';
 
 type Role = 'retailer' | 'manufacturer' | null;
 
@@ -66,24 +65,9 @@ const MANUFACTURER_STEPS: TourStep[] = [
 ];
 
 export function DashboardTour() {
-  const [role, setRole] = useState<Role>(null);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setRole(null);
-        return;
-      }
-      try {
-        const profile = await getUserProfile(user.uid);
-        const r = profile?.role;
-        setRole(r === 'manufacturer' || r === 'retailer' ? r : null);
-      } catch {
-        setRole(null);
-      }
-    });
-    return () => unsub();
-  }, []);
+  const { profile: effectiveProfile, isAdminView } = useEffectiveUser();
+  const r = effectiveProfile?.role;
+  const role: Role = !isAdminView && (r === 'manufacturer' || r === 'retailer') ? r : null;
 
   const steps = useMemo(() => {
     if (role === 'manufacturer') return MANUFACTURER_STEPS;

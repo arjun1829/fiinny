@@ -104,7 +104,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
     const r = d.data() as Record<string, unknown>;
     return (
       String(r.status ?? "") === "active" &&
-      String(r.onboardingStatus ?? "active") !== "pending"
+      String(r.onboardingStatus ?? "active") === "active"
     );
   });
 

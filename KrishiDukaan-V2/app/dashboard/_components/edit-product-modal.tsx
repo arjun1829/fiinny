@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
+import { compressImage } from "../../utils/compressImage";
 import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import type { InventoryRow } from "../_types/inventory";
@@ -324,8 +325,9 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
     if (!file.type.startsWith("image/")) { onChange({ error: "Select an image file." }); return; }
     onChange({ uploading: true, error: "" });
     try {
+      const toUpload = await compressImage(file);
       const path = `product-images/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), file);
+      const snap = await uploadBytes(storageRef(storage, path), toUpload);
       onChange({ url: await getDownloadURL(snap.ref), uploading: false });
     } catch {
       onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
@@ -459,6 +461,10 @@ export function EditProductModal({ row, onClose, onSaved }: {
 
   const handleSave = async () => {
     if (!name.trim()) { setMessage({ type: "err", text: "Product name is required." }); return; }
+    if (description.trim().length > 0 && (description.trim().length < 20 || description.trim().length > 300)) {
+      setMessage({ type: "err", text: "Description must be between 20 and 300 characters." });
+      return;
+    }
     const parsedVariants = variants.map((v) => {
       const stockNum = v.stock !== "" ? Number(v.stock) : undefined;
       return {
@@ -647,14 +653,20 @@ export function EditProductModal({ row, onClose, onSaved }: {
               )}
             </div>
 
-            <label className="flex flex-col gap-1.5 text-sm">
+            <div className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium text-on-surface flex items-center gap-1.5">
                 <AlignLeft className="h-3.5 w-3.5 text-on-surface-variant" /> {t('descriptionLabel')}
               </span>
               <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
-                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2.5 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
+                className={`rounded-xl border bg-white px-3 py-2.5 text-on-surface outline-none focus:ring-2 resize-none ${description.trim().length > 0 && (description.trim().length < 20 || description.trim().length > 300) ? "border-red-400 focus:border-red-400 focus:ring-red-200" : "border-outline-variant/40 focus:border-primary focus:ring-primary/20"}`}
                 placeholder={t('descModalPlaceholder')} />
-            </label>
+              <div className="flex justify-between items-center">
+                {description.trim().length > 0 && (description.trim().length < 20 || description.trim().length > 300) ? (
+                  <span className="text-xs text-red-500">Description must be between 20 and 300 characters.</span>
+                ) : <span />}
+                <span className={`text-xs ml-auto ${description.length > 300 ? "text-red-500 font-medium" : "text-on-surface-variant"}`}>{description.length}/300</span>
+              </div>
+            </div>
           </div>
 
           {/* Dynamic category-specific fields */}

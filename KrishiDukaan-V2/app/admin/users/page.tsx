@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
   Package, ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
-  SlidersHorizontal, Calendar, RotateCcw, MapPin, Truck, WifiOff, Tag, Receipt,
+  SlidersHorizontal, Calendar, RotateCcw, MapPin, Truck, WifiOff, Tag, Receipt, LayoutDashboard,
 } from "lucide-react";
 import {
   fetchAllUsers, promoteToAdmin,
@@ -129,7 +129,7 @@ export default function AdminUsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: "", email: "", phone: "", password: "", shopName: "",
-    role: "consumer" as string,
+    role: "customer" as string,
     address: "", city: "", state: "", pincode: "",
     latitude: null as number | null, longitude: null as number | null,
     gstin: "",
@@ -514,7 +514,7 @@ export default function AdminUsersPage() {
   };
 
   const BLANK_FORM = {
-    name: "", email: "", phone: "", password: "", shopName: "", role: "consumer",
+    name: "", email: "", phone: "", password: "", shopName: "", role: "customer",
     address: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null,
     gstin: "", secondaryPhone: "",
     subscriptionStatus: "inactive" as "inactive" | "active",
@@ -912,10 +912,23 @@ export default function AdminUsersPage() {
                       <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button type="button" onClick={() => setEditUser(u)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
-                        <Pencil className="h-3.5 w-3.5" /> Edit
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        {(u.role === "retailer" || u.role === "manufacturer") && (
+                          <a
+                            href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                            title={`Open ${u.shopName || u.name || u.id}'s dashboard`}
+                          >
+                            <LayoutDashboard className="h-3.5 w-3.5" /> Dashboard
+                          </a>
+                        )}
+                        <button type="button" onClick={() => setEditUser(u)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -946,10 +959,22 @@ export default function AdminUsersPage() {
                       </>
                     )}
                   </div>
-                  <button type="button" onClick={() => setEditUser(u)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container shrink-0">
-                    <Pencil className="h-3 w-3" /> Edit
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(u.role === "retailer" || u.role === "manufacturer") && (
+                      <a
+                        href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                      >
+                        <LayoutDashboard className="h-3 w-3" />
+                      </a>
+                    )}
+                    <button type="button" onClick={() => setEditUser(u)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 px-2.5 py-1 text-[11px] font-medium text-on-surface hover:bg-surface-container">
+                      <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
@@ -1331,7 +1356,7 @@ export default function AdminUsersPage() {
                   }}
                   className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2 appearance-none"
                 >
-                  <option value="consumer">Consumer (Regular User)</option>
+                  <option value="customer">Customer (Regular User)</option>
                   <option value="retailer">Retailer</option>
                   <option value="manufacturer">Manufacturer</option>
                   <option value="admin">Admin</option>

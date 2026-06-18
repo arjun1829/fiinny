@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { auth, getUserProfile, fetchRetailerProducts, fetchManufacturerProducts } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { fetchRetailerProducts, fetchManufacturerProducts } from "../firebase";
 import { MapPin, Pencil, ExternalLink } from "lucide-react";
+import { useEffectiveUser } from "./_context/effective-user-context";
 import { PageHeader } from "./_components/page-header";
 import { StatCard } from "./_components/stat-card";
 import { QuickActions } from "./_components/quick-actions";
@@ -31,6 +31,7 @@ function initials(name: string): string {
 
 export default function DashboardPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatMetric[]>([]);
   const [inventoryHealth, setInventoryHealth] = useState<any>(null);
@@ -38,119 +39,116 @@ export default function DashboardPage() {
   const [profileSummary, setProfileSummary] = useState<ProfileSummary | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const profile = await getUserProfile(user.uid);
+    console.debug('[DashboardPage] effect — effectiveUid:', effectiveUid, '| effectiveProfile:', effectiveProfile?.role ?? null);
+    if (!effectiveUid || !effectiveProfile) {
+      console.debug('[DashboardPage] skipping — uid or profile is null/empty');
+      return;
+    }
+    const profile = effectiveProfile;
+    const uid = effectiveUid;
 
-          // Profile summary card
-          if (profile) {
-            let slug = "";
-            let logo = "";
-            let businessName = "";
-            let ownerName = (profile as any).ownerName || profile.name || "";
-            let city = (profile as any).city || "";
-            let state = (profile as any).state || "";
+    (async () => {
+      try {
+        // Profile summary card
+        let slug = "";
+        let logo = "";
+        let businessName = "";
+        let ownerName = (profile as any).ownerName || profile.name || "";
+        let city = (profile as any).city || "";
+        let state = (profile as any).state || "";
 
-            if (profile.role === "manufacturer") {
-              try {
-                const { resolveManufacturerDocId } = await import("./_lib/profile-persistence");
-                const { fetchManufacturerProfile, fetchBrandPageCustomization } = await import("./_lib/brand-page-firestore");
-                const phone = await resolveManufacturerDocId(user.uid);
-                const [mfrDoc, custom] = await Promise.all([
-                  fetchManufacturerProfile(phone),
-                  fetchBrandPageCustomization(phone),
-                ]);
-                if (mfrDoc) {
-                  slug = String(mfrDoc.slug ?? "");
-                  businessName = String(mfrDoc.businessName ?? "");
-                  ownerName = String(mfrDoc.ownerName ?? ownerName);
-                  const addr = (mfrDoc.address ?? {}) as Record<string, unknown>;
-                  city = String(addr.city ?? city);
-                  state = String(addr.state ?? state);
-                }
-                if (custom) logo = String(custom.logo ?? "");
-              } catch (e) {
-                console.error("Error loading brand details in dashboard:", e);
-              }
-            } else if (profile.role === "retailer") {
-              try {
-                const { getDoc, doc } = await import("firebase/firestore");
-                const { db } = await import("../firebase");
-                const phone = (profile as any).phone || "";
-                const retailerDocId = (profile as any).retailerDocId || phone;
-                if (retailerDocId) {
-                  const snap = await getDoc(doc(db, "retailers", retailerDocId));
-                  if (snap.exists()) {
-                    const r = snap.data() as Record<string, unknown>;
-                    businessName = String(r.shopName ?? r.businessName ?? "");
-                    ownerName = String(r.ownerName ?? ownerName);
-                    const addr = (r.address ?? {}) as Record<string, unknown>;
-                    city = String(addr.city ?? city);
-                    state = String(addr.state ?? state);
-                  }
-                }
-              } catch (e) {
-                console.error("Error loading retailer details in dashboard:", e);
-              }
-            }
-
-            setProfileSummary({
-              businessName,
-              ownerName,
-              city,
-              state,
-              role: profile.role || "",
-              productCount: (profile as any).productCount || 0,
-              slug,
-              logo,
-            });
-          }
-          if (profile) {
-            let products: any[] = [];
-            if (profile.role === 'retailer') {
-              products = await fetchRetailerProducts(user.uid);
-            } else if (profile.role === 'manufacturer') {
-              products = await fetchManufacturerProducts(user.uid);
-            }
-
-            const analytics = await fetchRetailerAnalytics(user.uid);
-
-            // Calculate stats from real data
-            const productCount = products.length;
-            const inStock = products.filter(p => p.stock !== 'Out of Stock' && p.stock !== '0').length;
-            const lowStock = products.filter(p => p.stock === 'Low Stock').length;
-            const outOfStock = productCount - inStock;
-
-            const totalDirections = analytics.directionRequests.reduce((sum, d) => sum + d.value, 0);
-
-            setStats([
-              { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "directions", label: t('directionsLabel'), value: totalDirections.toLocaleString(), change: "0.0%", trend: "neutral" },
-              { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
+        if (profile.role === "manufacturer") {
+          try {
+            const { resolveManufacturerDocId } = await import("./_lib/profile-persistence");
+            const { fetchManufacturerProfile, fetchBrandPageCustomization } = await import("./_lib/brand-page-firestore");
+            const phone = await resolveManufacturerDocId(uid);
+            const [mfrDoc, custom] = await Promise.all([
+              fetchManufacturerProfile(phone),
+              fetchBrandPageCustomization(phone),
             ]);
-
-            setInventoryHealth({
-              inStock,
-              lowStock,
-              outOfStock,
-              score: productCount > 0 ? Math.round((inStock / productCount) * 100) : 100,
-              label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
-            });
-
-            setReviews([]);
+            if (mfrDoc) {
+              slug = String(mfrDoc.slug ?? "");
+              businessName = String(mfrDoc.businessName ?? "");
+              ownerName = String(mfrDoc.ownerName ?? ownerName);
+              const addr = (mfrDoc.address ?? {}) as Record<string, unknown>;
+              city = String(addr.city ?? city);
+              state = String(addr.state ?? state);
+            }
+            if (custom) logo = String(custom.logo ?? "");
+          } catch (e) {
+            console.error("Error loading brand details in dashboard:", e);
           }
-        } catch (error) {
-          console.error("Error fetching dashboard data:", error);
-        } finally {
-          setLoading(false);
+        } else if (profile.role === "retailer") {
+          try {
+            const { getDoc, doc } = await import("firebase/firestore");
+            const { db } = await import("../firebase");
+            const phone = (profile as any).phone || "";
+            const retailerDocId = (profile as any).retailerDocId || phone;
+            if (retailerDocId) {
+              const snap = await getDoc(doc(db, "retailers", retailerDocId));
+              if (snap.exists()) {
+                const r = snap.data() as Record<string, unknown>;
+                businessName = String(r.shopName ?? r.businessName ?? "");
+                ownerName = String(r.ownerName ?? ownerName);
+                const addr = (r.address ?? {}) as Record<string, unknown>;
+                city = String(addr.city ?? city);
+                state = String(addr.state ?? state);
+              }
+            }
+          } catch (e) {
+            console.error("Error loading retailer details in dashboard:", e);
+          }
         }
-      }
-    });
 
-    return () => unsubscribe();
-  }, []);
+        setProfileSummary({
+          businessName,
+          ownerName,
+          city,
+          state,
+          role: profile.role || "",
+          productCount: (profile as any).productCount || 0,
+          slug,
+          logo,
+        });
+
+        let products: any[] = [];
+        if (profile.role === 'retailer') {
+          products = await fetchRetailerProducts(uid);
+        } else if (profile.role === 'manufacturer') {
+          products = await fetchManufacturerProducts(uid);
+        }
+
+        const analytics = await fetchRetailerAnalytics(uid);
+
+        const productCount = products.length;
+        const inStock = products.filter(p => p.stock !== 'Out of Stock' && p.stock !== '0').length;
+        const lowStock = products.filter(p => p.stock === 'Low Stock').length;
+        const outOfStock = productCount - inStock;
+        const totalDirections = analytics.directionRequests.reduce((sum, d) => sum + d.value, 0);
+
+        setStats([
+          { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
+          { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
+          { id: "directions", label: t('directionsLabel'), value: totalDirections.toLocaleString(), change: "0.0%", trend: "neutral" },
+          { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
+        ]);
+
+        setInventoryHealth({
+          inStock,
+          lowStock,
+          outOfStock,
+          score: productCount > 0 ? Math.round((inStock / productCount) * 100) : 100,
+          label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
+        });
+
+        setReviews([]);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [effectiveUid, effectiveProfile]);
 
   if (loading) {
     return (

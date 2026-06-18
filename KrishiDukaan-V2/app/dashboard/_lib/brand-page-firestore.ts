@@ -99,6 +99,19 @@ export async function fetchManufacturerProfile(
 
 // ─── Write functions ──────────────────────────────────────────────────────────
 
+function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obj)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [
+        k,
+        v !== null && typeof v === "object" && !Array.isArray(v)
+          ? stripUndefined(v as Record<string, unknown>)
+          : v,
+      ]),
+  );
+}
+
 /** Upsert optional customization in brandPages/{phone}. */
 export async function saveBrandPageCustomization(
   manufacturerPhone: string,
@@ -109,7 +122,7 @@ export async function saveBrandPageCustomization(
   await setDoc(
     ref,
     {
-      ...data,
+      ...stripUndefined(data as Record<string, unknown>),
       updatedAt: serverTimestamp(),
       ...(existing.exists() ? {} : { createdAt: serverTimestamp() }),
     },

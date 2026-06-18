@@ -7,7 +7,6 @@ import '../widgets/app_shell.dart';
 import '../../features/auth/screens/phone_entry_screen.dart';
 import '../../features/auth/screens/otp_verification_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
-import '../../features/auth/screens/signup_screen.dart';
 import '../../features/marketplace/screens/home_screen.dart';
 import '../../features/marketplace/screens/marketplace_screen.dart';
 import '../../features/marketplace/screens/product_detail_screen.dart';
@@ -55,6 +54,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Splash and first-install welcome run before any auth decisions.
       if (path == '/splash' || path == '/welcome') return null;
 
+      // "Create account" is merged into the single sign-in flow. Redirect any
+      // old /signup links (e.g. manufacturer invite links) into /login, keeping
+      // the invite code so the new user still lands on the right onboarding.
+      if (path == '/signup') {
+        final invite = state.uri.queryParameters['inviteCode'];
+        return (invite != null && invite.isNotEmpty)
+            ? '/login?inviteCode=${Uri.encodeComponent(invite)}'
+            : '/login';
+      }
+
       final authState = ref.read(authStateProvider);
       if (authState.isLoading) return null;
 
@@ -63,7 +72,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       final isAuthPath = path == '/login' ||
           path == '/login/otp' ||
-          path == '/signup' ||
           path == '/onboarding';
 
       const protectedPaths = ['/checkout', '/orders', '/dashboard'];
@@ -109,6 +117,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootKey,
         builder: (_, state) => PhoneEntryScreen(
           redirectAfterLogin: state.uri.queryParameters['redirect'],
+          inviteCode: state.uri.queryParameters['inviteCode'],
         ),
         routes: [
           GoRoute(
@@ -127,13 +136,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
         ],
-      ),
-      GoRoute(
-        path: '/signup',
-        parentNavigatorKey: _rootKey,
-        builder: (_, state) => SignupScreen(
-          inviteCode: state.uri.queryParameters['inviteCode'],
-        ),
       ),
       GoRoute(
         path: '/onboarding',
@@ -263,7 +265,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/marketplace',
                 builder: (context, state) {
                   final category = state.uri.queryParameters['category'];
-                  return MarketplaceScreen(initialCategory: category);
+                  return MarketplaceScreen(
+                    initialCategory: category,
+                    searchFocusToken: state.uri.queryParameters['focus'],
+                  );
                 }),
           ]),
           StatefulShellBranch(navigatorKey: _hubsKey, routes: [

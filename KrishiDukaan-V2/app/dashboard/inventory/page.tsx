@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, getUserProfile } from "../../firebase";
+import { getUserProfile } from "../../firebase";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import { PageHeader } from "../_components/page-header";
 import { InventoryHealthCards } from "../_components/inventory-health-cards";
 import { InventoryTable } from "../_components/inventory-table";
@@ -203,7 +203,7 @@ export default function InventoryPage() {
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const urlInviteCode = searchParams.get("inviteCode") ?? "";
-
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -286,38 +286,28 @@ export default function InventoryPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setAuthReady(true);
-      if (!user) {
-        setUserId(null);
-        setProfile(null);
-        setSeatStats(DEFAULT_STATS);
-        setRows([]);
-        setLoading(false);
-        return;
-      }
-      setUserId(user.uid);
-      try {
-        const profileData = await getUserProfile(user.uid);
-        setProfile(profileData);
-        const resolvedRole: UserRole =
-          profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
-        setRole(resolvedRole);
-        setAccountDeliveryEnabled(!!(profileData as any)?.onlineDelivery);
-        let rDocId = profileData?.retailerDocId;
+    if (!effectiveUid || !effectiveProfile) return;
+    setAuthReady(true);
+    setUserId(effectiveUid);
+    const profileData = effectiveProfile;
+    setProfile(profileData);
+    const resolvedRole: UserRole =
+      profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
+    setRole(resolvedRole);
+    setAccountDeliveryEnabled(!!(profileData as any)?.onlineDelivery);
+    let rDocId = profileData?.retailerDocId;
 
+    (async () => {
+      try {
         if (resolvedRole === "retailer") {
-          // Auto-accept any pending invites matching the retailer's phone (no code needed).
-          // Runs silently — new invites assigned while already logged in appear on next load.
-          await autoAcceptPendingInvitesForPhone(user.uid).catch((e) => {
+          await autoAcceptPendingInvitesForPhone(effectiveUid).catch((e) => {
             console.warn("[autoAccept] Silent failure:", e);
           });
 
-          // Also accept an invite code passed via the email magic link (?inviteCode=XXXX)
           if (urlInviteCode) {
             setMagicStatus(null);
             try {
-              const result = await acceptManufacturerInvite({ uid: user.uid, inviteCode: urlInviteCode });
+              const result = await acceptManufacturerInvite({ uid: effectiveUid, inviteCode: urlInviteCode });
               if (result.ok === true) {
                 if (result.backfillError) {
                   setMagicStatus({ type: "error", message: `Linked, but product sync failed: ${result.backfillError}` });
@@ -327,15 +317,14 @@ export default function InventoryPage() {
               } else {
                 setMagicStatus({ type: "error", message: result.message });
               }
-            } catch (e) {
+            } catch {
               setMagicStatus({ type: "error", message: "Magic link failed to process." });
             }
             const url = new URL(window.location.href);
             url.searchParams.delete("inviteCode");
             window.history.replaceState({}, "", url.toString());
-            
-            // Refresh profile data as backfill might have updated retailerDocId
-            const freshProfile = await getUserProfile(user.uid);
+
+            const freshProfile = await getUserProfile(effectiveUid);
             if (freshProfile) {
               setProfile(freshProfile);
               rDocId = freshProfile.retailerDocId;
@@ -343,13 +332,12 @@ export default function InventoryPage() {
           }
         }
 
-        await load(user.uid, resolvedRole, rDocId, profileData?.phone);
+        await load(effectiveUid, resolvedRole, rDocId, profileData?.phone);
       } catch {
         setLoading(false);
       }
-    });
-    return () => unsub();
-  }, [load, urlInviteCode]);
+    })();
+  }, [effectiveUid, effectiveProfile, load, urlInviteCode]);
 
   const health = useMemo(() => computeHealth(rows), [rows]);
 
@@ -587,6 +575,7 @@ export default function InventoryPage() {
                 onCreated={async () => { setAddModalOpen(false); await refresh(); }}
                 seatStats={seatStats}
                 storeName={profile?.shopName}
+                accountDeliveryEnabled={accountDeliveryEnabled}
               />
               <BulkProductUpload
                 userId={userId}
@@ -594,6 +583,7 @@ export default function InventoryPage() {
                 seatStats={seatStats}
                 onDone={async () => { setAddModalOpen(false); await refresh(); }}
                 storeName={profile?.shopName}
+                accountDeliveryEnabled={accountDeliveryEnabled}
               />
             </div>
           </div>

@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -32,6 +32,7 @@ import { useI18n } from "../../i18n/I18nContext";
 import { StatusToast } from "../../components/shared/status-toast";
 import { fetchManufacturerCatalogueRows } from "../_lib/inventory-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
+import { compressImage } from "../../utils/compressImage";
 
 declare global { interface Window { google?: any; } }
 
@@ -148,8 +149,9 @@ function OnlineDeliveryToggle({ value, onChange }: { value: boolean; onChange: (
 // ─── Image Upload helpers ──────────────────────────────────────────────────────
 
 async function uploadImageToStorage(file: File, pathPrefix: string): Promise<string> {
+  const toUpload = await compressImage(file);
   const path = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), file);
+  const snap = await uploadBytes(storageRef(storage, path), toUpload);
   return getDownloadURL(snap.ref);
 }
 
@@ -158,6 +160,7 @@ async function uploadImageToStorage(file: File, pathPrefix: string): Promise<str
 function ProfilePageInner() {
   const router = useRouter();
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
 
   const [uid,       setUid]       = useState<string | null>(null);
   const [mfrDocId,  setMfrDocId]  = useState<string | null>(null);
@@ -251,18 +254,21 @@ function ProfilePageInner() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { setLoading(false); return; }
-      setUid(user.uid);
-      setLoading(true);
-      setStatus(null);
+    if (!effectiveUid || !effectiveProfile) return;
+    setUid(effectiveUid);
+    setLoading(true);
+    setStatus(null);
+    const role: DashboardProfileRole | null =
+      effectiveProfile.role === "manufacturer" ? "manufacturer"
+      : effectiveProfile.role === "retailer" ? "retailer"
+      : null;
+    (async () => {
       try {
-        const role = await fetchDashboardUserRole(user.uid);
         setUserRole(role);
         if (!role) return;
         const [loaded] = await Promise.all([
-          loadProfileState(user.uid, role, user.email),
-          loadSocial(user.uid, role),
+          loadProfileState(effectiveUid, role, (effectiveProfile as any).email ?? null),
+          loadSocial(effectiveUid, role),
         ]);
         setForm(loaded.form);
         setGeo(loaded.geo);
@@ -270,7 +276,7 @@ function ProfilePageInner() {
         setManufacturerCreatedAt(loaded.manufacturerCreatedAt);
         if (role === "manufacturer") {
           try {
-            const prods = await fetchManufacturerCatalogueRows(user.uid);
+            const prods = await fetchManufacturerCatalogueRows(effectiveUid);
             setProducts(prods.filter((p) => p.isActive));
           } catch { /* non-critical */ }
         }
@@ -279,9 +285,8 @@ function ProfilePageInner() {
       } finally {
         setLoading(false);
       }
-    });
-    return () => unsub();
-  }, [loadSocial]);
+    })();
+  }, [effectiveUid, effectiveProfile, loadSocial]);
 
   // Preload Maps script as soon as edit mode opens so Geocoder is available
   // for "Use Current Location" regardless of which location tab is active.

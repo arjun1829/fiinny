@@ -24,7 +24,17 @@ const _categories = [
 
 class MarketplaceScreen extends ConsumerStatefulWidget {
   final String? initialCategory;
-  const MarketplaceScreen({super.key, this.initialCategory});
+
+  /// A one-shot token (from `?focus=`) that asks the screen to put the cursor
+  /// straight into the search field. Home passes a fresh value on every tap so
+  /// the keyboard pops up immediately instead of needing a second tap here.
+  final String? searchFocusToken;
+
+  const MarketplaceScreen({
+    super.key,
+    this.initialCategory,
+    this.searchFocusToken,
+  });
 
   @override
   ConsumerState<MarketplaceScreen> createState() => _MarketplaceScreenState();
@@ -32,8 +42,10 @@ class MarketplaceScreen extends ConsumerStatefulWidget {
 
 class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   final _scrollController = ScrollController();
   Timer? _debounce;
+  String? _handledFocusToken;
 
   // Suggestions
   List<CatalogModel> _suggestionProducts = [];
@@ -48,6 +60,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
       }
     });
+    _maybeFocusSearch();
   }
 
   @override
@@ -58,12 +71,26 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
       });
     }
+    _maybeFocusSearch();
+  }
+
+  /// Focus the search field when a new focus token arrives (e.g. the user tapped
+  /// "Search" on the home page). Guarded by [_handledFocusToken] so a rebuild
+  /// for any other reason doesn't keep stealing focus.
+  void _maybeFocusSearch() {
+    final token = widget.searchFocusToken;
+    if (token == null || token == _handledFocusToken) return;
+    _handledFocusToken = token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _searchController.dispose();
+    _searchFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -184,6 +211,8 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                   ),
                   child: TextField(
                   controller: _searchController,
+                  focusNode: _searchFocus,
+                  textInputAction: TextInputAction.search,
                   onChanged: (q) {
                     _debounce?.cancel();
                     _debounce = Timer(const Duration(milliseconds: 400), () {

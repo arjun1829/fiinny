@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import {
   Truck,
   Phone,
@@ -19,7 +19,7 @@ import {
   Download,
   Lock,
 } from "lucide-react";
-import { auth, fetchIncomingOrdersForSeller, getUserProfile, updateOrderStatus } from "../../firebase";
+import { fetchIncomingOrdersForSeller, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
@@ -238,6 +238,7 @@ function PaymentCard({ order }: { order: OrderDoc }) {
 
 export default function OrdersPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -265,40 +266,31 @@ export default function OrdersPage() {
   };
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setUid(null);
-        setSellerType(null);
-        setOrders([]);
-        setLoading(false);
-        return;
-      }
-      const profile = await getUserProfile(user.uid);
-      const role = profile?.role;
-      const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
-      setOnlineDelivery(hasOnlineDelivery);
-      if (role === "retailer" || role === "manufacturer") {
-        setUid(user.uid);
-        setSellerType(role);
-        setSellerInfo({
-          name:  String((profile as any)?.businessName ?? (profile as any)?.shopName ?? (profile as any)?.name ?? ""),
-          phone: String((profile as any)?.phone ?? ""),
-          gstin: String((profile as any)?.gstin ?? ""),
-        });
-        if (hasOnlineDelivery) {
-          await load(user.uid, role);
-        } else {
-          setLoading(false);
-        }
+    if (!effectiveUid || !effectiveProfile) return;
+    const profile = effectiveProfile;
+    const role = profile?.role;
+    const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
+    setOnlineDelivery(hasOnlineDelivery);
+    if (role === "retailer" || role === "manufacturer") {
+      setUid(effectiveUid);
+      setSellerType(role);
+      setSellerInfo({
+        name:  String((profile as any)?.businessName ?? (profile as any)?.shopName ?? (profile as any)?.name ?? ""),
+        phone: String((profile as any)?.phone ?? ""),
+        gstin: String((profile as any)?.gstin ?? ""),
+      });
+      if (hasOnlineDelivery) {
+        load(effectiveUid, role);
       } else {
-        setUid(null);
-        setSellerType(null);
-        setOrders([]);
         setLoading(false);
       }
-    });
-    return () => unsub();
-  }, []);
+    } else {
+      setUid(null);
+      setSellerType(null);
+      setOrders([]);
+      setLoading(false);
+    }
+  }, [effectiveUid, effectiveProfile]);
 
   const onAdvance = async (orderId: string, status: OrderStatus) => {
     setUpdatingId(orderId);

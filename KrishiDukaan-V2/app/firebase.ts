@@ -24,16 +24,15 @@ import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
+const _projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "krishidukan-e8315";
 const firebaseConfig = {
-  apiKey: "AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778",
-  authDomain: typeof window !== 'undefined' && window.location.hostname === 'localhost'
-    ? "krishidukan-e8315.firebaseapp.com"
-    : "krishidukan.com",
-  projectId: "krishidukan-e8315",
-  storageBucket: "krishidukan-e8315.firebasestorage.app",
-  messagingSenderId: "650303885415",
-  appId: "1:650303885415:web:7db7619260aa478b2b84c2",
-  measurementId: "G-7MEFGCD4EX"
+  apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY             ?? "AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778",
+  authDomain:        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN         ?? `${_projectId}.firebaseapp.com`,
+  projectId:         _projectId,
+  storageBucket:     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET      ?? `${_projectId}.firebasestorage.app`,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "650303885415",
+  appId:             process.env.NEXT_PUBLIC_FIREBASE_APP_ID              ?? "1:650303885415:web:7db7619260aa478b2b84c2",
+  measurementId:     process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID      ?? "G-7MEFGCD4EX",
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -439,6 +438,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
                (secondaryPhone && a.storePhone === secondaryPhone),
       );
       if (!alreadyPresent && (secondaryStoreId || secondaryPhone)) {
+        const secondaryDiscountPct = secondary.effectiveDiscountPct ?? 0;
         av.push({
           storeId: secondaryStoreId,
           storePhone: secondaryPhone,
@@ -446,6 +446,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: secondary.stock || 'In Stock',
           sellingPrice: secondary.price,
           isOnline: secondary.isOnline,
+          discountPct: secondaryDiscountPct > 0 ? secondaryDiscountPct : undefined,
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
@@ -502,8 +503,9 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
         // Mirror this store's own per-package-size prices onto the entry.
         if (Array.isArray(copy.variants)) existing.variants = copy.variants;
-        // Mirror the active discount so lowestFinalPrice is computed correctly.
-        existing.discountPct = copyDiscountPct > 0 ? copyDiscountPct : existing.discountPct;
+        // Always carry the copy's live discount into the entry so lowestFinalPrice
+        // is computed correctly on the marketplace card.
+        if (copyDiscountPct > 0) existing.discountPct = copyDiscountPct;
       } else {
         av.push({
           storeId: copyStoreId,
@@ -512,10 +514,10 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
           stockLevel: copy.stock || 'In Stock',
           sellingPrice: copy.price,
           isOnline: copy.isOnline,
+          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
           // Carry this store's own per-package-size prices so the detail view can
           // resolve the correct price per selected variant (not just the base price).
           variants: Array.isArray(copy.variants) ? copy.variants : undefined,
-          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
         });
       }
       const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
@@ -2902,7 +2904,7 @@ export async function fetchManufacturerNetworkStores(manufacturerPhone: string):
       const r = d.data();
       return (
         String(r.status ?? '') === 'active' &&
-        String(r.onboardingStatus ?? 'active') !== 'pending'
+        String(r.onboardingStatus ?? 'active') === 'active'
       );
     });
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
+import { compressImage } from "../../utils/compressImage";
 import type { BlogPost } from "../../firebase";
 
 type EditorPost = Omit<BlogPost, "id" | "createdAt" | "updatedAt" | "publishedAt">;
@@ -85,8 +86,9 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     setUploadingImage(true);
     setImageUploadProgress(0);
     try {
+      const toUpload = await compressImage(file);
       const path = `blog-images/${Date.now()}-${file.name}`;
-      const url = await uploadToStorage(file, path, setImageUploadProgress);
+      const url = await uploadToStorage(toUpload, path, setImageUploadProgress);
       editorRef.current?.focus();
       document.execCommand("insertHTML", false, `<img src="${url}" alt="${file.name}" />`);
     } finally {
@@ -101,8 +103,9 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     if (!file) return;
     setUploadingCover(true);
     try {
+      const toUpload = await compressImage(file);
       const path = `blog-covers/${Date.now()}-${file.name}`;
-      const url = await uploadToStorage(file, path, () => {});
+      const url = await uploadToStorage(toUpload, path, () => {});
       setCoverImage(url);
     } finally {
       setUploadingCover(false);
