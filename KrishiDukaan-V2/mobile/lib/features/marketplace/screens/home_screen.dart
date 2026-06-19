@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../core/utils/image_utils.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
@@ -39,7 +41,7 @@ class HomeScreen extends ConsumerWidget {
               decoration: BoxDecoration(gradient: topBarGradient()),
             ),
             foregroundColor: Colors.white,
-            title: const TopBarTitle(title: 'KrishiDukaan'),
+            title: const TopBarTitle(title: 'KrishiDukan'),
             actions: [
               TopBarAction(
                 icon: Icons.search,
@@ -60,7 +62,7 @@ class HomeScreen extends ConsumerWidget {
                     data: (user) => Text(
                       user != null
                           ? 'Hello, ${user.name.split(' ').first}! 👋'
-                          : 'Welcome to KrishiDukaan',
+                          : 'Welcome to KrishiDukan',
                       style: AppTextStyles.heading2,
                     ),
                     loading: () => const SizedBox(
@@ -69,7 +71,7 @@ class HomeScreen extends ConsumerWidget {
                       child: LinearProgressIndicator(),
                     ),
                     error: (_, _) => Text(
-                      'Welcome to KrishiDukaan',
+                      'Welcome to KrishiDukan',
                       style: AppTextStyles.heading2,
                     ),
                   ),
@@ -403,10 +405,11 @@ class _CategoryCard extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(22),
-                child: Image.network(
-                  category.imgUrl,
+                child: CachedNetworkImage(
+                  imageUrl: resolveImageUrl(category.imgUrl),
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
+                  memCacheWidth: 200,
+                  errorWidget: (context, url, error) => const Icon(
                     Icons.image_not_supported_outlined,
                     size: 20,
                     color: Colors.grey,
@@ -511,7 +514,7 @@ class _BecomeRetailerBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Sell on KrishiDukaan', style: AppTextStyles.heading3),
+                Text('Sell on KrishiDukan', style: AppTextStyles.heading3),
                 Text(
                   'Reach farmers in your area',
                   style: AppTextStyles.bodySmall,
@@ -982,7 +985,7 @@ class _HelpFooter extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'KrishiDukaan • आपके खेत की हर ज़रूरत',
+            'KrishiDukan • आपके खेत की हर ज़रूरत',
             style: AppTextStyles.caption
                 .copyWith(color: AppColors.onSurfaceVariant),
           ),

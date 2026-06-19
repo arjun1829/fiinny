@@ -29,6 +29,7 @@ import '../../features/manufacturer/screens/manufacturer_catalog_screen.dart';
 import '../../features/manufacturer/screens/assign_product_screen.dart';
 import '../../features/manufacturer/screens/brand_editor_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/profile/screens/profile_edit_screen.dart';
 import '../../features/notifications/notifications.dart';
 import '../../features/welcome/screens/splash_screen.dart';
 import '../../features/welcome/screens/welcome_screen.dart';
@@ -187,6 +188,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/notifications',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/profile/edit',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => ProfileEditScreen(
+          reason: state.uri.queryParameters['reason'],
+        ),
       ),
       // ── Dashboard routes ─────────────────────────────────────────────────
       GoRoute(

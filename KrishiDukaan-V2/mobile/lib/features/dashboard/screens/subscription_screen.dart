@@ -102,7 +102,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         'amount': order['amount'],
         'currency': order['currency'] ?? 'INR',
         'order_id': order['id'],
-        'name': 'KrishiDukaan',
+        'name': 'KrishiDukan',
         'description':
             '$_seats seat${_seats != 1 ? 's' : ''} · ${_duration.label}',
         'prefill': {
@@ -230,7 +230,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             backgroundColor: AppColors.success,
           ),
         );
-        context.go('/dashboard');
+        // New sellers complete their shop profile before landing on the
+        // dashboard; existing users buying more seats go straight back.
+        context.go(widget.reason == 'new_account'
+            ? '/profile/edit?reason=new_account'
+            : '/dashboard');
       }
     } catch (e) {
       if (mounted) {
@@ -306,7 +310,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             _noticeBanner(
               icon: Icons.celebration_outlined,
               color: AppColors.primary,
-              title: 'Welcome to KrishiDukaan! 🎉',
+              title: 'Welcome to KrishiDukan! 🎉',
               subtitle:
                   'Your account is ready. Subscribe to unlock your dashboard, '
                   'list products and start selling.',

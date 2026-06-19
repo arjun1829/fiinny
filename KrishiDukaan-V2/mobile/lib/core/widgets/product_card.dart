@@ -28,9 +28,7 @@ class ProductCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: hasOffer
-              ? Border.all(color: const Color(0xFF86EFAC))
-              : null,
+          border: hasOffer ? Border.all(color: const Color(0xFF86EFAC)) : null,
           boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
@@ -48,17 +46,22 @@ class ProductCard extends StatelessWidget {
                 children: [
                   Positioned.fill(
                     child: ClipRRect(
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(12)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
                       child: product.hasImages
                           ? CachedNetworkImage(
+                              memCacheWidth: 1000,
                               imageUrl: product.imageUrl,
                               fit: BoxFit.cover,
                               placeholder: (_, _) => Container(
                                 color: AppColors.surfaceVariant,
                                 child: const Center(
-                                  child: Icon(Icons.grass,
-                                      size: 40, color: AppColors.primaryLight),
+                                  child: Icon(
+                                    Icons.grass,
+                                    size: 40,
+                                    color: AppColors.primaryLight,
+                                  ),
                                 ),
                               ),
                               errorWidget: (_, _, _) => _placeholder(),
@@ -72,7 +75,9 @@ class ProductCard extends StatelessWidget {
                       left: 0,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: const BoxDecoration(
                           color: Color(0xFF16A34A),
                           borderRadius: BorderRadius.only(
@@ -83,8 +88,11 @@ class ProductCard extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.local_offer,
-                                size: 10, color: Colors.white),
+                            const Icon(
+                              Icons.local_offer,
+                              size: 10,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 3),
                             Text(
                               '${maxPct.toStringAsFixed(0)}% OFF',
@@ -109,17 +117,21 @@ class ProductCard extends StatelessWidget {
                 children: [
                   // Category badge
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.primaryContainer.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Text(product.category,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                        )),
+                    child: Text(
+                      product.category,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   // Name
@@ -170,8 +182,11 @@ class ProductCard extends StatelessWidget {
                   // Seller count
                   Row(
                     children: [
-                      const Icon(Icons.store_outlined,
-                          size: 12, color: AppColors.onSurfaceVariant),
+                      const Icon(
+                        Icons.store_outlined,
+                        size: 12,
+                        color: AppColors.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '${product.sellerCount} seller${product.sellerCount != 1 ? 's' : ''}',
@@ -179,8 +194,11 @@ class ProductCard extends StatelessWidget {
                       ),
                       if (product.rating != null) ...[
                         const SizedBox(width: 8),
-                        const Icon(Icons.star,
-                            size: 12, color: AppColors.secondary),
+                        const Icon(
+                          Icons.star,
+                          size: 12,
+                          color: AppColors.secondary,
+                        ),
                         const SizedBox(width: 2),
                         Text(
                           product.rating!.toStringAsFixed(1),
@@ -199,9 +217,9 @@ class ProductCard extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-        color: AppColors.surfaceVariant,
-        child: const Center(
-          child: Icon(Icons.grass, size: 40, color: AppColors.primaryLight),
-        ),
-      );
+    color: AppColors.surfaceVariant,
+    child: const Center(
+      child: Icon(Icons.grass, size: 40, color: AppColors.primaryLight),
+    ),
+  );
 }

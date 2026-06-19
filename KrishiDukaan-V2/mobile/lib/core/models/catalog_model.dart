@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/image_utils.dart';
 import 'listing_model.dart';
 
 class AvailabilityEntry {
@@ -119,7 +120,13 @@ class CatalogModel {
     this.collectionPath = 'catalog',
   });
 
-  String get imageUrl => images.isNotEmpty ? images.first : '';
+  // Platform-resolved image URLs (proxied on web so cross-origin hosts without
+  // CORS still render — see resolveImageUrl). Use these in the UI, not the raw
+  // `images` list.
+  String get imageUrl =>
+      images.isNotEmpty ? resolveImageUrl(images.first) : '';
+  List<String> get displayImages =>
+      images.map(resolveImageUrl).toList(growable: false);
   bool get hasImages => images.isNotEmpty;
   bool get hasNpk =>
       nitrogen != null && phosphorus != null && potassium != null;

@@ -17,7 +17,7 @@ class NotificationService {
   final _localNotifications = FlutterLocalNotificationsPlugin();
 
   static const _channelId = 'krishidukaan_main';
-  static const _channelName = 'KrishiDukaan Updates';
+  static const _channelName = 'KrishiDukan Updates';
 
   bool _initialized = false;
 

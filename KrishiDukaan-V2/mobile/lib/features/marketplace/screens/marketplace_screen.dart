@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -281,11 +282,12 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                               leading: p.imageUrl.isNotEmpty
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
-                                      child: Image.network(
-                                        p.imageUrl,
+                                      child: CachedNetworkImage(
+                                        imageUrl: p.imageUrl,
                                         width: 48,
                                         height: 48,
                                         fit: BoxFit.cover,
+                                        memCacheWidth: 150,
                                       ),
                                     )
                                   : const Icon(Icons.agriculture),

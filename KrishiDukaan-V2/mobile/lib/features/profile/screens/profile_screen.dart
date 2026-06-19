@@ -121,6 +121,44 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
 
+        // Prompt to finish profile when key fields are missing.
+        if (!user.isProfileComplete) ...[
+          InkWell(
+            onTap: () => context.push('/profile/edit'),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.secondary.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: AppColors.secondary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      isHindi
+                          ? 'अपनी प्रोफ़ाइल पूरी करें (नाम, पता' +
+                              (user.isSeller ? ', दुकान का नाम' : '') +
+                              ')'
+                          : 'Complete your profile (name, address'
+                              '${user.isSeller ? ', shop name' : ''})',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: AppColors.onSurfaceVariant),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
         // Account info card
         _Card(
           title: isHindi ? 'खाता जानकारी' : 'Account Info',
@@ -143,6 +181,11 @@ class _ProfileBody extends ConsumerWidget {
         _Card(
           title: isHindi ? 'त्वरित लिंक' : 'Quick Links',
           children: [
+            _LinkRow(
+              icon: Icons.edit_outlined,
+              label: isHindi ? 'प्रोफ़ाइल संपादित करें' : 'Edit Profile',
+              onTap: () => context.push('/profile/edit'),
+            ),
             _LinkRow(
               icon: Icons.receipt_long_outlined,
               label: isHindi ? 'ऑर्डर इतिहास' : 'Order History',
@@ -210,7 +253,7 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         Center(
-          child: Text('KrishiDukaan v1.0.0', style: AppTextStyles.caption),
+          child: Text('KrishiDukan v1.0.0', style: AppTextStyles.caption),
         ),
         const SizedBox(height: 80),
       ],

@@ -24,14 +24,18 @@ class CartScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Text('Cart (${items.length})',
-            style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+        title: Text(
+          'Cart (${items.length})',
+          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+        ),
         actions: [
           if (items.isNotEmpty)
             TextButton(
               onPressed: () => _confirmClear(context, ref),
-              child: const Text('Clear',
-                  style: TextStyle(color: Colors.white70)),
+              child: const Text(
+                'Clear',
+                style: TextStyle(color: Colors.white70),
+              ),
             ),
         ],
       ),
@@ -63,12 +67,12 @@ class CartScreen extends ConsumerWidget {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Clear cart?'),
-        content:
-            const Text('All items will be removed from your cart.'),
+        content: const Text('All items will be removed from your cart.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
@@ -89,8 +93,9 @@ class _CartItemTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final storeName =
-        item.sellerName.trim().isNotEmpty ? item.sellerName.trim() : 'Store';
+    final storeName = item.sellerName.trim().isNotEmpty
+        ? item.sellerName.trim()
+        : 'Store';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -107,6 +112,7 @@ class _CartItemTile extends ConsumerWidget {
                 height: 60,
                 child: item.catalogImage != null
                     ? CachedNetworkImage(
+                        memCacheWidth: 1000,
                         imageUrl: item.catalogImage!,
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => _imgPlaceholder(),
@@ -119,10 +125,12 @@ class _CartItemTile extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.catalogName,
-                      style: AppTextStyles.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    item.catalogName,
+                    style: AppTextStyles.bodyMedium,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   if (item.variantLabel != null)
                     Text(item.variantLabel!, style: AppTextStyles.caption),
                   const SizedBox(height: 6),
@@ -130,14 +138,18 @@ class _CartItemTile extends ConsumerWidget {
                   // ── Selected store + change ──────────────────────────────
                   Row(
                     children: [
-                      const Icon(Icons.storefront_outlined,
-                          size: 14, color: AppColors.onSurfaceVariant),
+                      const Icon(
+                        Icons.storefront_outlined,
+                        size: 14,
+                        color: AppColors.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           storeName,
                           style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.onSurfaceVariant),
+                            color: AppColors.onSurfaceVariant,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -148,18 +160,25 @@ class _CartItemTile extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(6),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.swap_horiz,
-                                  size: 15, color: AppColors.primary),
+                              const Icon(
+                                Icons.swap_horiz,
+                                size: 15,
+                                color: AppColors.primary,
+                              ),
                               const SizedBox(width: 2),
-                              Text('Change',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w700,
-                                  )),
+                              Text(
+                                'Change',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -185,7 +204,8 @@ class _CartItemTile extends ConsumerWidget {
                         Text(
                           CurrencyUtils.format(item.originalPrice),
                           style: AppTextStyles.caption.copyWith(
-                              decoration: TextDecoration.lineThrough),
+                            decoration: TextDecoration.lineThrough,
+                          ),
                         ),
                         _discountBadge(),
                       ],
@@ -203,9 +223,12 @@ class _CartItemTile extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('Subtotal', style: AppTextStyles.caption),
-                          Text(CurrencyUtils.format(item.lineTotal),
-                              style: AppTextStyles.bodyMedium
-                                  .copyWith(fontWeight: FontWeight.w700)),
+                          Text(
+                            CurrencyUtils.format(item.lineTotal),
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ],
                       ),
                       _QtyControl(item: item),
@@ -221,19 +244,22 @@ class _CartItemTile extends ConsumerWidget {
   }
 
   Widget _discountBadge() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFF16A34A),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          item.discountPct > 0
-              ? '${item.discountPct.toStringAsFixed(0)}% OFF'
-              : 'Save ${CurrencyUtils.format(item.unitSavings)}',
-          style: const TextStyle(
-              color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: const Color(0xFF16A34A),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      item.discountPct > 0
+          ? '${item.discountPct.toStringAsFixed(0)}% OFF'
+          : 'Save ${CurrencyUtils.format(item.unitSavings)}',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 9,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
 
   /// Opens the store picker for this product and re-points the line to the
   /// chosen store, applying that store's price + discount.
@@ -247,7 +273,9 @@ class _CartItemTile extends ConsumerWidget {
     );
     if (picked == null || !context.mounted) return;
 
-    ref.read(cartProvider.notifier).updateStore(
+    ref
+        .read(cartProvider.notifier)
+        .updateStore(
           item,
           listingId: picked.listing.id,
           sellerPhone: picked.listing.sellerPhone,
@@ -260,16 +288,17 @@ class _CartItemTile extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-            'Now buying from ${picked.listing.sellerName.trim().isNotEmpty ? picked.listing.sellerName.trim() : 'the selected store'}'),
+          'Now buying from ${picked.listing.sellerName.trim().isNotEmpty ? picked.listing.sellerName.trim() : 'the selected store'}',
+        ),
         backgroundColor: AppColors.primary,
       ),
     );
   }
 
   Widget _imgPlaceholder() => Container(
-        color: AppColors.surfaceVariant,
-        child: const Icon(Icons.grass, color: AppColors.primaryLight),
-      );
+    color: AppColors.surfaceVariant,
+    child: const Icon(Icons.grass, color: AppColors.primaryLight),
+  );
 }
 
 class _QtyControl extends ConsumerWidget {
@@ -288,7 +317,11 @@ class _QtyControl extends ConsumerWidget {
           constraints: const BoxConstraints(),
           onPressed: () => ref
               .read(cartProvider.notifier)
-              .updateQuantity(item.listingId, item.variantLabel, item.quantity - 1),
+              .updateQuantity(
+                item.listingId,
+                item.variantLabel,
+                item.quantity - 1,
+              ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -301,7 +334,11 @@ class _QtyControl extends ConsumerWidget {
           constraints: const BoxConstraints(),
           onPressed: () => ref
               .read(cartProvider.notifier)
-              .updateQuantity(item.listingId, item.variantLabel, item.quantity + 1),
+              .updateQuantity(
+                item.listingId,
+                item.variantLabel,
+                item.quantity + 1,
+              ),
         ),
       ],
     );
@@ -343,8 +380,10 @@ class _CheckoutBar extends StatelessWidget {
                     ),
                   ),
                 const Text('Total', style: AppTextStyles.bodySmall),
-                Text(CurrencyUtils.format(total),
-                    style: AppTextStyles.priceLarge),
+                Text(
+                  CurrencyUtils.format(total),
+                  style: AppTextStyles.priceLarge,
+                ),
               ],
             ),
           ),
@@ -354,7 +393,8 @@ class _CheckoutBar extends StatelessWidget {
               backgroundColor: AppColors.primary,
               minimumSize: const Size(160, 48),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Checkout', style: AppTextStyles.button),
           ),

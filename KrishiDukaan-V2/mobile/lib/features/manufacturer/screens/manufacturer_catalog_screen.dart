@@ -57,8 +57,9 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
 
   @override
   Widget build(BuildContext context) {
-    final catalogAsync =
-        ref.watch(manufacturerCatalogProvider(widget.manufacturerPhone));
+    final catalogAsync = ref.watch(
+      manufacturerCatalogProvider(widget.manufacturerPhone),
+    );
     final seatAsync = ref.watch(seatStatsProvider(widget.manufacturerPhone));
 
     return Scaffold(
@@ -66,8 +67,10 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Text('My Catalog',
-            style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+        title: Text(
+          'My Catalog',
+          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Colors.white),
@@ -76,10 +79,8 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
         ],
       ),
       body: catalogAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            const ErrorView(message: 'Could not load catalog.'),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => const ErrorView(message: 'Could not load catalog.'),
         data: (products) {
           final filteredProducts = products.where((p) {
             return p.name.toLowerCase().contains(_searchQuery.toLowerCase());
@@ -95,7 +96,9 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+                      side: BorderSide(
+                        color: AppColors.divider.withValues(alpha: 0.5),
+                      ),
                     ),
                     color: Colors.white,
                     child: Padding(
@@ -133,14 +136,24 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
                           ),
                           ElevatedButton.icon(
                             onPressed: () => context.push('/subscription'),
-                            icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
-                            label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
+                            icon: const Icon(
+                              Icons.add_shopping_cart,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Buy More Seats',
+                              style: TextStyle(color: Colors.white),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                             ),
                           ),
                         ],
@@ -158,7 +171,10 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
                   controller: _searchController,
                   decoration: InputDecoration(
                     hintText: 'Search by product name…',
-                    prefixIcon: const Icon(Icons.search, color: AppColors.onSurfaceVariant),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppColors.onSurfaceVariant,
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
@@ -174,11 +190,17 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
                     ),
                     fillColor: Colors.white,
                     filled: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   onChanged: (val) {
                     setState(() => _searchQuery = val.trim());
@@ -189,13 +211,19 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
               Expanded(
                 child: filteredProducts.isEmpty
                     ? EmptyState(
-                        title: _searchQuery.isNotEmpty ? 'No matches' : 'No products yet',
+                        title: _searchQuery.isNotEmpty
+                            ? 'No matches'
+                            : 'No products yet',
                         subtitle: _searchQuery.isNotEmpty
                             ? 'Try another search query'
                             : 'Add products to your catalog',
                         icon: Icons.inventory_2_outlined,
-                        actionLabel: _searchQuery.isNotEmpty ? null : 'Add Product',
-                        onAction: _searchQuery.isNotEmpty ? null : () => _showAddSheet(context),
+                        actionLabel: _searchQuery.isNotEmpty
+                            ? null
+                            : 'Add Product',
+                        onAction: _searchQuery.isNotEmpty
+                            ? null
+                            : () => _showAddSheet(context),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -223,7 +251,8 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) =>
           _ProductSheet(manufacturerPhone: widget.manufacturerPhone),
     );
@@ -233,16 +262,15 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
 class _CatalogTile extends StatelessWidget {
   final CatalogModel product;
   final String manufacturerPhone;
-  const _CatalogTile(
-      {required this.product, required this.manufacturerPhone});
+  const _CatalogTile({required this.product, required this.manufacturerPhone});
 
   @override
   Widget build(BuildContext context) {
     final lastUpdatedStr = product.updatedAt != null
         ? DateFormat('MMM d, yyyy, h:mm a').format(product.updatedAt!)
         : (product.createdAt != null
-            ? DateFormat('MMM d, yyyy, h:mm a').format(product.createdAt!)
-            : 'Not updated');
+              ? DateFormat('MMM d, yyyy, h:mm a').format(product.createdAt!)
+              : 'Not updated');
 
     return Card(
       elevation: 0,
@@ -267,17 +295,22 @@ class _CatalogTile extends StatelessWidget {
                     height: 60,
                     child: product.imageUrl.isNotEmpty
                         ? CachedNetworkImage(
+                            memCacheWidth: 1000,
                             imageUrl: product.imageUrl,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => const Icon(
-                                Icons.inventory_2_outlined,
-                                color: AppColors.primaryLight),
+                              Icons.inventory_2_outlined,
+                              color: AppColors.primaryLight,
+                            ),
                             errorWidget: (_, __, ___) => const Icon(
-                                Icons.inventory_2_outlined,
-                                color: AppColors.primaryLight),
+                              Icons.inventory_2_outlined,
+                              color: AppColors.primaryLight,
+                            ),
                           )
-                        : const Icon(Icons.inventory_2_outlined,
-                            color: AppColors.primaryLight),
+                        : const Icon(
+                            Icons.inventory_2_outlined,
+                            color: AppColors.primaryLight,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -287,25 +320,38 @@ class _CatalogTile extends StatelessWidget {
                     children: [
                       Text(
                         product.name,
-                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                              color: AppColors.primaryContainer.withValues(
+                                alpha: 0.5,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               product.category,
-                              style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: product.isActive
                                   ? AppColors.success.withValues(alpha: 0.1)
@@ -315,7 +361,9 @@ class _CatalogTile extends StatelessWidget {
                             child: Text(
                               product.isActive ? 'Active' : 'Inactive',
                               style: AppTextStyles.caption.copyWith(
-                                color: product.isActive ? AppColors.success : AppColors.error,
+                                color: product.isActive
+                                    ? AppColors.success
+                                    : AppColors.error,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -328,12 +376,15 @@ class _CatalogTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             // Variants list
             if (product.variants != null && product.variants!.isNotEmpty) ...[
               Text(
                 'Variants:',
-                style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.bold, color: AppColors.onSurfaceVariant),
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 4),
               Wrap(
@@ -341,15 +392,22 @@ class _CatalogTile extends StatelessWidget {
                 runSpacing: 4,
                 children: product.variants!.map((v) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceVariant.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.divider.withValues(alpha: 0.5)),
+                      border: Border.all(
+                        color: AppColors.divider.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: Text(
                       '${v.label} · ₹${v.price.toStringAsFixed(0)}',
-                      style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w500),
+                      style: AppTextStyles.caption.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   );
                 }).toList(),
@@ -361,21 +419,26 @@ class _CatalogTile extends StatelessWidget {
                 children: [
                   Text(
                     'MRP: ${CurrencyUtils.format(product.price)}',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
             ],
-            
+
             // Last updated
             Text(
               'Last Updated: $lastUpdatedStr',
-              style: AppTextStyles.caption.copyWith(color: AppColors.onSurfaceVariant.withValues(alpha: 0.8)),
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
             ),
-            
+
             const Divider(height: 24),
-            
+
             // Actions
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -386,8 +449,10 @@ class _CatalogTile extends StatelessWidget {
                       context: context,
                       isScrollControlled: true,
                       shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(20))),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
                       builder: (_) => _ProductSheet(
                         manufacturerPhone: manufacturerPhone,
                         product: product,
@@ -408,8 +473,10 @@ class _CatalogTile extends StatelessWidget {
                       context: context,
                       isScrollControlled: true,
                       shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(20))),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
                       builder: (_) => _CatalogDiscountSheet(product: product),
                     );
                   },
@@ -427,19 +494,23 @@ class _CatalogTile extends StatelessWidget {
                       context: context,
                       builder: (ctx) => AlertDialog(
                         title: const Text('Delete Product'),
-                        content: Text(
-                            'Remove "${product.name}" from catalog?'),
+                        content: Text('Remove "${product.name}" from catalog?'),
                         actions: [
                           TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('Cancel')),
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cancel'),
+                          ),
                           FilledButton(
                             style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.error),
+                              backgroundColor: AppColors.error,
+                            ),
                             onPressed: () async {
                               Navigator.pop(ctx);
                               await ManufacturerRepository()
-                                  .deleteCatalogProduct(product.id, collectionPath: product.collectionPath);
+                                  .deleteCatalogProduct(
+                                    product.id,
+                                    collectionPath: product.collectionPath,
+                                  );
                             },
                             child: const Text('Delete'),
                           ),
@@ -468,8 +539,7 @@ class _CatalogTile extends StatelessWidget {
 class _ProductSheet extends StatefulWidget {
   final String manufacturerPhone;
   final CatalogModel? product;
-  const _ProductSheet(
-      {required this.manufacturerPhone, this.product});
+  const _ProductSheet({required this.manufacturerPhone, this.product});
 
   @override
   State<_ProductSheet> createState() => _ProductSheetState();
@@ -491,7 +561,7 @@ class _ProductSheetState extends State<_ProductSheet> {
   String _selectedSize = '1';
   bool _saving = false;
   late bool _isActive;
-  
+
   final List<VariantModel> _variants = [];
   late List<TextEditingController> _imageUrlCtrls;
 
@@ -511,31 +581,32 @@ class _ProductSheetState extends State<_ProductSheet> {
     final p = widget.product;
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _priceCtrl = TextEditingController(
-        text: p != null ? p.price.toStringAsFixed(0) : '');
-    _descCtrl =
-        TextEditingController(text: p?.description ?? '');
+      text: p != null ? p.price.toStringAsFixed(0) : '',
+    );
+    _descCtrl = TextEditingController(text: p?.description ?? '');
     _nCtrl = TextEditingController(
-        text: p?.nitrogen != null
-            ? p!.nitrogen!.toStringAsFixed(0)
-            : '');
+      text: p?.nitrogen != null ? p!.nitrogen!.toStringAsFixed(0) : '',
+    );
     _pCtrl = TextEditingController(
-        text: p?.phosphorus != null
-            ? p!.phosphorus!.toStringAsFixed(0)
-            : '');
+      text: p?.phosphorus != null ? p!.phosphorus!.toStringAsFixed(0) : '',
+    );
     _kCtrl = TextEditingController(
-        text: p?.potassium != null
-            ? p!.potassium!.toStringAsFixed(0)
-            : '');
+      text: p?.potassium != null ? p!.potassium!.toStringAsFixed(0) : '',
+    );
     _category = _matchCategory(p?.category);
     _isActive = p == null ? true : p.isActive;
-    
+
     if (p?.variants != null) {
       _variants.addAll(p!.variants!);
     }
 
     final existingImages = p?.images ?? [];
-    _imageUrlCtrls = List.generate(5, (i) =>
-        TextEditingController(text: i < existingImages.length ? existingImages[i] : ''));
+    _imageUrlCtrls = List.generate(
+      5,
+      (i) => TextEditingController(
+        text: i < existingImages.length ? existingImages[i] : '',
+      ),
+    );
   }
 
   @override
@@ -549,7 +620,9 @@ class _ProductSheetState extends State<_ProductSheet> {
     _customUnitCtrl.dispose();
     _customSizeCtrl.dispose();
     _stockCtrl.dispose();
-    for (final c in _imageUrlCtrls) { c.dispose(); }
+    for (final c in _imageUrlCtrls) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -562,8 +635,12 @@ class _ProductSheetState extends State<_ProductSheet> {
       return;
     }
 
-    final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
-    final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+    final unit = _selectedUnit == 'Custom'
+        ? _customUnitCtrl.text.trim()
+        : _selectedUnit;
+    final size = _selectedSize == 'Custom'
+        ? _customSizeCtrl.text.trim()
+        : _selectedSize;
     if (unit.isEmpty || size.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please choose unit and package size.')),
@@ -603,8 +680,10 @@ class _ProductSheetState extends State<_ProductSheet> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(isEdit ? 'Edit Catalog Product' : 'Add Catalog Product',
-                        style: AppTextStyles.heading2),
+                    Text(
+                      isEdit ? 'Edit Catalog Product' : 'Add Catalog Product',
+                      style: AppTextStyles.heading2,
+                    ),
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
@@ -620,11 +699,20 @@ class _ProductSheetState extends State<_ProductSheet> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: SwitchListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      title: Text(_isActive ? 'Active' : 'Inactive',
-                          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      title: Text(
+                        _isActive ? 'Active' : 'Inactive',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       subtitle: Text(
-                        _isActive ? 'Visible to retailers' : 'Hidden from catalog',
+                        _isActive
+                            ? 'Visible to retailers'
+                            : 'Hidden from catalog',
                         style: AppTextStyles.caption,
                       ),
                       value: _isActive,
@@ -635,46 +723,70 @@ class _ProductSheetState extends State<_ProductSheet> {
                   const SizedBox(height: 16),
                 ],
 
-                Text('Product Name *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Product Name *',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _nameCtrl,
                   decoration: InputDecoration(
                     hintText: 'e.g. Bharat 2 In 1',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                Text('Category *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+
+                Text(
+                  'Category *',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _category,
                   decoration: InputDecoration(
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   items: _categories
-                      .map((c) =>
-                          DropdownMenuItem(value: c, child: Text(c)))
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
-                  onChanged: (v) =>
-                      setState(() => _category = v ?? _category),
+                  onChanged: (v) => setState(() => _category = v ?? _category),
                 ),
                 const SizedBox(height: 16),
-                
-                Text('Description', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+
+                Text(
+                  'Description',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _descCtrl,
                   maxLines: 2,
                   decoration: InputDecoration(
                     hintText: 'Crop suitability, yield, dosage...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                Text('NPK Composition (%)',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+
+                Text(
+                  'NPK Composition (%)',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -688,9 +800,15 @@ class _ProductSheetState extends State<_ProductSheet> {
                 const SizedBox(height: 20),
 
                 // Variants list
-                Text('Pack Sizes & MRPs', style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                Text(
+                  'Pack Sizes & MRPs',
+                  style: AppTextStyles.heading3.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                
+
                 if (_variants.isNotEmpty) ...[
                   ..._variants.asMap().entries.map((e) {
                     final i = e.key;
@@ -699,11 +817,18 @@ class _ProductSheetState extends State<_ProductSheet> {
                       color: AppColors.primaryContainer.withValues(alpha: 0.1),
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
-                        title: Text(v.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(
+                          v.label,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         subtitle: Text('MRP: ₹${v.price.toStringAsFixed(0)}'),
                         trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                          onPressed: () => setState(() => _variants.removeAt(i)),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: AppColors.error,
+                          ),
+                          onPressed: () =>
+                              setState(() => _variants.removeAt(i)),
                         ),
                       ),
                     );
@@ -712,19 +837,35 @@ class _ProductSheetState extends State<_ProductSheet> {
                 ],
 
                 // Step 1: Unit
-                Text('Step 1 — Unit', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Step 1 — Unit',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ['gm', 'KG', 'ml', 'L', 'Packet', 'Piece', 'Bottle', 'Can', 'Custom'].map((u) {
-                    return ChoiceChip(
-                      label: Text(u),
-                      selected: _selectedUnit == u,
-                      selectedColor: AppColors.primaryContainer,
-                      onSelected: (_) => setState(() => _selectedUnit = u),
-                    );
-                  }).toList(),
+                  children:
+                      [
+                        'gm',
+                        'KG',
+                        'ml',
+                        'L',
+                        'Packet',
+                        'Piece',
+                        'Bottle',
+                        'Can',
+                        'Custom',
+                      ].map((u) {
+                        return ChoiceChip(
+                          label: Text(u),
+                          selected: _selectedUnit == u,
+                          selectedColor: AppColors.primaryContainer,
+                          onSelected: (_) => setState(() => _selectedUnit = u),
+                        );
+                      }).toList(),
                 ),
                 if (_selectedUnit == 'Custom') ...[
                   const SizedBox(height: 8),
@@ -732,19 +873,28 @@ class _ProductSheetState extends State<_ProductSheet> {
                     controller: _customUnitCtrl,
                     decoration: InputDecoration(
                       labelText: 'Custom Unit',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
                 const SizedBox(height: 16),
 
                 // Step 2: Package Size
-                Text('Step 2 — Package Size', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Step 2 — Package Size',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((sz) {
+                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((
+                    sz,
+                  ) {
                     return ChoiceChip(
                       label: Text(sz),
                       selected: _selectedSize == sz,
@@ -760,7 +910,9 @@ class _ProductSheetState extends State<_ProductSheet> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'Custom Package Size',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
@@ -773,11 +925,13 @@ class _ProductSheetState extends State<_ProductSheet> {
                   decoration: InputDecoration(
                     labelText: 'MRP Price (₹) *',
                     prefixText: '₹ ',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 OutlinedButton.icon(
                   onPressed: _addVariantSize,
                   icon: const Icon(Icons.add),
@@ -785,29 +939,42 @@ class _ProductSheetState extends State<_ProductSheet> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
 
-                Text('Product Images (up to 5)',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Product Images (up to 5)',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                ...List.generate(5, (i) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TextField(
-                    controller: _imageUrlCtrls[i],
-                    decoration: InputDecoration(
-                      labelText: i == 0 ? 'Main image URL' : 'Image ${i + 1} URL',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ...List.generate(
+                  5,
+                  (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: _imageUrlCtrls[i],
+                      decoration: InputDecoration(
+                        labelText: i == 0
+                            ? 'Main image URL'
+                            : 'Image ${i + 1} URL',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
                   ),
-                )),
+                ),
                 const SizedBox(height: 80),
               ],
             ),
           ),
-          
+
           Positioned(
             left: 0,
             right: 0,
@@ -822,7 +989,9 @@ class _ProductSheetState extends State<_ProductSheet> {
                   onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: _saving
                       ? const Center(
@@ -830,8 +999,18 @@ class _ProductSheetState extends State<_ProductSheet> {
                             height: 18,
                             width: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white)))
-                      : Text(isEdit ? 'Save Changes' : 'Add to Catalog', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : Text(
+                          isEdit ? 'Save Changes' : 'Add to Catalog',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -850,13 +1029,13 @@ class _ProductSheetState extends State<_ProductSheet> {
   }
 
   Widget _npkField(TextEditingController ctrl, String label) => TextField(
-        controller: ctrl,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+    controller: ctrl,
+    keyboardType: TextInputType.number,
+    decoration: InputDecoration(
+      labelText: label,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+  );
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
@@ -869,12 +1048,18 @@ class _ProductSheetState extends State<_ProductSheet> {
 
     final priceInput = double.tryParse(_priceCtrl.text.trim());
     if (priceInput != null) {
-      final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
-      final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+      final unit = _selectedUnit == 'Custom'
+          ? _customUnitCtrl.text.trim()
+          : _selectedUnit;
+      final size = _selectedSize == 'Custom'
+          ? _customSizeCtrl.text.trim()
+          : _selectedSize;
       if (unit.isNotEmpty && size.isNotEmpty) {
         final label = '$size $unit';
         if (!_variants.any((v) => v.label == label)) {
-          _variants.add(VariantModel(label: label, price: priceInput, stock: 1));
+          _variants.add(
+            VariantModel(label: label, price: priceInput, stock: 1),
+          );
         }
       }
     }
@@ -918,7 +1103,11 @@ class _ProductSheetState extends State<_ProductSheet> {
       };
 
       if (widget.product != null) {
-        await repo.updateCatalogProduct(widget.product!.id, data, collectionPath: widget.product!.collectionPath);
+        await repo.updateCatalogProduct(
+          widget.product!.id,
+          data,
+          collectionPath: widget.product!.collectionPath,
+        );
       } else {
         await repo.addCatalogProduct(
           manufacturerPhone: widget.manufacturerPhone,
@@ -937,9 +1126,9 @@ class _ProductSheetState extends State<_ProductSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving product: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving product: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -987,12 +1176,17 @@ class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Discount — ${widget.product.name}',
-              style: AppTextStyles.heading2),
+          Text(
+            'Discount — ${widget.product.name}',
+            style: AppTextStyles.heading2,
+          ),
           const SizedBox(height: 4),
-          Text('Sets a discount on this product for all retailers.',
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.onSurfaceVariant)),
+          Text(
+            'Sets a discount on this product for all retailers.',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 16),
 
           SwitchListTile(
@@ -1006,8 +1200,10 @@ class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
 
           Row(
             children: [
-              Text('Discount: ${_percentage.toInt()}%',
-                  style: AppTextStyles.bodyMedium),
+              Text(
+                'Discount: ${_percentage.toInt()}%',
+                style: AppTextStyles.bodyMedium,
+              ),
               Expanded(
                 child: Slider(
                   value: _percentage,
@@ -1051,14 +1247,16 @@ class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
             width: double.infinity,
             child: FilledButton(
               onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
               child: _saving
                   ? const SizedBox(
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Text('Save Discount'),
             ),
           ),
@@ -1080,9 +1278,9 @@ class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving discount: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving discount: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1120,18 +1318,14 @@ class _DateField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16),
         ),
         child: Text(
-          value != null
-              ? DateFormat('MMM d, yyyy').format(value!)
-              : 'Optional',
+          value != null ? DateFormat('MMM d, yyyy').format(value!) : 'Optional',
           style: AppTextStyles.bodyMedium.copyWith(
-              color: enabled
-                  ? AppColors.onSurface
-                  : AppColors.onSurfaceVariant),
+            color: enabled ? AppColors.onSurface : AppColors.onSurfaceVariant,
+          ),
         ),
       ),
     );

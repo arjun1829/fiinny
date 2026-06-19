@@ -15,15 +15,14 @@ import '../data/brand_repository.dart';
 
 final _brandRepo = BrandRepository();
 
-final _brandProvider =
-    FutureProvider.family<BrandModel?, String>((ref, phone) {
+final _brandProvider = FutureProvider.family<BrandModel?, String>((ref, phone) {
   return _brandRepo.fetchBrandByPhone(phone);
 });
 
 final _brandProductsProvider =
     FutureProvider.family<List<CatalogModel>, String>((ref, phone) {
-  return _brandRepo.fetchBrandProducts(phone);
-});
+      return _brandRepo.fetchBrandProducts(phone);
+    });
 
 class BrandScreen extends ConsumerWidget {
   final String manufacturerPhone;
@@ -58,6 +57,7 @@ class BrandScreen extends ConsumerWidget {
                     children: [
                       if (brand.coverImage != null)
                         CachedNetworkImage(
+                          memCacheWidth: 1000,
                           imageUrl: brand.coverImage!,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) =>
@@ -67,7 +67,10 @@ class BrandScreen extends ConsumerWidget {
                         Container(
                           decoration: const BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [AppColors.primary, AppColors.primaryLight],
+                              colors: [
+                                AppColors.primary,
+                                AppColors.primaryLight,
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
@@ -81,6 +84,7 @@ class BrandScreen extends ConsumerWidget {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: CachedNetworkImage(
+                              memCacheWidth: 1000,
                               imageUrl: brand.logo!,
                               width: 64,
                               height: 64,
@@ -103,90 +107,109 @@ class BrandScreen extends ConsumerWidget {
                       Text(brand.businessName, style: AppTextStyles.heading1),
                       if (brand.tagline != null) ...[
                         const SizedBox(height: 4),
-                        Text(brand.tagline!,
-                            style: AppTextStyles.body.copyWith(
-                                color: AppColors.onSurfaceVariant,
-                                fontStyle: FontStyle.italic)),
+                        Text(
+                          brand.tagline!,
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.onSurfaceVariant,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                       ],
                       if (brand.description != null) ...[
                         const SizedBox(height: 12),
-                        Text(brand.description!,
-                            style: AppTextStyles.body),
+                        Text(brand.description!, style: AppTextStyles.body),
                       ],
                       const SizedBox(height: 12),
-                      ref.watch(storeReviewsProvider(brand.phone)).when(
-                        data: (reviews) {
-                          final avg = reviews.isEmpty
-                              ? 0.0
-                              : reviews.fold<double>(0, (sum, r) => sum + r.rating) /
-                                  reviews.length;
-                          final count = reviews.length;
+                      ref
+                          .watch(storeReviewsProvider(brand.phone))
+                          .when(
+                            data: (reviews) {
+                              final avg = reviews.isEmpty
+                                  ? 0.0
+                                  : reviews.fold<double>(
+                                          0,
+                                          (sum, r) => sum + r.rating,
+                                        ) /
+                                        reviews.length;
+                              final count = reviews.length;
 
-                          return Row(
-                            children: [
-                              if (count > 0) ...[
-                                Row(
-                                  children: List.generate(
-                                    5,
-                                    (i) => Icon(
-                                      i < avg.round() ? Icons.star : Icons.star_border,
+                              return Row(
+                                children: [
+                                  if (count > 0) ...[
+                                    Row(
+                                      children: List.generate(
+                                        5,
+                                        (i) => Icon(
+                                          i < avg.round()
+                                              ? Icons.star
+                                              : Icons.star_border,
+                                          size: 16,
+                                          color: AppColors.secondary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      avg.toStringAsFixed(1),
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '($count)',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                  ],
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      final store = StoreModel(
+                                        id: brand.phone,
+                                        name: brand.businessName,
+                                        phone: brand.phone,
+                                        logo: brand.logo,
+                                        averageRating: avg,
+                                        totalReviews: count,
+                                      );
+                                      showStoreReviewsBottomSheet(
+                                        context: context,
+                                        ref: ref,
+                                        store: store,
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.rate_review,
                                       size: 16,
-                                      color: AppColors.secondary,
+                                    ),
+                                    label: Text(
+                                      count > 0
+                                          ? 'View Reviews'
+                                          : 'Write a Review',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.primary,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(50, 30),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  avg.toStringAsFixed(1),
-                                  style: AppTextStyles.bodyMedium
-                                      .copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '($count)',
-                                  style: AppTextStyles.bodyMedium
-                                      .copyWith(color: AppColors.onSurfaceVariant),
-                                ),
-                                const SizedBox(width: 16),
-                              ],
-                              TextButton.icon(
-                                onPressed: () {
-                                  final store = StoreModel(
-                                    id: brand.phone,
-                                    name: brand.businessName,
-                                    phone: brand.phone,
-                                    logo: brand.logo,
-                                    averageRating: avg,
-                                    totalReviews: count,
-                                  );
-                                  showStoreReviewsBottomSheet(
-                                    context: context,
-                                    ref: ref,
-                                    store: store,
-                                  );
-                                },
-                                icon: const Icon(Icons.rate_review, size: 16),
-                                label: Text(
-                                  count > 0 ? 'View Reviews' : 'Write a Review',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(50, 30),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                        loading: () => const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        error: (e, s) => const SizedBox.shrink(),
-                      ),
+                                ],
+                              );
+                            },
+                            loading: () => const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            error: (e, s) => const SizedBox.shrink(),
+                          ),
                       const SizedBox(height: 24),
 
                       // Products section
@@ -194,16 +217,16 @@ class BrandScreen extends ConsumerWidget {
                       const SizedBox(height: 12),
 
                       productsAsync.when(
-                        loading: () => const Center(
-                            child: CircularProgressIndicator()),
-                        error: (_, _) =>
-                            const Text('Could not load products.'),
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, _) => const Text('Could not load products.'),
                         data: (products) {
                           if (products.isEmpty) {
                             return const Text(
                               'No products available.',
                               style: TextStyle(
-                                  color: AppColors.onSurfaceVariant),
+                                color: AppColors.onSurfaceVariant,
+                              ),
                             );
                           }
                           return GridView.builder(
@@ -211,11 +234,11 @@ class BrandScreen extends ConsumerWidget {
                             physics: const NeverScrollableScrollPhysics(),
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 0.75,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
+                                  crossAxisCount: 2,
+                                  childAspectRatio: 0.75,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
                             itemCount: products.length,
                             itemBuilder: (_, i) => _BrandProductCard(
                               product: products[i],
@@ -264,13 +287,15 @@ class _BrandProductCard extends StatelessWidget {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(12),
+                ),
                 child: SizedBox(
                   width: double.infinity,
                   height: double.infinity,
                   child: product.hasImages
                       ? CachedNetworkImage(
+                          memCacheWidth: 1000,
                           imageUrl: product.imageUrl,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) => _placeholder(),
@@ -284,13 +309,17 @@ class _BrandProductCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(product.name,
-                      style: AppTextStyles.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    product.name,
+                    style: AppTextStyles.bodyMedium,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
-                  Text(CurrencyUtils.format(product.price),
-                      style: AppTextStyles.price),
+                  Text(
+                    CurrencyUtils.format(product.price),
+                    style: AppTextStyles.price,
+                  ),
                 ],
               ),
             ),
@@ -301,9 +330,9 @@ class _BrandProductCard extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-        color: AppColors.surfaceVariant,
-        child: const Center(
-          child: Icon(Icons.grass, size: 36, color: AppColors.primaryLight),
-        ),
-      );
+    color: AppColors.surfaceVariant,
+    child: const Center(
+      child: Icon(Icons.grass, size: 36, color: AppColors.primaryLight),
+    ),
+  );
 }
