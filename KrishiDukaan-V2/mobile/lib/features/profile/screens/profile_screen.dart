@@ -148,10 +148,18 @@ class _ProfileBody extends ConsumerWidget {
               label: isHindi ? 'ऑर्डर इतिहास' : 'Order History',
               onTap: () => context.push('/orders'),
             ),
-            if (user.canAccessDashboard)
+            if (user.isSeller)
               _LinkRow(
-                icon: Icons.dashboard_outlined,
-                label: isHindi ? 'विक्रेता डैशबोर्ड' : 'Seller Dashboard',
+                icon: user.canAccessDashboard
+                    ? Icons.dashboard_outlined
+                    : Icons.lock_outline,
+                label: user.canAccessDashboard
+                    ? (isHindi ? 'विक्रेता डैशबोर्ड' : 'Seller Dashboard')
+                    : (isHindi
+                        ? 'विक्रेता डैशबोर्ड (सदस्यता लें)'
+                        : 'Seller Dashboard (Subscribe)'),
+                // Unpaid sellers are redirected to the paywall by the router
+                // guard on /dashboard, so they can purchase a subscription.
                 onTap: () => context.push('/dashboard'),
               ),
           ],
