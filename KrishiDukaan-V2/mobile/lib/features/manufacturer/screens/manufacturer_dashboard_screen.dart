@@ -246,6 +246,20 @@ class _ManufacturerBody extends ConsumerWidget {
                           ),
                         ),
                       ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => context.push('/subscription'),
+                          icon: const Icon(Icons.add_circle_outline, size: 18),
+                          label: const Text('Buy more seats'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 );

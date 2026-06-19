@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../../../core/payments/app_razorpay.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
@@ -28,7 +28,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _cityCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
 
-  late final Razorpay _razorpay;
+  late final AppRazorpay _razorpay;
   final _paymentService = PaymentService();
   final _orderRepo = OrderRepository();
 
@@ -39,9 +39,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError);
+    _razorpay = AppRazorpay(
+      onSuccess: _onPaymentSuccess,
+      onError: _onPaymentError,
+    );
 
     // Pre-fill phone from Firebase Auth
     final user = FirebaseAuth.instance.currentUser;
@@ -107,15 +108,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  void _onPaymentSuccess(PaymentSuccessResponse response) async {
+  void _onPaymentSuccess(AppPaymentSuccess response) async {
     setState(() => _isLoading = true);
 
     try {
       // Verify payment signature server-side
       final verified = await _paymentService.verifyPayment(
-        razorpayOrderId: response.orderId ?? '',
-        razorpayPaymentId: response.paymentId ?? '',
-        razorpaySignature: response.signature ?? '',
+        razorpayOrderId: response.orderId,
+        razorpayPaymentId: response.paymentId,
+        razorpaySignature: response.signature,
       );
 
       if (!verified) throw Exception('Payment verification failed');
@@ -135,8 +136,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           'city': _cityCtrl.text.trim(),
           'pincode': _pincodeCtrl.text.trim(),
         },
-        razorpayOrderId: response.orderId ?? '',
-        razorpayPaymentId: response.paymentId ?? '',
+        razorpayOrderId: response.orderId,
+        razorpayPaymentId: response.paymentId,
       );
 
       ref.read(cartProvider.notifier).clear();
@@ -151,10 +152,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  void _onPaymentError(PaymentFailureResponse response) {
+  void _onPaymentError(AppPaymentError response) {
     setState(() {
       _isLoading = false;
-      _error = response.message ?? 'Payment failed. Please try again.';
+      _error = response.message;
     });
   }
 

@@ -998,9 +998,15 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     final seatStats = ref.read(seatStatsProvider(widget.sellerPhone)).value;
     if (seatStats != null && seatStats.available <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No listing seats available. Purchase more seats from Subscription.'),
+        SnackBar(
+          content: const Text(
+              'No listing seats available. Buy more seats to add this product.'),
           backgroundColor: Colors.orange,
+          action: SnackBarAction(
+            label: 'Buy seats',
+            textColor: Colors.white,
+            onPressed: () => context.push('/subscription'),
+          ),
         ),
       );
       return;

@@ -195,8 +195,10 @@ class HomeScreen extends ConsumerWidget {
                   // Dashboard CTA for retailers
                   userAsync.maybeWhen(
                     data: (user) {
-                      if (user != null && user.canAccessDashboard) {
-                        return _DashboardBanner();
+                      if (user != null && user.isSeller) {
+                        return _DashboardBanner(
+                          canAccess: user.canAccessDashboard,
+                        );
                       }
                       if (user != null && user.isConsumer) {
                         return _BecomeRetailerBanner();
@@ -433,6 +435,11 @@ class _CategoryCard extends StatelessWidget {
 }
 
 class _DashboardBanner extends StatelessWidget {
+  // Paid sellers open the dashboard directly; unpaid sellers are routed to the
+  // subscription paywall by the router guard on /dashboard.
+  final bool canAccess;
+  const _DashboardBanner({required this.canAccess});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -446,7 +453,11 @@ class _DashboardBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.dashboard, color: Colors.white, size: 32),
+          Icon(
+            canAccess ? Icons.dashboard : Icons.workspace_premium,
+            color: Colors.white,
+            size: 32,
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -457,7 +468,9 @@ class _DashboardBanner extends StatelessWidget {
                   style: AppTextStyles.heading3.copyWith(color: Colors.white),
                 ),
                 Text(
-                  'Manage inventory & orders',
+                  canAccess
+                      ? 'Manage inventory & orders'
+                      : 'Subscribe to start selling',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: Colors.white70,
                   ),
@@ -469,7 +482,7 @@ class _DashboardBanner extends StatelessWidget {
             onPressed: () => context.go('/dashboard'),
             style: FilledButton.styleFrom(backgroundColor: Colors.white),
             child: Text(
-              'Open',
+              canAccess ? 'Open' : 'Subscribe',
               style: AppTextStyles.button.copyWith(color: AppColors.primary),
             ),
           ),
