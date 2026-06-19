@@ -1,6 +1,8 @@
 {
   "projects": {
-    "default": "krishidukan-e8315"
+    "default": "krishidukan-e8315",
+    "prod": "krishidukan-e8315",
+    "uat": "karan-arjun-uat"
   },
   "targets": {
     "krishidukan-e8315": {
@@ -10,6 +12,13 @@
         ],
         "admin": [
           "krishidukan-admin"
+        ]
+      }
+    },
+    "karan-arjun-uat": {
+      "hosting": {
+        "main": [
+          "karan-arjun-uat"
         ]
       }
     }

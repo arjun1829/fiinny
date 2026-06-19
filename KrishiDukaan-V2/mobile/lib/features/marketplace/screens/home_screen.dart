@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +13,13 @@ import '../providers/marketplace_provider.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  /// Opens the marketplace with the search field already focused. A fresh token
+  /// on each tap guarantees the keyboard pops up even when the marketplace tab
+  /// is already alive in the shell's IndexedStack.
+  void _openSearch(BuildContext context) {
+    context.go('/marketplace?focus=${DateTime.now().millisecondsSinceEpoch}');
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,7 +44,7 @@ class HomeScreen extends ConsumerWidget {
               TopBarAction(
                 icon: Icons.search,
                 tooltip: 'Search products',
-                onPressed: () => context.go('/marketplace'),
+                onPressed: () => _openSearch(context),
               ),
               const NotificationBell(),
             ],
@@ -108,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 14),
                           GestureDetector(
-                            onTap: () => context.go('/marketplace'),
+                            onTap: () => _openSearch(context),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -146,6 +155,10 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 20),
+
+                  // Rotating promo banners — gives the page a lively hero strip
+                  const _PromoCarousel(),
                   const SizedBox(height: 24),
 
                   // Category cards grid
@@ -175,13 +188,17 @@ class HomeScreen extends ConsumerWidget {
                       );
                     },
                   ),
+                  const SizedBox(height: 24),
+                  const _BenefitsStrip(),
                   const SizedBox(height: 28),
 
                   // Dashboard CTA for retailers
                   userAsync.maybeWhen(
                     data: (user) {
-                      if (user != null && user.canAccessDashboard) {
-                        return _DashboardBanner();
+                      if (user != null && user.isSeller) {
+                        return _DashboardBanner(
+                          canAccess: user.canAccessDashboard,
+                        );
                       }
                       if (user != null && user.isConsumer) {
                         return _BecomeRetailerBanner();
@@ -190,6 +207,9 @@ class HomeScreen extends ConsumerWidget {
                     },
                     orElse: () => const SizedBox.shrink(),
                   ),
+
+                  // Top deals — horizontal rail of the biggest discounts
+                  const _TopDealsRail(),
 
                   // Featured products (real Firestore data)
                   Row(
@@ -243,6 +263,10 @@ class HomeScreen extends ConsumerWidget {
                       );
                     },
                   ),
+                  const SizedBox(height: 28),
+
+                  // Friendly closing card so the page ends on a helpful note
+                  const _HelpFooter(),
                   const SizedBox(height: 80),
                 ],
               ),
@@ -411,6 +435,11 @@ class _CategoryCard extends StatelessWidget {
 }
 
 class _DashboardBanner extends StatelessWidget {
+  // Paid sellers open the dashboard directly; unpaid sellers are routed to the
+  // subscription paywall by the router guard on /dashboard.
+  final bool canAccess;
+  const _DashboardBanner({required this.canAccess});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -424,7 +453,11 @@ class _DashboardBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.dashboard, color: Colors.white, size: 32),
+          Icon(
+            canAccess ? Icons.dashboard : Icons.workspace_premium,
+            color: Colors.white,
+            size: 32,
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -435,7 +468,9 @@ class _DashboardBanner extends StatelessWidget {
                   style: AppTextStyles.heading3.copyWith(color: Colors.white),
                 ),
                 Text(
-                  'Manage inventory & orders',
+                  canAccess
+                      ? 'Manage inventory & orders'
+                      : 'Subscribe to start selling',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: Colors.white70,
                   ),
@@ -447,7 +482,7 @@ class _DashboardBanner extends StatelessWidget {
             onPressed: () => context.go('/dashboard'),
             style: FilledButton.styleFrom(backgroundColor: Colors.white),
             child: Text(
-              'Open',
+              canAccess ? 'Open' : 'Subscribe',
               style: AppTextStyles.button.copyWith(color: AppColors.primary),
             ),
           ),
@@ -550,6 +585,406 @@ class _PlaceholderProductCard extends StatelessWidget {
                 Text('Loading...', style: AppTextStyles.price),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Promo carousel ────────────────────────────────
+
+class _Promo {
+  final String title;
+  final String subtitle;
+  final String cta;
+  final IconData icon;
+  final List<Color> colors;
+  final String route;
+
+  const _Promo({
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.icon,
+    required this.colors,
+    required this.route,
+  });
+}
+
+const _promos = <_Promo>[
+  _Promo(
+    title: 'Best prices on\nfertilizers & seeds',
+    subtitle: 'Compare nearby stores and save on every order',
+    cta: 'Shop deals',
+    icon: Icons.local_offer,
+    colors: [AppColors.primary, AppColors.primaryLight],
+    route: '/marketplace',
+  ),
+  _Promo(
+    title: '100% genuine\nagri products',
+    subtitle: 'Verified sellers, premium-grade inputs for your farm',
+    cta: 'Browse catalog',
+    icon: Icons.verified,
+    colors: [Color(0xFF0E7490), Color(0xFF22D3EE)],
+    route: '/marketplace',
+  ),
+  _Promo(
+    title: 'Find a trusted\nstore near you',
+    subtitle: 'Locate krishi stores around your village',
+    cta: 'Open store locator',
+    icon: Icons.storefront,
+    colors: [Color(0xFFB45309), Color(0xFFF59E0B)],
+    route: '/stores',
+  ),
+];
+
+class _PromoCarousel extends StatefulWidget {
+  const _PromoCarousel();
+
+  @override
+  State<_PromoCarousel> createState() => _PromoCarouselState();
+}
+
+class _PromoCarouselState extends State<_PromoCarousel> {
+  final _controller = PageController(viewportFraction: 0.92);
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final next = (_page + 1) % _promos.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 150,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: _promos.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (_, i) => _PromoCard(promo: _promos[i]),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(_promos.length, (i) {
+            final active = i == _page;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: active ? 18 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary : AppColors.divider,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+class _PromoCard extends StatelessWidget {
+  final _Promo promo;
+  const _PromoCard({required this.promo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: GestureDetector(
+        onTap: () => context.go(promo.route),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: promo.colors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: promo.colors.first.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -12,
+                bottom: -12,
+                child: Icon(
+                  promo.icon,
+                  size: 120,
+                  color: Colors.white.withValues(alpha: 0.12),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      promo.title,
+                      style: AppTextStyles.heading2.copyWith(
+                        color: Colors.white,
+                        height: 1.15,
+                        fontSize: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      promo.subtitle,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            promo.cta,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.onSurface,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_forward,
+                              size: 14, color: AppColors.onSurface),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Benefits strip ────────────────────────────────
+
+class _BenefitsStrip extends StatelessWidget {
+  const _BenefitsStrip();
+
+  static const _items = <(IconData, String)>[
+    (Icons.verified_user_outlined, 'Genuine\nproducts'),
+    (Icons.local_offer_outlined, 'Best\nprices'),
+    (Icons.local_shipping_outlined, 'Doorstep\ndelivery'),
+    (Icons.support_agent_outlined, 'Expert\nsupport'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: _items.map((it) {
+          return Expanded(
+            child: Column(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(it.$1, color: AppColors.primary, size: 22),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  it.$2,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Top deals rail ────────────────────────────────
+
+class _TopDealsRail extends ConsumerWidget {
+  const _TopDealsRail();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dealsAsync = ref.watch(topDealsProvider);
+    return dealsAsync.maybeWhen(
+      data: (deals) {
+        if (deals.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.local_fire_department,
+                        color: AppColors.secondary, size: 20),
+                    const SizedBox(width: 6),
+                    Text('Top Deals', style: AppTextStyles.heading3),
+                  ],
+                ),
+                TextButton(
+                  onPressed: () => context.go('/marketplace'),
+                  child: const Text('See all'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 250,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: deals.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (_, i) => SizedBox(
+                  width: 160,
+                  child: ProductCard(
+                    product: deals[i],
+                    onTap: () => context.go('/product/${deals[i].id}'),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
+    );
+  }
+}
+
+// ─────────────────────────── Help footer ───────────────────────────────────
+
+class _HelpFooter extends StatelessWidget {
+  const _HelpFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.primary.withValues(alpha: 0.08), Colors.white],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primaryContainer.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.support_agent, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Need farming advice?',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Get crop tips, Q&A and expert guidance on Krishi Hubs.',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => context.go('/hubs'),
+              icon: const Icon(Icons.forum_outlined, size: 18),
+              label: const Text('Explore Krishi Hubs'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'KrishiDukaan • आपके खेत की हर ज़रूरत',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.onSurfaceVariant),
           ),
         ],
       ),

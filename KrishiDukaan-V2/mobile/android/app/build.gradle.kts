@@ -38,6 +38,21 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("prod") {
+            dimension = "environment"
+            // Uses google-services.json from app/src/prod/ (production Firebase project)
+        }
+        create("uat") {
+            dimension = "environment"
+            applicationIdSuffix = ".uat"
+            versionNameSuffix = "-uat"
+            // Uses google-services.json from app/src/uat/ (karan-arjun-uat Firebase project)
+        }
+    }
+
     signingConfigs {
         if (keyPropertiesFile.exists()) {
             create("release") {

@@ -14,8 +14,10 @@ import '../../../core/models/cart_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/widgets/expandable_text.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
+import '../widgets/store_selector_sheet.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String catalogId;
@@ -63,6 +65,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               .take(12)
               .toList();
 
+          final hasDetails =
+              (catalog.description != null && catalog.description!.isNotEmpty) ||
+                  catalog.hasNpk;
+
           return CustomScrollView(
             slivers: [
               // ── Hero image app bar ────────────────────────────────────────
@@ -80,7 +86,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Product header ──────────────────────────────────────
+                    // ── Product header (name, price, max discount) ──────────
                     _buildProductHeader(catalog, displayPrice),
 
                     // ── Image thumbnails (gallery) ──────────────────────────
@@ -93,19 +99,17 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
                     const Divider(height: 1, thickness: 1),
 
-                    // ── Description ─────────────────────────────────────────
+                    // ── Buy options first: stores nearest-first. Farmers care
+                    //    about price/discount/distance more than the spec
+                    //    sheet, so this sits above the product details. ───────
+                    _buildStoresSection(listingsAsync, catalog, displayPrice),
+
+                    // ── Product details moved below the buy options ─────────
+                    if (hasDetails) const Divider(height: 1, thickness: 1),
                     if (catalog.description != null &&
                         catalog.description!.isNotEmpty)
                       _buildDescription(catalog),
-
-                    // ── NPK section (fertilizers) ───────────────────────────
                     if (catalog.hasNpk) _buildNpkSection(catalog),
-
-                    const SizedBox(height: 8),
-                    const Divider(height: 1, thickness: 1),
-
-                    // ── Available At Stores ─────────────────────────────────
-                    _buildStoresSection(listingsAsync, catalog, displayPrice),
 
                     const Divider(height: 1, thickness: 1),
 
@@ -126,7 +130,149 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           );
         },
       ),
+      // ── Sticky Add to Cart / Buy Now bar (Amazon-style) ──────────────────
+      bottomNavigationBar: catalogAsync.maybeWhen(
+        data: (catalog) =>
+            catalog == null ? null : _buildBottomBar(catalog, listingsAsync),
+        orElse: () => null,
+      ),
     );
+  }
+
+  // ─────────────────────── Buy options (cart / buy now) ──────────────────────
+
+  /// Sticky bottom bar with Add to Cart + Buy Now. Disabled (with a hint) while
+  /// listings load or when no store sells this product online. Orderable store
+  /// resolution + pricing lives in the shared [buildStoreOptions].
+  Widget _buildBottomBar(
+      CatalogModel catalog, AsyncValue<List<ListingModel>> listingsAsync) {
+    final options = listingsAsync.maybeWhen(
+      data: (raw) => buildStoreOptions(catalog, raw),
+      orElse: () => null,
+    );
+    final canOrder = options != null && options.isNotEmpty;
+
+    return Material(
+      elevation: 12,
+      color: Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: !canOrder
+              ? SizedBox(
+                  height: 48,
+                  child: Center(
+                    child: Text(
+                      listingsAsync.isLoading
+                          ? 'Checking availability…'
+                          : 'Not available for online order',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.onSurfaceVariant),
+                    ),
+                  ),
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _startOrder(catalog, options, buyNow: false),
+                        icon: const Icon(Icons.add_shopping_cart, size: 18),
+                        label: const Text('Add to Cart'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(
+                              color: AppColors.primary, width: 1.5),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          textStyle: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () =>
+                            _startOrder(catalog, options, buyNow: true),
+                        icon: const Icon(Icons.flash_on, size: 18),
+                        label: const Text('Buy Now'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.secondary,
+                          foregroundColor: AppColors.onSecondary,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          textStyle: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// Picks a store (auto-selects when there's only one) then adds the chosen
+  /// store's listing to the cart. Buy Now continues straight to checkout.
+  Future<void> _startOrder(
+    CatalogModel catalog,
+    List<StoreOption> options, {
+    required bool buyNow,
+  }) async {
+    if (options.isEmpty) return;
+
+    StoreOption chosen;
+    if (options.length == 1) {
+      chosen = options.first;
+    } else {
+      final picked = await showStoreSelector(
+        context,
+        options: options,
+        title: buyNow ? 'Buy from which store?' : 'Add from which store?',
+      );
+      if (picked == null) return; // user dismissed the sheet
+      chosen = picked;
+    }
+
+    if (!mounted) return;
+    _addOptionToCart(catalog, chosen);
+
+    if (buyNow) {
+      context.go('/checkout');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Added ${catalog.name} from ${chosen.listing.sellerName}'),
+          backgroundColor: AppColors.primary,
+          action: SnackBarAction(
+            label: 'View Cart',
+            textColor: Colors.white,
+            onPressed: () => context.go('/cart'),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _addOptionToCart(CatalogModel catalog, StoreOption opt) {
+    final listing = opt.listing;
+    ref.read(cartProvider.notifier).addItem(
+          CartItemModel(
+            catalogId: catalog.id,
+            catalogName: catalog.name,
+            catalogImage:
+                catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
+            listingId: listing.id,
+            sellerPhone: listing.sellerPhone,
+            sellerName: listing.sellerName,
+            price: opt.effectivePrice,
+            originalPrice: opt.originalPrice,
+            discountPct: opt.discountPct,
+            quantity: 1,
+          ),
+        );
   }
 
   // ─────────────────────────── Hero image ────────────────────────────────────
@@ -313,10 +459,37 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             const SizedBox(height: 8),
           ],
 
-          // Price
-          Text(
-            CurrencyUtils.format(displayPrice),
-            style: AppTextStyles.priceLarge,
+          // Price + maximum discount (the headline info for farmers)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  CurrencyUtils.format(displayPrice),
+                  style: AppTextStyles.priceLarge,
+                ),
+              ),
+              if (catalog.maxDiscountPct > 0) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16A34A),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Up to ${catalog.maxDiscountPct.toStringAsFixed(0)}% OFF',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           if (catalog.sellerCount > 0) ...[
             const SizedBox(height: 4),
@@ -443,7 +616,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         children: [
           Text('Description', style: AppTextStyles.heading3),
           const SizedBox(height: 8),
-          Text(catalog.description!, style: AppTextStyles.body),
+          ExpandableText(catalog.description!, trimLines: 4),
         ],
       ),
     );
@@ -487,12 +660,19 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.store_outlined,
+              const Icon(Icons.storefront_outlined,
                   size: 18, color: AppColors.primary),
               const SizedBox(width: 6),
-              Text('Available at these Stores',
+              Text('Buy from a store near you',
                   style: AppTextStyles.heading3),
             ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(left: 24, top: 2),
+            child: Text(
+              'Nearest stores first — compare price & discount',
+              style: AppTextStyles.bodySmall,
+            ),
           ),
           const SizedBox(height: 12),
           listingsAsync.when(
@@ -1207,77 +1387,104 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       ),
                     ],
 
-                    // ── Action buttons ────────────────────────────────────
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        // Map button — geo point or address search fallback
-                        if (listing.hasLocation ||
-                            (listing.sellerAddress?.trim().isNotEmpty ??
-                                false)) ...[
+                    // ── Secondary actions: Map + Call ──────────────────────
+                    if (listing.hasLocation ||
+                        (listing.sellerAddress?.trim().isNotEmpty ?? false) ||
+                        _isDialable(listing.sellerPhone)) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          // Map — geo point or address search fallback
+                          if (listing.hasLocation ||
+                              (listing.sellerAddress?.trim().isNotEmpty ??
+                                  false)) ...[
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _openMap(listing),
+                                icon: const Icon(Icons.map_outlined, size: 16),
+                                label: const Text('Map'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(
+                                      color: AppColors.primary),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  textStyle: AppTextStyles.caption.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ),
+                            if (_isDialable(listing.sellerPhone))
+                              const SizedBox(width: 8),
+                          ],
+                          // Call — only for dialable numbers (UIDs leak into
+                          // sellerPhone on some legacy docs)
+                          if (_isDialable(listing.sellerPhone))
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    _callStore(listing.sellerPhone),
+                                icon: const Icon(Icons.phone_outlined,
+                                    size: 16),
+                                label: const Text('Call'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(
+                                      color: AppColors.primary),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  textStyle: AppTextStyles.caption.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+
+                    // ── Primary actions: Add to Cart + Buy Now (online) ────
+                    if (listing.isInStock && listing.isOnline) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => _openMap(listing),
-                              icon: const Icon(Icons.map_outlined, size: 16),
-                              label: const Text('Map'),
+                              onPressed: () => _addToCart(context),
+                              icon: const Icon(Icons.add_shopping_cart,
+                                  size: 16),
+                              label: const Text('Add to Cart'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.primary,
                                 side: const BorderSide(
-                                    color: AppColors.primary),
+                                    color: AppColors.primary, width: 1.5),
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 10),
-                                textStyle: AppTextStyles.caption.copyWith(
+                                textStyle: const TextStyle(
                                     fontWeight: FontWeight.w700, fontSize: 12),
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                        ],
-                        // Call button — only for dialable numbers (UIDs leak
-                        // into sellerPhone on some legacy docs)
-                        if (_isDialable(listing.sellerPhone)) ...[
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () =>
-                                  _callStore(listing.sellerPhone),
-                              icon:
-                                  const Icon(Icons.phone_outlined, size: 16),
-                              label: const Text('Call'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: const BorderSide(
-                                    color: AppColors.primary),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                                textStyle: AppTextStyles.caption.copyWith(
-                                    fontWeight: FontWeight.w700, fontSize: 12),
-                              ),
-                            ),
-                          ),
-                          if (listing.isInStock && listing.isOnline)
-                            const SizedBox(width: 8),
-                        ],
-                        // Order button — only if seller sells online
-                        if (listing.isInStock && listing.isOnline)
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed: () => _addToCart(context),
-                              icon: const Icon(Icons.shopping_cart_outlined,
-                                  size: 16),
-                              label: const Text('Order'),
+                              onPressed: () => _buyNow(context),
+                              icon: const Icon(Icons.flash_on, size: 16),
+                              label: const Text('Buy Now'),
                               style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.primary,
+                                backgroundColor: AppColors.secondary,
+                                foregroundColor: AppColors.onSecondary,
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 10),
-                                textStyle: AppTextStyles.caption.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                    color: Colors.white),
+                                textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w800, fontSize: 12),
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1328,6 +1535,8 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             sellerPhone: listing.sellerPhone,
             sellerName: listing.sellerName,
             price: _effectivePrice,
+            originalPrice: listing.price,
+            discountPct: _discountPct,
             quantity: 1,
           ),
         );
@@ -1342,6 +1551,28 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
         ),
       ),
     );
+  }
+
+  /// Buy Now from this specific store: add to cart, then go straight to
+  /// checkout (login is enforced by the /checkout route guard).
+  void _buyNow(BuildContext context) {
+    final listing = widget.listing;
+    ref.read(cartProvider.notifier).addItem(
+          CartItemModel(
+            catalogId: widget.catalogId,
+            catalogName: widget.catalogName,
+            catalogImage:
+                widget.catalogImage.isNotEmpty ? widget.catalogImage : null,
+            listingId: listing.id,
+            sellerPhone: listing.sellerPhone,
+            sellerName: listing.sellerName,
+            price: _effectivePrice,
+            originalPrice: listing.price,
+            discountPct: _discountPct,
+            quantity: 1,
+          ),
+        );
+    context.go('/checkout');
   }
 }
 

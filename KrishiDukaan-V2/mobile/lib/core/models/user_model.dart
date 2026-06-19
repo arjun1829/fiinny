@@ -29,7 +29,11 @@ class UserModel {
   bool get isRetailer => role == 'retailer' || role == 'manufacturer';
   bool get isManufacturer => role == 'manufacturer';
   bool get isAdmin => role == 'admin';
-  bool get canAccessDashboard => (isRetailer || isManufacturer) && isPaid;
+  // A seller (retailer or manufacturer) always has a dashboard entry point.
+  // Whether they can actually open it depends on isPaid — unpaid sellers are
+  // routed to the subscription paywall by the router guard.
+  bool get isSeller => isRetailer || isManufacturer;
+  bool get canAccessDashboard => isSeller && isPaid;
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;

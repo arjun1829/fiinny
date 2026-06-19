@@ -293,11 +293,12 @@ class CatalogRepository {
     }
   }
 
-  Future<List<CatalogModel>> fetchPage({
+  /// All merged products matching [category] / [searchQuery], unpaginated.
+  /// The full catalog is fetched + merged in one shot, so the marketplace pages
+  /// through this result in memory rather than re-querying Firestore per page.
+  Future<List<CatalogModel>> fetchFiltered({
     String? category,
     String? searchQuery,
-    DocumentSnapshot? startAfter,
-    int limit = AppConfig.firestorePageSize,
   }) async {
     final allProducts = await fetchAllMergedProducts();
     var filtered = allProducts;
@@ -321,6 +322,18 @@ class CatalogRepository {
         return nameMatch || descMatch || catMatch || storeMatch || availMatch;
       }).toList();
     }
+
+    return filtered;
+  }
+
+  Future<List<CatalogModel>> fetchPage({
+    String? category,
+    String? searchQuery,
+    DocumentSnapshot? startAfter,
+    int limit = AppConfig.firestorePageSize,
+  }) async {
+    final filtered =
+        await fetchFiltered(category: category, searchQuery: searchQuery);
 
     int startIdx = 0;
     if (startAfter != null) {
