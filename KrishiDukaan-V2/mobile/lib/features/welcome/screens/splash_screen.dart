@@ -143,7 +143,7 @@ class _SplashScreenState extends State<SplashScreen>
                     child: Column(
                       children: [
                         Text(
-                          'KrishiDukaan',
+                          'KrishiDukan',
                           style: AppTextStyles.heading1.copyWith(
                             color: Colors.white,
                             fontSize: 32,

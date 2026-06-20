@@ -476,6 +476,12 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
+        // Phone-keyed reads — required so the seat-stats queries that filter by
+        // ownerPhone / manufacturerPhone are authorized. The dashboard "Listing
+        // Seats" card depends on these; without them the query is denied and the
+        // whole card silently disappears.
+        resource.data.ownerPhone == myPhone() ||
+        resource.data.manufacturerPhone == myPhone() ||
         phoneMatches(resource.data.retailerDocId) ||
         // Admin-assigned listings key ownerId by the seller's phone, not their UID.
         phoneMatches(resource.data.ownerId)

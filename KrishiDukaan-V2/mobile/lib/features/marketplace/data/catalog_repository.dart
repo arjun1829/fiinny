@@ -370,6 +370,12 @@ class CatalogRepository {
     for (final p in list) {
       if (p.id == catalogId) return p;
     }
+    try {
+      final doc = await _db.collection('products').doc(catalogId).get();
+      if (doc.exists) {
+        return CatalogModel.fromFirestore(doc);
+      }
+    } catch (_) {}
     return null;
   }
 

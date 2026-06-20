@@ -47,7 +47,7 @@ Widget _ringImage(String asset, IconData fallback, Color fallbackColor) {
 /// Emoji drifting up the background of the brand hero.
 const _fruitDrift = ['🍃', '🌶️', '🥦', '💧', '🍊', '🌻'];
 
-/// First-install welcome screen. A single animated KrishiDukaan brand hero with
+/// First-install welcome screen. A single animated KrishiDukan brand hero with
 /// an orbiting ring of fruit icons — warm and lively for our farmer / village
 /// audience — followed by a "Get Started" CTA into the login / onboarding flow.
 class WelcomeScreen extends StatefulWidget {
@@ -87,7 +87,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Animated KrishiDukaan brand hero (single welcome page) ─────
+          // ── Animated KrishiDukan brand hero (single welcome page) ─────
           const _BrandHero(active: true),
 
           // ── Readability scrim so the bottom CTA stays legible ─────────
@@ -154,7 +154,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 }
 
-// ─── Page 1: animated KrishiDukaan brand hero ────────────────────────────────
+// ─── Page 1: animated KrishiDukan brand hero ────────────────────────────────
 
 class _BrandHero extends StatefulWidget {
   final bool active;
@@ -314,7 +314,7 @@ class _BrandHeroState extends State<_BrandHero> with TickerProviderStateMixin {
                     child: Column(
                       children: [
                         Text(
-                          'KrishiDukaan',
+                          'KrishiDukan',
                           style: AppTextStyles.displayLarge.copyWith(
                             color: Colors.white,
                             fontSize: 34,

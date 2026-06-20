@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../../../core/payments/app_razorpay.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -13,6 +13,7 @@ import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../providers/dashboard_provider.dart';
 
 // Server-side price per seat (matches API: PRICE_PER_SEAT in create-order/route.ts)
 const _pricePerSeat = {1: 21, 3: 54, 6: 90, 12: 144};
@@ -43,7 +44,7 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
 }
 
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
-  late Razorpay _razorpay;
+  late final AppRazorpay _razorpay;
   int _seats = 1;
   _Duration _duration = _durations[0];
   bool _loading = false;
@@ -52,10 +53,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _onError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
+    _razorpay = AppRazorpay(onSuccess: _onSuccess, onError: _onError);
   }
 
   @override
@@ -104,7 +102,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         'amount': order['amount'],
         'currency': order['currency'] ?? 'INR',
         'order_id': order['id'],
-        'name': 'KrishiDukaan',
+        'name': 'KrishiDukan',
         'description':
             '$_seats seat${_seats != 1 ? 's' : ''} · ${_duration.label}',
         'prefill': {
@@ -122,7 +120,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     }
   }
 
-  void _onSuccess(PaymentSuccessResponse response) async {
+  void _onSuccess(AppPaymentSuccess response) async {
     setState(() => _loading = true);
 
     try {
@@ -135,9 +133,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'razorpay_order_id': response.orderId ?? '',
-          'razorpay_payment_id': response.paymentId ?? '',
-          'razorpay_signature': response.signature ?? '',
+          'razorpay_order_id': response.orderId,
+          'razorpay_payment_id': response.paymentId,
+          'razorpay_signature': response.signature,
         }),
       );
 
@@ -220,6 +218,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
       // Refresh the user state so changes propagate to dashboard and shell
       ref.invalidate(currentUserProvider);
+      // Refresh seat counts so "X left · used/total" updates immediately.
+      ref.invalidate(seatStatsProvider);
 
       setState(() => _loading = false);
 
@@ -230,7 +230,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             backgroundColor: AppColors.success,
           ),
         );
-        context.go('/dashboard');
+        // New sellers complete their shop profile before landing on the
+        // dashboard; existing users buying more seats go straight back.
+        context.go(widget.reason == 'new_account'
+            ? '/profile/edit?reason=new_account'
+            : '/dashboard');
       }
     } catch (e) {
       if (mounted) {
@@ -242,10 +246,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     }
   }
 
-  void _onError(PaymentFailureResponse r) {
+  void _onError(AppPaymentError r) {
     setState(() {
       _loading = false;
-      _error = r.message ?? 'Payment failed. Please try again.';
+      _error = r.message;
     });
   }
 
@@ -306,7 +310,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             _noticeBanner(
               icon: Icons.celebration_outlined,
               color: AppColors.primary,
-              title: 'Welcome to KrishiDukaan! 🎉',
+              title: 'Welcome to KrishiDukan! 🎉',
               subtitle:
                   'Your account is ready. Subscribe to unlock your dashboard, '
                   'list products and start selling.',

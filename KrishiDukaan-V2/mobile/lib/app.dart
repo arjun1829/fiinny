@@ -35,7 +35,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     final locale = ref.watch(localeProvider);
 
     return MaterialApp.router(
-      title: 'KrishiDukaan',
+      title: 'KrishiDukan',
       debugShowCheckedModeBanner: false,
       locale: locale,
       supportedLocales: const [Locale('en'), Locale('hi')],

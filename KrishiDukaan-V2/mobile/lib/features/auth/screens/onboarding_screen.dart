@@ -102,11 +102,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       if (!mounted) return;
       // Business accounts need a subscription before the dashboard unlocks —
-      // take them straight to the plans page instead of dropping them on home.
+      // take them straight to the plans page (they complete their shop profile
+      // after paying). Consumers go straight to completing their profile.
       if (_role == 'retailer' || _role == 'manufacturer') {
         context.go('/subscription?reason=new_account');
       } else {
-        context.go('/');
+        context.go('/profile/edit?reason=new_account');
       }
     } catch (e) {
       if (!mounted) return;

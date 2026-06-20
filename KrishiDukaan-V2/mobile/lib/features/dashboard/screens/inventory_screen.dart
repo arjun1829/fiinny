@@ -32,8 +32,7 @@ class InventoryScreen extends ConsumerWidget {
           const Scaffold(body: ErrorView(message: 'Not logged in.')),
       data: (user) {
         if (user == null) {
-          return const Scaffold(
-              body: ErrorView(message: 'Not logged in.'));
+          return const Scaffold(body: ErrorView(message: 'Not logged in.'));
         }
         return _InventoryBody(sellerPhone: user.phone, sellerName: user.name);
       },
@@ -44,8 +43,7 @@ class InventoryScreen extends ConsumerWidget {
 class _InventoryBody extends ConsumerStatefulWidget {
   final String sellerPhone;
   final String sellerName;
-  const _InventoryBody(
-      {required this.sellerPhone, required this.sellerName});
+  const _InventoryBody({required this.sellerPhone, required this.sellerName});
 
   @override
   ConsumerState<_InventoryBody> createState() => _InventoryBodyState();
@@ -70,8 +68,10 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Text('My Inventory',
-            style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+        title: Text(
+          'My Inventory',
+          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Colors.white),
@@ -80,10 +80,8 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
         ],
       ),
       body: listingsAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            const ErrorView(message: 'Could not load inventory.'),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => const ErrorView(message: 'Could not load inventory.'),
         data: (listings) {
           final filteredListings = listings.where((l) {
             final name = (l.productName ?? '').toLowerCase();
@@ -93,69 +91,83 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
           return Column(
             children: [
               // Seats Widget — uses real subscription + seatListing counts
-              ref.watch(seatStatsProvider(widget.sellerPhone)).when(
-                data: (stats) => Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Card(
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
-                    ),
-                    color: Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Listing Seats',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${stats.available} Left',
-                                  style: AppTextStyles.heading2.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${stats.activeUsed} / ${stats.totalPurchased} Used',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
+              ref
+                  .watch(seatStatsProvider(widget.sellerPhone))
+                  .when(
+                    data: (stats) => Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: AppColors.divider.withValues(alpha: 0.5),
                           ),
-                          ElevatedButton.icon(
-                            onPressed: () => context.push('/subscription'),
-                            icon: const Icon(Icons.add_shopping_cart, size: 16, color: Colors.white),
-                            label: const Text('Buy More Seats', style: TextStyle(color: Colors.white)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                        ),
+                        color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Listing Seats',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${stats.available} Left',
+                                      style: AppTextStyles.heading2.copyWith(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${stats.activeUsed} / ${stats.totalPurchased} Used',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            ),
+                              ElevatedButton.icon(
+                                onPressed: () => context.push('/subscription'),
+                                icon: const Icon(
+                                  Icons.add_shopping_cart,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'Buy More Seats',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
                   ),
-                ),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -163,7 +175,10 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
                   controller: _searchController,
                   decoration: InputDecoration(
                     hintText: 'Search by product name…',
-                    prefixIcon: const Icon(Icons.search, color: AppColors.onSurfaceVariant),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppColors.onSurfaceVariant,
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
@@ -179,11 +194,17 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
                     ),
                     fillColor: Colors.white,
                     filled: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   onChanged: (val) {
                     setState(() => _searchQuery = val.trim());
@@ -194,13 +215,19 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
               Expanded(
                 child: filteredListings.isEmpty
                     ? EmptyState(
-                        title: _searchQuery.isNotEmpty ? 'No matches' : 'No listings yet',
+                        title: _searchQuery.isNotEmpty
+                            ? 'No matches'
+                            : 'No listings yet',
                         subtitle: _searchQuery.isNotEmpty
                             ? 'Try another search query'
                             : 'Tap + to add your first product',
                         icon: Icons.inventory_2_outlined,
-                        actionLabel: _searchQuery.isNotEmpty ? null : 'Add Listing',
-                        onAction: _searchQuery.isNotEmpty ? null : () => _showAddListingSheet(context, ref),
+                        actionLabel: _searchQuery.isNotEmpty
+                            ? null
+                            : 'Add Listing',
+                        onAction: _searchQuery.isNotEmpty
+                            ? null
+                            : () => _showAddListingSheet(context, ref),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -229,7 +256,8 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _AddListingSheet(
         sellerPhone: widget.sellerPhone,
         sellerName: widget.sellerName,
@@ -243,10 +271,11 @@ class _ListingTile extends StatelessWidget {
   final String sellerPhone;
   final WidgetRef ref;
 
-  const _ListingTile(
-      {required this.listing,
-      required this.sellerPhone,
-      required this.ref});
+  const _ListingTile({
+    required this.listing,
+    required this.sellerPhone,
+    required this.ref,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -280,17 +309,22 @@ class _ListingTile extends StatelessWidget {
                     height: 60,
                     child: listing.imageUrl != null
                         ? CachedNetworkImage(
+                            memCacheWidth: 1000,
                             imageUrl: listing.imageUrl!,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => const Icon(
-                                Icons.inventory_2_outlined,
-                                color: AppColors.primaryLight),
+                              Icons.inventory_2_outlined,
+                              color: AppColors.primaryLight,
+                            ),
                             errorWidget: (_, __, ___) => const Icon(
-                                Icons.inventory_2_outlined,
-                                color: AppColors.primaryLight),
+                              Icons.inventory_2_outlined,
+                              color: AppColors.primaryLight,
+                            ),
                           )
-                        : const Icon(Icons.inventory_2_outlined,
-                            color: AppColors.primaryLight),
+                        : const Icon(
+                            Icons.inventory_2_outlined,
+                            color: AppColors.primaryLight,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -299,28 +333,42 @@ class _ListingTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        listing.productName ?? 'Product ${listing.catalogId.substring(0, 8)}...',
-                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                        listing.productName ??
+                            'Product ${listing.catalogId.substring(0, 8)}...',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
                           if (listing.category != null) ...[
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
-                                color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                                color: AppColors.primaryContainer.withValues(
+                                  alpha: 0.5,
+                                ),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 listing.category!,
-                                style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 6),
                           ],
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: isAssigned
                                   ? Colors.blue.withValues(alpha: 0.1)
@@ -330,14 +378,19 @@ class _ListingTile extends StatelessWidget {
                             child: Text(
                               sourceLabel,
                               style: AppTextStyles.caption.copyWith(
-                                color: isAssigned ? Colors.blue[700] : Colors.orange[800],
+                                color: isAssigned
+                                    ? Colors.blue[700]
+                                    : Colors.orange[800],
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: listing.isActive
                                   ? AppColors.success.withValues(alpha: 0.1)
@@ -347,7 +400,9 @@ class _ListingTile extends StatelessWidget {
                             child: Text(
                               listing.isActive ? 'Active' : 'Inactive',
                               style: AppTextStyles.caption.copyWith(
-                                color: listing.isActive ? AppColors.success : AppColors.error,
+                                color: listing.isActive
+                                    ? AppColors.success
+                                    : AppColors.error,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -360,12 +415,15 @@ class _ListingTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             // Variants and prices
             if (listing.variants.isNotEmpty) ...[
               Text(
                 'Variants:',
-                style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.bold, color: AppColors.onSurfaceVariant),
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 4),
               Wrap(
@@ -373,15 +431,22 @@ class _ListingTile extends StatelessWidget {
                 runSpacing: 4,
                 children: listing.variants.map((v) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceVariant.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.divider.withValues(alpha: 0.5)),
+                      border: Border.all(
+                        color: AppColors.divider.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: Text(
                       '${v.label} · ₹${v.price.toStringAsFixed(0)} (${v.stock})',
-                      style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w500),
+                      style: AppTextStyles.caption.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   );
                 }).toList(),
@@ -393,10 +458,16 @@ class _ListingTile extends StatelessWidget {
                 children: [
                   Text(
                     'Price: ${CurrencyUtils.format(listing.price)}',
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: listing.isInStock
                           ? AppColors.success.withValues(alpha: 0.1)
@@ -404,9 +475,13 @@ class _ListingTile extends StatelessWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      listing.isInStock ? 'In Stock (${listing.stockQuantity})' : 'Out of Stock',
+                      listing.isInStock
+                          ? 'In Stock (${listing.stockQuantity})'
+                          : 'Out of Stock',
                       style: AppTextStyles.caption.copyWith(
-                        color: listing.isInStock ? AppColors.success : AppColors.error,
+                        color: listing.isInStock
+                            ? AppColors.success
+                            : AppColors.error,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -415,31 +490,39 @@ class _ListingTile extends StatelessWidget {
               ),
               const SizedBox(height: 8),
             ],
-            
+
             // Last updated and discount info
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'Last Updated: $lastUpdatedStr',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.onSurfaceVariant.withValues(alpha: 0.8)),
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.8),
+                  ),
                 ),
                 if (listing.discount != null && listing.discount!.isActive)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.secondary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       '${listing.discount!.percentage.toInt()}% OFF',
-                      style: AppTextStyles.caption.copyWith(color: AppColors.secondary, fontWeight: FontWeight.bold),
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.secondary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
               ],
             ),
             const Divider(height: 24),
-            
+
             // Actions
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -488,8 +571,8 @@ class _ListingTile extends StatelessWidget {
           context: context,
           isScrollControlled: true,
           shape: const RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(20))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
           builder: (_) => _EditListingSheet(listing: listing),
         );
       case 'discount':
@@ -497,8 +580,8 @@ class _ListingTile extends StatelessWidget {
           context: context,
           isScrollControlled: true,
           shape: const RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(20))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
           builder: (_) => _DiscountSheet(listing: listing),
         );
       case 'delete':
@@ -506,19 +589,20 @@ class _ListingTile extends StatelessWidget {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Delete Listing'),
-            content:
-                const Text('Remove this product from your store?'),
+            content: const Text('Remove this product from your store?'),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel')),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.error),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
                 onPressed: () async {
                   Navigator.pop(ctx);
-                  await DashboardRepository()
-                      .deleteListing(listing.id, collectionPath: listing.collectionPath);
+                  await DashboardRepository().deleteListing(
+                    listing.id,
+                    collectionPath: listing.collectionPath,
+                  );
                 },
                 child: const Text('Delete'),
               ),
@@ -534,8 +618,7 @@ class _ListingTile extends StatelessWidget {
 class _AddListingSheet extends ConsumerStatefulWidget {
   final String sellerPhone;
   final String sellerName;
-  const _AddListingSheet(
-      {required this.sellerPhone, required this.sellerName});
+  const _AddListingSheet({required this.sellerPhone, required this.sellerName});
 
   @override
   ConsumerState<_AddListingSheet> createState() => _AddListingSheetState();
@@ -602,8 +685,12 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       return;
     }
 
-    final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
-    final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+    final unit = _selectedUnit == 'Custom'
+        ? _customUnitCtrl.text.trim()
+        : _selectedUnit;
+    final size = _selectedSize == 'Custom'
+        ? _customSizeCtrl.text.trim()
+        : _selectedSize;
     if (unit.isEmpty || size.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please choose unit and package size.')),
@@ -640,7 +727,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     );
     if (source == null) return;
     final xFile = await picker.pickImage(
-        source: source, maxWidth: 1024, imageQuality: 85);
+      source: source,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
     if (xFile != null && mounted) {
       setState(() => _imageFile = File(xFile.path));
     }
@@ -669,7 +759,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Add Product to Catalogue', style: AppTextStyles.heading2),
+                    Text(
+                      'Add Product to Catalogue',
+                      style: AppTextStyles.heading2,
+                    ),
                     IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
@@ -677,16 +770,23 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Product Name Autofill
-                Text('Product Name *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Product Name *',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _nameCtrl,
                   decoration: InputDecoration(
                     hintText: 'Search existing catalogue to auto-fill...',
                     prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onChanged: (val) {
                     setState(() {
@@ -725,7 +825,11 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                               _category = cat.category;
                               _descCtrl.text = cat.description ?? '';
                               if (cat.images.isNotEmpty) {
-                                for (int i = 0; i < cat.images.length && i < 5; i++) {
+                                for (
+                                  int i = 0;
+                                  i < cat.images.length && i < 5;
+                                  i++
+                                ) {
                                   _imageUrlCtrls[i].text = cat.images[i];
                                 }
                               }
@@ -738,39 +842,70 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                
+
                 // Category
-                Text('Category *', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Category *',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _category,
                   decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  items: ['Fertilizers', 'Seeds', 'Pesticides', 'Irrigation', 'Tools', 'Organic', 'Herbicides']
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
+                  items:
+                      [
+                            'Fertilizers',
+                            'Seeds',
+                            'Pesticides',
+                            'Irrigation',
+                            'Tools',
+                            'Organic',
+                            'Herbicides',
+                          ]
+                          .map(
+                            (c) => DropdownMenuItem(value: c, child: Text(c)),
+                          )
+                          .toList(),
                   onChanged: (v) => setState(() => _category = v ?? _category),
                 ),
                 const SizedBox(height: 16),
 
                 // Description
-                Text('Description', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Description',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _descCtrl,
                   maxLines: 2,
                   decoration: InputDecoration(
                     hintText: 'Crop suitability, yield, dosage, soil type...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // Variants list
-                Text('Pack Sizes & Prices', style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                Text(
+                  'Pack Sizes & Prices',
+                  style: AppTextStyles.heading3.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                
+
                 if (_variants.isNotEmpty) ...[
                   ..._variants.asMap().entries.map((e) {
                     final i = e.key;
@@ -779,11 +914,20 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                       color: AppColors.primaryContainer.withValues(alpha: 0.1),
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
-                        title: Text(v.label, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Price: ₹${v.price.toStringAsFixed(0)} · Stock: ${v.stock}'),
+                        title: Text(
+                          v.label,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Price: ₹${v.price.toStringAsFixed(0)} · Stock: ${v.stock}',
+                        ),
                         trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                          onPressed: () => setState(() => _variants.removeAt(i)),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: AppColors.error,
+                          ),
+                          onPressed: () =>
+                              setState(() => _variants.removeAt(i)),
                         ),
                       ),
                     );
@@ -792,19 +936,35 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 ],
 
                 // Step 1: Unit
-                Text('Step 1 — Unit', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Step 1 — Unit',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ['gm', 'KG', 'ml', 'L', 'Packet', 'Piece', 'Bottle', 'Can', 'Custom'].map((u) {
-                    return ChoiceChip(
-                      label: Text(u),
-                      selected: _selectedUnit == u,
-                      selectedColor: AppColors.primaryContainer,
-                      onSelected: (_) => setState(() => _selectedUnit = u),
-                    );
-                  }).toList(),
+                  children:
+                      [
+                        'gm',
+                        'KG',
+                        'ml',
+                        'L',
+                        'Packet',
+                        'Piece',
+                        'Bottle',
+                        'Can',
+                        'Custom',
+                      ].map((u) {
+                        return ChoiceChip(
+                          label: Text(u),
+                          selected: _selectedUnit == u,
+                          selectedColor: AppColors.primaryContainer,
+                          onSelected: (_) => setState(() => _selectedUnit = u),
+                        );
+                      }).toList(),
                 ),
                 if (_selectedUnit == 'Custom') ...[
                   const SizedBox(height: 8),
@@ -812,19 +972,28 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                     controller: _customUnitCtrl,
                     decoration: InputDecoration(
                       labelText: 'Custom Unit',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
                 const SizedBox(height: 16),
 
                 // Step 2: Package Size
-                Text('Step 2 — Package Size', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Step 2 — Package Size',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((sz) {
+                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((
+                    sz,
+                  ) {
                     return ChoiceChip(
                       label: Text(sz),
                       selected: _selectedSize == sz,
@@ -840,7 +1009,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       labelText: 'Custom Package Size',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
@@ -856,7 +1027,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                         decoration: InputDecoration(
                           labelText: 'Price (₹) *',
                           prefixText: '₹ ',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
@@ -867,14 +1040,16 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           labelText: 'Stock Qty *',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                
+
                 OutlinedButton.icon(
                   onPressed: _addVariantSize,
                   icon: const Icon(Icons.add),
@@ -882,15 +1057,22 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
-                
+
                 // Product Images
-                Text('Product Images (up to 5)', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Product Images (up to 5)',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                
+
                 Row(
                   children: [
                     Expanded(
@@ -898,7 +1080,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                         controller: _imageUrlCtrls[0],
                         decoration: InputDecoration(
                           labelText: 'Main image URL',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                     ),
@@ -916,42 +1100,60 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                         child: _imageFile != null
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.file(_imageFile!, fit: BoxFit.cover),
+                                child: Image.file(
+                                  _imageFile!,
+                                  fit: BoxFit.cover,
+                                ),
                               )
-                            : const Icon(Icons.add_photo_alternate_outlined,
-                                size: 24, color: AppColors.onSurfaceVariant),
+                            : const Icon(
+                                Icons.add_photo_alternate_outlined,
+                                size: 24,
+                                color: AppColors.onSurfaceVariant,
+                              ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                ...List.generate(4, (i) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TextField(
-                    controller: _imageUrlCtrls[i + 1],
-                    decoration: InputDecoration(
-                      labelText: 'Image ${i + 2} URL',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ...List.generate(
+                  4,
+                  (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: _imageUrlCtrls[i + 1],
+                      decoration: InputDecoration(
+                        labelText: 'Image ${i + 2} URL',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
                   ),
-                )),
+                ),
                 const SizedBox(height: 16),
-                
+
                 // Store Address
-                Text('Store Address (Optional)', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Store Address (Optional)',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _addressCtrl,
                   decoration: InputDecoration(
                     hintText: 'Store location/address...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 80),
               ],
             ),
           ),
-          
+
           Positioned(
             left: 0,
             right: 0,
@@ -966,7 +1168,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: _saving
                       ? const Center(
@@ -974,8 +1178,18 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                             height: 18,
                             width: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white)))
-                      : const Text('Add to Catalogue / Inventory', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Text(
+                          'Add to Catalogue / Inventory',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -998,9 +1212,16 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     final seatStats = ref.read(seatStatsProvider(widget.sellerPhone)).value;
     if (seatStats != null && seatStats.available <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No listing seats available. Purchase more seats from Subscription.'),
+        SnackBar(
+          content: const Text(
+            'No listing seats available. Buy more seats to add this product.',
+          ),
           backgroundColor: Colors.orange,
+          action: SnackBarAction(
+            label: 'Buy seats',
+            textColor: Colors.white,
+            onPressed: () => context.push('/subscription'),
+          ),
         ),
       );
       return;
@@ -1009,12 +1230,18 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     final priceInput = double.tryParse(_priceCtrl.text.trim());
     final stockInput = int.tryParse(_stockCtrl.text.trim());
     if (priceInput != null && stockInput != null) {
-      final unit = _selectedUnit == 'Custom' ? _customUnitCtrl.text.trim() : _selectedUnit;
-      final size = _selectedSize == 'Custom' ? _customSizeCtrl.text.trim() : _selectedSize;
+      final unit = _selectedUnit == 'Custom'
+          ? _customUnitCtrl.text.trim()
+          : _selectedUnit;
+      final size = _selectedSize == 'Custom'
+          ? _customSizeCtrl.text.trim()
+          : _selectedSize;
       if (unit.isNotEmpty && size.isNotEmpty) {
         final label = '$size $unit';
         if (!_variants.any((v) => v.label == label)) {
-          _variants.add(VariantModel(label: label, price: priceInput, stock: stockInput));
+          _variants.add(
+            VariantModel(label: label, price: priceInput, stock: stockInput),
+          );
         }
       }
     }
@@ -1027,7 +1254,11 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     } else {
       if (priceInput == null || stockInput == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please add at least one variant size with price and stock.')),
+          const SnackBar(
+            content: Text(
+              'Please add at least one variant size with price and stock.',
+            ),
+          ),
         );
         return;
       }
@@ -1043,12 +1274,16 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
           .toList();
 
       if (_imageFile != null) {
-        final url = await DashboardRepository()
-            .uploadListingImage(_imageFile!, widget.sellerPhone);
+        final url = await DashboardRepository().uploadListingImage(
+          _imageFile!,
+          widget.sellerPhone,
+        );
         imageUrls.insert(0, url);
       }
 
-      final catalogId = _selectedCatalog?.id ?? FirebaseFirestore.instance.collection('catalog').doc().id;
+      final catalogId =
+          _selectedCatalog?.id ??
+          FirebaseFirestore.instance.collection('catalog').doc().id;
 
       await DashboardRepository().addListing(
         sellerPhone: widget.sellerPhone,
@@ -1056,7 +1291,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         catalogId: catalogId,
         price: basePrice,
         stockQuantity: totalStock,
-        sellerAddress: _addressCtrl.text.trim().isNotEmpty ? _addressCtrl.text.trim() : null,
+        sellerAddress: _addressCtrl.text.trim().isNotEmpty
+            ? _addressCtrl.text.trim()
+            : null,
         variants: _variants,
         images: imageUrls,
         productName: name,
@@ -1067,9 +1304,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1079,7 +1316,17 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
 // ── Edit Listing Sheet ────────────────────────────────────────────────────────
 
-const _kUnitTypes = ['gm', 'KG', 'ml', 'L', 'Packet', 'Piece', 'Bottle', 'Can', 'Custom'];
+const _kUnitTypes = [
+  'gm',
+  'KG',
+  'ml',
+  'L',
+  'Packet',
+  'Piece',
+  'Bottle',
+  'Can',
+  'Custom',
+];
 
 class _EditListingSheet extends StatefulWidget {
   final ListingModel listing;
@@ -1113,19 +1360,21 @@ class _EditListingSheetState extends State<_EditListingSheet> {
   void initState() {
     super.initState();
     _priceCtrl = TextEditingController(
-        text: widget.listing.price.toStringAsFixed(0));
-    _stockCtrl = TextEditingController(
-        text: '${widget.listing.stockQuantity}');
+      text: widget.listing.price.toStringAsFixed(0),
+    );
+    _stockCtrl = TextEditingController(text: '${widget.listing.stockQuantity}');
     _isActive = widget.listing.isActive;
-    _variants = widget.listing.variants.map((v) => _VariantEntry(
-      label: v.label,
-      price: v.price,
-      stock: v.stock,
-    )).toList();
+    _variants = widget.listing.variants
+        .map(
+          (v) => _VariantEntry(label: v.label, price: v.price, stock: v.stock),
+        )
+        .toList();
     // Initialize image URL controllers from existing images
     final existingUrls = widget.listing.images;
     _imageUrlCtrls = List.generate(5, (i) {
-      return TextEditingController(text: i < existingUrls.length ? existingUrls[i] : '');
+      return TextEditingController(
+        text: i < existingUrls.length ? existingUrls[i] : '',
+      );
     });
     _discountActive = widget.listing.discount?.isActive ?? false;
     _discountPct = widget.listing.discount?.percentage ?? 10;
@@ -1135,8 +1384,12 @@ class _EditListingSheetState extends State<_EditListingSheet> {
   void dispose() {
     _priceCtrl.dispose();
     _stockCtrl.dispose();
-    for (final c in _imageUrlCtrls) { c.dispose(); }
-    for (final v in _variants) { v.dispose(); }
+    for (final c in _imageUrlCtrls) {
+      c.dispose();
+    }
+    for (final v in _variants) {
+      v.dispose();
+    }
     super.dispose();
   }
 
@@ -1159,225 +1412,268 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       ),
       child: SingleChildScrollView(
         child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Edit Listing', style: AppTextStyles.heading2),
-          const SizedBox(height: 12),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Edit Listing', style: AppTextStyles.heading2),
+            const SizedBox(height: 12),
 
-          // Active/Inactive toggle
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              title: Text(_isActive ? 'Active' : 'Inactive',
-                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                _isActive ? 'Visible to customers' : 'Hidden from marketplace',
-                style: AppTextStyles.caption,
+            // Active/Inactive toggle
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
               ),
-              value: _isActive,
-              activeColor: AppColors.primary,
-              onChanged: (v) => setState(() => _isActive = v),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                title: Text(
+                  _isActive ? 'Active' : 'Inactive',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  _isActive
+                      ? 'Visible to customers'
+                      : 'Hidden from marketplace',
+                  style: AppTextStyles.caption,
+                ),
+                value: _isActive,
+                activeColor: AppColors.primary,
+                onChanged: (v) => setState(() => _isActive = v),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          // Base price & stock
-          TextField(
-            controller: _priceCtrl,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Base Price (₹)',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              prefixText: '₹ ',
+            const SizedBox(height: 16),
+            // Base price & stock
+            TextField(
+              controller: _priceCtrl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Base Price (₹)',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixText: '₹ ',
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _stockCtrl,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Stock Quantity',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _stockCtrl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Stock Quantity',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-          // ── Pack sizes / variants ──────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Pack Sizes', style: AppTextStyles.bodyMedium),
-              TextButton.icon(
-                onPressed: _addVariant,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Size'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-              ),
-            ],
-          ),
-          // Unit type chips
-          Wrap(
-            spacing: 6,
-            children: _kUnitTypes.map((u) => ChoiceChip(
-              label: Text(u, style: AppTextStyles.caption),
-              selected: _selectedUnit == u,
-              selectedColor: AppColors.primaryContainer,
-              onSelected: (_) => setState(() => _selectedUnit = u),
-            )).toList(),
-          ),
-          const SizedBox(height: 8),
-          ..._variants.asMap().entries.map((e) {
-            final i = e.key;
-            final v = e.value;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: v.labelCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Size (e.g. 1 $_selectedUnit)',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+            // ── Pack sizes / variants ──────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Pack Sizes', style: AppTextStyles.bodyMedium),
+                TextButton.icon(
+                  onPressed: _addVariant,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add Size'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+            // Unit type chips
+            Wrap(
+              spacing: 6,
+              children: _kUnitTypes
+                  .map(
+                    (u) => ChoiceChip(
+                      label: Text(u, style: AppTextStyles.caption),
+                      selected: _selectedUnit == u,
+                      selectedColor: AppColors.primaryContainer,
+                      onSelected: (_) => setState(() => _selectedUnit = u),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 8),
+            ..._variants.asMap().entries.map((e) {
+              final i = e.key;
+              final v = e.value;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: v.labelCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Size (e.g. 1 $_selectedUnit)',
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: v.priceCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '₹ Price',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: v.priceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '₹ Price',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: v.stockCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Stock',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: v.stockCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Stock',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline,
-                        color: AppColors.error, size: 20),
-                    onPressed: () => _removeVariant(i),
-                  ),
-                ],
-              ),
-            );
-          }),
-          const SizedBox(height: 16),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle_outline,
+                        color: AppColors.error,
+                        size: 20,
+                      ),
+                      onPressed: () => _removeVariant(i),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
 
-          // ── Product images ─────────────────────────────────────────────
-          Text('Product Images (up to 5)', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 12),
-          // Main image — file picker or URL
-          Row(
-            children: [
-              Expanded(
+            // ── Product images ─────────────────────────────────────────────
+            Text(
+              'Product Images (up to 5)',
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Main image — file picker or URL
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _imageUrlCtrls[0],
+                    decoration: InputDecoration(
+                      labelText: 'Main image URL',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: _imageFile != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(_imageFile!, fit: BoxFit.cover),
+                          )
+                        : const Icon(
+                            Icons.add_photo_alternate_outlined,
+                            size: 24,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(
+              4,
+              (i) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
                 child: TextField(
-                  controller: _imageUrlCtrls[0],
+                  controller: _imageUrlCtrls[i + 1],
                   decoration: InputDecoration(
-                    labelText: 'Main image URL',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    labelText: 'Image ${i + 2} URL',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     isDense: true,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: _pickImage,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.divider),
-                  ),
-                  child: _imageFile != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(_imageFile!, fit: BoxFit.cover),
-                        )
-                      : const Icon(Icons.add_photo_alternate_outlined,
-                          size: 24, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Discount ───────────────────────────────────────────────────
+            Text('Discount', style: AppTextStyles.bodyMedium),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                _discountActive
+                    ? '${_discountPct.toInt()}% off'
+                    : 'No discount',
+                style: AppTextStyles.body,
+              ),
+              value: _discountActive,
+              activeThumbColor: AppColors.primary,
+              onChanged: (v) => setState(() => _discountActive = v),
+            ),
+            if (_discountActive)
+              Slider(
+                value: _discountPct,
+                min: 1,
+                max: 80,
+                divisions: 79,
+                label: '${_discountPct.toInt()}%',
+                activeColor: AppColors.primary,
+                onChanged: (v) => setState(() => _discountPct = v),
+              ),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...List.generate(4, (i) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TextField(
-              controller: _imageUrlCtrls[i + 1],
-              decoration: InputDecoration(
-                labelText: 'Image ${i + 2} URL',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                isDense: true,
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Save Changes'),
               ),
             ),
-          )),
-          const SizedBox(height: 16),
-
-          // ── Discount ───────────────────────────────────────────────────
-          Text('Discount', style: AppTextStyles.bodyMedium),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              _discountActive ? '${_discountPct.toInt()}% off' : 'No discount',
-              style: AppTextStyles.body,
-            ),
-            value: _discountActive,
-            activeThumbColor: AppColors.primary,
-            onChanged: (v) => setState(() => _discountActive = v),
-          ),
-          if (_discountActive)
-            Slider(
-              value: _discountPct,
-              min: 1,
-              max: 80,
-              divisions: 79,
-              label: '${_discountPct.toInt()}%',
-              activeColor: AppColors.primary,
-              onChanged: (v) => setState(() => _discountPct = v),
-            ),
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary),
-              child: _saving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Text('Save Changes'),
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1402,7 +1698,10 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     );
     if (source == null) return;
     final xFile = await picker.pickImage(
-        source: source, maxWidth: 1024, imageQuality: 85);
+      source: source,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
     if (xFile != null && mounted) {
       setState(() => _imageFile = File(xFile.path));
     }
@@ -1423,8 +1722,10 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
       // Upload picked file if any, replace or prepend to URLs
       if (_imageFile != null) {
-        final url = await DashboardRepository()
-            .uploadListingImage(_imageFile!, widget.listing.sellerPhone);
+        final url = await DashboardRepository().uploadListingImage(
+          _imageFile!,
+          widget.listing.sellerPhone,
+        );
         if (imageUrls.isEmpty || imageUrls.first.isEmpty) {
           if (imageUrls.isEmpty) {
             imageUrls.insert(0, url);
@@ -1438,12 +1739,15 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       }
 
       // Collect variants
-      final variants = _variants.map((v) {
-        final label = v.labelCtrl.text.trim();
-        final vPrice = double.tryParse(v.priceCtrl.text.trim()) ?? 0;
-        final vStock = int.tryParse(v.stockCtrl.text.trim()) ?? 0;
-        return VariantModel(label: label, price: vPrice, stock: vStock);
-      }).where((v) => v.label.isNotEmpty).toList();
+      final variants = _variants
+          .map((v) {
+            final label = v.labelCtrl.text.trim();
+            final vPrice = double.tryParse(v.priceCtrl.text.trim()) ?? 0;
+            final vStock = int.tryParse(v.stockCtrl.text.trim()) ?? 0;
+            return VariantModel(label: label, price: vPrice, stock: vStock);
+          })
+          .where((v) => v.label.isNotEmpty)
+          .toList();
 
       final effectiveDiscountPct = _discountActive ? _discountPct : 0.0;
       final updates = <String, dynamic>{
@@ -1462,8 +1766,11 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       };
 
       final repo = DashboardRepository();
-      await repo.updateListing(widget.listing.id, updates,
-          collectionPath: widget.listing.collectionPath);
+      await repo.updateListing(
+        widget.listing.id,
+        updates,
+        collectionPath: widget.listing.collectionPath,
+      );
       // Keep the marketplace availability[] mirror and the seller's inventory
       // doc (read by the web dashboard) in sync (price/stock/discount).
       if (widget.listing.collectionPath == 'products') {
@@ -1496,10 +1803,15 @@ class _VariantEntry {
   final TextEditingController priceCtrl;
   final TextEditingController stockCtrl;
 
-  _VariantEntry({required String label, required double price, required int stock})
-      : labelCtrl = TextEditingController(text: label),
-        priceCtrl = TextEditingController(text: price > 0 ? price.toStringAsFixed(0) : ''),
-        stockCtrl = TextEditingController(text: stock > 0 ? '$stock' : '');
+  _VariantEntry({
+    required String label,
+    required double price,
+    required int stock,
+  }) : labelCtrl = TextEditingController(text: label),
+       priceCtrl = TextEditingController(
+         text: price > 0 ? price.toStringAsFixed(0) : '',
+       ),
+       stockCtrl = TextEditingController(text: stock > 0 ? '$stock' : '');
 
   void dispose() {
     labelCtrl.dispose();
@@ -1561,8 +1873,10 @@ class _DiscountSheetState extends State<_DiscountSheet> {
 
           Row(
             children: [
-              Text('Discount: ${_percentage.toInt()}%',
-                  style: AppTextStyles.bodyMedium),
+              Text(
+                'Discount: ${_percentage.toInt()}%',
+                style: AppTextStyles.bodyMedium,
+              ),
               Expanded(
                 child: Slider(
                   value: _percentage,
@@ -1606,14 +1920,16 @@ class _DiscountSheetState extends State<_DiscountSheet> {
             width: double.infinity,
             child: FilledButton(
               onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
               child: _saving
                   ? const SizedBox(
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Text('Save Discount'),
             ),
           ),
@@ -1661,15 +1977,13 @@ class _DatePickerField extends StatelessWidget {
                 context: context,
                 initialDate: value ?? DateTime.now(),
                 firstDate: DateTime.now(),
-                lastDate:
-                    DateTime.now().add(const Duration(days: 365)),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
               );
               if (d != null) onPicked(d);
             }
           : null,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           border: Border.all(color: AppColors.divider),
           borderRadius: BorderRadius.circular(8),

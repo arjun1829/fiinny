@@ -132,7 +132,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                       children: [
                         const AppBrandIcon(size: 80, elevated: true),
                         const SizedBox(height: 16),
-                        Text('KrishiDukaan', style: AppTextStyles.heading1),
+                        Text('KrishiDukan', style: AppTextStyles.heading1),
                         const SizedBox(height: 4),
                         Text(
                           'Agri Commerce Platform',

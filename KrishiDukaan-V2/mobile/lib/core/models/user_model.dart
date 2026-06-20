@@ -11,6 +11,13 @@ class UserModel {
   final int productCount;
   final String? fcmToken;
   final DateTime? createdAt;
+  // Profile-completion fields (mirror the web's users/{phone} schema).
+  final String? businessName;
+  final String? address;
+  final String? city;
+  final String? state;
+  final String? pincode;
+  final bool profileCompleted;
 
   const UserModel({
     required this.uid,
@@ -23,13 +30,37 @@ class UserModel {
     required this.productCount,
     this.fcmToken,
     this.createdAt,
+    this.businessName,
+    this.address,
+    this.city,
+    this.state,
+    this.pincode,
+    this.profileCompleted = false,
   });
+
+  /// True once the essential profile fields are filled. Sellers additionally
+  /// need a business name; everyone needs a name. Mirrors the web's
+  /// businessName + location completeness check.
+  bool get isProfileComplete {
+    if (profileCompleted) return true;
+    final hasName = name.trim().isNotEmpty;
+    final hasLocation = (city ?? '').trim().isNotEmpty ||
+        (address ?? '').trim().isNotEmpty;
+    if (isSeller) {
+      return hasName && (businessName ?? '').trim().isNotEmpty && hasLocation;
+    }
+    return hasName && hasLocation;
+  }
 
   bool get isConsumer => role == 'consumer';
   bool get isRetailer => role == 'retailer' || role == 'manufacturer';
   bool get isManufacturer => role == 'manufacturer';
   bool get isAdmin => role == 'admin';
-  bool get canAccessDashboard => (isRetailer || isManufacturer) && isPaid;
+  // A seller (retailer or manufacturer) always has a dashboard entry point.
+  // Whether they can actually open it depends on isPaid — unpaid sellers are
+  // routed to the subscription paywall by the router guard.
+  bool get isSeller => isRetailer || isManufacturer;
+  bool get canAccessDashboard => isSeller && isPaid;
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -44,6 +75,12 @@ class UserModel {
       productCount: (data['productCount'] as num?)?.toInt() ?? 0,
       fcmToken: data['fcmToken'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      businessName: data['businessName'] as String?,
+      address: data['address'] as String?,
+      city: data['city'] as String?,
+      state: data['state'] as String?,
+      pincode: data['pincode'] as String?,
+      profileCompleted: data['profileCompleted'] as bool? ?? false,
     );
   }
 

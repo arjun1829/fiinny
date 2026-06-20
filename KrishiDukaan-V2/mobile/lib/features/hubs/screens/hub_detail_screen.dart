@@ -11,7 +11,8 @@ import 'hub_content_widget.dart';
 /// Shown when navigating directly to /hubs/:hubId
 /// Renders the full hub detail for a single crop.
 class HubDetailScreen extends ConsumerWidget {
-  final String postId; // parameter name kept for router compat (was postId/slug)
+  final String
+  postId; // parameter name kept for router compat (was postId/slug)
 
   const HubDetailScreen({super.key, required this.postId});
 
@@ -51,16 +52,18 @@ class HubDetailScreen extends ConsumerWidget {
                 flexibleSpace: FlexibleSpaceBar(
                   title: Text(
                     '${hub.name} Hub',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: Colors.white, fontSize: 14),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
                   ),
-                  titlePadding:
-                      const EdgeInsets.only(left: 56, bottom: 14),
+                  titlePadding: const EdgeInsets.only(left: 56, bottom: 14),
                   background: hub.heroImage.isNotEmpty
                       ? Stack(
                           fit: StackFit.expand,
                           children: [
                             CachedNetworkImage(
+                              memCacheWidth: 1000,
                               imageUrl: hub.heroImage,
                               fit: BoxFit.cover,
                               errorWidget: (_, _, _) =>
@@ -83,9 +86,7 @@ class HubDetailScreen extends ConsumerWidget {
                       : null,
                 ),
               ),
-              SliverToBoxAdapter(
-                child: HubContentWidget(hub: hub),
-              ),
+              SliverToBoxAdapter(child: HubContentWidget(hub: hub)),
             ],
           );
         },
