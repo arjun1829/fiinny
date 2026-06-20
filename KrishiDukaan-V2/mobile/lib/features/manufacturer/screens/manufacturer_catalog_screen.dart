@@ -162,7 +162,7 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
                   ),
                 ),
                 loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, _) => const SizedBox.shrink(),
               ),
               // Search bar
               Padding(
@@ -298,11 +298,11 @@ class _CatalogTile extends StatelessWidget {
                             memCacheWidth: 1000,
                             imageUrl: product.imageUrl,
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => const Icon(
+                            placeholder: (_, _) => const Icon(
                               Icons.inventory_2_outlined,
                               color: AppColors.primaryLight,
                             ),
-                            errorWidget: (_, __, ___) => const Icon(
+                            errorWidget: (_, _, _) => const Icon(
                               Icons.inventory_2_outlined,
                               color: AppColors.primaryLight,
                             ),
@@ -716,7 +716,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                         style: AppTextStyles.caption,
                       ),
                       value: _isActive,
-                      activeColor: AppColors.primary,
+                      activeThumbColor: AppColors.primary,
                       onChanged: (v) => setState(() => _isActive = v),
                     ),
                   ),
@@ -749,6 +749,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
+                  // ignore: deprecated_member_use
                   value: _category,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
@@ -1193,7 +1194,7 @@ class _CatalogDiscountSheetState extends State<_CatalogDiscountSheet> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Enable Discount'),
             value: _isActive,
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
             onChanged: (v) => setState(() => _isActive = v),
           ),
           const SizedBox(height: 12),

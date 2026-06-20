@@ -151,7 +151,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
       ),
       body: storesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => Center(
+        error: (_, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -585,7 +585,7 @@ class _MapOverlay extends StatelessWidget {
                                       memCacheWidth: 1000,
                                       imageUrl: focusedStore!.logo!,
                                       fit: BoxFit.contain,
-                                      errorWidget: (_, __, ___) => const Icon(
+                                      errorWidget: (_, _, _) => const Icon(
                                         Icons.store,
                                         color: AppColors.primary,
                                       ),
@@ -747,7 +747,7 @@ class _StoreCard extends StatelessWidget {
                                 memCacheWidth: 1000,
                                 imageUrl: store.logo!,
                                 fit: BoxFit.contain,
-                                errorWidget: (_, __, ___) => Icon(
+                                errorWidget: (_, _, _) => Icon(
                                   Icons.store,
                                   color: isSelected
                                       ? Colors.white

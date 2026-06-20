@@ -417,7 +417,7 @@ class _CropStatCards extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: stats.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final s = stats[i];
           return Container(
@@ -561,7 +561,7 @@ class _GrowthJourneySection extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: hub.growthStages.length,
-              separatorBuilder: (_, __) => _StageConnector(),
+              separatorBuilder: (_, _) => _StageConnector(),
               itemBuilder: (_, i) {
                 final stage = hub.growthStages[i];
                 return _GrowthStageCard(stage: stage, index: i);

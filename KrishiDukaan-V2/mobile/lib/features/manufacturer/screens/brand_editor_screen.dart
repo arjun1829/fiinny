@@ -395,7 +395,7 @@ class _BrandTabState extends State<_BrandTab> {
                     imageUrl: widget.logoCtrl.text,
                     height: 60,
                     fit: BoxFit.contain,
-                    errorWidget: (_, __, ___) =>
+                    errorWidget: (_, _, _) =>
                         const Icon(Icons.broken_image_outlined),
                   ),
                 ),
@@ -422,7 +422,7 @@ class _BrandTabState extends State<_BrandTab> {
                     height: 80,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
+                    errorWidget: (_, _, _) =>
                         const Icon(Icons.broken_image_outlined),
                   ),
                 ),
@@ -540,7 +540,7 @@ class _BrandTabState extends State<_BrandTab> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: widget.videos.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
                     itemBuilder: (_, i) {
                       final id = widget.videos[i];
                       return Stack(
@@ -554,7 +554,7 @@ class _BrandTabState extends State<_BrandTab> {
                               width: 100,
                               height: 110,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
+                              errorWidget: (_, _, _) => Container(
                                 width: 100,
                                 height: 110,
                                 color: Colors.black12,
@@ -649,7 +649,7 @@ class _ProductsTab extends ConsumerWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: products.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
             final p = products[i];
             return Container(
@@ -671,7 +671,7 @@ class _ProductsTab extends ConsumerWidget {
                               memCacheWidth: 1000,
                               imageUrl: p.imageUrl,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => const Icon(
+                              errorWidget: (_, _, _) => const Icon(
                                 Icons.inventory_2_outlined,
                                 color: AppColors.primaryLight,
                               ),
@@ -745,7 +745,7 @@ class _StoresTab extends ConsumerWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: active.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
             final r = active[i];
             return Container(
