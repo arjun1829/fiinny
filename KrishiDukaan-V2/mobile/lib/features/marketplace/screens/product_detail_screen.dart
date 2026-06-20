@@ -160,7 +160,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             ),
                           ],
                         ),
-                        error: (_, __) => const SizedBox.shrink(),
+                        error: (_, _) => const SizedBox.shrink(),
                       ),
                     ],
 
@@ -1113,7 +1113,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: otherProducts.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        separatorBuilder: (_, _) => const SizedBox(width: 12),
                         itemBuilder: (context, index) {
                           final p = otherProducts[index];
                           return GestureDetector(
@@ -1200,7 +1200,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
           ),
         ],
       ),
@@ -1448,8 +1448,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
 
   bool get _hasDiscount {
     final listing = widget.listing;
-    if (listing.discount != null && listing.discount!.isCurrentlyActive)
+    if (listing.discount != null && listing.discount!.isCurrentlyActive) {
       return true;
+    }
     return widget.sellerDiscountPct > 0;
   }
 

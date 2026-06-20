@@ -142,11 +142,8 @@ class _ProfileBody extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       isHindi
-                          ? 'अपनी प्रोफ़ाइल पूरी करें (नाम, पता' +
-                              (user.isSeller ? ', दुकान का नाम' : '') +
-                              ')'
-                          : 'Complete your profile (name, address'
-                              '${user.isSeller ? ', shop name' : ''})',
+                          ? 'अपनी प्रोफ़ाइल पूरी करें (नाम, पता${user.isSeller ? ', दुकान का नाम' : ''})'
+                          : 'Complete your profile (name, address${user.isSeller ? ', shop name' : ''})',
                       style: AppTextStyles.bodySmall,
                     ),
                   ),

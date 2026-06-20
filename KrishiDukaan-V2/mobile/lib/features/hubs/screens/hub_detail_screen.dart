@@ -26,7 +26,7 @@ class HubDetailScreen extends ConsumerWidget {
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (_, __) => ErrorView(
+        error: (_, _) => ErrorView(
           message: 'Could not load hub.',
           onRetry: () => ref.invalidate(hubDetailProvider(postId)),
         ),

@@ -166,7 +166,7 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
                       ),
                     ),
                     loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
+                    error: (_, _) => const SizedBox.shrink(),
                   ),
               // Search bar
               Padding(
@@ -312,11 +312,11 @@ class _ListingTile extends StatelessWidget {
                             memCacheWidth: 1000,
                             imageUrl: listing.imageUrl!,
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => const Icon(
+                            placeholder: (_, _) => const Icon(
                               Icons.inventory_2_outlined,
                               color: AppColors.primaryLight,
                             ),
-                            errorWidget: (_, __, ___) => const Icon(
+                            errorWidget: (_, _, _) => const Icon(
                               Icons.inventory_2_outlined,
                               color: AppColors.primaryLight,
                             ),
@@ -852,6 +852,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
+                  // ignore: deprecated_member_use
                   value: _category,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
@@ -1250,7 +1251,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     int totalStock = 0;
     if (_variants.isNotEmpty) {
       basePrice = _variants.first.price;
-      totalStock = _variants.fold(0, (sum, v) => sum + v.stock);
+      totalStock = _variants.fold(0, (acc, v) => acc + v.stock);
     } else {
       if (priceInput == null || stockInput == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1442,7 +1443,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
                   style: AppTextStyles.caption,
                 ),
                 value: _isActive,
-                activeColor: AppColors.primary,
+                activeThumbColor: AppColors.primary,
                 onChanged: (v) => setState(() => _isActive = v),
               ),
             ),
