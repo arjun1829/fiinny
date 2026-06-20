@@ -15,6 +15,16 @@ class BrandRepository {
     return _buildBrand(snap.docs.first);
   }
 
+  Future<BrandModel?> fetchBrandByUid(String uid) async {
+    final snap = await _db
+        .collection('manufacturers')
+        .where('uid', isEqualTo: uid)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return _buildBrand(snap.docs.first);
+  }
+
   Future<BrandModel?> fetchBrandByPhone(String phone) async {
     final mfrDoc = await _db.collection('manufacturers').doc(phone).get();
     if (!mfrDoc.exists) return null;
@@ -28,14 +38,57 @@ class BrandRepository {
 
   Future<List<CatalogModel>> fetchBrandProducts(String manufacturerPhone) async {
     final mfrDoc = await _db.collection('manufacturers').doc(manufacturerPhone).get();
-    final uid = mfrDoc.data()?['uid'] as String?;
-    if (uid == null) return [];
+    final data = mfrDoc.data();
+    // uid field first, then manufacturerId (legacy), then fall back to the phone
+    // itself — some docs store the phone in uid when created from web.
+    final uid = (data?['uid'] as String?)?.isNotEmpty == true
+        ? data!['uid'] as String
+        : (data?['manufacturerId'] as String?)?.isNotEmpty == true
+            ? data!['manufacturerId'] as String
+            : manufacturerPhone;
+    if (uid.isEmpty) return [];
 
-    final snap = await _db
-        .collection('catalog')
-        .where('createdByPhone', isEqualTo: manufacturerPhone)
+    final byUid = _db
+        .collection('products')
+        .where('manufacturerId', isEqualTo: uid)
+        .where('isActive', isEqualTo: true)
         .limit(30)
         .get();
-    return snap.docs.map(CatalogModel.fromFirestore).toList();
+    final byPhone = _db
+        .collection('products')
+        .where('manufacturerPhone', isEqualTo: manufacturerPhone)
+        .where('isActive', isEqualTo: true)
+        .limit(30)
+        .get();
+
+    final results = await Future.wait([byUid, byPhone]);
+    final copySources = {'retailer_inventory_copy', 'manufacturer_assigned', 'admin_assigned'};
+    final seen = <String>{};
+    final products = <CatalogModel>[];
+    for (final snap in results) {
+      for (final doc in snap.docs) {
+        if (seen.add(doc.id)) {
+          final p = CatalogModel.fromFirestore(doc);
+          if (!copySources.contains(p.source)) products.add(p);
+        }
+      }
+    }
+    return products;
+  }
+
+  /// Reads the public mirror docs from `manufacturers/{phone}/retailers`
+  /// (status == 'active') and returns them as [BrandRetailerModel] list.
+  Future<List<BrandRetailerModel>> fetchBrandRetailers(
+      String manufacturerPhone) async {
+    final snap = await _db
+        .collection('manufacturers')
+        .doc(manufacturerPhone)
+        .collection('retailers')
+        .where('status', isEqualTo: 'active')
+        .limit(50)
+        .get();
+    return snap.docs
+        .map((d) => BrandRetailerModel.fromMirror(d.id, d.data()))
+        .toList();
   }
 }

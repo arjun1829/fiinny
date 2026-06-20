@@ -407,7 +407,7 @@ class _CategoryCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(22),
                 child: CachedNetworkImage(
                   imageUrl: resolveImageUrl(category.imgUrl),
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   memCacheWidth: 200,
                   errorWidget: (context, url, error) => const Icon(
                     Icons.image_not_supported_outlined,

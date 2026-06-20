@@ -53,7 +53,7 @@ class ProductCard extends StatelessWidget {
                           ? CachedNetworkImage(
                               memCacheWidth: 1000,
                               imageUrl: product.imageUrl,
-                              fit: BoxFit.cover,
+                              fit: BoxFit.contain,
                               placeholder: (_, _) => Container(
                                 color: AppColors.surfaceVariant,
                                 child: const Center(

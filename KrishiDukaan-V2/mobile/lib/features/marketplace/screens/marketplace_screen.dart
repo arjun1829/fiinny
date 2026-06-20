@@ -286,7 +286,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                                         imageUrl: p.imageUrl,
                                         width: 48,
                                         height: 48,
-                                        fit: BoxFit.cover,
+                                        fit: BoxFit.contain,
                                         memCacheWidth: 150,
                                       ),
                                     )

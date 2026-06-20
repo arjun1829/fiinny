@@ -75,6 +75,8 @@ class CatalogModel {
   final Map<String, double> sellerDiscounts;
 
   // Merging / web schema fields
+  final String? manufacturerId;
+  final String? manufacturerPhone;
   final String? source;
   final String? retailerId;
   final String? retailerPhone;
@@ -108,6 +110,8 @@ class CatalogModel {
     this.variants,
     this.maxDiscountPct = 0,
     this.sellerDiscounts = const {},
+    this.manufacturerId,
+    this.manufacturerPhone,
     this.source,
     this.retailerId,
     this.retailerPhone,
@@ -152,6 +156,8 @@ class CatalogModel {
     List<VariantModel>? variants,
     double? maxDiscountPct,
     Map<String, double>? sellerDiscounts,
+    String? manufacturerId,
+    String? manufacturerPhone,
     String? source,
     String? retailerId,
     String? retailerPhone,
@@ -184,6 +190,8 @@ class CatalogModel {
       variants: variants ?? this.variants,
       maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
       sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
+      manufacturerId: manufacturerId ?? this.manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? this.manufacturerPhone,
       source: source ?? this.source,
       retailerId: retailerId ?? this.retailerId,
       retailerPhone: retailerPhone ?? this.retailerPhone,
@@ -246,6 +254,8 @@ class CatalogModel {
       }
     }
 
+    final manufacturerId = d['manufacturerId'] as String?;
+    final manufacturerPhone = d['manufacturerPhone'] as String?;
     final source = d['source'] as String?;
     final retailerId = d['retailerId'] as String?;
     final retailerPhone = d['retailerPhone'] as String?;
@@ -284,6 +294,8 @@ class CatalogModel {
       isActive: d['isActive'] as bool? ?? true,
       variants: parsedVariants,
       maxDiscountPct: maxDiscountPct,
+      manufacturerId: manufacturerId,
+      manufacturerPhone: manufacturerPhone,
       source: source,
       retailerId: retailerId,
       retailerPhone: retailerPhone,

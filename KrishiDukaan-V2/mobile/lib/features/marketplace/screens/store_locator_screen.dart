@@ -14,6 +14,39 @@ import '../../../core/widgets/app_top_bar.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
 
+void _showFullStoreImage(BuildContext context, String imageUrl) {
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(8),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 4.0,
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.contain,
+              placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+              errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class StoreLocatorScreen extends ConsumerStatefulWidget {
   const StoreLocatorScreen({super.key});
 
@@ -546,13 +579,16 @@ class _MapOverlay extends StatelessWidget {
                             child:
                                 focusedStore!.logo != null &&
                                     focusedStore!.logo!.isNotEmpty
-                                ? CachedNetworkImage(
-                                    memCacheWidth: 1000,
-                                    imageUrl: focusedStore!.logo!,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => const Icon(
-                                      Icons.store,
-                                      color: AppColors.primary,
+                                ? GestureDetector(
+                                    onTap: () => _showFullStoreImage(context, focusedStore!.logo!),
+                                    child: CachedNetworkImage(
+                                      memCacheWidth: 1000,
+                                      imageUrl: focusedStore!.logo!,
+                                      fit: BoxFit.contain,
+                                      errorWidget: (_, __, ___) => const Icon(
+                                        Icons.store,
+                                        color: AppColors.primary,
+                                      ),
                                     ),
                                   )
                                 : const Icon(
@@ -705,16 +741,19 @@ class _StoreCard extends StatelessWidget {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: store.logo != null && store.logo!.isNotEmpty
-                          ? CachedNetworkImage(
-                              memCacheWidth: 1000,
-                              imageUrl: store.logo!,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Icon(
-                                Icons.store,
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.onSurfaceVariant,
-                                size: 20,
+                          ? GestureDetector(
+                              onTap: () => _showFullStoreImage(context, store.logo!),
+                              child: CachedNetworkImage(
+                                memCacheWidth: 1000,
+                                imageUrl: store.logo!,
+                                fit: BoxFit.contain,
+                                errorWidget: (_, __, ___) => Icon(
+                                  Icons.store,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.onSurfaceVariant,
+                                  size: 20,
+                                ),
                               ),
                             )
                           : Icon(

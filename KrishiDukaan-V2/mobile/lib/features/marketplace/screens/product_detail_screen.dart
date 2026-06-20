@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/brand_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/providers/cart_provider.dart';
@@ -40,6 +41,21 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
     final reviewsAsync = ref.watch(productReviewsProvider(widget.catalogId));
     final allProductsState = ref.watch(marketplaceProvider);
+
+    final catalogValue = catalogAsync.value;
+    final hasManufacturer = catalogValue != null &&
+        (catalogValue.manufacturerId != null ||
+            catalogValue.manufacturerPhone != null);
+    final brandAsync = hasManufacturer
+        ? ref.watch(productBrandProvider((
+            uid: catalogValue.manufacturerId,
+            phone: catalogValue.manufacturerPhone,
+          )))
+        : null;
+
+    final brandProductsAsync = (brandAsync != null && brandAsync.value != null)
+        ? ref.watch(brandProductsProvider(brandAsync.value!.phone))
+        : null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -121,6 +137,32 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
                     // ── Reviews ─────────────────────────────────────────────
                     _buildReviewsSection(reviewsAsync, catalog),
+
+                    // ── Manufacturer Brand Section ──────────────────────────
+                    if (hasManufacturer && brandAsync != null && brandProductsAsync != null) ...[
+                      brandAsync.when(
+                        data: (brand) {
+                          if (brand == null) return const SizedBox.shrink();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Divider(height: 1, thickness: 1),
+                              _buildManufacturerBrandSection(catalog, brand, brandProductsAsync),
+                            ],
+                          );
+                        },
+                        loading: () => const Column(
+                          children: [
+                            Divider(height: 1, thickness: 1),
+                            Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          ],
+                        ),
+                        error: (_, __) => const SizedBox.shrink(),
+                      ),
+                    ],
 
                     const Divider(height: 1, thickness: 1),
 
@@ -292,6 +334,39 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         );
   }
 
+  void _showFullImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(8),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
+              ),
+            ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ─────────────────────────── Hero image ────────────────────────────────────
 
   Widget _buildHeroImage(CatalogModel catalog) {
@@ -300,13 +375,16 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
     Widget imageWidget;
     if (imageUrl.isNotEmpty) {
-      imageWidget = CachedNetworkImage(
-        memCacheWidth: 1000,
-        imageUrl: imageUrl,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        errorWidget: (_, _, _) => _placeholderImage(),
+      imageWidget = GestureDetector(
+        onTap: () => _showFullImage(context, imageUrl),
+        child: CachedNetworkImage(
+          memCacheWidth: 1000,
+          imageUrl: imageUrl,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+          errorWidget: (_, _, _) => _placeholderImage(),
+        ),
       );
     } else {
       imageWidget = _placeholderImage();
@@ -896,6 +974,233 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 ],
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────── Manufacturer Brand Section ──────────────────────
+
+  Widget _buildManufacturerBrandSection(
+    CatalogModel catalog,
+    BrandModel brand,
+    AsyncValue<List<CatalogModel>> productsAsync,
+  ) {
+    final String brandName = brand.businessName.isNotEmpty ? brand.businessName : 'This Manufacturer';
+    final hasBrandPage = brand.slug != null && brand.slug!.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D2B09), // Premium Deep Forest Green
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'MANUFACTURED BY',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.secondary,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        brandName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (brand.location != null || brand.establishedYear != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            if (brand.location != null && brand.location!.isNotEmpty) brand.location,
+                            if (brand.establishedYear != null && brand.establishedYear!.isNotEmpty) 'Est. ${brand.establishedYear}',
+                          ].join(' · '),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Visit Brand Store Button
+                if (hasBrandPage)
+                  ElevatedButton(
+                    onPressed: () {
+                      context.push('/brand/${brand.phone}');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Text(
+                          'VISIT STORE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.chevron_right, size: 14),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          
+          // Products list
+          productsAsync.when(
+            data: (products) {
+              final otherProducts = products.where((p) => p.id != catalog.id).toList();
+              if (otherProducts.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'More from $brandName',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 180,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: otherProducts.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final p = otherProducts[index];
+                          return GestureDetector(
+                            onTap: () {
+                              context.push('/product/${p.id}');
+                            },
+                            child: Container(
+                              width: 130,
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.divider),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(11),
+                                      ),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: p.hasImages
+                                            ? CachedNetworkImage(
+                                                imageUrl: p.imageUrl,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Container(
+                                                color: AppColors.surfaceVariant,
+                                                child: const Center(
+                                                  child: Icon(Icons.grass,
+                                                      color: AppColors.primaryLight),
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          p.category.toUpperCase(),
+                                          style: AppTextStyles.caption.copyWith(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 9,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          p.name,
+                                          style: AppTextStyles.bodyMedium.copyWith(
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          CurrencyUtils.format(p.price),
+                                          style: AppTextStyles.price.copyWith(
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, __) => const SizedBox.shrink(),
           ),
         ],
       ),
