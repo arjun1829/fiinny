@@ -1,62 +1,142 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { fetchBlogPostBySlug, fetchBlogPosts, type BlogPost } from "../../firebase";
+import {
+  getPostBySlug,
+  getPublishedPosts,
+  relatedPosts,
+  toIso,
+} from "../../lib/seo/blog-server";
+
+// Incremental Static Regeneration — cached at the edge, refreshed hourly.
+export const revalidate = 3600;
+export const dynamicParams = true;
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
+
+interface PageProps {
+  params: Promise<{ slug: string }>;
+}
 
 function formatDate(ts: unknown): string {
   try {
     const d = (ts as any)?.toDate?.() ?? new Date(ts as string);
+    if (isNaN(d.getTime())) return "";
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
-export default function BlogPostPage() {
-  const params = useParams();
-  const slug = typeof params?.slug === "string" ? params.slug : Array.isArray(params?.slug) ? params.slug[0] : "";
-
-  const [post, setPost] = useState<BlogPost | null>(null);
-  const [related, setRelated] = useState<BlogPost[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!slug) return;
-    Promise.all([
-      fetchBlogPostBySlug(slug),
-      fetchBlogPosts("published"),
-    ]).then(([p, all]) => {
-      setPost(p);
-      if (p) {
-        document.title = `${p.title} — KrishiDukaan Blog`;
-        setRelated(all.filter(a => a.id !== p.id && a.tags?.some(t => p.tags?.includes(t))).slice(0, 3));
-      }
-    }).finally(() => setLoading(false));
-  }, [slug]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
+// ─── Metadata ───────────────────────────────────────────────────────────────
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getPostBySlug(slug);
   if (!post) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
-        <span className="text-5xl">🌾</span>
-        <h1 className="text-2xl font-black text-on-surface">Post not found</h1>
-        <Link href="/blog" className="text-primary font-semibold hover:underline">← Back to Blog</Link>
-      </div>
-    );
+    return {
+      title: "Post Not Found | KrishiDukan",
+      robots: { index: false, follow: false },
+    };
   }
+
+  const canonicalPath = `/blog/${post.slug}`;
+  const description =
+    post.excerpt ||
+    `${post.title} — farming insights and agri-retail tips from the KrishiDukan team.`;
+  const images = post.coverImage ? [post.coverImage] : ["/images/og-default.png"];
+  const published = toIso(post.publishedAt);
+  const modified = toIso(post.updatedAt ?? post.publishedAt);
+
+  return {
+    // Absolute title opts out of the root "%s | KrishiDukan" template so the
+    // tab/title text stays exactly as before (no double brand suffix).
+    title: { absolute: `${post.title} — KrishiDukaan Blog` },
+    description: description.slice(0, 320),
+    alternates: { canonical: canonicalPath },
+    openGraph: {
+      type: "article",
+      title: post.title,
+      description: description.slice(0, 320),
+      url: `${SITE_URL}${canonicalPath}`,
+      siteName: "KrishiDukan",
+      images,
+      ...(published ? { publishedTime: published } : {}),
+      ...(modified ? { modifiedTime: modified } : {}),
+      ...(post.author ? { authors: [post.author] } : {}),
+      ...(post.tags?.length ? { tags: post.tags } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: description.slice(0, 200),
+      images,
+    },
+  };
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+export default async function BlogPostPage({ params }: PageProps) {
+  const { slug } = await params;
+  // Fetched in parallel; getPublishedPosts feeds the "Related Articles" section.
+  const [post, all] = await Promise.all([getPostBySlug(slug), getPublishedPosts()]);
+  if (!post) notFound();
+
+  const related = relatedPosts(post, all, 3);
+  const canonicalUrl = `${SITE_URL}/blog/${post.slug}`;
+  const ogImage = post.coverImage || `${SITE_URL}/images/og-default.png`;
+  const published = toIso(post.publishedAt);
+  const modified = toIso(post.updatedAt ?? post.publishedAt);
+  const shareUrl = `https://wa.me/?text=${encodeURIComponent(`${post.title} — ${canonicalUrl}`)}`;
+
+  // ── JSON-LD: BlogPosting ──
+  const articleLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt || post.title,
+    image: ogImage,
+    author: { "@type": "Person", name: post.author || "KrishiDukaan" },
+    publisher: {
+      "@type": "Organization",
+      name: "KrishiDukan",
+      logo: {
+        "@type": "ImageObject",
+        url: `${SITE_URL}/images/krishidukan%20icon.webp`,
+      },
+    },
+    mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
+    ...(post.tags?.length ? { keywords: post.tags.join(", ") } : {}),
+    ...(published ? { datePublished: published } : {}),
+    ...(modified ? { dateModified: modified } : {}),
+  };
+
+  // ── JSON-LD: BreadcrumbList ──
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "KrishiDukan", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Blog", item: `${SITE_URL}/blog` },
+      { "@type": "ListItem", position: 3, name: post.title },
+    ],
+  };
 
   return (
     <div className="min-h-screen bg-surface">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
+
       {/* Cover */}
       {post.coverImage ? (
         <div className="w-full h-64 md:h-96 overflow-hidden bg-surface-container-low">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={post.coverImage} alt={post.title} className="w-full h-full object-cover" />
         </div>
       ) : (
@@ -112,7 +192,7 @@ export default function BlogPostPage() {
             ← Back to Blog
           </Link>
           <a
-            href={`https://wa.me/?text=${encodeURIComponent(`${post.title} — ${typeof window !== 'undefined' ? window.location.href : ''}`)}`}
+            href={shareUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-xs font-bold bg-green-600 text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
