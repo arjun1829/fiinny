@@ -109,6 +109,12 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
       : undefined,
+    videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
+    composition: Array.isArray(data.composition)
+      ? (data.composition as { name: string; value: string }[]).filter(
+          (c) => c && typeof c === "object" && c.name
+        )
+      : undefined,
     // Legacy fertilizer flat fields — kept for backward compat
     nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
     phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
@@ -415,6 +421,8 @@ export async function fetchRetailerInventoryRows(
         bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
         bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
         categoryInfo: p.categoryInfo,
+        videoUrl: p.videoUrl ?? undefined,
+        composition: p.composition ?? undefined,
         nitrogen: p.nitrogen ?? "",
         phosphorus: p.phosphorus ?? "",
         potassium: p.potassium ?? "",
@@ -508,6 +516,8 @@ export async function fetchManufacturerCatalogueRows(
       originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
       updatedAt: timestampToDate(p.updatedAt),
       categoryInfo: p.categoryInfo,
+      videoUrl: p.videoUrl ?? undefined,
+      composition: p.composition ?? undefined,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",

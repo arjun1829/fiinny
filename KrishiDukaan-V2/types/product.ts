@@ -65,8 +65,11 @@ export type MarketplaceProduct = {
   /** Variants — package sizes with per-variant price and stock */
   variants?: { unit: string; price: number; stock?: number }[];
 
+  /** Optional YouTube demonstration URL. Extract the video ID and embed via iframe. */
+  videoUrl?: string;
+
   /** Product detail enrichment */
-  composition?: { name: string; value: string; color: string }[];
+  composition?: { name: string; value: string; color?: string }[];
   benefits?: string[];
   application?: string;
 

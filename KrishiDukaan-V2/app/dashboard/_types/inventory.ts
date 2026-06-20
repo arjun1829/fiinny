@@ -39,6 +39,10 @@ export interface ProductDoc {
 
   /** Category-specific structured information (new schema). */
   categoryInfo?: Record<string, string | string[]>;
+  /** Optional YouTube demonstration URL. */
+  videoUrl?: string | null;
+  /** Composition / ingredient list (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
+  composition?: { name: string; value: string }[] | null;
   /** @deprecated Legacy fertilizer flat fields — backward compat only. */
   nitrogen?: string;
   phosphorus?: string;
@@ -160,6 +164,14 @@ export interface InventoryRow {
   // Bulk discount fields
   bulkDiscountEnabled: boolean;
   bulkDiscountTiers: BulkDiscountTier[];
+
+  // ── Video ─────────────────────────────────────────────────────────────────────
+  /** Optional YouTube URL for product demonstration. */
+  videoUrl?: string;
+
+  // ── Composition ───────────────────────────────────────────────────────────────
+  /** Ingredient / nutrient breakdown for Fertilizers, Pesticides, Herbicides, Bio-Stimulants. */
+  composition?: { name: string; value: string }[];
 
   // ── Category-specific info ────────────────────────────────────────────────────
   /** Structured category info (new schema). */

@@ -30,6 +30,7 @@ export function ReviewSection({
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
   const [rating, setRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
   const [text, setText] = useState('');
@@ -160,35 +161,42 @@ export function ReviewSection({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="animate-pulse flex flex-col gap-4 mt-8 bg-white rounded-3xl border border-surface-container shadow-sm p-8">
-        <div className="h-8 bg-surface-container rounded w-1/3"></div>
-        <div className="h-24 bg-surface-container-low rounded-2xl w-full"></div>
-      </div>
-    );
-  }
+  // While loading, render nothing — avoids layout shift for the empty state
+  if (loading) return null;
 
   const totalReviews = reviews.length;
+
+  // When there are no reviews, only show the section if the user is logged in
+  // and can write one — otherwise hide it completely.
+  if (totalReviews === 0 && !isLoggedIn) return null;
+
   const ratingCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   let sum = 0;
   reviews.forEach(r => {
     const rounded = Math.round(r.rating) as 1 | 2 | 3 | 4 | 5;
-    if (rounded >= 1 && rounded <= 5) {
-      ratingCounts[rounded]++;
-    }
+    if (rounded >= 1 && rounded <= 5) ratingCounts[rounded]++;
     sum += r.rating;
   });
   const avgRating = totalReviews > 0 ? (sum / totalReviews).toFixed(1) : '0.0';
 
+  const INITIAL_VISIBLE = 2;
+  const visibleReviews = showAllReviews ? reviews : reviews.slice(0, INITIAL_VISIBLE);
+  const hasMore = reviews.length > INITIAL_VISIBLE;
+
   return (
-    <section className="bg-white rounded-3xl border border-surface-container shadow-sm p-6 md:p-8 flex flex-col gap-6 mt-8">
+    <section className="bg-white rounded-3xl border border-surface-container shadow-sm p-6 md:p-8 flex flex-col gap-6">
+      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-surface-container-low pb-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-xl text-primary">
             <MessageSquare className="w-6 h-6" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-on-surface tracking-tight">Customer Reviews</h2>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-on-surface tracking-tight">Customer Reviews</h2>
+            {totalReviews > 0 && (
+              <p className="text-xs text-on-surface-variant mt-0.5">{totalReviews} {totalReviews === 1 ? 'review' : 'reviews'} · {avgRating} avg</p>
+            )}
+          </div>
         </div>
         {!showForm && isLoggedIn && (
           existingReview ? (
@@ -196,8 +204,7 @@ export function ReviewSection({
               onClick={openEditReview}
               className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-2.5 bg-surface-container text-on-surface font-bold rounded-xl border border-outline-variant/40 hover:bg-surface-container-high hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
             >
-              <Pencil className="w-4 h-4" />
-              Edit Your Review
+              <Pencil className="w-4 h-4" /> Edit Your Review
             </button>
           ) : (
             <button
@@ -210,18 +217,17 @@ export function ReviewSection({
         )}
       </div>
 
-      {!isLoggedIn && (
+      {/* Login prompt — only when logged out and reviews exist (so the section is visible) */}
+      {!isLoggedIn && totalReviews > 0 && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-2xl border border-amber-200/60 flex items-center justify-between">
-          <p className="text-amber-800 text-sm font-medium">
-            Join the community and share your experience.
-          </p>
+          <p className="text-amber-800 text-sm font-medium">Join the community and share your experience.</p>
           <a href="/?view=login" className="px-4 py-2 bg-amber-100 text-amber-900 font-bold rounded-lg hover:bg-amber-200 transition-colors text-xs uppercase tracking-widest">
             Login to Review
           </a>
         </div>
       )}
 
-      {/* Existing review banner */}
+      {/* User's existing review banner */}
       {isLoggedIn && existingReview && !showForm && (
         <div className="bg-gradient-to-r from-primary/5 to-secondary/5 border border-primary/20 rounded-2xl p-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -238,105 +244,72 @@ export function ReviewSection({
               </div>
             </div>
           </div>
-          <button
-            onClick={openEditReview}
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary border border-primary/30 rounded-lg hover:bg-primary/10 transition-colors"
-          >
+          <button onClick={openEditReview} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-primary border border-primary/30 rounded-lg hover:bg-primary/10 transition-colors">
             <Pencil className="w-3 h-3" /> Edit
           </button>
         </div>
       )}
 
+      {/* Write / edit form */}
       {showForm && isLoggedIn && (
         <form onSubmit={handleSubmit} className="bg-surface-container-lowest p-6 rounded-3xl flex flex-col gap-5 border border-surface-container shadow-inner">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
-                {userName.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="font-bold text-on-surface leading-none">{userName}</h3>
-                <p className="text-xs text-on-surface-variant mt-1 uppercase tracking-widest font-semibold">
-                  {isEditing ? 'Editing your review' : 'Posting publicly'}
-                </p>
-              </div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <h3 className="font-bold text-on-surface leading-none">{userName}</h3>
+              <p className="text-xs text-on-surface-variant mt-1 uppercase tracking-widest font-semibold">
+                {isEditing ? 'Editing your review' : 'Posting publicly'}
+              </p>
             </div>
           </div>
-          
           <div className="flex flex-col gap-2">
             <span className="text-sm font-bold text-on-surface-variant uppercase tracking-widest">Select Rating</span>
             <div className="flex gap-1.5">
               {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  onClick={() => setRating(star)}
-                  onMouseEnter={() => setHoverRating(star)}
-                  onMouseLeave={() => setHoverRating(0)}
-                  className="focus:outline-none transition-transform hover:scale-110 p-1"
-                >
-                  <Star
-                    className={`w-8 h-8 ${
-                      star <= (hoverRating || rating)
-                        ? 'fill-amber-400 text-amber-400 drop-shadow-sm'
-                        : 'text-surface-container-highest stroke-1'
-                    } transition-colors`}
-                  />
+                <button key={star} type="button" onClick={() => setRating(star)}
+                  onMouseEnter={() => setHoverRating(star)} onMouseLeave={() => setHoverRating(0)}
+                  className="focus:outline-none transition-transform hover:scale-110 p-1">
+                  <Star className={`w-8 h-8 ${star <= (hoverRating || rating) ? 'fill-amber-400 text-amber-400 drop-shadow-sm' : 'text-surface-container-highest stroke-1'} transition-colors`} />
                 </button>
               ))}
             </div>
           </div>
-
           <textarea
             placeholder="Share details of your experience with this product or store..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
+            value={text} onChange={(e) => setText(e.target.value)} required
             className="w-full bg-white border border-surface-container rounded-2xl px-5 py-4 text-sm focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[120px] resize-y transition-all"
-            required
           />
-          
           <div className="flex justify-end gap-3 mt-2">
-            <button 
-              type="button" 
-              onClick={() => { setShowForm(false); setIsEditing(false); }}
-              className="px-6 py-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-bold rounded-xl transition-all text-sm uppercase tracking-wider"
-            >
+            <button type="button" onClick={() => { setShowForm(false); setIsEditing(false); }}
+              className="px-6 py-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-bold rounded-xl transition-all text-sm uppercase tracking-wider">
               Cancel
             </button>
-            <button 
-              type="submit" 
-              disabled={submitting}
-              className="px-8 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 text-sm uppercase tracking-wider"
-            >
+            <button type="submit" disabled={submitting}
+              className="px-8 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 text-sm uppercase tracking-wider">
               {submitting ? (isEditing ? 'Updating...' : 'Posting...') : (isEditing ? 'Update Review' : 'Post Review')}
             </button>
           </div>
         </form>
       )}
 
-      {reviews.length > 0 ? (
+      {/* Reviews list — only rendered when reviews exist */}
+      {totalReviews > 0 && (
         <div className="flex flex-col gap-6">
-          {/* Rating Overview */}
+          {/* Rating overview */}
           <div className="flex flex-col md:flex-row gap-8 bg-surface-container-lowest p-6 rounded-3xl border border-surface-container">
             <div className="flex flex-col items-center justify-center shrink-0 w-32">
               <span className="text-5xl font-black text-on-surface">{avgRating}</span>
               <div className="flex items-center my-2 gap-0.5">
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <Star
-                    key={s}
-                    className={`w-4 h-4 ${
-                      s <= Math.round(Number(avgRating))
-                        ? 'fill-amber-400 text-amber-400'
-                        : 'text-surface-container-highest fill-surface-container-low'
-                    }`}
-                  />
+                  <Star key={s} className={`w-4 h-4 ${s <= Math.round(Number(avgRating)) ? 'fill-amber-400 text-amber-400' : 'text-surface-container-highest fill-surface-container-low'}`} />
                 ))}
               </div>
               <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-widest">
                 {totalReviews} {totalReviews === 1 ? 'Review' : 'Reviews'}
               </span>
             </div>
-            
             <div className="flex-1 flex flex-col gap-2 justify-center border-l-0 md:border-l md:border-surface-container pl-0 md:pl-8">
               {[5, 4, 3, 2, 1].map((stars) => {
                 const count = ratingCounts[stars as keyof typeof ratingCounts];
@@ -347,82 +320,76 @@ export function ReviewSection({
                       {stars} <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                     </span>
                     <div className="flex-1 h-2.5 bg-surface-container rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${percent}%` }}
-                        transition={{ duration: 1, ease: 'easeOut' }}
-                        className="h-full bg-amber-400 rounded-full" 
-                      />
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${percent}%` }}
+                        transition={{ duration: 1, ease: 'easeOut' }} className="h-full bg-amber-400 rounded-full" />
                     </div>
-                    <span className="text-xs font-semibold text-on-surface-variant w-8 text-right">
-                      {count}
-                    </span>
+                    <span className="text-xs font-semibold text-on-surface-variant w-8 text-right">{count}</span>
                   </div>
                 );
               })}
             </div>
           </div>
 
+          {/* Individual reviews — capped at 2, expandable */}
           <div className="grid grid-cols-1 gap-4">
-          {reviews.map(review => (
-            <div key={review.id} className={`border p-5 rounded-2xl hover:border-primary/30 transition-colors group ${review.reviewerPhone === userPhone ? 'bg-primary/5 border-primary/20' : 'bg-surface-container-lowest border-surface-container'}`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold">
-                    {review.reviewerName.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-on-surface">{review.reviewerName}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">Verified Buyer</span>
-                      {review.reviewerPhone === userPhone && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">You</span>
-                      )}
+            {visibleReviews.map(review => (
+              <div key={review.id} className={`border p-5 rounded-2xl hover:border-primary/30 transition-colors ${review.reviewerPhone === userPhone ? 'bg-primary/5 border-primary/20' : 'bg-surface-container-lowest border-surface-container'}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold">
+                      {review.reviewerName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-on-surface">{review.reviewerName}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">Verified Buyer</span>
+                        {review.reviewerPhone === userPhone && (
+                          <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">You</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-0.5 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">
-                    <span className="text-xs font-black text-amber-700 mr-1">{review.rating.toFixed(1)}</span>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-3.5 h-3.5 ${
-                          star <= review.rating
-                            ? 'fill-amber-400 text-amber-400'
-                            : 'text-amber-200 fill-amber-50'
-                        }`}
-                      />
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">
+                      <span className="text-xs font-black text-amber-700 mr-1">{review.rating.toFixed(1)}</span>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star key={star} className={`w-3.5 h-3.5 ${star <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-amber-200 fill-amber-50'}`} />
+                      ))}
+                    </div>
+                    {review.reviewerPhone === userPhone && (
+                      <button onClick={openEditReview} className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors" title="Edit your review">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {review.reviewerPhone === userPhone && (
-                    <button
-                      onClick={openEditReview}
-                      className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
-                      title="Edit your review"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
+                <p className="text-on-surface-variant text-sm leading-relaxed whitespace-pre-wrap ml-12 pl-1 mt-1">{review.reviewText}</p>
+                {review.updatedAt && (
+                  <p className="text-[10px] text-on-surface-variant/50 ml-12 pl-1 mt-1 font-medium">edited</p>
+                )}
               </div>
-              <p className="text-on-surface-variant text-sm leading-relaxed whitespace-pre-wrap ml-12 pl-1 mt-1">
-                {review.reviewText}
-              </p>
-              {review.updatedAt && (
-                <p className="text-[10px] text-on-surface-variant/50 ml-12 pl-1 mt-1 font-medium">edited</p>
-              )}
-            </div>
-          ))}
-        </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-10 px-4 bg-surface-container-lowest rounded-2xl border border-dashed border-surface-container text-center">
-          <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4">
-            <Star className="w-8 h-8 text-on-surface-variant opacity-50" />
+            ))}
           </div>
-          <p className="text-lg font-bold text-on-surface mb-1">No reviews yet</p>
-          <p className="text-sm text-on-surface-variant max-w-sm">Be the first to share your experience with the community.</p>
+
+          {/* Show More / Show Less */}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setShowAllReviews(v => !v)}
+              className="self-center px-6 py-2.5 rounded-xl border border-outline-variant/40 text-sm font-bold text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
+            >
+              {showAllReviews ? `Show Less` : `Show ${reviews.length - INITIAL_VISIBLE} More Review${reviews.length - INITIAL_VISIBLE !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Empty state — only shown when logged in (so user can write the first review) */}
+      {totalReviews === 0 && isLoggedIn && !showForm && (
+        <div className="flex flex-col items-center justify-center py-8 px-4 bg-surface-container-lowest rounded-2xl border border-dashed border-surface-container text-center">
+          <Star className="w-8 h-8 text-on-surface-variant opacity-30 mb-3" />
+          <p className="text-sm font-bold text-on-surface mb-1">No reviews yet</p>
+          <p className="text-xs text-on-surface-variant">Be the first to share your experience.</p>
         </div>
       )}
     </section>

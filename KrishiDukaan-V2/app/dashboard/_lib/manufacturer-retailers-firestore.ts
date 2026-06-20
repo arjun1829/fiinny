@@ -402,9 +402,10 @@ export async function createNetworkRetailer(
 
   await batch.commit();
 
-  // Subcollection mirror — awaited so errors surface immediately
+  // Subcollection mirror — include address + geo so the Company Page fast-path
+  // (mirrorGeo && mirrorAddr.city) fires without needing a secondary retailers/ read.
   if (manufacturerPhone) {
-    await syncRetailerMirror(manufacturerPhone, normalizedPhone, {
+    const mirrorPayload: Record<string, unknown> = {
       retailerDocId: normalizedPhone,
       retailerPhone: normalizedPhone,
       manufacturerPhone,
@@ -414,7 +415,15 @@ export async function createNetworkRetailer(
       status: "invited",
       onboardingStatus: "pending",
       addedAt: serverTimestamp(),
-    });
+      address: {
+        line1:   input.address.line1.trim(),
+        city:    input.address.city.trim(),
+        state:   input.address.state.trim(),
+        pincode: input.address.pincode.trim(),
+      },
+    };
+    if (input.geo) mirrorPayload.geo = input.geo;
+    await syncRetailerMirror(manufacturerPhone, normalizedPhone, mirrorPayload);
   } else {
     console.error(
       "[createNetworkRetailer] Cannot write subcollection mirror: manufacturer has no resolvable phone. uid:",

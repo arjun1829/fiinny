@@ -19,7 +19,43 @@ function normalizePhone(raw: string): string {
   if (digits.length === 10) return `+91${digits}`;
   if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
   if (digits.length === 11 && digits.startsWith("0")) return `+91${digits.slice(1)}`;
-  return raw.trim();
+  return ""; // could not normalize — caller treats empty as invalid
+}
+
+// ─── Google Maps URL validation ───────────────────────────────────────────────
+// Error-string constants used as keys into tErr() / translation lookups.
+const MAPS_ERR_REQUIRED = "Google Maps link required";
+const MAPS_ERR_INVALID = "Invalid Google Maps link";
+const MAPS_ERR_NOT_GOOGLE = "Must be a Google Maps URL (maps.google.com or google.com/maps)";
+const MAPS_ERR_NO_COORDS = "Google Maps link must include coordinates (e.g. ?q=18.55,75.00)";
+
+// Returns a specific error string, or null when the URL is acceptable.
+function validateGoogleMapsLink(raw: string): string | null {
+  const url = raw.trim();
+  if (!url) return MAPS_ERR_REQUIRED;
+
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return MAPS_ERR_INVALID;
+  }
+
+  const host = u.hostname.toLowerCase();
+
+  // Short links resolved server-side — accept provisionally
+  if (host === "goo.gl" || host === "maps.app.goo.gl") return null;
+
+  const isGoogleMaps =
+    host === "maps.google.com" ||
+    ((host === "www.google.com" || host === "google.com") &&
+      u.pathname.toLowerCase().startsWith("/maps"));
+
+  if (!isGoogleMaps) return MAPS_ERR_NOT_GOOGLE;
+
+  if (!parseGoogleMapsUrl(url)) return MAPS_ERR_NO_COORDS;
+
+  return null;
 }
 
 // ─── CSV parser ───────────────────────────────────────────────────────────────
@@ -87,8 +123,10 @@ type ParsedRetailerRow = {
   ownerName: string;
   phone: string;
   normalizedPhone: string;
-  googleMapsLink: string;
+  googleMapsLink: string;   // raw value parsed from the CSV cell (for display)
+  mapsError: string | null; // null = valid; string = specific validation error
   city: string;
+  district: string;
   state: string;
   pincode: string;
   errors: string[];
@@ -103,12 +141,12 @@ type UploadRow = ParsedRetailerRow & { status: RowStatus; statusMsg: string };
 // Google Maps URLs contain a comma between lat and lng, so the googleMapsLink
 // cell must always be quoted ("...") in the CSV. Without quotes, the comma is
 // treated as a column separator, shifting city/state/pincode into wrong columns.
-const CSV_TEMPLATE = `shopName,ownerName,phone,googleMapsLink,city,state,pincode
-Sai Agro Test 01,Sai Surve Test 01,9876500001,"https://maps.google.com/?q=18.5204,73.8567",Pune,Maharashtra,411001
-Krishi Kendra Test 02,Rahul Jadhav Test 02,9876500002,"https://maps.google.com/?q=19.9975,73.7898",Nashik,Maharashtra,422001
-Agro Solutions Test 03,Amit Bhosale Test 03,9876500003,"https://maps.google.com/?q=16.7050,74.2433",Kolhapur,Maharashtra,416003
-Farmer Store Test 04,Nikhil Pawar Test 04,9876500004,"https://maps.google.com/?q=19.8762,75.3433",Aurangabad,Maharashtra,431001
-Green Agro Test 05,Pratik Shinde Test 05,9876500005,"https://maps.google.com/?q=17.6805,75.9080",Solapur,Maharashtra,413001
+const CSV_TEMPLATE = `shopName,ownerName,phone,googleMapsLink,city,district,state,pincode
+Sai Agro Test 01,Sai Surve Test 01,9876500001,"https://maps.google.com/?q=18.5204,73.8567",Pune,Pune,Maharashtra,411001
+Krishi Kendra Test 02,Rahul Jadhav Test 02,9876500002,"https://maps.google.com/?q=19.9975,73.7898",Nashik,Nashik,Maharashtra,422001
+Agro Solutions Test 03,Amit Bhosale Test 03,9876500003,"https://maps.google.com/?q=16.7050,74.2433",Kolhapur,Kolhapur,Maharashtra,416003
+Farmer Store Test 04,Nikhil Pawar Test 04,9876500004,"https://maps.google.com/?q=19.8762,75.3433",Aurangabad,Aurangabad,Maharashtra,431001
+Green Agro Test 05,Pratik Shinde Test 05,9876500005,"https://maps.google.com/?q=17.6805,75.9080",Solapur,Solapur,Maharashtra,413001
 `;
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
@@ -127,36 +165,57 @@ function parseRetailerCSV(
   const seen = new Set<string>();
 
   return dataRows.map((cells, i) => {
-    const rowNum = isHeader ? i + 2 : i + 1;
+    const rowNum         = isHeader ? i + 2 : i + 1;
     const shopName       = (cells[0] ?? "").trim();
-    const ownerName      = (cells[1] ?? "").trim();
+    const ownerNameRaw   = (cells[1] ?? "").trim();
     const phoneRaw       = (cells[2] ?? "").trim();
-    const googleMapsLink = (cells[3] ?? "").trim();
+    // Strip smart/curly quotes that spreadsheet apps insert around URLs
+    const googleMapsLink = (cells[3] ?? "").trim().replace(/[\u201C\u201D\u2018\u2019\u00AB\u00BB]/g, "");
     const city           = (cells[4] ?? "").trim();
-    const state          = (cells[5] ?? "").trim();
-    const pincode        = (cells[6] ?? "").trim();
+    const district       = (cells[5] ?? "").trim();
+    const state          = (cells[6] ?? "").trim() || "Maharashtra";
+    const pincode        = (cells[7] ?? "").trim();
 
+    // Owner name is optional — fall back to shop name
+    const ownerName = ownerNameRaw || shopName;
+
+    // Normalize phone: strip all non-digits then build E164
     const normalizedPhone = phoneRaw ? normalizePhone(phoneRaw) : "";
 
     const errors: string[] = [];
-    if (!shopName) errors.push("Shop name required");
-    if (!ownerName) errors.push("Owner name required");
-    if (!phoneRaw) errors.push("Phone required");
-    else if (normalizedPhone === phoneRaw && !/^\+\d{10,15}$/.test(phoneRaw)) {
-      errors.push("Invalid phone number");
-    }
-    if (!city) errors.push("City required");
-    if (!state) errors.push("State required");
 
+    // 1. Shop name: required, min 3 chars
+    if (!shopName) {
+      errors.push("Shop name required");
+    } else if (shopName.length < 3) {
+      errors.push("Shop name too short");
+    }
+
+    // 2. Phone: required, must normalize to a valid +91XXXXXXXXXX
+    if (!phoneRaw) {
+      errors.push("Phone required");
+    } else if (!normalizedPhone) {
+      errors.push("Phone must contain exactly 10 digits");
+    }
+
+    // 3. Google Maps link: always validated, independent of other errors
+    const mapsError = validateGoogleMapsLink(googleMapsLink);
+    if (mapsError) errors.push(mapsError);
+
+    // 4. Duplicate phone within the file (runs regardless of other errors)
     const dupKey = normalizedPhone || phoneRaw;
     const isDuplicate = !!dupKey && seen.has(dupKey);
-    if (!isDuplicate && dupKey) seen.add(dupKey);
+    if (isDuplicate) {
+      errors.push("Duplicate phone in file");
+    } else if (dupKey) {
+      seen.add(dupKey);
+    }
 
     const isExisting = !!normalizedPhone && existingPhones.has(normalizedPhone);
 
     return {
       rowNum, shopName, ownerName, phone: phoneRaw, normalizedPhone,
-      googleMapsLink, city, state, pincode, errors, isDuplicate, isExisting,
+      googleMapsLink, mapsError, city, district, state, pincode, errors, isDuplicate, isExisting,
     };
   });
 }
@@ -185,12 +244,15 @@ export function BulkRetailerUpload({
   // stays untouched). Unknown/dynamic strings fall through unchanged.
   const tErr = (msg: string): string => {
     switch (msg) {
-      case "Shop name required": return t("csvRetailerErrShopName");
-      case "Owner name required": return t("csvRetailerErrOwnerName");
-      case "Phone required": return t("csvRetailerErrPhone");
-      case "Invalid phone number": return t("csvRetailerErrInvalidPhone");
-      case "City required": return t("csvRetailerErrCity");
-      case "State required": return t("csvRetailerErrState");
+      case "Shop name required":                  return t("csvRetailerErrShopName");
+      case "Shop name too short":                 return t("csvRetailerErrShopNameMin");
+      case "Phone required":                      return t("csvRetailerErrPhone");
+      case "Phone must contain exactly 10 digits": return t("csvRetailerErrPhoneDigits");
+      case MAPS_ERR_REQUIRED:    return t("csvRetailerErrMapsRequired");
+      case MAPS_ERR_INVALID:     return t("csvRetailerErrMapsInvalid");
+      case MAPS_ERR_NOT_GOOGLE:  return t("csvRetailerErrMapsNotGoogle");
+      case MAPS_ERR_NO_COORDS:   return t("csvRetailerErrMapsNoCoords");
+      case "Duplicate phone in file":                              return t("csvRetailerErrDupPhone");
       default: return msg;
     }
   };
@@ -256,9 +318,9 @@ export function BulkRetailerUpload({
           manufacturerId,
           shopName: rows[i]!.shopName,
           ownerName: rows[i]!.ownerName,
-          phone: rows[i]!.phone,
+          phone: rows[i]!.normalizedPhone,
           address: {
-            line1: [rows[i]!.city, rows[i]!.state].filter(Boolean).join(", "),
+            line1: [rows[i]!.city, rows[i]!.district, rows[i]!.state].filter(Boolean).join(", "),
             city: rows[i]!.city,
             state: rows[i]!.state,
             pincode: rows[i]!.pincode,
@@ -286,6 +348,32 @@ export function BulkRetailerUpload({
     setUploading(false);
     setDone(true);
     await onDone();
+  };
+
+  // ── Download failed rows ───────────────────────────────────────────────────
+
+  const downloadFailedRows = () => {
+    if (!uploadRows) return;
+    const failed = uploadRows.filter(
+      (r) => r.status === "error" || (r.status === "skipped" && (r.errors.length > 0 || r.isDuplicate)),
+    );
+    if (!failed.length) return;
+    const header = "Row,Shop Name,Phone,Error\n";
+    const body = failed
+      .map((r) => {
+        const reason = r.status === "error"
+          ? r.statusMsg
+          : r.errors.map(tErr).join("; ");
+        return `${r.rowNum},"${r.shopName.replace(/"/g, '""')}","${r.normalizedPhone || r.phone}","${reason.replace(/"/g, '""')}"`;
+      })
+      .join("\n");
+    const blob = new Blob([header + body], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "retailers-failed.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ── Reset ──────────────────────────────────────────────────────────────────
@@ -388,7 +476,7 @@ export function BulkRetailerUpload({
             </button>
             <HelperIcon size="xs" variant="ghost" side="right" textKey="csvRetailerTemplate" ariaLabel={`${t("csvDownloadTemplate")} help`} />
             <span className="text-xs text-on-surface-variant">
-              {t("csvColumnsLabel")} <code className="font-mono">shopName, ownerName, phone, googleMapsLink, city, state, pincode</code>
+              {t("csvColumnsLabel")} <code className="font-mono">shopName, ownerName, phone, googleMapsLink, city, district, state, pincode</code>
             </span>
             <p className="text-xs text-amber-600">
             Google Maps links must be enclosed in double quotes (&quot;&quot;)
@@ -497,22 +585,41 @@ export function BulkRetailerUpload({
                         <td className="px-3 py-2 text-on-surface-variant font-mono">
                           {row.normalizedPhone || row.phone || "—"}
                         </td>
-                        <td className="px-3 py-2 text-center">
+                        {/* Maps cell: shows the actual parsed URL so admins can verify column was read correctly */}
+                        <td className="px-3 py-2 max-w-[140px]">
                           {row.googleMapsLink ? (
-                            <MapPin className="h-3.5 w-3.5 text-green-600 inline-block" />
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1">
+                                {row.mapsError ? (
+                                  <span className="text-red-500 font-bold shrink-0">✗</span>
+                                ) : (
+                                  <MapPin className="h-3 w-3 text-green-600 shrink-0" />
+                                )}
+                                <span className="font-mono text-[10px] text-on-surface-variant truncate" title={row.googleMapsLink}>
+                                  {row.googleMapsLink.replace(/^https?:\/\/(www\.)?/, "").slice(0, 32)}
+                                </span>
+                              </div>
+                              {row.mapsError && (
+                                <span className="text-[10px] text-red-500 leading-tight">{tErr(row.mapsError)}</span>
+                              )}
+                            </div>
                           ) : (
-                            <span className="text-on-surface-variant/40">—</span>
+                            <span className="text-red-400 text-[10px] font-medium">Missing</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-on-surface-variant">{row.city || "—"}</td>
                         <td className="px-3 py-2 text-on-surface-variant">{row.state || "—"}</td>
                         <td className="px-3 py-2">
-                          {row.isDuplicate ? (
+                          {row.isDuplicate && !row.errors.filter(e => e !== "Duplicate phone in file").length && !row.mapsError ? (
                             <span className="text-amber-600 font-medium">{t("csvRetailerDupRow")}</span>
-                          ) : row.isExisting ? (
+                          ) : row.isExisting && !row.errors.length ? (
                             <span className="text-amber-600 font-medium">{t("csvRetailerExistingRow")}</span>
                           ) : row.errors.length ? (
-                            <span className="text-red-600">{tErr(row.errors[0]!)}</span>
+                            <div className="flex flex-col gap-1">
+                              {row.errors.map((e, idx) => (
+                                <span key={idx} className="text-red-600 leading-tight">{tErr(e)}</span>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-green-600 font-medium">{t("csvStatusReady")}</span>
                           )}
@@ -625,13 +732,24 @@ export function BulkRetailerUpload({
               </div>
 
               {done && (
-                <button
-                  type="button"
-                  onClick={reset}
-                  className="inline-flex w-fit items-center gap-2 rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container transition-colors"
-                >
-                  {t("csvUploadAnother")}
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  {uploadRows.some((r) => r.status === "error" || (r.status === "skipped" && (r.errors.length > 0 || r.isDuplicate))) && (
+                    <button
+                      type="button"
+                      onClick={downloadFailedRows}
+                      className="inline-flex w-fit items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+                    >
+                      <FileDown className="h-4 w-4" /> {t("csvRetailerDownloadFailed")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="inline-flex w-fit items-center gap-2 rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container transition-colors"
+                  >
+                    {t("csvUploadAnother")}
+                  </button>
+                </div>
               )}
             </div>
           )}

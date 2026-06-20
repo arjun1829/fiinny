@@ -361,6 +361,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
         variants: Array.isArray(data.variants) ? data.variants : undefined,
         images: Array.isArray(data.images) ? data.images : undefined,
+        videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
+        composition: Array.isArray(data.composition) ? data.composition : undefined,
       } as MarketplaceProduct;
     });
 
@@ -2900,11 +2902,15 @@ export type RetailerNetworkStore = {
 export async function fetchManufacturerNetworkStores(manufacturerPhone: string): Promise<RetailerNetworkStore[]> {
   try {
     const snap = await getDocs(collection(db, 'manufacturers', manufacturerPhone, 'retailers'));
+    // Match Retailer Network dashboard logic: exclude only explicitly revoked/removed/inactive
     const activeMirrors = snap.docs.filter((d) => {
       const r = d.data();
+      const status = String(r.status ?? 'invited');
+      const onboarding = String(r.onboardingStatus ?? 'active');
       return (
-        String(r.status ?? '') === 'active' &&
-        String(r.onboardingStatus ?? 'active') === 'active'
+        status !== 'revoked' &&
+        onboarding !== 'removed' &&
+        onboarding !== 'inactive'
       );
     });
 
