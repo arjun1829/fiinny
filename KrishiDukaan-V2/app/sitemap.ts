@@ -52,34 +52,17 @@ function staticEntries(now: Date): MetadataRoute.Sitemap {
 }
 
 // ─── Category entries ───────────────────────────────────────────────────────
-// Canonical categories surfaced as the SPA's filtered market view. (Dedicated
-// SSR category routes are a later phase; these are the navigable URLs today.)
-const CATEGORIES = [
-  "Seeds",
-  "Fertilizers",
-  "Pesticides",
-  "Herbicides",
-  "Bio-Stimulants",
-  "Tools",
-  "Other",
-];
-
 function categoryEntries(now: Date): MetadataRoute.Sitemap {
   // Canonical SSR category landing pages (/category/[slug]).
-  const ssr = SEO_CATEGORIES.map((c) => ({
+  // NOTE: The legacy `/?view=market&category=…` entries were removed — the raw
+  // `&` they contained broke XML validation (EntityRef: expecting ';'), and they
+  // merely duplicated these canonical, query-param-free category routes.
+  return SEO_CATEGORIES.map((c) => ({
     url: `${SITE_URL}/category/${c.slug}`,
     lastModified: now,
     changeFrequency: "daily" as const,
     priority: 0.9,
   }));
-  // Legacy SPA market views — kept for continuity; lower priority.
-  const legacy = CATEGORIES.map((category) => ({
-    url: `${SITE_URL}/?view=market&category=${encodeURIComponent(category)}`,
-    lastModified: now,
-    changeFrequency: "daily" as const,
-    priority: 0.6,
-  }));
-  return [...ssr, ...legacy];
 }
 
 // ─── Product entries (dynamic, safe-fallback) ───────────────────────────────

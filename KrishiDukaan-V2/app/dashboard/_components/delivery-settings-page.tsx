@@ -15,17 +15,22 @@ import {
 import type { WeightSlab, CoverageType } from "../_types/delivery-settings";
 import { INDIAN_STATES } from "../_types/delivery-settings";
 import { PageHeader } from "./page-header";
+import { useI18n } from "../../i18n/I18nContext";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function overlaps(slabs: WeightSlab[], idx: number, next: WeightSlab): string | null {
+// Validation errors are returned as a translatable descriptor (key + params)
+// so the same logic can be rendered in any language at the display site.
+type SlabError = { key: string; params?: Record<string, string | number> };
+
+function overlaps(slabs: WeightSlab[], idx: number, next: WeightSlab): SlabError | null {
   for (let i = 0; i < slabs.length; i++) {
     if (i === idx) continue;
     const s = slabs[i];
     const overlapExists =
       next.minKg < s.maxKg && next.maxKg > s.minKg;
     if (overlapExists)
-      return `Overlaps with slab ${s.minKg}–${s.maxKg} kg`;
+      return { key: "deliverySlabOverlaps", params: { min: s.minKg, max: s.maxKg } };
   }
   return null;
 }
@@ -34,13 +39,13 @@ function validateSlab(
   slab: WeightSlab,
   slabs: WeightSlab[],
   idx: number,
-): string | null {
+): SlabError | null {
   if (!Number.isFinite(slab.minKg) || slab.minKg < 0)
-    return "Min weight must be ≥ 0";
+    return { key: "deliverySlabMinError" };
   if (!Number.isFinite(slab.maxKg) || slab.maxKg <= slab.minKg)
-    return "Max weight must be greater than min";
+    return { key: "deliverySlabMaxError" };
   if (!Number.isFinite(slab.charge) || slab.charge < 0)
-    return "Charge must be ≥ 0";
+    return { key: "deliverySlabChargeError" };
   return overlaps(slabs, idx, slab);
 }
 
@@ -99,13 +104,14 @@ function SlabRow({
   onDelete: () => void;
   disabled: boolean;
 }) {
+  const { t } = useI18n();
   const next: WeightSlab = { minKg: slab.minKg, maxKg: slab.maxKg, charge: slab.charge };
   const error = validateSlab(next, allSlabs as WeightSlab[], index);
 
   return (
     <div className={`rounded-xl border p-3 flex flex-col gap-2 ${error ? "border-red-200 bg-red-50/30" : "border-outline-variant/25 bg-white"}`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-on-surface-variant">Slab {index + 1}</span>
+        <span className="text-xs font-semibold text-on-surface-variant">{t('deliverySlabLabel', { number: index + 1 })}</span>
         <button
           type="button"
           disabled={disabled || isOnly}
@@ -118,7 +124,7 @@ function SlabRow({
 
       <div className="grid grid-cols-3 gap-2">
         <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium text-on-surface-variant">Min (kg)</span>
+          <span className="font-medium text-on-surface-variant">{t('deliveryMinKg')}</span>
           <input
             type="number"
             min={0}
@@ -130,7 +136,7 @@ function SlabRow({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium text-on-surface-variant">Max (kg)</span>
+          <span className="font-medium text-on-surface-variant">{t('deliveryMaxKg')}</span>
           <input
             type="number"
             min={0}
@@ -142,7 +148,7 @@ function SlabRow({
           />
         </label>
         <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium text-on-surface-variant">Charge (₹)</span>
+          <span className="font-medium text-on-surface-variant">{t('deliveryChargeRupees')}</span>
           <div className="relative">
             <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">₹</span>
             <input
@@ -160,13 +166,13 @@ function SlabRow({
 
       {error && (
         <p className="flex items-center gap-1 text-[10px] font-medium text-red-600">
-          <AlertTriangle className="h-3 w-3 shrink-0" /> {error}
+          <AlertTriangle className="h-3 w-3 shrink-0" /> {t(error.key as any, error.params)}
         </p>
       )}
 
       {!error && (
         <p className="text-[10px] text-on-surface-variant">
-          Orders {slab.minKg}–{slab.maxKg} kg → <span className="font-semibold text-on-surface">₹{slab.charge}</span> delivery charge
+          {t('deliverySlabSummary', { min: slab.minKg, max: slab.maxKg, charge: slab.charge })}
         </p>
       )}
     </div>
@@ -184,6 +190,7 @@ function StatePicker({
   onChange: (states: string[]) => void;
   disabled: boolean;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
 
@@ -208,7 +215,7 @@ function StatePicker({
       <div className="flex items-center gap-2 flex-wrap">
         <input
           type="text"
-          placeholder="Search states…"
+          placeholder={t('deliverySearchStates')}
           disabled={disabled}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -221,11 +228,11 @@ function StatePicker({
             onClick={() => onChange([])}
             className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
           >
-            Clear all
+            {t('deliveryClearAll')}
           </button>
         )}
         <span className="text-xs text-on-surface-variant">
-          {selected.length} of {INDIAN_STATES.length} selected
+          {t('deliverySelectedOfTotal', { selected: selected.length, total: INDIAN_STATES.length })}
         </span>
       </div>
 
@@ -257,9 +264,9 @@ function StatePicker({
           className="flex items-center gap-1 self-start text-xs font-semibold text-primary hover:underline"
         >
           {showAll ? (
-            <><ChevronUp className="h-3.5 w-3.5" /> Show less</>
+            <><ChevronUp className="h-3.5 w-3.5" /> {t('deliveryShowLess')}</>
           ) : (
-            <><ChevronDown className="h-3.5 w-3.5" /> Show all {filtered.length} states</>
+            <><ChevronDown className="h-3.5 w-3.5" /> {t('deliveryShowAllStates', { count: filtered.length })}</>
           )}
         </button>
       )}
@@ -270,6 +277,7 @@ function StatePicker({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function DeliverySettingsPage() {
+  const { t } = useI18n();
   const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
   const [sellerPhone, setSellerPhone] = useState<string | null>(null);
@@ -362,16 +370,16 @@ export function DeliverySettingsPage() {
           weightSlabs: slabs as WeightSlab[],
         },
       );
-      setStatus({ type: "ok", text: "Delivery settings saved." });
+      setStatus({ type: "ok", text: t('deliverySavedSuccess') });
     } catch (e) {
       setStatus({
         type: "err",
-        text: e instanceof Error ? e.message : "Failed to save.",
+        text: e instanceof Error ? e.message : t('deliverySaveFailed'),
       });
     } finally {
       setSaving(false);
     }
-  }, [sellerPhone, canSave, storedOnlineDeliveryEnabled, coverageType, selectedStates, slabs]);
+  }, [sellerPhone, canSave, storedOnlineDeliveryEnabled, coverageType, selectedStates, slabs, t]);
 
   // Auto-dismiss success
   useEffect(() => {
@@ -392,7 +400,7 @@ export function DeliverySettingsPage() {
   if (!uid) {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-        You must be logged in to manage delivery settings.
+        {t('deliveryMustLogin')}
       </div>
     );
   }
@@ -401,24 +409,24 @@ export function DeliverySettingsPage() {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
-          title="Delivery Settings"
-          description="Configure online delivery, charge slabs, and coverage for your products."
+          title={t('deliverySettingsTitle')}
+          description={t('deliverySettingsSubtitle')}
         />
         <div className="flex flex-col items-center gap-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 px-6 py-16 text-center">
           <div className="rounded-full bg-surface-container p-5">
             <Lock className="h-9 w-9 text-on-surface-variant/40" />
           </div>
           <div>
-            <p className="text-base font-bold text-on-surface">Online Delivery is currently disabled.</p>
+            <p className="text-base font-bold text-on-surface">{t('deliveryOnlineDisabled')}</p>
             <p className="mt-1.5 text-sm text-on-surface-variant max-w-sm mx-auto leading-relaxed">
-              Enable Online Delivery from your Profile to configure delivery coverage and delivery charges.
+              {t('deliveryEnableFromProfile')}
             </p>
           </div>
           <Link
             href="/dashboard/profile"
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 transition-all"
           >
-            Go to Profile
+            {t('deliveryGoToProfile')}
           </Link>
         </div>
       </div>
@@ -428,28 +436,27 @@ export function DeliverySettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Delivery Settings"
-        description="Configure online delivery, charge slabs, and coverage for your products."
+        title={t('deliverySettingsTitle')}
+        description={t('deliverySettingsSubtitle')}
       />
 
       {/* ── Section 2: Delivery Charge Slabs ── */}
       <Section
         icon={Weight}
-        title="Delivery Charge Configuration"
-        subtitle="Set weight-based delivery charges. Customers pay the charge for the slab their order weight falls into."
+        title={t('deliveryChargeConfigTitle')}
+        subtitle={t('deliveryChargeConfigSubtitle')}
       >
         {/* Example hint */}
         <div className="mb-4 flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5">
           <Info className="h-4 w-4 shrink-0 text-primary mt-0.5" />
           <p className="text-xs text-primary/80">
-            Example: 0–2 kg → ₹100, 2–5 kg → ₹250, 5–10 kg → ₹500.
-            Ranges must not overlap. Leave empty for free delivery.
+            {t('deliveryChargeExample')}
           </p>
         </div>
 
         {slabs.length === 0 ? (
           <div className="rounded-xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 py-8 text-center text-sm text-on-surface-variant">
-            No slabs configured — delivery is free for all orders.
+            {t('deliveryNoSlabs')}
           </div>
         ) : (
           <div className="flex flex-col gap-2 mb-3">
@@ -474,13 +481,13 @@ export function DeliverySettingsPage() {
           onClick={addSlab}
           className="flex items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2.5 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors"
         >
-          <Plus className="h-4 w-4" /> Add Slab
+          <Plus className="h-4 w-4" /> {t('deliveryAddSlab')}
         </button>
 
         {hasSlabErrors && (
           <p className="mt-2 flex items-center gap-1 text-xs font-medium text-red-600">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            Fix slab errors before saving.
+            {t('deliveryFixSlabErrors')}
           </p>
         )}
       </Section>
@@ -488,14 +495,16 @@ export function DeliverySettingsPage() {
       {/* ── Section 3: Delivery Coverage ── */}
       <Section
         icon={Globe}
-        title="Delivery Coverage"
-        subtitle="Choose where you deliver. Customers outside your coverage area will not be able to place orders."
+        title={t('deliveryCoverageTitle')}
+        subtitle={t('deliveryCoverageSubtitle')}
         badge={
           <span className="inline-flex items-center gap-1 rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">
             <MapPin className="h-3 w-3" />
             {coverageType === "pan_india"
-              ? "Pan India"
-              : `${selectedStates.length} state${selectedStates.length !== 1 ? "s" : ""}`}
+              ? t('deliveryPanIndia')
+              : selectedStates.length === 1
+                ? t('deliveryStateCountSingular', { count: selectedStates.length })
+                : t('deliveryStatesCount', { count: selectedStates.length })}
           </span>
         }
       >
@@ -514,9 +523,9 @@ export function DeliverySettingsPage() {
               } disabled:opacity-50`}
             >
               {type === "pan_india" ? (
-                <><Globe className="h-4 w-4" /> Pan India</>
+                <><Globe className="h-4 w-4" /> {t('deliveryPanIndia')}</>
               ) : (
-                <><MapPin className="h-4 w-4" /> Selected States</>
+                <><MapPin className="h-4 w-4" /> {t('deliverySelectedStates')}</>
               )}
             </button>
           ))}
@@ -524,7 +533,7 @@ export function DeliverySettingsPage() {
 
         {coverageType === "pan_india" && (
           <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-primary/80">
-            You deliver to all states and union territories across India.
+            {t('deliveryPanIndiaInfo')}
           </div>
         )}
 
@@ -538,7 +547,7 @@ export function DeliverySettingsPage() {
             {coverageInvalid && (
               <p className="mt-2 flex items-center gap-1 text-xs font-medium text-red-600">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                Select at least one state.
+                {t('deliverySelectAtLeastOne')}
               </p>
             )}
           </>
@@ -563,7 +572,7 @@ export function DeliverySettingsPage() {
             </div>
           ) : (
             <p className="text-xs text-on-surface-variant">
-              Changes apply to all your products immediately after saving.
+              {t('deliveryChangesApply')}
             </p>
           )}
         </div>
@@ -575,9 +584,9 @@ export function DeliverySettingsPage() {
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95 disabled:opacity-50 transition-all"
         >
           {saving ? (
-            <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
+            <><Loader2 className="h-4 w-4 animate-spin" /> {t('deliverySaving')}</>
           ) : (
-            <><Save className="h-4 w-4" /> Save Settings</>
+            <><Save className="h-4 w-4" /> {t('deliverySaveSettings')}</>
           )}
         </button>
       </div>

@@ -16,6 +16,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../app/firebase';
 import { Star, MessageSquare, Pencil } from 'lucide-react';
+import { useI18n } from '../../app/i18n/I18nContext';
 
 export function ReviewSection({
   targetId,
@@ -27,6 +28,7 @@ export function ReviewSection({
   /** Reports the live average rating + count whenever reviews load or change. */
   onAggregateChange?: (targetId: string, averageRating: number, totalReviews: number) => void;
 }) {
+  const { t } = useI18n();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -154,7 +156,7 @@ export function ReviewSection({
       setIsEditing(false);
     } catch (err) {
       console.error('Failed to submit review', err);
-      alert('Failed to submit review. You might not have permission.');
+      alert(t('reviewSubmitFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -188,7 +190,7 @@ export function ReviewSection({
           <div className="p-2 bg-primary/10 rounded-xl text-primary">
             <MessageSquare className="w-6 h-6" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-on-surface tracking-tight">Customer Reviews</h2>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-on-surface tracking-tight">{t('customerReviews')}</h2>
         </div>
         {!showForm && isLoggedIn && (
           existingReview ? (
@@ -197,14 +199,14 @@ export function ReviewSection({
               className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-5 py-2.5 bg-surface-container text-on-surface font-bold rounded-xl border border-outline-variant/40 hover:bg-surface-container-high hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
             >
               <Pencil className="w-4 h-4" />
-              Edit Your Review
+              {t('editYourReview')}
             </button>
           ) : (
             <button
               onClick={openNewReview}
               className="w-full sm:w-auto px-5 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all text-sm uppercase tracking-wider"
             >
-              Write a Review
+              {t('writeAReview')}
             </button>
           )
         )}
@@ -213,10 +215,10 @@ export function ReviewSection({
       {!isLoggedIn && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-2xl border border-amber-200/60 flex items-center justify-between">
           <p className="text-amber-800 text-sm font-medium">
-            Join the community and share your experience.
+            {t('joinCommunityShare')}
           </p>
           <a href="/?view=login" className="px-4 py-2 bg-amber-100 text-amber-900 font-bold rounded-lg hover:bg-amber-200 transition-colors text-xs uppercase tracking-widest">
-            Login to Review
+            {t('loginToReview')}
           </a>
         </div>
       )}
@@ -229,7 +231,7 @@ export function ReviewSection({
               {userName.charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-primary mb-0.5">Your Review</p>
+              <p className="text-xs font-black uppercase tracking-widest text-primary mb-0.5">{t('yourReviewLabel')}</p>
               <div className="flex items-center gap-1.5">
                 {[1,2,3,4,5].map(s => (
                   <Star key={s} className={`w-3.5 h-3.5 ${s <= existingReview.rating ? 'fill-amber-400 text-amber-400' : 'text-surface-container-highest fill-surface-container-low'}`} />
@@ -257,14 +259,14 @@ export function ReviewSection({
               <div>
                 <h3 className="font-bold text-on-surface leading-none">{userName}</h3>
                 <p className="text-xs text-on-surface-variant mt-1 uppercase tracking-widest font-semibold">
-                  {isEditing ? 'Editing your review' : 'Posting publicly'}
+                  {isEditing ? t('editingYourReview') : t('postingPublicly')}
                 </p>
               </div>
             </div>
           </div>
           
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-bold text-on-surface-variant uppercase tracking-widest">Select Rating</span>
+            <span className="text-sm font-bold text-on-surface-variant uppercase tracking-widest">{t('selectRatingLabel')}</span>
             <div className="flex gap-1.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -288,7 +290,7 @@ export function ReviewSection({
           </div>
 
           <textarea
-            placeholder="Share details of your experience with this product or store..."
+            placeholder={t('reviewPlaceholder')}
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="w-full bg-white border border-surface-container rounded-2xl px-5 py-4 text-sm focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 min-h-[120px] resize-y transition-all"
@@ -296,19 +298,19 @@ export function ReviewSection({
           />
           
           <div className="flex justify-end gap-3 mt-2">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => { setShowForm(false); setIsEditing(false); }}
               className="px-6 py-2.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-bold rounded-xl transition-all text-sm uppercase tracking-wider"
             >
-              Cancel
+              {t('cancelBtn')}
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={submitting}
               className="px-8 py-2.5 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 text-sm uppercase tracking-wider"
             >
-              {submitting ? (isEditing ? 'Updating...' : 'Posting...') : (isEditing ? 'Update Review' : 'Post Review')}
+              {submitting ? (isEditing ? t('updatingBtn') : t('postingBtn')) : (isEditing ? t('updateReviewBtn') : t('postReviewBtn'))}
             </button>
           </div>
         </form>
@@ -333,7 +335,7 @@ export function ReviewSection({
                 ))}
               </div>
               <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-widest">
-                {totalReviews} {totalReviews === 1 ? 'Review' : 'Reviews'}
+                {totalReviews} {totalReviews === 1 ? t('reviewSingular') : t('reviewPlural')}
               </span>
             </div>
             
@@ -374,9 +376,9 @@ export function ReviewSection({
                   <div className="flex flex-col">
                     <span className="font-bold text-on-surface">{review.reviewerName}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">Verified Buyer</span>
+                      <span className="text-[10px] text-on-surface-variant font-semibold uppercase tracking-widest mt-0.5">{t('verifiedBuyer')}</span>
                       {review.reviewerPhone === userPhone && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">You</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded-full">{t('youLabel')}</span>
                       )}
                     </div>
                   </div>
@@ -399,7 +401,7 @@ export function ReviewSection({
                     <button
                       onClick={openEditReview}
                       className="p-1.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
-                      title="Edit your review"
+                      title={t('editYourReview')}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -410,7 +412,7 @@ export function ReviewSection({
                 {review.reviewText}
               </p>
               {review.updatedAt && (
-                <p className="text-[10px] text-on-surface-variant/50 ml-12 pl-1 mt-1 font-medium">edited</p>
+                <p className="text-[10px] text-on-surface-variant/50 ml-12 pl-1 mt-1 font-medium">{t('reviewEdited')}</p>
               )}
             </div>
           ))}
@@ -421,8 +423,8 @@ export function ReviewSection({
           <div className="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4">
             <Star className="w-8 h-8 text-on-surface-variant opacity-50" />
           </div>
-          <p className="text-lg font-bold text-on-surface mb-1">No reviews yet</p>
-          <p className="text-sm text-on-surface-variant max-w-sm">Be the first to share your experience with the community.</p>
+          <p className="text-lg font-bold text-on-surface mb-1">{t('noReviewsYetTitle')}</p>
+          <p className="text-sm text-on-surface-variant max-w-sm">{t('noReviewsYetDesc')}</p>
         </div>
       )}
     </section>

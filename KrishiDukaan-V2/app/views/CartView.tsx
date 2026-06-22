@@ -46,7 +46,7 @@ type CartViewProps = {
   mapsApiKey?: string;
 };
 
-function CartSkeleton({ onGoOrders }: { onGoOrders?: () => void }) {
+function CartSkeleton({ onGoOrders, cartOrderSummaryLabel }: { onGoOrders?: () => void; cartOrderSummaryLabel: string }) {
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
       <div className="flex items-center justify-between gap-4 mb-2">
@@ -69,7 +69,7 @@ function CartSkeleton({ onGoOrders }: { onGoOrders?: () => void }) {
         ))}
       </div>
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 space-y-3 animate-pulse">
-        <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">Order Summary</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40">{cartOrderSummaryLabel}</p>
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex justify-between items-center">
             <div className="h-4 bg-surface-container rounded w-1/3" />
@@ -590,7 +590,7 @@ function CartItemCard({
   onRemove: (itemKey: string) => void;
   onAssignStore: (itemKey: string, sellerId: string, sellerType: SellerType, sellerName: string, storePrice?: number, discountPct?: number, originalPrice?: number) => void;
   isPending: boolean;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -639,7 +639,7 @@ function CartItemCard({
               </div>
               {item.discountPct && item.discountPct > 0 && item.originalPrice && (
                 <p className="text-[10px] font-semibold text-green-600">
-                  You save ₹{(item.originalPrice - item.price).toLocaleString("en-IN")} per unit
+                  {t('cartYouSavePerUnit', { amount: (item.originalPrice - item.price).toLocaleString("en-IN") })}
                 </p>
               )}
             </div>
@@ -820,7 +820,7 @@ export default function CartView({
   // Geocoding call SERVER-SIDE (no browser referer restriction) with an OSM
   // fallback, so it returns structured address components reliably even when the
   // in-browser Google JS Geocoder is blocked. Fills the existing fields directly.
-  const ADDRESS_ERROR = "Unable to fetch current location. Please enter address manually.";
+  const ADDRESS_ERROR = t('cartLocationError');
 
   const handleUseLocation = () => {
     setLocationError(null);
@@ -926,7 +926,7 @@ export default function CartView({
   }, [mapsApiKey, applyPlaceToFields]);
 
   // All hooks are above — safe to do a conditional return here
-  if (cartLoading) return <CartSkeleton onGoOrders={onGoOrders} />;
+  if (cartLoading) return <CartSkeleton onGoOrders={onGoOrders} cartOrderSummaryLabel={t('cartOrderSummary')} />;
 
   return (
     <div className="px-4 md:px-10 max-w-5xl mx-auto w-full py-8">
@@ -1009,13 +1009,13 @@ export default function CartView({
           {/* Subtotal (MRP) */}
           <div className="flex items-center justify-between text-sm text-on-surface-variant">
             <span className="inline-flex items-center gap-1.5">
-              Subtotal (MRP)
+              {t('cartSubtotalMrp')}
               {readyItems.length > 0 && readyItems.length < items.length && (
                 <span className="text-xs font-medium">
                   ({t('cartItemsOf', { ready: readyItems.length, total: items.length })})
                 </span>
               )}
-              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel="Subtotal help" />
+              <HelperIcon size="xs" variant="ghost" side="right" textKey="cartSubtotal" ariaLabel={t('cartSubtotalMrp')} />
             </span>
             <span className="font-semibold text-on-surface">
               ₹{mrpSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1025,7 +1025,7 @@ export default function CartView({
           {/* Product Discounts — only when discounts exist */}
           {totalDiscounts > 0 && (
             <div className="flex items-center justify-between text-sm text-green-700">
-              <span>Product Discounts</span>
+              <span>{t('cartProductDiscounts')}</span>
               <span className="font-semibold">
                 -₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
@@ -1035,7 +1035,7 @@ export default function CartView({
           {/* Discounted Subtotal — only when there are discounts */}
           {totalDiscounts > 0 && (
             <div className="flex items-center justify-between text-sm border-t border-outline-variant/10 pt-1.5">
-              <span className="font-semibold text-on-surface">Discounted Subtotal</span>
+              <span className="font-semibold text-on-surface">{t('cartDiscountedSubtotal')}</span>
               <span className="font-semibold text-on-surface">
                 ₹{discountedSubtotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
@@ -1046,7 +1046,7 @@ export default function CartView({
           {canCheckout && (
             <div className="flex items-center justify-between text-sm text-on-surface-variant">
               <span className="inline-flex items-center gap-1.5">
-                Delivery Charges
+                {t('cartDeliveryCharges')}
                 {estimatingDelivery && (
                   <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                 )}
@@ -1054,7 +1054,7 @@ export default function CartView({
               <span className={`font-semibold ${deliveryCharge > 0 ? "text-on-surface" : "text-green-700"}`}>
                 {estimatingDelivery ? "—" : deliveryCharge > 0
                   ? `₹${deliveryCharge.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : "Free"}
+                  : t('cartDeliveryFree')}
               </span>
             </div>
           )}
@@ -1062,8 +1062,7 @@ export default function CartView({
           {/* Weight info — only when non-zero */}
           {canCheckout && !estimatingDelivery && Object.values(bySellerWeight).some((w) => w > 0) && (
             <p className="text-[10px] text-on-surface-variant">
-              Est. weight:{" "}
-              {Object.values(bySellerWeight).reduce((s, w) => s + w, 0).toFixed(2)} kg
+              {t('cartEstWeight', { weight: Object.values(bySellerWeight).reduce((s, w) => s + w, 0).toFixed(2) })}
             </p>
           )}
 
@@ -1071,7 +1070,7 @@ export default function CartView({
           {canCheckout && totalGst > 0 && (
             <div className="flex items-center justify-between text-sm text-on-surface-variant">
               <span className="inline-flex items-center gap-1">
-                Total GST
+                {t('cartTotalGst')}
               </span>
               <span className="font-semibold text-on-surface">
                 ₹{totalGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1081,11 +1080,11 @@ export default function CartView({
 
           {/* Grand Total */}
           <div className="flex items-center justify-between border-t border-outline-variant/20 pt-2 mt-1">
-            <span className="text-base font-bold text-on-surface">Grand Total</span>
+            <span className="text-base font-bold text-on-surface">{t('cartGrandTotal')}</span>
             <span className="text-xl font-black text-secondary">
               {grandTotal !== undefined
                 ? `₹${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : <span className="text-sm text-on-surface-variant font-medium">Calculating…</span>}
+                : <span className="text-sm text-on-surface-variant font-medium">{t('cartCalculating')}</span>}
             </span>
           </div>
         </div>
@@ -1093,7 +1092,7 @@ export default function CartView({
         {/* Total Savings — celebratory row below grand total */}
         {totalDiscounts > 0 && (
           <div className="flex items-center justify-between text-sm font-semibold text-green-700 mt-1">
-            <span>Total Savings</span>
+            <span>{t('cartTotalSavings')}</span>
             <span>-₹{totalDiscounts.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         )}
@@ -1132,7 +1131,7 @@ export default function CartView({
             {/* Address — structured fields */}
             <div className="rounded-xl border border-outline-variant/40 bg-white p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Delivery Address</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t('cartDeliveryAddress')}</span>
                 <button
                   type="button"
                   onClick={handleUseLocation}
@@ -1144,7 +1143,7 @@ export default function CartView({
                   ) : (
                     <ICONS.Location className="w-3 h-3" />
                   )}
-                  {locating ? "Locating…" : "Use My Location"}
+                  {locating ? t('cartLocating') : t('cartUseMyLocation')}
                 </button>
               </div>
               {locationError && (
@@ -1154,7 +1153,7 @@ export default function CartView({
                 ref={addressInputRef}
                 value={addressArea}
                 onChange={(e) => { onCustomerFieldChange("addressArea", e.target.value); setLocationError(null); }}
-                placeholder="Area / Locality"
+                placeholder={t('cartAreaLocality')}
                 autoComplete="off"
                 className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm w-full"
               />
@@ -1162,13 +1161,13 @@ export default function CartView({
                 <input
                   value={addressCity}
                   onChange={(e) => onCustomerFieldChange("addressCity", e.target.value)}
-                  placeholder="City"
+                  placeholder={t('cartCity')}
                   className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
                 />
                 <input
                   value={addressDistrict}
                   onChange={(e) => onCustomerFieldChange("addressDistrict", e.target.value)}
-                  placeholder="District"
+                  placeholder={t('cartDistrict')}
                   className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
                 />
               </div>
@@ -1176,13 +1175,13 @@ export default function CartView({
                 <input
                   value={addressState}
                   onChange={(e) => onCustomerFieldChange("addressState", e.target.value)}
-                  placeholder="State"
+                  placeholder={t('cartState')}
                   className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
                 />
                 <input
                   value={addressPincode}
                   onChange={(e) => onCustomerFieldChange("addressPincode", e.target.value)}
-                  placeholder="Pincode"
+                  placeholder={t('cartPincode')}
                   type="number"
                   maxLength={6}
                   className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-1.5 text-sm"
@@ -1199,7 +1198,7 @@ export default function CartView({
                     className="w-4 h-4 rounded accent-primary cursor-pointer"
                   />
                   <span className="text-xs text-on-surface-variant group-hover:text-on-surface transition-colors">
-                    Save as my default delivery address
+                    {t('cartSaveDefaultAddress')}
                   </span>
                 </label>
               )}
@@ -1220,22 +1219,22 @@ export default function CartView({
                 {loading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Processing Payment…
+                    {t('cartProcessingPayment')}
                   </>
                 ) : estimatingDelivery ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Calculating Total…
+                    {t('cartCalculatingTotal')}
                   </>
                 ) : canCheckout ? (
-                  <><CreditCard className="w-4 h-4" /> Pay ₹{(grandTotal ?? 0).toLocaleString("en-IN")} &amp; Place Order ({readyItems.length})</>
+                  <><CreditCard className="w-4 h-4" /> {t('cartPayAndPlaceOrder', { amount: (grandTotal ?? 0).toLocaleString("en-IN"), count: readyItems.length })}</>
                 ) : (
                   t('cartSelectStoresToOrder')
                 )}
               </button>
               <div className="flex items-center justify-center gap-2 text-[11px] text-on-surface-variant/70">
                 <Lock className="w-3 h-3" />
-                <span>Secured by Razorpay · UPI · Cards · NetBanking</span>
+                <span>{t('cartSecuredBy')}</span>
               </div>
             </div>
           </div>
