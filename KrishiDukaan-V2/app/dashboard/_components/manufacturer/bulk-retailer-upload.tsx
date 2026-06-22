@@ -478,11 +478,6 @@ export function BulkRetailerUpload({
             <span className="text-xs text-on-surface-variant">
               {t("csvColumnsLabel")} <code className="font-mono">shopName, ownerName, phone, googleMapsLink, city, district, state, pincode</code>
             </span>
-            <p className="text-xs text-amber-600">
-            Google Maps links must be enclosed in double quotes (&quot;&quot;)
-            Example:
-            &quot;https://maps.google.com/?q=18.5204,73.8567&quot;
-          </p>
           </div>
 
           {/* File picker */}
