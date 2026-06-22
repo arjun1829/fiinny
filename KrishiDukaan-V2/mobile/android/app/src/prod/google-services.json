@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:650303885415:android:4a5dc22cf6500f592b84c2",
+        "android_client_info": {
+          "package_name": "com.karanarjuntechnologies.KrishiDukan"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDoD8qbPN5dpW4-ggQbZDjoaqJs0okWakI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:650303885415:android:794d0055354eb8d62b84c2",
         "android_client_info": {
           "package_name": "com.karanarjuntechnologies.krishidukan"

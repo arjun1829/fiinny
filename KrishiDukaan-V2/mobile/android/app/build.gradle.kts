@@ -15,6 +15,13 @@ if (keyPropertiesFile.exists()) {
     keyPropertiesFile.inputStream().use { keyProperties.load(it) }
 }
 
+// True only when Gradle is actually assembling a release artifact. Lets us fail
+// fast on a missing keystore for releases without breaking debug builds, which
+// configure every buildType regardless of the task being run.
+val isReleaseBuild = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+
 android {
     namespace = "com.karanarjuntechnologies.krishidukaan_app"
     compileSdk = flutter.compileSdkVersion
@@ -31,7 +38,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.karanarjuntechnologies.krishidukan"
+        // Must match the package name registered in Google Play exactly (case-sensitive).
+        applicationId = "com.karanarjuntechnologies.KrishiDukan"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -66,10 +74,19 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keyPropertiesFile.exists())
-                signingConfigs.getByName("release")
-            else
-                signingConfigs.getByName("debug")
+            // Release MUST be signed with the upload keystore. If key.properties is
+            // missing, fail the release build instead of silently debug-signing it
+            // (which Google Play rejects with a "wrong signing key" error). Non-release
+            // tasks fall back to debug so `flutter run` still works without the keystore.
+            signingConfig = when {
+                keyPropertiesFile.exists() -> signingConfigs.getByName("release")
+                isReleaseBuild -> throw GradleException(
+                    "Missing android/key.properties — release builds require the upload " +
+                    "keystore (krishidukan.jks). Restore key.properties + krishidukan.jks " +
+                    "before building a release."
+                )
+                else -> signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
