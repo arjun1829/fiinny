@@ -1388,6 +1388,8 @@ export default function App() {
               if (coords) setCoordinates(coords);
             }}
             userCoords={coordinates}
+            globalSearch={mapFilterProductId ? '' : productSearch}
+            onClearGlobalSearch={() => setProductSearch('')}
           />
         );
       case 'profile':
