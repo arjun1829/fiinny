@@ -208,9 +208,42 @@ export default function App() {
         storeId: null as string | null,
         inviteCode: null as string | null,
         hubId: null as string | null,
+        manufacturerId: null as string | null,
       };
     }
 
+    // ── Hash-route parsing ────────────────────────────────────────────────────
+    // Support deep-link URLs like  #/product/{id}  and  #/brand/{slug}
+    // that are shared from external sources (WhatsApp links, QR codes, etc.).
+    // We convert them into the canonical query-param state and immediately
+    // replace the URL so the rest of the app never sees the hash form again.
+    const hash = window.location.hash; // e.g. "#/product/voFM67c..."
+    if (hash && hash.startsWith('#/')) {
+      const hashPath = hash.slice(2); // strip leading "#/"
+      const [segment, id] = hashPath.split('/');
+      if (segment === 'product' && id) {
+        return {
+          view: 'product' as View,
+          productId: id,
+          storeId: null,
+          inviteCode: null,
+          hubId: null,
+          manufacturerId: null,
+        };
+      }
+      if (segment === 'brand' && id) {
+        return {
+          view: 'brand' as View,
+          productId: null,
+          storeId: null,
+          inviteCode: null,
+          hubId: null,
+          manufacturerId: id,
+        };
+      }
+    }
+
+    // ── Query-param parsing (canonical URL format) ────────────────────────────
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
     let view = VALID_VIEWS.includes(viewParam as View) ? (viewParam as View) : 'home';
