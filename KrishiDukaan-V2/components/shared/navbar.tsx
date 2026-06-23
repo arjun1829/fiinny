@@ -339,7 +339,7 @@ export function Navbar({
             <button
               key={item.id}
               data-tour-nav={item.id}
-              onClick={() => navigate(item.id as View)}
+              onClick={() => { if (item.id === 'map') setProductSearch?.(''); navigate(item.id as View); }}
               className={`text-xs font-semibold transition-colors hover:text-primary whitespace-nowrap ${
                 currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
               }`}
