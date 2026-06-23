@@ -542,10 +542,10 @@ class _PlaceholderProductCard extends StatelessWidget {
         border: Border.all(color: AppColors.divider.withValues(alpha: 0.6)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 12,
-            spreadRadius: 2,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 16,
+            spreadRadius: 4,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
