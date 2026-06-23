@@ -1,7 +1,7 @@
 name: krishidukaan_app
 description: KrishiDukaan — Agri Commerce Platform
 publish_to: 'none'
-version: 1.5.0+2
+version: 2.0.6+106
 
 environment:
   sdk: ^3.11.5

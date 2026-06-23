@@ -1,15 +1,13 @@
 flutter_native_splash:
-  # Plain green native splash — NO logo. Android paints this only while the
-  # process boots (before Flutter draws). Keeping it a bare green that matches
-  # AppColors.primary makes it blend seamlessly into our animated SplashScreen,
-  # so the user only ever perceives our custom animated landing page.
+  # Solid green — matches the Flutter SplashScreen gradient start color.
+  # No image here so the native splash fades seamlessly into the Flutter
+  # animated splash without a jarring logo jump.
   color: "#2E7D32"
   color_dark: "#1B5E20"
 
   android_12:
     color: "#2E7D32"
     color_dark: "#1B5E20"
-    icon_background_color: "#2E7D32"
 
   web: false
   ios: false
