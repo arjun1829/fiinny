@@ -57,6 +57,7 @@ function BulkTiersSection({
   productId: string;
   basePrice: number;
 }) {
+  const { t } = useI18n();
   const [tiers, setTiers] = useState<BulkDiscountTier[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -109,20 +110,20 @@ function BulkTiersSection({
       <div className="flex items-center gap-2 px-3 py-2 bg-secondary/10">
         <Layers className="h-3.5 w-3.5 text-secondary shrink-0" />
         <p className="text-[10px] font-black uppercase tracking-widest text-secondary">
-          Bulk Discount Tiers
+          {t('bulkDiscountTiersLabel')}
         </p>
       </div>
       <div className="divide-y divide-secondary/10">
-        {tiers.map((t, i) => {
-          const { finalPrice, discountAmt } = calcDiscount(basePrice, t.discountPct);
+        {tiers.map((tier, i) => {
+          const { finalPrice, discountAmt } = calcDiscount(basePrice, tier.discountPct);
           return (
             <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
-              <span className="text-on-surface-variant">Buy {t.minQty}+ units</span>
+              <span className="text-on-surface-variant">{t('bulkBuyUnits', { count: tier.minQty })}</span>
               <div className="flex items-center gap-2">
                 <span className="text-on-surface-variant line-through text-[10px]">₹{fmtPrice(basePrice)}</span>
                 <span className="font-bold text-green-700">₹{fmtPrice(finalPrice)}</span>
                 <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-black text-white">
-                  {t.discountPct}% OFF
+                  {tier.discountPct}% OFF
                 </span>
               </div>
             </div>
@@ -130,7 +131,7 @@ function BulkTiersSection({
         })}
       </div>
       <p className="text-[10px] text-on-surface-variant px-3 py-2">
-        Add more units to your cart to unlock bigger savings.
+        {t('bulkUnlockSavings')}
       </p>
     </div>
   );
@@ -147,6 +148,7 @@ function RetailerProfileSection({
   currentProductId: string;
   onProductClick?: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [profile, setProfile] = useState<RetailerPublicProfile | null>(null);
   const [products, setProducts] = useState<RetailerProductSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +189,7 @@ function RetailerProfileSection({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">
-            Sold &amp; fulfilled by
+            {t('soldFulfilledBy')}
           </p>
           <h3 className="text-lg font-bold text-on-surface truncate">{shopName}</h3>
           {locationParts.length > 0 && (
@@ -208,7 +210,7 @@ function RetailerProfileSection({
             </span>
           </div>
           <span className="text-[10px] text-on-surface-variant">
-            {profile?.totalReviews || 0} reviews
+            {t('nReviews', { count: profile?.totalReviews || 0 })}
           </span>
         </div>
       </div>
@@ -223,12 +225,12 @@ function RetailerProfileSection({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-on-surface">
-              Would you like to see more products from this retailer?
+              {t('moreProductsFromRetailer')}
             </p>
             <p className="text-xs text-on-surface-variant mt-0.5">
               {products.length > 0
-                ? `${products.length} other product${products.length !== 1 ? "s" : ""} available from ${shopName}`
-                : `Browse all products listed by ${shopName}`}
+                ? t('nOtherProducts', { count: products.length, plural: products.length !== 1 ? 's' : '', shop: shopName })
+                : t('browseAllFromShop', { shop: shopName })}
             </p>
           </div>
         </div>
@@ -272,7 +274,7 @@ function RetailerProfileSection({
           </div>
         ) : (
           <p className="text-sm text-on-surface-variant italic">
-            No other products listed yet from this retailer.
+            {t('noOtherProductsFromRetailer')}
           </p>
         )}
       </div>
@@ -296,6 +298,7 @@ function ManufacturerBrandSection({
   onProductClick?: (id: string) => void;
   onViewBrand?: (manufacturerId: string) => void;
 }) {
+  const { t } = useI18n();
   const [mfrInfo, setMfrInfo] = useState<MfrInfo>(null);
   const [mfrProducts, setMfrProducts] = useState<MfrProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -371,7 +374,7 @@ function ManufacturerBrandSection({
       {/* Brand header — stacks on mobile so the brand name stays fully visible, row layout on sm+ (desktop unchanged) */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between p-6 bg-[#0d2b09]">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">Manufactured by</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mb-1">{t('manufacturedBy')}</p>
           <h2 className="text-xl font-bold text-white leading-tight break-words sm:truncate">{brandName}</h2>
           {(mfrInfo?.location || mfrInfo?.founded) && (
             <p className="text-white/60 text-xs mt-0.5">
@@ -386,7 +389,7 @@ function ManufacturerBrandSection({
             rel="noopener noreferrer"
             className="w-full justify-center sm:w-auto sm:justify-start shrink-0 flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
           >
-            Visit Brand Store <ICONS.ChevronRight className="w-3 h-3" />
+            {t('visitBrandStore')} <ICONS.ChevronRight className="w-3 h-3" />
           </a>
         )}
       </div>
@@ -394,7 +397,7 @@ function ManufacturerBrandSection({
       {/* More from this manufacturer */}
       {mfrProducts.length > 0 && (
         <div className="p-6 bg-white flex flex-col gap-4">
-          <p className="text-sm font-semibold text-on-surface">More from {brandName}</p>
+          <p className="text-sm font-semibold text-on-surface">{t('moreFromBrand', { brand: brandName })}</p>
           <div className="flex gap-3 overflow-x-auto pb-1 hide-scrollbar">
             {mfrProducts.map((p) => (
               <button
@@ -898,7 +901,7 @@ export default function ProductDetailView({
                   >
                     <span className="flex items-center justify-center gap-1 text-xs font-black tracking-wide">
                       <Tag className="h-3 w-3 shrink-0" />
-                      Up to {pct}% OFF
+                      {t('upToOff', { pct })}
                     </span>
                   </div>
                 </div>
@@ -936,7 +939,7 @@ export default function ProductDetailView({
           {productVariants && productVariants.length > 1 && (
             <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
               <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                Package Size
+                {t('packageSizeLabel')}
               </p>
               <div className="flex flex-wrap gap-2">
                 {productVariants.map((v, i) => {
@@ -962,12 +965,12 @@ export default function ProductDetailView({
                       </span>
                       {outOfStock && (
                         <span className="text-[9px] font-bold uppercase tracking-wide text-red-400 mt-0.5">
-                          Out of stock
+                          {t('outOfStockLabel')}
                         </span>
                       )}
                       {!outOfStock && v.stock !== undefined && v.stock <= 10 && (
                         <span className={`text-[9px] font-bold uppercase tracking-wide mt-0.5 ${isSelected ? "text-white/80" : "text-amber-600"}`}>
-                          Only {v.stock} left
+                          {t('onlyNLeft', { count: v.stock! })}
                         </span>
                       )}
                     </button>
@@ -1183,7 +1186,7 @@ export default function ProductDetailView({
                         }`}
                       >
                         <ICONS.AddToCart className="w-3.5 h-3.5" />
-                        {selectedOrderStoreId === store.id ? 'Selected' : 'Order'}
+                        {selectedOrderStoreId === store.id ? t('selectedBtn') : t('orderBtn')}
                       </button>
                     );
                   })()}
@@ -1206,21 +1209,21 @@ export default function ProductDetailView({
                           return (
                             <div className="mt-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 space-y-1.5">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-on-surface-variant">Original price</span>
+                                <span className="text-xs text-on-surface-variant">{t('originalPriceLabel')}</span>
                                 <span className="text-xs font-medium text-on-surface-variant line-through">₹{resolvedPrice.toLocaleString('en-IN')}</span>
                               </div>
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-on-surface-variant">Discount</span>
+                                <span className="text-xs text-on-surface-variant">{t('discountLabel')}</span>
                                 <span className="rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-black text-white">
                                   {resolvedDiscountPct}% OFF
                                 </span>
                               </div>
                               <div className="flex items-center justify-between border-t border-green-200 pt-1.5">
-                                <span className="text-sm font-bold text-green-700">Final price</span>
+                                <span className="text-sm font-bold text-green-700">{t('finalPriceLabel')}</span>
                                 <span className="text-lg font-black text-green-700">₹{finalPrice.toLocaleString('en-IN')}</span>
                               </div>
                               <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold text-green-600">You save</span>
+                                <span className="text-xs font-semibold text-green-600">{t('youSaveLabel')}</span>
                                 <span className="text-xs font-bold text-green-600">₹{discountAmt.toLocaleString('en-IN')}</span>
                               </div>
                             </div>
@@ -1282,8 +1285,8 @@ export default function ProductDetailView({
             );
           }) : (
             <div className="p-5 rounded-2xl border-2 border-dashed border-surface-container flex flex-col items-center gap-2 text-center">
-              <span className="text-sm font-semibold text-on-surface">Currently unavailable</span>
-              <span className="text-xs text-on-surface-variant">This product is not listed at any store right now.</span>
+              <span className="text-sm font-semibold text-on-surface">{t('currentlyUnavailable')}</span>
+              <span className="text-xs text-on-surface-variant">{t('productUnavailableDesc')}</span>
             </div>
           )}
           </div>
@@ -1332,9 +1335,9 @@ export default function ProductDetailView({
             return (
               <div className="sticky bottom-4 z-10 rounded-2xl border-2 border-green-500 bg-white shadow-xl p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-green-700 mb-0.5">Order from</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-green-700 mb-0.5">{t('orderFromLabel')}</p>
                   <p className="text-sm font-bold text-on-surface truncate">{selectedStore.name}</p>
-                  <p className="text-xs text-on-surface-variant">₹{orderPrice.toLocaleString('en-IN')} · Online Delivery</p>
+                  <p className="text-xs text-on-surface-variant">₹{orderPrice.toLocaleString('en-IN')} · {t('onlineDeliveryLabel')}</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1343,7 +1346,7 @@ export default function ProductDetailView({
                   }}
                   className="shrink-0 h-11 px-5 bg-green-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 text-[11px]"
                 >
-                  <ICONS.AddToCart className="w-4 h-4" /> Add to Cart
+                  <ICONS.AddToCart className="w-4 h-4" /> {t('addToCartBtn')}
                 </button>
               </div>
             );
@@ -1401,10 +1404,10 @@ export default function ProductDetailView({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-1 text-sm font-black text-white shadow-sm shadow-green-600/30">
                       <Tag className="h-3.5 w-3.5 shrink-0" />
-                      Save ₹{savings.toLocaleString('en-IN')} ({discountPct}% OFF)
+                      {t('saveAmountOff', { amount: savings.toLocaleString('en-IN'), pct: discountPct })}
                     </span>
                     {isLowestNearby && (
-                      <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Lowest nearby</span>
+                      <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">{t('lowestNearby')}</span>
                     )}
                   </div>
                 </>
@@ -1415,7 +1418,7 @@ export default function ProductDetailView({
                   <div className="flex flex-col mb-1">
                     <span className="text-sm text-outline line-through">₹{mrp.toLocaleString('en-IN')}</span>
                     {isLowestNearby && (
-                      <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Lowest nearby</span>
+                      <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">{t('lowestNearby')}</span>
                     )}
                   </div>
                 </div>
@@ -1433,7 +1436,7 @@ export default function ProductDetailView({
               )}
               {displayStock !== undefined && displayStock > 0 && displayStock <= 20 && (
                 <span className="mb-1 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                  {displayStock} in stock
+                  {t('nInStock', { count: displayStock })}
                 </span>
               )}
             </div>
@@ -1442,11 +1445,11 @@ export default function ProductDetailView({
           <div className="flex items-center gap-2 sm:gap-3 sm:ml-auto flex-wrap">
             {product.sellMode === "offline_store_only" ? (
               <span className="inline-flex items-center gap-2 h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-xs sm:text-sm">
-                In-Store Only
+                {t('inStoreOnly')}
               </span>
             ) : visibleStores.length === 0 ? (
               <span className="inline-flex items-center gap-2 h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-surface-container text-on-surface-variant font-black uppercase tracking-widest text-xs sm:text-sm">
-                Currently unavailable
+                {t('currentlyUnavailable')}
               </span>
             ) : (
               <>
@@ -1456,14 +1459,14 @@ export default function ProductDetailView({
                   className="h-10 sm:h-12 px-4 sm:px-6 border-2 border-primary text-primary font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 active:scale-95 transition-all flex items-center gap-1.5 sm:gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
                 >
                   <ICONS.AddToCart className="w-4 h-4 sm:w-5 sm:h-5" />
-                  {displayStock === 0 ? "Out of Stock" : t('addToCart')}
+                  {displayStock === 0 ? t('outOfStockLabel') : t('addToCart')}
                 </button>
                 {onBuyNow && displayStock !== 0 && (
                   <button
                     onClick={() => onBuyNow(product, cartVariant)}
                     className="h-10 sm:h-12 px-5 sm:px-8 bg-primary text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
                   >
-                    Buy Now
+                    {t('buyNowBtn')}
                   </button>
                 )}
               </>
@@ -1484,12 +1487,40 @@ export default function ProductDetailView({
                 onClick={() => setDescExpanded((v) => !v)}
                 className="mt-1 text-xs font-semibold text-primary hover:underline focus:outline-none"
               >
-                {descExpanded ? "Show Less" : "Read More"}
+                {descExpanded ? t('showLess') : t('readMore')}
               </button>
             )}
           </div>
         )}
       </div>
+
+      {/* ── Composition ─────────────────────────────────────────────────────── */}
+      {Array.isArray(product.composition) && product.composition.length > 0 && (
+        <section>
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Ingredients &amp; Nutrients</p>
+            <h2 className="text-2xl font-bold text-on-surface">Composition</h2>
+          </div>
+          <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-container bg-surface-container-low">
+                  <th className="px-6 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Component / Ingredient</th>
+                  <th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Value / %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container">
+                {product.composition.map((entry, i) => (
+                  <tr key={i} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="px-6 py-3 font-semibold text-on-surface">{entry.name}</td>
+                    <td className="px-6 py-3 text-right font-bold text-primary">{entry.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Product Info — renders from categoryInfo (new) or legacy flat fields */}
       {(() => {
@@ -1521,7 +1552,7 @@ export default function ProductDetailView({
             </div>
             <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
               <div className="px-6 pt-5 pb-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{activeCat} Information</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{t('categoryInfoLabel', { category: activeCat })}</span>
               </div>
               <div className="divide-y divide-surface-container">
                 {filledFields.map(({ key, label, type }) => {
@@ -1554,6 +1585,35 @@ export default function ProductDetailView({
         );
       })()}
 
+      {/* ── Product Demonstration Video ──────────────────────────────────────── */}
+      {(() => {
+        const rawUrl: string = (product as any).videoUrl ?? "";
+        if (!rawUrl.trim()) return null;
+        const match = rawUrl.match(
+          /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+        );
+        const videoId = match ? match[1] : null;
+        if (!videoId) return null;
+        return (
+          <section>
+            <div className="mb-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">See it in Action</p>
+              <h2 className="text-xl font-bold text-on-surface">Product Demonstration</h2>
+            </div>
+            <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-black aspect-video w-full">
+              <iframe
+                src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+                title="Product demonstration"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="w-full h-full"
+                loading="lazy"
+              />
+            </div>
+          </section>
+        );
+      })()}
+
       {/*
         Similar Products — same-category items from the products already loaded into the
         view. No extra fetch: reuses the in-memory `products` prop the marketplace already
@@ -1565,11 +1625,6 @@ export default function ProductDetailView({
         onProductClick={onProductClick}
         onCategoryClick={onCategoryClick}
       />
-
-      {/* Product Reviews */}
-      {product.id && (
-        <ReviewSection targetId={product.id} targetType="product" />
-      )}
 
       {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
       {sellerProducts.length > 0 && !product.retailerPhone && (
@@ -1626,6 +1681,11 @@ export default function ProductDetailView({
           currentProductId={product.id}
           onProductClick={onProductClick}
         />
+      )}
+
+      {/* Product Reviews — at the very bottom, collapsed when empty */}
+      {product.id && (
+        <ReviewSection targetId={product.id} targetType="product" />
       )}
     </div>
   );

@@ -2,13 +2,15 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  getPostBySlug,
+  getPublishedPostBySlug,
   getPublishedPosts,
-  relatedPosts,
   toIso,
+  type SeoBlogPost,
 } from "../../lib/seo/blog-server";
+import ShareButton from "./_components/share-button";
 
-// Incremental Static Regeneration — cached at the edge, refreshed hourly.
+// ISR — server-rendered and cached, re-generated hourly so Firestore edits and
+// new posts appear automatically without a redeploy.
 export const revalidate = 3600;
 export const dynamicParams = true;
 
@@ -19,9 +21,9 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-function formatDate(ts: unknown): string {
+function formatDate(value: unknown): string {
   try {
-    const d = (ts as any)?.toDate?.() ?? new Date(ts as string);
+    const d = (value as { toDate?: () => Date })?.toDate?.() ?? new Date(value as string);
     if (isNaN(d.getTime())) return "";
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
   } catch {
@@ -29,65 +31,66 @@ function formatDate(ts: unknown): string {
   }
 }
 
+function relatedFor(post: SeoBlogPost, all: SeoBlogPost[]): SeoBlogPost[] {
+  return all
+    .filter((a) => a.id !== post.id && a.tags?.some((t) => post.tags?.includes(t)))
+    .slice(0, 3);
+}
+
 // ─── Metadata ───────────────────────────────────────────────────────────────
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
-  if (!post) {
-    return {
-      title: "Post Not Found | KrishiDukan",
-      robots: { index: false, follow: false },
-    };
-  }
+  const post = await getPublishedPostBySlug(slug);
+  if (!post) return { title: "Post Not Found | KrishiDukan Blog" };
 
-  const canonicalPath = `/blog/${post.slug}`;
-  const description =
-    post.excerpt ||
-    `${post.title} — farming insights and agri-retail tips from the KrishiDukan team.`;
-  const images = post.coverImage ? [post.coverImage] : ["/images/og-default.png"];
+  const description = (post.excerpt || post.title).slice(0, 300);
+  const canonicalPath = `/blog/${encodeURIComponent(post.slug || slug)}`;
+  const images = post.coverImage ? [{ url: post.coverImage }] : undefined;
   const published = toIso(post.publishedAt);
-  const modified = toIso(post.updatedAt ?? post.publishedAt);
+  const modified = toIso(post.updatedAt) ?? published;
 
   return {
-    // Absolute title opts out of the root "%s | KrishiDukan" template so the
-    // tab/title text stays exactly as before (no double brand suffix).
-    title: { absolute: `${post.title} — KrishiDukaan Blog` },
-    description: description.slice(0, 320),
+    title: `${post.title} | KrishiDukan Blog`,
+    description,
     alternates: { canonical: canonicalPath },
     openGraph: {
       type: "article",
       title: post.title,
-      description: description.slice(0, 320),
+      description,
       url: `${SITE_URL}${canonicalPath}`,
       siteName: "KrishiDukan",
-      images,
+      ...(images ? { images } : {}),
+      ...(post.author ? { authors: [post.author] } : {}),
       ...(published ? { publishedTime: published } : {}),
       ...(modified ? { modifiedTime: modified } : {}),
-      ...(post.author ? { authors: [post.author] } : {}),
       ...(post.tags?.length ? { tags: post.tags } : {}),
     },
     twitter: {
-      card: "summary_large_image",
+      card: post.coverImage ? "summary_large_image" : "summary",
       title: post.title,
       description: description.slice(0, 200),
-      images,
+      ...(post.coverImage ? { images: [post.coverImage] } : {}),
     },
   };
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
-  // Fetched in parallel; getPublishedPosts feeds the "Related Articles" section.
-  const [post, all] = await Promise.all([getPostBySlug(slug), getPublishedPosts()]);
+
+  const [post, allPublished] = await Promise.all([
+    getPublishedPostBySlug(slug),
+    getPublishedPosts(),
+  ]);
+
   if (!post) notFound();
 
-  const related = relatedPosts(post, all, 3);
-  const canonicalUrl = `${SITE_URL}/blog/${post.slug}`;
-  const ogImage = post.coverImage || `${SITE_URL}/images/og-default.png`;
+  const related = relatedFor(post, allPublished);
   const published = toIso(post.publishedAt);
-  const modified = toIso(post.updatedAt ?? post.publishedAt);
-  const shareUrl = `https://wa.me/?text=${encodeURIComponent(`${post.title} — ${canonicalUrl}`)}`;
+  const modified = toIso(post.updatedAt) ?? published;
+  const canonicalUrl = `${SITE_URL}/blog/${encodeURIComponent(post.slug || slug)}`;
 
   // ── JSON-LD: BlogPosting ──
   const articleLd: Record<string, unknown> = {
@@ -95,8 +98,8 @@ export default async function BlogPostPage({ params }: PageProps) {
     "@type": "BlogPosting",
     headline: post.title,
     description: post.excerpt || post.title,
-    image: ogImage,
-    author: { "@type": "Person", name: post.author || "KrishiDukaan" },
+    ...(post.coverImage ? { image: [post.coverImage] } : {}),
+    ...(post.author ? { author: { "@type": "Person", name: post.author } } : {}),
     publisher: {
       "@type": "Organization",
       name: "KrishiDukan",
@@ -105,10 +108,11 @@ export default async function BlogPostPage({ params }: PageProps) {
         url: `${SITE_URL}/images/krishidukan%20icon.webp`,
       },
     },
-    mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
-    ...(post.tags?.length ? { keywords: post.tags.join(", ") } : {}),
     ...(published ? { datePublished: published } : {}),
     ...(modified ? { dateModified: modified } : {}),
+    ...(post.tags?.length ? { keywords: post.tags.join(", ") } : {}),
+    mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
+    url: canonicalUrl,
   };
 
   // ── JSON-LD: BreadcrumbList ──
@@ -146,7 +150,7 @@ export default async function BlogPostPage({ params }: PageProps) {
       <div className="max-w-3xl mx-auto px-4 py-10">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-on-surface-variant font-semibold mb-6">
-          <Link href="/" className="hover:text-primary transition-colors">KrishiDukaan</Link>
+          <Link href="/" className="hover:text-primary transition-colors">KrishiDukan</Link>
           <span>›</span>
           <Link href="/blog" className="hover:text-primary transition-colors">Blog</Link>
           <span>›</span>
@@ -155,7 +159,7 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         {/* Tags */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {(post.tags || []).map(t => (
+          {(post.tags || []).map((t) => (
             <span key={t} className="rounded-full bg-primary/10 text-primary px-3 py-1 text-[10px] font-black uppercase tracking-widest border border-primary/20">
               {t}
             </span>
@@ -191,14 +195,7 @@ export default async function BlogPostPage({ params }: PageProps) {
           <Link href="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline">
             ← Back to Blog
           </Link>
-          <a
-            href={shareUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-xs font-bold bg-green-600 text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
-          >
-            Share on WhatsApp
-          </a>
+          <ShareButton title={post.title} />
         </div>
       </div>
 
@@ -208,7 +205,7 @@ export default async function BlogPostPage({ params }: PageProps) {
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-xl font-black text-on-surface mb-6">Related Articles</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {related.map(r => (
+              {related.map((r) => (
                 <Link key={r.id} href={`/blog/${r.slug}`} className="group block rounded-2xl border border-surface-container bg-white p-5 hover:shadow-md transition-shadow">
                   <h3 className="font-black text-on-surface mb-2 group-hover:text-primary transition-colors line-clamp-2">{r.title}</h3>
                   <p className="text-sm text-on-surface-variant line-clamp-2">{r.excerpt}</p>

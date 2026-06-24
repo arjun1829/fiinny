@@ -46,6 +46,10 @@ export type ManufacturerProductInput = {
   gstRate?: 0 | 5 | 12 | 18 | 28;
   /** Whether this product is available for online home delivery. Defaults to online_delivery. */
   sellMode?: "online_delivery" | "offline_store_only";
+  /** Optional YouTube video URL for product demonstration. Stored as-is; never upload to Storage. */
+  videoUrl?: string;
+  /** Ingredient / nutrient composition (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
+  composition?: { name: string; value: string }[];
   /** @deprecated Legacy fertilizer fields — still accepted for backward compat. */
   nitrogen?: string;
   phosphorus?: string;
@@ -117,6 +121,8 @@ export async function createManufacturerProduct(
     createdAt: now,
     updatedAt: now,
     categoryInfo: input.categoryInfo ?? null,
+    videoUrl: input.videoUrl?.trim() || null,
+    composition: input.composition?.length ? input.composition : null,
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
@@ -260,6 +266,8 @@ export async function updateManufacturerProduct(
   if (input.image !== undefined)       patch.image       = (input.image ?? "").trim();
   if (input.images !== undefined)      patch.images      = input.images;
   if (input.categoryInfo !== undefined)    patch.categoryInfo    = input.categoryInfo ?? null;
+  if (input.videoUrl !== undefined)        patch.videoUrl        = input.videoUrl.trim() || null;
+  if (input.composition !== undefined)     patch.composition     = input.composition?.length ? input.composition : null;
   if (input.gstApplicable !== undefined) {
     patch.gstApplicable = input.gstApplicable;
     patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;

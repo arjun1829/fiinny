@@ -13,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
-import { syncRetailerMirror, activateRetailerOnProductAssignment } from "./manufacturer-retailers-firestore";
+import { syncRetailerMirror, activateRetailerOnProductAssignment, deactivateRetailerOnLastSeatRelease } from "./manufacturer-retailers-firestore";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
   addSeatListingToBatch,
@@ -244,7 +244,7 @@ export async function assignProductToRetailer(
       });
     }
 
-    // Flip onboardingStatus → "active" on the invite link doc now that a product is assigned.
+    // Mark seat as assigned on the invite doc and restore store visibility.
     await activateRetailerOnProductAssignment(
       input.manufacturerId,
       input.retailerDocId,
@@ -272,8 +272,11 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
   // Release the seat — this MUST succeed regardless of product copy state.
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
-  const retailerProductId = String(data.productId ?? "");
-  const retailerDocId     = String(data.retailerDocId ?? "");
+  const retailerProductId  = String(data.productId      ?? "");
+  const retailerDocId      = String(data.retailerDocId  ?? "");
+  const manufacturerId     = String(data.ownerId        ?? "");
+  const manufacturerPhone  = data.manufacturerPhone != null ? String(data.manufacturerPhone) : null;
+  const retailerPhone      = data.retailerPhone     != null ? String(data.retailerPhone)     : null;
 
   // Deactivate the retailer's product copy only if it still exists.
   // If the retailer already removed it via their inventory, the doc is gone and
@@ -319,6 +322,29 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
         }
       }
     } catch { /* non-critical — product may already be deleted */ }
+  }
+
+  // If this was the last active seat listing for this retailer, clear their active/assignedSeat state.
+  if (retailerDocId && manufacturerId) {
+    try {
+      const remainingSnap = await getDocs(
+        query(
+          collection(db, SEAT_LISTINGS),
+          where("retailerDocId", "==", retailerDocId),
+          where("ownerId",       "==", manufacturerId),
+          where("listingType",   "==", "assigned"),
+          where("status",        "==", "active"),
+        ),
+      );
+      if (remainingSnap.empty) {
+        await deactivateRetailerOnLastSeatRelease(
+          manufacturerId,
+          retailerDocId,
+          manufacturerPhone,
+          retailerPhone,
+        );
+      }
+    } catch { /* non-critical */ }
   }
 }
 
@@ -591,7 +617,7 @@ export async function bulkAssignProductsToRetailer(
         });
       }
 
-      // Flip onboardingStatus → "active" now that at least one product is assigned.
+      // Mark seat as assigned on the invite doc and restore store visibility.
       await activateRetailerOnProductAssignment(
         manufacturerId,
         retailerDocId,

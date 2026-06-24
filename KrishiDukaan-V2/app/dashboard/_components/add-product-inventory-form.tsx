@@ -3,12 +3,13 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2, PackagePlus, Plus, X, Upload, Link as LinkIcon,
-  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt,
+  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt, Youtube,
 } from "lucide-react";
 import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
   type ProductCategory, effectiveCategoryInfo,
 } from "../_lib/category-info";
+import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
@@ -54,6 +55,18 @@ const MAX_VARIANTS = 8;
 const MAX_IMAGES   = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function extractYouTubeId(url: string): string | null {
+  const t = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(t)) return t;
+  const m = t.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function isValidYouTubeUrl(url: string): boolean {
+  if (!url.trim()) return true;
+  return extractYouTubeId(url) !== null;
+}
 
 function buildUnit(v: Variant): string {
   if (v.unitType === "custom") return v.customUnit.trim();
@@ -124,6 +137,8 @@ type AdminProductPayload = {
   gstApplicable: boolean; gstRate: number;
   sellMode: "online_delivery" | "offline_store_only"; isOnline: boolean;
   editProductId: string | null;
+  videoUrl?: string;
+  composition?: { name: string; value: string }[];
 };
 
 type AddProductInventoryFormProps = {
@@ -477,6 +492,12 @@ export function AddProductInventoryForm({
   // Images
   const [images,      setImages]      = useState<ImageSlot[]>([newSlot()]);
 
+  // Video
+  const [videoUrl,    setVideoUrl]    = useState("");
+
+  // Composition
+  const [composition, setComposition] = useState<CompositionEntry[]>([]);
+
   // Search state
   const [suggestions,   setSuggestions]   = useState<SearchResult[]>([]);
   const [searching,     setSearching]     = useState(false);
@@ -525,6 +546,8 @@ export function AddProductInventoryForm({
     setGstApplicable(!!p.gstApplicable);
     setGstRate(p.gstRate ?? 0);
     setSellMode(p.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery");
+    setVideoUrl((p as any).videoUrl ?? "");
+    setComposition(Array.isArray((p as any).composition) ? (p as any).composition : []);
     const ci = effectiveCategoryInfo(p as Record<string, unknown>);
     if (ci) {
       const flat: Record<string, string> = {};
@@ -679,6 +702,10 @@ export function AddProductInventoryForm({
       setMessage({ type: "err", text: "Wait for image uploads to finish." });
       return;
     }
+    if (videoUrl.trim() && !isValidYouTubeUrl(videoUrl)) {
+      setMessage({ type: "err", text: "Enter a valid YouTube URL (youtube.com or youtu.be)." });
+      return;
+    }
 
     const imageUrls = images.map((s) => s.url.trim()).filter(Boolean);
 
@@ -713,6 +740,8 @@ export function AddProductInventoryForm({
           gstApplicable, gstRate: gstApplicable ? gstRate : 0,
           sellMode, isOnline: sellMode === "online_delivery",
           editProductId: initialProduct?.id ?? null,
+          videoUrl: videoUrl.trim() || undefined,
+          composition: composition.filter(e => e.name.trim()) as any,
         };
         if (onAdminSave) {
           await onAdminSave(adminPayload);
@@ -742,6 +771,8 @@ export function AddProductInventoryForm({
           description,
           image: imageUrls[0] ?? undefined,
           images: imageUrls,
+          videoUrl: videoUrl.trim() || undefined,
+          composition: composition.filter(e => e.name.trim()),
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable,
           gstRate: gstApplicable ? gstRate : 0,
@@ -771,6 +802,8 @@ export function AddProductInventoryForm({
       setGstApplicable(false); setGstRate(0);
       setVariants([newVariant()]);
       setImages([newSlot()]);
+      setVideoUrl("");
+      setComposition([]);
       await onCreated();
     } catch (err) {
       setMessage({ type: "err", text: err instanceof Error ? err.message : "Failed to create product." });
@@ -956,6 +989,18 @@ export function AddProductInventoryForm({
           onToggle={() => setShowAdditionalData((v) => !v)}
         />
 
+        {/* ── Composition (Fertilizers / Pesticides / Herbicides / Bio-Stimulants) */}
+        {COMPOSITION_CATEGORIES.has(category === "Other" ? (customCategory.trim() || "Other") : category) && (
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Layers className="h-4 w-4 text-primary" /> Composition
+              <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+            </div>
+            <p className="text-xs text-on-surface-variant -mt-1">List all active ingredients, nutrients, or chemical components with their concentrations.</p>
+            <CompositionEditor entries={composition} onChange={setComposition} disabled={isDisabled} />
+          </div>
+        )}
+
         {/* ── Section 2: Pack sizes & prices ────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -1009,7 +1054,36 @@ export function AddProductInventoryForm({
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 
-        {/* ── Section 4: GST & Delivery ─────────────────────────────────────── */}
+        {/* ── Section 4: Product Video ──────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Youtube className="h-4 w-4 text-red-500" /> Product Video
+            <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+          </div>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-on-surface">YouTube URL</span>
+            <input
+              type="url"
+              disabled={isDisabled}
+              placeholder="https://www.youtube.com/watch?v=… or https://youtu.be/…"
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              className={`rounded-xl border px-3 py-2.5 text-on-surface outline-none focus:ring-2 text-sm disabled:opacity-50 ${
+                videoUrl.trim() && !isValidYouTubeUrl(videoUrl)
+                  ? "border-red-400 focus:border-red-400 focus:ring-red-200"
+                  : "border-outline-variant/40 bg-surface-container-lowest focus:border-primary focus:ring-primary/20"
+              }`}
+            />
+            {videoUrl.trim() && !isValidYouTubeUrl(videoUrl) && (
+              <span className="text-xs text-red-500">Enter a valid YouTube URL (youtube.com or youtu.be).</span>
+            )}
+            {videoUrl.trim() && isValidYouTubeUrl(videoUrl) && (
+              <span className="text-xs text-primary">✓ Valid YouTube URL — video will appear on the product page.</span>
+            )}
+          </label>
+        </div>
+
+        {/* ── Section 5: GST & Delivery ─────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
             <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery

@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+/* Plus Jakarta Sans is now loaded via next/font in app/layout.tsx (self-hosted,
+   exposed as --font-jakarta and consumed by Tailwind's font-sans). The previous
+   render-blocking Google Fonts @import was removed for performance. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

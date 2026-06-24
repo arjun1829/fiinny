@@ -42,9 +42,6 @@ export interface CategoryField {
 
 export const CATEGORY_FIELDS: Record<ProductCategory, CategoryField[]> = {
   Fertilizers: [
-    { key: "nitrogen",    label: "Nitrogen (N)",         type: "text",     placeholder: "e.g. 19%" },
-    { key: "phosphorus",  label: "Phosphorus (P)",       type: "text",     placeholder: "e.g. 19%" },
-    { key: "potassium",   label: "Potassium (K)",        type: "text",     placeholder: "e.g. 19%" },
     { key: "application", label: "Application",          type: "textarea", placeholder: "e.g. Suitable for foliar spray and fertigation..." },
     { key: "dosage",      label: "Recommended Dosage",   type: "text",     placeholder: "e.g. 3–5 gm / Litre" },
     { key: "bestForCrops",label: "Best For Crops",       type: "chips",    placeholder: "e.g. Tomatoes, Wheat, Sugarcane" },

@@ -1,10 +1,19 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import { I18nProvider } from "./i18n/I18nContext";
 
-const inter = Inter({ subsets: ["latin"] });
+// Self-hosted via next/font (replaces the render-blocking CSS @import in
+// globals.css). Exposed as the --font-jakarta CSS variable, which Tailwind's
+// `font-sans` consumes — keeping site-wide typography identical, with no extra
+// network request and no font-swap layout shift.
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-jakarta",
+});
 
 // Canonical public origin. Used by metadataBase, canonical URLs, Open Graph,
 // JSON-LD and the sitemap/robots routes. Override via NEXT_PUBLIC_SITE_URL if needed.
@@ -132,7 +141,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={jakarta.variable}>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}

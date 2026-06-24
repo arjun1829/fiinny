@@ -42,16 +42,28 @@ export function isValidGstinFormat(gstin: string): boolean {
   );
 }
 
-// Resolve Firebase Auth UID → normalized phone via uidIndex.
-// Returns null if the index entry doesn't exist yet.
+// Resolve Firebase Auth UID → normalized phone.
+// Primary: uidIndex (written at every phone-OTP signup).
+// Fallback: manufacturers/{uid}.phone — covers admin-created accounts where uidIndex was
+// not written but the profile was saved with uid as the Firestore document key.
 async function phoneFromUid(uid: string): Promise<string | null> {
   try {
     const snap = await getDoc(doc(db, "uidIndex", uid));
-    if (!snap.exists()) return null;
-    return String(snap.data().phone ?? "") || null;
-  } catch {
-    return null;
-  }
+    if (snap.exists()) {
+      const phone = String(snap.data().phone ?? "").trim();
+      if (phone) return phone;
+    }
+  } catch { /* fall through */ }
+
+  try {
+    const mfgSnap = await getDoc(doc(db, "manufacturers", uid));
+    if (mfgSnap.exists()) {
+      const phone = String(mfgSnap.data().phone ?? "").trim();
+      if (phone) return phone;
+    }
+  } catch { /* fall through */ }
+
+  return null;
 }
 
 async function retailerDocIdFromUid(uid: string): Promise<string | null> {

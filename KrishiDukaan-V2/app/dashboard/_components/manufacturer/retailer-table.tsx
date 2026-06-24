@@ -36,27 +36,34 @@ type RetailerTableProps = {
   onEdit?: (row: ManufacturerRetailerRow) => void;
   onDetails?: (row: ManufacturerRetailerRow) => void;
   onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
-  onActivate?: (row: ManufacturerRetailerRow) => void;
+  onActivate?: (row: ManufacturerRetailerRow) => void | Promise<void>;
   // Selection
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
 };
 
-function OnboardingBadge({ status }: { status: ManufacturerRetailerRow["onboardingStatus"] }) {
+function OnboardingBadge({
+  status,
+  manuallyDeactivated,
+}: {
+  status: ManufacturerRetailerRow["onboardingStatus"];
+  manuallyDeactivated?: boolean;
+}) {
   const { t } = useI18n();
+  // Deactivated is an operational state — driven by manuallyDeactivated, not onboardingStatus
+  if (manuallyDeactivated) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+        <PowerOff className="h-3 w-3" />
+        Deactivated
+      </span>
+    );
+  }
   if (status === "active") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
         <CheckCircle2 className="h-3 w-3" />
         {t('activeBadge')}
-      </span>
-    );
-  }
-  if (status === "inactive") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-        <PowerOff className="h-3 w-3" />
-        Deactivated
       </span>
     );
   }
@@ -337,9 +344,9 @@ export function RetailerTable({
           </thead>
           <tbody className="divide-y divide-outline-variant/20">
             {rows.map((row) => {
-              const isManuallyInactive = row.onboardingStatus === "inactive";
+              const isManuallyInactive = row.manuallyDeactivated === true;
               const canAssign    = onAssignProduct && !isManuallyInactive;
-              const canDeactivate = onDeactivate && !isManuallyInactive && row.onboardingStatus === "active";
+              const canDeactivate = onDeactivate && !isManuallyInactive;
               const canActivate  = onActivate && isManuallyInactive;
 
               const isSelectable = selectable && row.status !== "revoked";
@@ -376,7 +383,7 @@ export function RetailerTable({
                     {row.retailerPhone || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <OnboardingBadge status={row.onboardingStatus} />
+                    <OnboardingBadge status={row.onboardingStatus} manuallyDeactivated={row.manuallyDeactivated} />
                   </td>
                   <td className="px-4 py-3">
                     <RowInviteActions row={row} />
