@@ -99,6 +99,7 @@ class StoreRepository {
         pincode: pincode,
         lat: (lat != null && lat != 0.0) ? lat : null,
         lng: (lng != null && lng != 0.0) ? lng : null,
+        role: role,
         score: 10 + (lat != null && lat != 0.0 ? 1 : 0),
       ));
     }
@@ -128,6 +129,7 @@ class StoreRepository {
           pincode: d['pincode']?.toString(),
           lat: geoPoint?.latitude ?? _num(geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d['lat']),
           lng: geoPoint?.longitude ?? _num(geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d['lng']),
+          role: 'retailer',
           score: 5,
         ));
       } catch (_) {}
@@ -169,6 +171,7 @@ class StoreRepository {
           pincode: pincode ?? d['pincode']?.toString(),
           lat: geoPoint?.latitude ?? _num(geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d['lat']),
           lng: geoPoint?.longitude ?? _num(geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d['lng']),
+          role: 'manufacturer',
           score: 5,
         ));
       } catch (_) {}
@@ -226,6 +229,7 @@ class StoreRepository {
         city: ts.city,
         state: ts.state,
         pincode: ts.pincode,
+        role: ts.role,
         averageRating: (agg != null && agg.count > 0) ? agg.sum / agg.count : null,
         totalReviews: (agg != null && agg.count > 0) ? agg.count : null,
       );
@@ -265,6 +269,7 @@ class _TempStore {
   final String? pincode;
   final double? lat;
   final double? lng;
+  final String role;
   final int score;
 
   const _TempStore({
@@ -280,6 +285,7 @@ class _TempStore {
     this.pincode,
     this.lat,
     this.lng,
+    this.role = '',
     required this.score,
   });
 }

@@ -9,9 +9,6 @@ import '../../../core/models/brand_model.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
-import '../../../core/models/store_model.dart';
-import '../../marketplace/providers/marketplace_provider.dart';
-import '../../marketplace/widgets/review_sheet.dart';
 import '../data/brand_repository.dart';
 
 final _brandRepo = BrandRepository();
@@ -117,7 +114,7 @@ class BrandScreen extends ConsumerWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
                 ),
               ),
             ),
@@ -138,7 +135,7 @@ class BrandScreen extends ConsumerWidget {
                       border: Border.all(color: Colors.white, width: 3),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: Colors.black.withValues(alpha: 0.2),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -353,7 +350,7 @@ class _InfoTile extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: AppColors.primaryLight.withOpacity(0.2), shape: BoxShape.circle),
+          decoration: BoxDecoration(color: AppColors.primaryLight.withValues(alpha: 0.2), shape: BoxShape.circle),
           child: Icon(icon, color: AppColors.primary),
         ),
         const SizedBox(width: 16),
@@ -568,7 +565,7 @@ class _RetailerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceVariant.withOpacity(0.5)),
+        border: Border.all(color: AppColors.surfaceVariant.withValues(alpha: 0.5)),
         boxShadow: [BoxShadow(color: AppColors.cardShadow, blurRadius: 4, offset: const Offset(0, 2))],
       ),
       child: Padding(
@@ -621,7 +618,7 @@ class _RetailerCard extends StatelessWidget {
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
-                color: AppColors.primaryLight.withOpacity(0.1),
+                color: AppColors.primaryLight.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: IconButton(

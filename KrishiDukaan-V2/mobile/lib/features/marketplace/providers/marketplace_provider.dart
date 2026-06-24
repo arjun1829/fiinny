@@ -187,6 +187,32 @@ final storesListProvider = FutureProvider<List<StoreModel>>((ref) {
   return ref.read(storeRepositoryProvider).fetchStores();
 });
 
+/// Stores enriched with the distance from the user's current location and
+/// sorted nearest-first. Stores without a usable location sink to the bottom.
+final storesByDistanceProvider = FutureProvider<List<StoreModel>>((ref) async {
+  final stores = await ref.watch(storesListProvider.future);
+  final user = ref.watch(locationProvider).value;
+
+  for (final s in stores) {
+    if (user != null && s.hasLocation) {
+      s.distanceKm =
+          GeoUtils.distanceKm(user.lat, user.lng, s.lat!, s.lng!);
+    } else {
+      s.distanceKm = null;
+    }
+  }
+
+  final sorted = [...stores]..sort((a, b) {
+      final da = a.distanceKm;
+      final db = b.distanceKm;
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da.compareTo(db);
+    });
+  return sorted;
+});
+
 final listingsForCatalogProvider =
     FutureProvider.family<List<ListingModel>, String>((ref, catalogId) async {
   final location = ref.watch(locationProvider).value;

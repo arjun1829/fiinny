@@ -188,6 +188,11 @@ class _ProfileBody extends ConsumerWidget {
               label: isHindi ? 'ऑर्डर इतिहास' : 'Order History',
               onTap: () => context.push('/orders'),
             ),
+            _LinkRow(
+              icon: Icons.support_agent_outlined,
+              label: isHindi ? 'सहायता और समर्थन' : 'Help & Support',
+              onTap: () => context.push('/support'),
+            ),
             if (user.isSeller)
               _LinkRow(
                 icon: user.canAccessDashboard

@@ -84,7 +84,7 @@ class BrandRepository {
         .collection('manufacturers')
         .doc(manufacturerPhone)
         .collection('retailers')
-        .where('status', isEqualTo: 'active')
+        .where('status', whereIn: ['active', 'invited'])
         .limit(50)
         .get();
     return snap.docs
