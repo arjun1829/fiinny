@@ -1494,6 +1494,34 @@ export default function ProductDetailView({
         )}
       </div>
 
+      {/* ── Composition ─────────────────────────────────────────────────────── */}
+      {Array.isArray(product.composition) && product.composition.length > 0 && (
+        <section>
+          <div className="mb-6">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Ingredients &amp; Nutrients</p>
+            <h2 className="text-2xl font-bold text-on-surface">Composition</h2>
+          </div>
+          <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-container bg-surface-container-low">
+                  <th className="px-6 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Component / Ingredient</th>
+                  <th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Value / %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container">
+                {product.composition.map((entry, i) => (
+                  <tr key={i} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="px-6 py-3 font-semibold text-on-surface">{entry.name}</td>
+                    <td className="px-6 py-3 text-right font-bold text-primary">{entry.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* Product Info — renders from categoryInfo (new) or legacy flat fields */}
       {(() => {
         // Resolve the effective category info using the backward-compat helper
@@ -1557,6 +1585,35 @@ export default function ProductDetailView({
         );
       })()}
 
+      {/* ── Product Demonstration Video ──────────────────────────────────────── */}
+      {(() => {
+        const rawUrl: string = (product as any).videoUrl ?? "";
+        if (!rawUrl.trim()) return null;
+        const match = rawUrl.match(
+          /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+        );
+        const videoId = match ? match[1] : null;
+        if (!videoId) return null;
+        return (
+          <section>
+            <div className="mb-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">See it in Action</p>
+              <h2 className="text-xl font-bold text-on-surface">Product Demonstration</h2>
+            </div>
+            <div className="rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-black aspect-video w-full">
+              <iframe
+                src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+                title="Product demonstration"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="w-full h-full"
+                loading="lazy"
+              />
+            </div>
+          </section>
+        );
+      })()}
+
       {/*
         Similar Products — same-category items from the products already loaded into the
         view. No extra fetch: reuses the in-memory `products` prop the marketplace already
@@ -1568,11 +1625,6 @@ export default function ProductDetailView({
         onProductClick={onProductClick}
         onCategoryClick={onCategoryClick}
       />
-
-      {/* Product Reviews */}
-      {product.id && (
-        <ReviewSection targetId={product.id} targetType="product" />
-      )}
 
       {/* Seller Portfolio — legacy fallback (products already in memory, no extra reads) */}
       {sellerProducts.length > 0 && !product.retailerPhone && (
@@ -1629,6 +1681,11 @@ export default function ProductDetailView({
           currentProductId={product.id}
           onProductClick={onProductClick}
         />
+      )}
+
+      {/* Product Reviews — at the very bottom, collapsed when empty */}
+      {product.id && (
+        <ReviewSection targetId={product.id} targetType="product" />
       )}
     </div>
   );

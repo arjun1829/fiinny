@@ -7,9 +7,13 @@ import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailer
 import {
   fetchRetailerAssignedProducts,
   type AssignedProductRow,
+  deactivateRetailerOnLastSeatRelease,
+  activateRetailerOnProductAssignment,
 } from "../../_lib/manufacturer-retailers-firestore";
-import { updateDoc, doc } from "firebase/firestore";
+import { collection, getDocs, query, updateDoc, doc, where } from "firebase/firestore";
 import { db } from "../../../firebase";
+
+const SEAT_LISTINGS = "retailerSeatListings";
 
 function StatusBadge({ status }: { status: AssignedProductRow["status"] }) {
   const { t } = useI18n();
@@ -57,8 +61,35 @@ export function RetailerDetailsModal({ row, manufacturerId, onClose, onAssignPro
     setToggling(p.listingId);
     try {
       const newStatus = p.status === "active" ? "released" : "active";
-      await updateDoc(doc(db, "retailerSeatListings", p.listingId), { status: newStatus });
+      await updateDoc(doc(db, SEAT_LISTINGS, p.listingId), { status: newStatus });
       await updateDoc(doc(db, "products", p.productId), { isActive: newStatus === "active" });
+
+      // Sync retailer active/assignedSeat state based on remaining active listings
+      const remainingSnap = await getDocs(
+        query(
+          collection(db, SEAT_LISTINGS),
+          where("retailerDocId", "==", row.retailerDocId),
+          where("ownerId",       "==", manufacturerId),
+          where("listingType",   "==", "assigned"),
+          where("status",        "==", "active"),
+        ),
+      );
+      if (newStatus === "released" && remainingSnap.empty) {
+        await deactivateRetailerOnLastSeatRelease(
+          manufacturerId,
+          row.retailerDocId,
+          null,
+          row.retailerPhone ?? null,
+        );
+      } else if (newStatus === "active") {
+        await activateRetailerOnProductAssignment(
+          manufacturerId,
+          row.retailerDocId,
+          null,
+          row.retailerPhone ?? null,
+        );
+      }
+
       await loadProducts();
     } catch { /* ignore */ }
     finally { setToggling(null); }

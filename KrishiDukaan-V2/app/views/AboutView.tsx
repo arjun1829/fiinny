@@ -195,7 +195,7 @@ export default function AboutView() {
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-widest text-white/60 mb-0.5">{t('aboutContactEmailLabel')}</div>
-                    <div className="font-bold">support@krishidukan.in</div>
+                    <div className="font-bold">arjun.tanpure@fiinny.com</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-white">

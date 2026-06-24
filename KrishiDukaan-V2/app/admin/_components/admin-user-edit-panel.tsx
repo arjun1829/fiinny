@@ -368,7 +368,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
 
       setDeleteMsg({
         ok: true,
-        text: `Deleted. Products deactivated: ${result.productsDeactivated}, inventory: ${result.inventoryDeactivated}, seats released: ${result.seatsReleased}, subs cancelled: ${result.subscriptionsCancelled}.`,
+        text: `Deleted. Products deactivated: ${result.productsDeactivated}, inventory deleted: ${result.inventoryDeleted}, seat listings deleted: ${result.seatListingsDeleted}, subscriptions deleted: ${result.subscriptionsDeleted}, network relationships deleted: ${result.networkRelationshipsDeleted}.`,
       });
       onSaved();
       setTimeout(onClose, 2500);

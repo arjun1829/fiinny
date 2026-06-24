@@ -361,6 +361,8 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
         variants: Array.isArray(data.variants) ? data.variants : undefined,
         images: Array.isArray(data.images) ? data.images : undefined,
+        videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
+        composition: Array.isArray(data.composition) ? data.composition : undefined,
       } as MarketplaceProduct;
     });
 
@@ -679,7 +681,22 @@ export async function fetchStores(): Promise<Store[]> {
       ...doc.data()
     } as Store));
 
-    const retailers = retailersSnapshot.docs.map((doc) => {
+    const retailers = retailersSnapshot.docs
+      .filter((doc) => {
+        const data = doc.data();
+        // Exclude retailers that have been removed or deactivated from a manufacturer network
+        const os = String(data.onboardingStatus ?? '');
+        if (os === 'removed' || os === 'inactive') return false;
+        // Network retailers (created via bulk upload or manufacturer invite) must have
+        // an active storefront AND an assigned seat — otherwise they have no products
+        // and should not appear in store search or the store locator.
+        if (data.onboardingType === 'manufacturer-network') {
+          return data.active === true && data.assignedSeat === true;
+        }
+        // Standalone / legacy retailers: only exclude if explicitly deactivated
+        return data.active !== false;
+      })
+      .map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
@@ -2900,11 +2917,15 @@ export type RetailerNetworkStore = {
 export async function fetchManufacturerNetworkStores(manufacturerPhone: string): Promise<RetailerNetworkStore[]> {
   try {
     const snap = await getDocs(collection(db, 'manufacturers', manufacturerPhone, 'retailers'));
+    // Match Retailer Network dashboard logic: exclude only explicitly revoked/removed/inactive
     const activeMirrors = snap.docs.filter((d) => {
       const r = d.data();
+      const status = String(r.status ?? 'invited');
+      const onboarding = String(r.onboardingStatus ?? 'active');
       return (
-        String(r.status ?? '') === 'active' &&
-        String(r.onboardingStatus ?? 'active') === 'active'
+        status !== 'revoked' &&
+        onboarding !== 'removed' &&
+        onboarding !== 'inactive'
       );
     });
 
@@ -3482,18 +3503,36 @@ export async function adminConvertManufacturerToRetailer(
 
 export type AdminDeleteUserResult = {
   productsDeactivated: number;
-  inventoryDeactivated: number;
-  seatsReleased: number;
-  subscriptionsCancelled: number;
+  inventoryDeleted: number;
+  seatListingsDeleted: number;
+  subscriptionsDeleted: number;
+  networkRelationshipsDeleted: number;
 };
 
+/** Dedup-aware batch delete: collects doc refs into a Set then flushes in ≤400-write batches. */
+async function batchDeleteDocs(
+  refs: import("firebase/firestore").DocumentReference[],
+): Promise<number> {
+  if (refs.length === 0) return 0;
+  const CHUNK = 400;
+  for (let i = 0; i < refs.length; i += CHUNK) {
+    const b = writeBatch(db);
+    refs.slice(i, i + CHUNK).forEach((r) => b.delete(r));
+    await b.commit();
+  }
+  return refs.length;
+}
+
 /**
- * Soft-deletes a user from the platform:
- *  - Deactivates their products and inventory (preserves order history)
- *  - Releases active seat listings
- *  - Marks subscriptions cancelled
- *  - Removes user, profile, and role-specific documents
- *  - Removes uidIndex entry
+ * Permanently deletes a user and all their data from the platform:
+ *  - Deactivates their products (preserves order history)
+ *  - Deletes all inventory records
+ *  - Deletes all seat listings (any status)
+ *  - Deletes all subscriptions (any status)
+ *  - Deletes manufacturer-retailer relationship docs
+ *  - Deletes brand/company pages, delivery settings, manufacturer contacts
+ *  - Deletes subcollection mirrors (manufacturers/phone/retailers, /products, /inventory)
+ *  - Removes user, profile, uidIndex, retailers/, manufacturers/ root docs
  *
  * Firebase Auth deletion is handled separately by POST /api/admin/delete-user
  * (requires Admin SDK) and should be called after this succeeds.
@@ -3505,11 +3544,8 @@ export async function adminDeleteUser(
 ): Promise<AdminDeleteUserResult> {
   const now = serverTimestamp();
   let productsDeactivated = 0;
-  let inventoryDeactivated = 0;
-  let seatsReleased = 0;
-  let subscriptionsCancelled = 0;
 
-  // ── 1. Deactivate products owned by this user ─────────────────────────────
+  // ── 1. Deactivate products (preserves order history — do not delete) ──────
   const productQueries = [
     getDocs(query(collection(db, "products"), where("ownerPhone", "==", phone))),
   ];
@@ -3531,7 +3567,7 @@ export async function adminDeleteUser(
   }
   if (productsDeactivated > 0) await productBatch.commit();
 
-  // ── 2. Deactivate inventory records ──────────────────────────────────────
+  // ── 2. Delete inventory records ───────────────────────────────────────────
   const invQueries = [
     getDocs(query(collection(db, "inventory"), where("ownerPhone", "==", phone))),
   ];
@@ -3540,70 +3576,158 @@ export async function adminDeleteUser(
   }
   const invSnaps = await Promise.all(invQueries);
   const invIds = new Set<string>();
-  const invBatch = writeBatch(db);
+  const invRefs: import("firebase/firestore").DocumentReference[] = [];
   for (const snap of invSnaps) {
     for (const d of snap.docs) {
       if (invIds.has(d.id)) continue;
       invIds.add(d.id);
-      if (d.data().isAvailable !== false) {
-        invBatch.update(d.ref, { isAvailable: false, updatedAt: now });
-        inventoryDeactivated++;
-      }
+      invRefs.push(d.ref);
     }
   }
-  if (inventoryDeactivated > 0) await invBatch.commit();
+  const inventoryDeleted = await batchDeleteDocs(invRefs);
 
-  // ── 3. Release active seat listings ──────────────────────────────────────
+  // ── 3. Delete ALL seat listings (any status) ──────────────────────────────
   const seatQueries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
-    getDocs(query(collection(db, "retailerSeatListings"), where("ownerPhone", "==", phone), where("status", "==", "active"))),
-    getDocs(query(collection(db, "retailerSeatListings"), where("retailerPhone", "==", phone), where("status", "==", "active"))),
+    getDocs(query(collection(db, "retailerSeatListings"), where("ownerPhone", "==", phone))),
+    getDocs(query(collection(db, "retailerSeatListings"), where("retailerPhone", "==", phone))),
   ];
   if (uid) {
-    seatQueries.push(getDocs(query(collection(db, "retailerSeatListings"), where("ownerId", "==", uid), where("status", "==", "active"))));
+    seatQueries.push(getDocs(query(collection(db, "retailerSeatListings"), where("ownerId", "==", uid))));
   }
   const seatSnaps = await Promise.all(seatQueries);
   const seatIds = new Set<string>();
-  const seatBatch = writeBatch(db);
+  const seatRefs: import("firebase/firestore").DocumentReference[] = [];
   for (const snap of seatSnaps) {
     for (const d of snap.docs) {
       if (seatIds.has(d.id)) continue;
       seatIds.add(d.id);
-      seatBatch.update(d.ref, { status: "released", releasedAt: now });
-      seatsReleased++;
+      seatRefs.push(d.ref);
     }
   }
-  if (seatsReleased > 0) await seatBatch.commit();
+  const seatListingsDeleted = await batchDeleteDocs(seatRefs);
 
-  // ── 4. Cancel subscriptions ───────────────────────────────────────────────
-  const subSnap = await getDocs(
-    query(collection(db, "subscriptions"), where("ownerPhone", "==", phone), where("subscriptionStatus", "==", "active")),
-  );
-  if (!subSnap.empty) {
-    const subBatch = writeBatch(db);
-    for (const d of subSnap.docs) {
-      subBatch.update(d.ref, { subscriptionStatus: "cancelled", updatedAt: now });
-      subscriptionsCancelled++;
-    }
-    await subBatch.commit();
-  }
-
-  // ── 5. Remove user-level Firestore documents ──────────────────────────────
-  const deletions: Promise<void>[] = [
-    deleteDoc(doc(db, "users", phone)).catch(() => {}),
-    deleteDoc(doc(db, "profiles", phone)).catch(() => {}),
+  // ── 4. Delete ALL subscriptions (any status) ─────────────────────────────
+  const subQueries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
+    getDocs(query(collection(db, "subscriptions"), where("ownerPhone", "==", phone))),
   ];
   if (uid) {
-    deletions.push(deleteDoc(doc(db, "uidIndex", uid)).catch(() => {}));
-    // Admin accounts are keyed by uid, not phone
-    deletions.push(deleteDoc(doc(db, "users", uid)).catch(() => {}));
+    subQueries.push(getDocs(query(collection(db, "subscriptions"), where("ownerId", "==", uid))));
   }
-  if (role === "retailer") {
-    deletions.push(deleteDoc(doc(db, "retailers", phone)).catch(() => {}));
+  const subSnaps = await Promise.all(subQueries);
+  const subIds = new Set<string>();
+  const subRefs: import("firebase/firestore").DocumentReference[] = [];
+  for (const snap of subSnaps) {
+    for (const d of snap.docs) {
+      if (subIds.has(d.id)) continue;
+      subIds.add(d.id);
+      subRefs.push(d.ref);
+    }
   }
-  if (role === "manufacturer") {
-    deletions.push(deleteDoc(doc(db, "manufacturers", phone)).catch(() => {}));
-  }
-  await Promise.all(deletions);
+  const subscriptionsDeleted = await batchDeleteDocs(subRefs);
 
-  return { productsDeactivated, inventoryDeactivated, seatsReleased, subscriptionsCancelled };
+  // ── 5. Delete manufacturer-retailer relationship docs ─────────────────────
+  // Cover all identity fields: manufacturer side (manufacturerId/Phone)
+  // and retailer side (retailerDocId/Phone) so both roles are cleaned up.
+  const mrQueries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
+    getDocs(query(collection(db, "manufacturerRetailers"), where("manufacturerPhone", "==", phone))),
+    getDocs(query(collection(db, "manufacturerRetailers"), where("retailerDocId",     "==", phone))),
+    getDocs(query(collection(db, "manufacturerRetailers"), where("retailerPhone",     "==", phone))),
+  ];
+  if (uid) {
+    mrQueries.push(getDocs(query(collection(db, "manufacturerRetailers"), where("manufacturerId", "==", uid))));
+  }
+  const mrSnaps = await Promise.all(mrQueries);
+  const mrIds = new Set<string>();
+  const mrRefs: import("firebase/firestore").DocumentReference[] = [];
+  for (const snap of mrSnaps) {
+    for (const d of snap.docs) {
+      if (mrIds.has(d.id)) continue;
+      mrIds.add(d.id);
+      mrRefs.push(d.ref);
+    }
+  }
+  const networkRelationshipsDeleted = await batchDeleteDocs(mrRefs);
+
+  // ── 6. Delete profile pages, delivery settings, contacts ─────────────────
+  const miscDeletions: Promise<void>[] = [
+    // Brand / company pages (phone-keyed and query-based)
+    deleteDoc(doc(db, "brandPages",   phone)).catch(() => {}),
+    deleteDoc(doc(db, "companyPages", phone)).catch(() => {}),
+    // Delivery settings (always phone-keyed)
+    deleteDoc(doc(db, "deliverySettings", phone)).catch(() => {}),
+    // Carts (phone-keyed)
+    deleteDoc(doc(db, "carts", phone)).catch(() => {}),
+  ];
+  if (uid) {
+    miscDeletions.push(deleteDoc(doc(db, "brandPages",   uid)).catch(() => {}));
+    miscDeletions.push(deleteDoc(doc(db, "companyPages", uid)).catch(() => {}));
+  }
+  // Brand/company pages stored with ownerPhone field
+  const bpSnap  = await getDocs(query(collection(db, "brandPages"),   where("ownerPhone", "==", phone))).catch(() => null);
+  const cpSnap  = await getDocs(query(collection(db, "companyPages"), where("ownerPhone", "==", phone))).catch(() => null);
+  // manufacturer_contacts (manufacturers only — keyed by manufacturerId)
+  const mcSnap  = uid
+    ? await getDocs(query(collection(db, "manufacturer_contacts"), where("manufacturerId", "==", uid))).catch(() => null)
+    : null;
+  await Promise.all(miscDeletions);
+  const miscRefs: import("firebase/firestore").DocumentReference[] = [];
+  for (const snap of [bpSnap, cpSnap, mcSnap]) {
+    if (!snap) continue;
+    for (const d of snap.docs) miscRefs.push(d.ref);
+  }
+  await batchDeleteDocs(miscRefs);
+
+  // ── 7. Delete subcollection mirrors ──────────────────────────────────────
+  // manufacturers/{phone}/retailers, /products, /inventory
+  // retailers/{phone}/products, /inventory
+  const subcollectionPaths: string[] = [
+    `manufacturers/${phone}/retailers`,
+    `manufacturers/${phone}/products`,
+    `manufacturers/${phone}/inventory`,
+    `retailers/${phone}/products`,
+    `retailers/${phone}/inventory`,
+  ];
+  if (uid) {
+    subcollectionPaths.push(
+      `manufacturers/${uid}/retailers`,
+      `manufacturers/${uid}/products`,
+      `manufacturers/${uid}/inventory`,
+      `retailers/${uid}/products`,
+      `retailers/${uid}/inventory`,
+    );
+  }
+  const subcollSnaps = await Promise.all(
+    subcollectionPaths.map((p) => {
+      const [col, id, sub] = p.split("/");
+      return getDocs(collection(db, col!, id!, sub!)).catch(() => null);
+    }),
+  );
+  const subCollRefs: import("firebase/firestore").DocumentReference[] = [];
+  const subCollIds = new Set<string>();
+  for (const snap of subcollSnaps) {
+    if (!snap) continue;
+    for (const d of snap.docs) {
+      if (subCollIds.has(d.ref.path)) continue;
+      subCollIds.add(d.ref.path);
+      subCollRefs.push(d.ref);
+    }
+  }
+  await batchDeleteDocs(subCollRefs);
+
+  // ── 8. Delete root identity documents ────────────────────────────────────
+  const rootDeletions: Promise<void>[] = [
+    deleteDoc(doc(db, "users",         phone)).catch(() => {}),
+    deleteDoc(doc(db, "profiles",      phone)).catch(() => {}),
+    deleteDoc(doc(db, "retailers",     phone)).catch(() => {}),
+    deleteDoc(doc(db, "manufacturers", phone)).catch(() => {}),
+  ];
+  if (uid) {
+    rootDeletions.push(deleteDoc(doc(db, "uidIndex",      uid)).catch(() => {}));
+    rootDeletions.push(deleteDoc(doc(db, "users",         uid)).catch(() => {}));
+    rootDeletions.push(deleteDoc(doc(db, "retailers",     uid)).catch(() => {}));
+    rootDeletions.push(deleteDoc(doc(db, "manufacturers", uid)).catch(() => {}));
+  }
+  await Promise.all(rootDeletions);
+
+  return { productsDeactivated, inventoryDeleted, seatListingsDeleted, subscriptionsDeleted, networkRelationshipsDeleted };
 }

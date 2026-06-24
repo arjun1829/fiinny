@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, PackagePlus, PowerOff, Trash2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, Loader2, PackagePlus, PowerOff, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
 import { fetchManufacturerProducts } from "../../../firebase";
 import { useEffectiveUser } from "../../_context/effective-user-context";
 import { PageHeader } from "../../_components/page-header";
@@ -21,6 +21,7 @@ import {
   deactivateNetworkRetailer,
   reactivateNetworkRetailer,
   bulkDeactivateNetworkRetailers,
+  bulkReactivateNetworkRetailers,
   bulkRemoveNetworkRetailers,
 } from "../../_lib/manufacturer-retailers-firestore";
 import {
@@ -73,6 +74,9 @@ export default function ManufacturerRetailersPage() {
   const [bulkConfirm,       setBulkConfirm]       = useState<BulkConfirmAction>(null);
   const [bulkActioning,     setBulkActioning]     = useState(false);
   const [bulkAssignOpen,    setBulkAssignOpen]    = useState(false);
+  // When true, the bulk assign modal was opened from the Reactivate flow.
+  // onAssigned will call bulkReactivateNetworkRetailers after products are assigned.
+  const [bulkReactivateMode, setBulkReactivateMode] = useState(false);
 
   const loadAll = useCallback(async (uid: string) => {
     setListLoading(true);
@@ -138,19 +142,17 @@ export default function ManufacturerRetailersPage() {
     await loadAll(manufacturerId);
   };
 
-  /**
-   * Opens the assign-product modal for a deactivated retailer so the
-   * manufacturer can assign at least one product to re-activate them.
-   */
+  // Opens the product assignment modal. If the retailer is deactivated,
+  // handleAssigned will call reactivateNetworkRetailer after products are assigned.
   const handleActivate = (row: ManufacturerRetailerRow) => {
     setAssignTarget(row);
   };
 
   const handleAssigned = async () => {
     if (!manufacturerId) return;
-    // If the assign target was manually deactivated, reset it back to active
-    // so the row reflects the new seat listing immediately.
-    if (assignTarget?.onboardingStatus === "inactive") {
+    // If this assignment was triggered from a reactivate flow, clear manuallyDeactivated
+    // now that at least one product has been assigned and a seat is consumed.
+    if (assignTarget?.manuallyDeactivated === true) {
       await reactivateNetworkRetailer(assignTarget.id);
     }
     await loadAll(manufacturerId);
@@ -173,6 +175,28 @@ export default function ManufacturerRetailersPage() {
       setBulkActioning(false);
       setBulkConfirm(null);
     }
+  };
+
+  // Opens the bulk assign modal in reactivate mode — no confirm dialog needed.
+  const handleBulkReactivateClick = () => {
+    setBulkReactivateMode(true);
+    setBulkAssignOpen(true);
+  };
+
+  // Called by BulkAssignRetailersModal after products are assigned.
+  // In reactivate mode, also clears manuallyDeactivated on all deactivated retailers.
+  const handleBulkAssigned = async () => {
+    if (bulkReactivateMode) {
+      const deactivatedItems = selectedRows
+        .filter((r) => r.manuallyDeactivated === true)
+        .map((r) => ({ inviteDocId: r.id, retailerDocId: r.retailerDocId }));
+      if (deactivatedItems.length > 0) {
+        await bulkReactivateNetworkRetailers(deactivatedItems);
+      }
+      setBulkReactivateMode(false);
+    }
+    setSelectedIds(new Set());
+    if (manufacturerId) await loadAll(manufacturerId);
   };
 
   const handleBulkRemove = async () => {
@@ -282,7 +306,7 @@ export default function ManufacturerRetailersPage() {
           <div className="flex flex-wrap gap-2 flex-1">
             <button
               type="button"
-              onClick={() => setBulkAssignOpen(true)}
+              onClick={() => { setBulkReactivateMode(false); setBulkAssignOpen(true); }}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95"
             >
               <PackagePlus className="h-3.5 w-3.5" /> Assign Products
@@ -293,6 +317,13 @@ export default function ManufacturerRetailersPage() {
               className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
             >
               <PowerOff className="h-3.5 w-3.5" /> Deactivate
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkReactivateClick}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Reactivate
             </button>
             <button
               type="button"
@@ -367,7 +398,7 @@ export default function ManufacturerRetailersPage() {
         />
       )}
 
-      {/* Bulk confirm modal */}
+      {/* Bulk confirm modal — deactivate and remove only */}
       {bulkConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !bulkActioning && setBulkConfirm(null)} />
@@ -408,19 +439,20 @@ export default function ManufacturerRetailersPage() {
         </div>
       )}
 
-      {/* Bulk assign products modal */}
+      {/* Bulk assign products modal — also used for the bulk reactivate flow */}
       {bulkAssignOpen && manufacturerId && selectedRows.length > 0 && (
         <BulkAssignRetailersModal
           manufacturerId={manufacturerId}
-          selectedRetailers={selectedRows}
+          selectedRetailers={
+            bulkReactivateMode
+              ? selectedRows.filter((r) => r.manuallyDeactivated === true)
+              : selectedRows
+          }
           products={products}
           subs={subs}
           seatListings={seatListings}
-          onAssigned={async () => {
-            setSelectedIds(new Set());
-            if (manufacturerId) await loadAll(manufacturerId);
-          }}
-          onClose={() => setBulkAssignOpen(false)}
+          onAssigned={handleBulkAssigned}
+          onClose={() => { setBulkAssignOpen(false); setBulkReactivateMode(false); }}
         />
       )}
     </>
