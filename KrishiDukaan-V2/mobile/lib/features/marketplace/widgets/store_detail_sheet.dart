@@ -192,8 +192,12 @@ class _StoreDetailSheet extends StatelessWidget {
                     width: double.infinity,
                     child: FilledButton.icon(
                       onPressed: () {
+                        // Capture the router before popping — after pop this
+                        // sheet's context is on its way out, so resolving the
+                        // GoRouter from it would be unsafe.
+                        final router = GoRouter.of(context);
                         Navigator.of(context).pop();
-                        context.push('/brand/${store.phone}');
+                        router.push('/brand/${store.phone}');
                       },
                       icon: const Icon(Icons.business_center_outlined, size: 18),
                       label: const Text('Visit Brand Page'),
