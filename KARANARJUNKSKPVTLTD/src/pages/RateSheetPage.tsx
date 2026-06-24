@@ -141,15 +141,39 @@ export default function RateSheetPage() {
         setImagePreview(null);
     };
 
+    // Resize + compress the chosen image before storing it.
+    // Product images live inline on the Firestore product doc, which has a ~1MB
+    // hard limit — a raw phone photo (2-7MB) overflows it and makes "Add Product"
+    // silently fail. We downscale to <=1000px and re-encode as JPEG (~0.82) so the
+    // result is ~100-250KB, comfortably under the limit.
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result as string;
-            setImagePreview(base64);
-            setFormData(prev => ({ ...prev, imageUrl: base64 }));
+            const dataUrl = reader.result as string;
+            const img = new Image();
+            img.onload = () => {
+                const MAX_DIM = 1000;
+                let { width, height } = img;
+                if (width > MAX_DIM || height > MAX_DIM) {
+                    if (width >= height) { height = Math.round((height * MAX_DIM) / width); width = MAX_DIM; }
+                    else { width = Math.round((width * MAX_DIM) / height); height = MAX_DIM; }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) { setImagePreview(dataUrl); setFormData(prev => ({ ...prev, imageUrl: dataUrl })); return; }
+                ctx.drawImage(img, 0, 0, width, height);
+                const compressed = canvas.toDataURL('image/jpeg', 0.82);
+                setImagePreview(compressed);
+                setFormData(prev => ({ ...prev, imageUrl: compressed }));
+            };
+            // Non-decodable (e.g. SVG) — fall back to the raw data URL.
+            img.onerror = () => { setImagePreview(dataUrl); setFormData(prev => ({ ...prev, imageUrl: dataUrl })); };
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     };
@@ -166,6 +190,14 @@ export default function RateSheetPage() {
             updatedAt: serverTimestamp()
         };
 
+        // Final safety net: a Firestore document is capped at ~1MB. If an image
+        // somehow remains oversized, fail loudly with a clear message rather than
+        // a generic error.
+        if ((formData.imageUrl?.length || 0) > 900_000) {
+            alert('That product photo is too large even after compression. Please pick a smaller image and try again.');
+            return;
+        }
+
         try {
             if (editingProduct) {
                 await updateDoc(getTenantDoc(db, tenantId!, 'products', editingProduct.id), productData);
@@ -176,9 +208,9 @@ export default function RateSheetPage() {
                 });
             }
             handleCloseModal();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving product:", error);
-            alert(t('inventory.save_error') || "Failed to save product.");
+            alert(`${t('inventory.save_error') || 'Failed to save product.'}\n\n${error?.message || error}`);
         }
     };
 
