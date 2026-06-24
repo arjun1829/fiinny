@@ -7,7 +7,7 @@ import { calcDiscount } from '../utils/discount';
 import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
 import type { BulkDiscountTier } from '../dashboard/_types/inventory';
 import { Tag, Layers } from 'lucide-react';
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
@@ -523,21 +523,74 @@ export default function ProductDetailView({
   onBuyNow,
 }: ProductDetailViewProps) {
   const { t } = useI18n();
-  const product = products.find(p => p.id === productId) || products[0];
+
+  // Try to find the product in the already-fetched list first (fast path).
+  // If not found — e.g. the user deep-linked to a secondary doc ID that was
+  // deduplicated during the merge — fetch it directly from Firestore so we
+  // still get the full doc with manufacturerId, manufacturerPhone, etc.
+  const inMemoryProduct = productId ? products.find(p => p.id === productId) : null;
+  const [fetchedProduct, setFetchedProduct] = useState<MarketplaceProduct | null>(null);
+  const [productLoading, setProductLoading] = useState(false);
+
+  useEffect(() => {
+    if (!productId || inMemoryProduct) {
+      setFetchedProduct(null);
+      return;
+    }
+    let cancelled = false;
+    setProductLoading(true);
+    getDoc(doc(db, 'products', productId))
+      .then((snap) => {
+        if (cancelled || !snap.exists()) return;
+        const d = snap.data() as Record<string, unknown>;
+        const imgs: string[] = Array.isArray(d.images)
+          ? (d.images as string[])
+          : d.image
+          ? [String(d.image)]
+          : [];
+        setFetchedProduct({
+          id: snap.id,
+          name: String(d.name ?? ''),
+          price: Number(d.price ?? 0),
+          category: String(d.category ?? 'general'),
+          description: String(d.description ?? ''),
+          image: imgs[0] ?? '',
+          images: imgs,
+          stock: String(d.stock ?? 'In Stock'),
+          store: String(d.store ?? 'Local Store'),
+          distance: String(d.distance ?? 'Nearby'),
+          manufacturerId: d.manufacturerId ? String(d.manufacturerId) : undefined,
+          manufacturerPhone: d.manufacturerPhone ? String(d.manufacturerPhone) : undefined,
+          retailerId: d.retailerId ? String(d.retailerId) : undefined,
+          retailerPhone: d.retailerPhone ? String(d.retailerPhone) : undefined,
+          ownerId: d.ownerId ? String(d.ownerId) : undefined,
+          source: d.source ? String(d.source) : undefined,
+          sellMode: d.sellMode === 'offline_store_only' ? 'offline_store_only' : 'online_delivery',
+          isOnline: d.sellMode !== 'offline_store_only',
+          availability: Array.isArray(d.availability) ? (d.availability as any) : undefined,
+          variants: Array.isArray(d.variants) ? (d.variants as any) : undefined,
+          effectiveDiscountPct: 0,
+          maxDiscountPct: 0,
+          gstApplicable: d.gstApplicable === true,
+        } as MarketplaceProduct);
+      })
+      .catch(() => { /* silently ignore — product may not exist */ })
+      .finally(() => { if (!cancelled) setProductLoading(false); });
+    return () => { cancelled = true; };
+  }, [productId, inMemoryProduct]);
+
+  const product = inMemoryProduct ?? fetchedProduct ?? products[0];
+
+  // All hooks must be declared before any early returns (Rules of Hooks)
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
   const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
-
-  // Variant selection — default to the first variant (or the product itself if no variants)
-  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
-  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
-  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
-  const displayStock = selectedVariant?.stock;
-  // Live store ratings keyed by phone — reflects new reviews instantly without a full refetch.
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const [activeImage, setActiveImage] = useState<string>('');
+
   const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
     setLiveStoreRatings((prev) => {
       const cur = prev[phone];
@@ -546,11 +599,27 @@ export default function ProductDetailView({
     });
   }, []);
 
+  if (productLoading && !inMemoryProduct) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-on-surface-variant">Loading product…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Variant selection — default to the first variant (or the product itself if no variants)
+  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
+  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
+  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
+  const displayStock = selectedVariant?.stock;
+
   // Gallery: use product.images if available, else fall back to product.image alone
   const galleryImages = (product.images && product.images.length > 0)
     ? product.images.slice(0, 5)
     : [product.image];
-  const [activeImage, setActiveImage] = useState(galleryImages[0]);
 
   useEffect(() => {
     if (product && product.id) {

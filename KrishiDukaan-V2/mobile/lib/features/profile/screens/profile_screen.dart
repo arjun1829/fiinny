@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/providers/app_info_provider.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_brand_icon.dart';
@@ -188,6 +189,11 @@ class _ProfileBody extends ConsumerWidget {
               label: isHindi ? 'ऑर्डर इतिहास' : 'Order History',
               onTap: () => context.push('/orders'),
             ),
+            _LinkRow(
+              icon: Icons.support_agent_outlined,
+              label: isHindi ? 'सहायता और समर्थन' : 'Help & Support',
+              onTap: () => context.push('/support'),
+            ),
             if (user.isSeller)
               _LinkRow(
                 icon: user.canAccessDashboard
@@ -250,7 +256,13 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         Center(
-          child: Text('KrishiDukan v1.0.0', style: AppTextStyles.caption),
+          child: Text(
+            ref.watch(appVersionProvider).maybeWhen(
+                  data: (v) => 'KrishiDukan v$v',
+                  orElse: () => 'KrishiDukan',
+                ),
+            style: AppTextStyles.caption,
+          ),
         ),
         const SizedBox(height: 80),
       ],

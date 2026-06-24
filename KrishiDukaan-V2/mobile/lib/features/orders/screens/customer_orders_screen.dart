@@ -21,6 +21,7 @@ class CustomerOrdersScreen extends ConsumerWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
         title: Text('My Orders',
             style: AppTextStyles.heading2.copyWith(color: Colors.white)),
       ),
