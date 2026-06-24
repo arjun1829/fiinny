@@ -76,19 +76,28 @@ class BrandRepository {
     return products;
   }
 
-  /// Reads the public mirror docs from `manufacturers/{phone}/retailers`
-  /// (status == 'active') and returns them as [BrandRetailerModel] list.
+  /// Reads from the global `manufacturerRetailers` collection — the single
+  /// source of truth written by both web admin and mobile. The mirror
+  /// subcollection (manufacturers/{phone}/retailers) is only written by the
+  /// mobile flows and is empty for web-created retailers, so it can't be used
+  /// as the primary source here.
   Future<List<BrandRetailerModel>> fetchBrandRetailers(
       String manufacturerPhone) async {
     final snap = await _db
-        .collection('manufacturers')
-        .doc(manufacturerPhone)
-        .collection('retailers')
+        .collection('manufacturerRetailers')
+        .where('manufacturerPhone', isEqualTo: manufacturerPhone)
         .where('status', whereIn: ['active', 'invited'])
         .limit(50)
         .get();
-    return snap.docs
-        .map((d) => BrandRetailerModel.fromMirror(d.id, d.data()))
-        .toList();
+    return snap.docs.map((d) {
+      final data = d.data();
+      // retailerPhone is the canonical phone; fall back to retailerDocId or doc ID
+      final phone = (data['retailerPhone'] as String?)?.isNotEmpty == true
+          ? data['retailerPhone'] as String
+          : ((data['retailerDocId'] as String?)?.isNotEmpty == true
+              ? data['retailerDocId'] as String
+              : d.id);
+      return BrandRetailerModel.fromMirror(phone, data);
+    }).toList();
   }
 }

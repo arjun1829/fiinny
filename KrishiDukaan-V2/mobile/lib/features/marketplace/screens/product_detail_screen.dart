@@ -104,6 +104,24 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 pinned: true,
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
+                // Explicit back button with a dark scrim so it stays visible
+                // over any product image colour (white images hide a bare arrow).
+                leading: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => context.pop(),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: _buildHeroImage(catalog),
                 ),
