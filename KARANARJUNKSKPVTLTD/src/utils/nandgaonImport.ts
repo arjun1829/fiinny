@@ -10,6 +10,7 @@
 import { writeBatch, doc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { getTenantCollection, getTenantDoc } from './tenantPath';
+import { deleteBySourceRef } from './importCleanup';
 
 interface POLine { description: string; quantity: number; rate: number; amount: number; }
 interface Invoice { vchNo: string; date: string; amount: number; lines: POLine[]; careOff?: string; }
@@ -206,6 +207,20 @@ function normName(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ');
 }
 
+/**
+ * The care-off lines from this ledger, parsed into shop name + village + amount.
+ * Used by the care-off → AR reconciliation preview (see careOffReconcile.ts) as
+ * the canonical list of what each manufacturer invoice should bill to a retailer.
+ */
+export function getCareOffEntries(): { vchNo: string; shopName: string; place: string; amount: number }[] {
+  return INVOICES.filter(i => i.careOff).map(i => {
+    const full = i.careOff as string;
+    const shopName = full.split(',')[0].trim();
+    const place = full.includes(',') ? full.substring(full.indexOf(',') + 1).trim() : '';
+    return { vchNo: i.vchNo, shopName, place, amount: i.amount };
+  });
+}
+
 export interface ImportCounts {
   purchaseOrders: number;
   arOrders: number;
@@ -220,12 +235,15 @@ export async function runNandgaonImport(
   tenantId: string,
   force = false,
 ): Promise<ImportCounts> {
-  // Idempotency check
+  // Idempotency check. On force, REPLACE: wipe the prior import's records first
+  // so re-running cannot create duplicates. (Retailers are reused by name, not deleted.)
   if (!force) {
     const check = await getDocs(
       query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('sourceRef', '==', SOURCE_REF))
     );
     if (!check.empty) return { purchaseOrders: 0, arOrders: 0, newRetailers: 0, payments: 0, skipped: true };
+  } else {
+    await deleteBySourceRef(db, tenantId, SOURCE_REF, ['purchaseOrders', 'supplierPayments', 'orders']);
   }
 
   // Load existing retailers for AR linking

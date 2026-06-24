@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -449,15 +451,15 @@ class DashboardRepository {
             try {
               mappedOrders.add(OrderModel.fromFirestore(doc));
             } catch (err, stack) {
-              print('Error mapping order ${doc.id}: $err');
-              print(stack.toString());
+              debugPrint('Error mapping order ${doc.id}: $err');
+              debugPrint(stack.toString());
             }
           }
           controller.add(mappedOrders);
         }
       } catch (err, stack) {
-        print('Error in watchSellerOrders emit: $err');
-        print(stack.toString());
+        debugPrint('Error in watchSellerOrders emit: $err');
+        debugPrint(stack.toString());
       }
     }
 

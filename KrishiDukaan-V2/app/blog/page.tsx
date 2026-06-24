@@ -1,12 +1,16 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchBlogPosts, type BlogPost } from "../firebase";
+import { getPublishedPosts } from "../lib/seo/blog-server";
+
+// Incremental Static Regeneration — cached at the edge, refreshed hourly.
+export const revalidate = 3600;
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
 
 function formatDate(ts: unknown): string {
   try {
     const d = (ts as any)?.toDate?.() ?? new Date(ts as string);
+    if (isNaN(d.getTime())) return "";
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
   } catch { return ""; }
 }
@@ -19,20 +23,34 @@ function TagChip({ tag }: { tag: string }) {
   );
 }
 
-export default function BlogListPage() {
-  const [posts, setPosts] = useState<BlogPost[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchBlogPosts("published")
-      .then(setPosts)
-      .finally(() => setLoading(false));
-  }, []);
-
+export default async function BlogListPage() {
+  const posts = await getPublishedPosts();
   const [featured, ...rest] = posts;
+
+  // ── JSON-LD: Blog with a list of posts ──
+  const blogLd = {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    name: "KrishiDukan Blog",
+    url: `${SITE_URL}/blog`,
+    description:
+      "Expert farming advice, agri-retail insights, and crop guides — written for Indian farmers and agricultural businesses.",
+    blogPost: posts.slice(0, 20).map((p) => ({
+      "@type": "BlogPosting",
+      headline: p.title,
+      url: `${SITE_URL}/blog/${p.slug}`,
+      ...(p.excerpt ? { description: p.excerpt } : {}),
+      ...(p.coverImage ? { image: p.coverImage } : {}),
+    })),
+  };
 
   return (
     <div className="min-h-screen bg-surface">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(blogLd) }}
+      />
+
       {/* Header */}
       <div className="bg-[#0d2b09] py-16 px-4 text-center">
         <Link href="/" className="inline-flex items-center gap-2 mb-8 text-white/60 text-sm font-semibold hover:text-white transition-colors">
@@ -47,11 +65,7 @@ export default function BlogListPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-12">
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : posts.length === 0 ? (
+        {posts.length === 0 ? (
           <div className="text-center py-20 text-on-surface-variant">
             <p className="text-xl font-bold">No posts yet</p>
             <p className="text-sm mt-2">Check back soon for farming tips and agri insights.</p>

@@ -201,6 +201,9 @@
       <excludeFolder url="file://$MODULE_DIR$/windows/flutter/ephemeral/.plugin_symlinks/printing/example/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/windows/flutter/ephemeral/.plugin_symlinks/printing/example/.pub" />
       <excludeFolder url="file://$MODULE_DIR$/windows/flutter/ephemeral/.plugin_symlinks/printing/example/build" />
+      <excludeFolder url="file://$MODULE_DIR$/KrishiDukaan-V2/mobile/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/KrishiDukaan-V2/mobile/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/KrishiDukaan-V2/mobile/build" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Dart SDK" level="project" />

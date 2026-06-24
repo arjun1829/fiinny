@@ -19,14 +19,14 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
   late TabController _tabController;
 
   // Brand story fields
-  final _taglineCtrl       = TextEditingController();
-  final _aboutCtrl         = TextEditingController();
-  final _yearCtrl          = TextEditingController();
-  final _websiteCtrl       = TextEditingController();
-  final _socialProofCtrl   = TextEditingController();
+  final _taglineCtrl = TextEditingController();
+  final _aboutCtrl = TextEditingController();
+  final _yearCtrl = TextEditingController();
+  final _websiteCtrl = TextEditingController();
+  final _socialProofCtrl = TextEditingController();
 
   // Image fields
-  final _logoCtrl   = TextEditingController();
+  final _logoCtrl = TextEditingController();
   final _bannerCtrl = TextEditingController();
 
   // Certifications
@@ -81,15 +81,19 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
           appBar: AppBar(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            title: Text('Brand Page Editor',
-                style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+            title: Text(
+              'Brand Page Editor',
+              style: AppTextStyles.heading2.copyWith(color: Colors.white),
+            ),
             actions: [
               TextButton(
                 onPressed: _saving ? null : () => _save(user.phone),
                 child: Text(
                   _saving ? 'Saving…' : 'Save',
                   style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -124,7 +128,8 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
                       videos: _videos,
                       videoError: _videoError,
                       onAddCert: _addCert,
-                      onRemoveCert: (c) => setState(() => _certifications.remove(c)),
+                      onRemoveCert: (c) =>
+                          setState(() => _certifications.remove(c)),
                       onAddVideo: _addVideo,
                       onRemoveVideo: (v) => setState(() => _videos.remove(v)),
                       onVideoInputChanged: () =>
@@ -143,19 +148,21 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
     final data = await ManufacturerRepository().fetchBrandPage(phone);
     if (!mounted) return;
     setState(() {
-      _taglineCtrl.text     = data?['tagline']     as String? ?? '';
+      _taglineCtrl.text = data?['tagline'] as String? ?? '';
       // support both 'about' (web) and legacy 'description' field
-      _aboutCtrl.text       = data?['about']        as String?
-                           ?? data?['description']  as String? ?? '';
-      _yearCtrl.text        = data?['establishedYear'] as String? ?? '';
-      _websiteCtrl.text     = data?['website']      as String? ?? '';
-      _socialProofCtrl.text = data?['socialProof']  as String? ?? '';
-      _logoCtrl.text        = data?['logo']         as String? ?? '';
+      _aboutCtrl.text =
+          data?['about'] as String? ?? data?['description'] as String? ?? '';
+      _yearCtrl.text = data?['establishedYear'] as String? ?? '';
+      _websiteCtrl.text = data?['website'] as String? ?? '';
+      _socialProofCtrl.text = data?['socialProof'] as String? ?? '';
+      _logoCtrl.text = data?['logo'] as String? ?? '';
       // support both 'banner' (web) and legacy 'coverImage'
-      _bannerCtrl.text      = data?['banner']       as String?
-                           ?? data?['coverImage']   as String? ?? '';
-      _certifications = List<String>.from(data?['certifications'] as List? ?? []);
-      _videos         = List<String>.from(data?['videos']         as List? ?? []);
+      _bannerCtrl.text =
+          data?['banner'] as String? ?? data?['coverImage'] as String? ?? '';
+      _certifications = List<String>.from(
+        data?['certifications'] as List? ?? [],
+      );
+      _videos = List<String>.from(data?['videos'] as List? ?? []);
       _loaded = true;
     });
   }
@@ -200,30 +207,31 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
     setState(() => _saving = true);
     try {
       await ManufacturerRepository().saveBrandPage(phone, {
-        'tagline':         _taglineCtrl.text.trim(),
-        'about':           _aboutCtrl.text.trim(),
+        'tagline': _taglineCtrl.text.trim(),
+        'about': _aboutCtrl.text.trim(),
         'establishedYear': _yearCtrl.text.trim(),
-        'website':         _websiteCtrl.text.trim(),
-        'socialProof':     _socialProofCtrl.text.trim(),
-        'logo':            _logoCtrl.text.trim(),
-        'banner':          _bannerCtrl.text.trim(),
-        'certifications':  _certifications,
-        'videos':          _videos,
-        'updatedAt':       DateTime.now().toIso8601String(),
+        'website': _websiteCtrl.text.trim(),
+        'socialProof': _socialProofCtrl.text.trim(),
+        'logo': _logoCtrl.text.trim(),
+        'banner': _bannerCtrl.text.trim(),
+        'certifications': _certifications,
+        'videos': _videos,
+        'updatedAt': DateTime.now().toIso8601String(),
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Brand page saved!'),
-              backgroundColor: AppColors.success),
+            content: Text('Brand page saved!'),
+            backgroundColor: AppColors.success,
+          ),
         );
         ref.invalidate(brandPageDataProvider(phone));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -293,7 +301,9 @@ class _BrandTabState extends State<_BrandTab> {
                 decoration: InputDecoration(
                   labelText: 'Tagline',
                   hintText: 'e.g. Growing India\'s Future',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -302,7 +312,9 @@ class _BrandTabState extends State<_BrandTab> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   labelText: 'About / Description',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -316,7 +328,9 @@ class _BrandTabState extends State<_BrandTab> {
                       decoration: InputDecoration(
                         labelText: 'Founded Year',
                         hintText: '2010',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         isDense: true,
                       ),
                     ),
@@ -329,7 +343,9 @@ class _BrandTabState extends State<_BrandTab> {
                       decoration: InputDecoration(
                         labelText: 'Website',
                         hintText: 'https://',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         isDense: true,
                       ),
                     ),
@@ -343,7 +359,9 @@ class _BrandTabState extends State<_BrandTab> {
                 decoration: InputDecoration(
                   labelText: 'Social Proof',
                   hintText: 'e.g. Trusted by 500+ farmers',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ],
@@ -362,7 +380,9 @@ class _BrandTabState extends State<_BrandTab> {
                 decoration: InputDecoration(
                   labelText: 'Logo URL',
                   hintText: 'https://...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   prefixIcon: const Icon(Icons.image_outlined),
                 ),
               ),
@@ -371,10 +391,11 @@ class _BrandTabState extends State<_BrandTab> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
+                    memCacheWidth: 1000,
                     imageUrl: widget.logoCtrl.text,
                     height: 60,
                     fit: BoxFit.contain,
-                    errorWidget: (_, __, ___) =>
+                    errorWidget: (_, _, _) =>
                         const Icon(Icons.broken_image_outlined),
                   ),
                 ),
@@ -385,7 +406,9 @@ class _BrandTabState extends State<_BrandTab> {
                 decoration: InputDecoration(
                   labelText: 'Banner / Cover Image URL',
                   hintText: 'https://...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   prefixIcon: const Icon(Icons.panorama_outlined),
                 ),
               ),
@@ -394,11 +417,12 @@ class _BrandTabState extends State<_BrandTab> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
+                    memCacheWidth: 1000,
                     imageUrl: widget.bannerCtrl.text,
                     height: 80,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
+                    errorWidget: (_, _, _) =>
                         const Icon(Icons.broken_image_outlined),
                   ),
                 ),
@@ -418,14 +442,18 @@ class _BrandTabState extends State<_BrandTab> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: widget.certifications.map((c) => Chip(
-                    label: Text(c, style: AppTextStyles.caption),
-                    backgroundColor:
-                        AppColors.primaryContainer.withValues(alpha: 0.3),
-                    side: const BorderSide(color: AppColors.primary),
-                    deleteIcon: const Icon(Icons.close, size: 14),
-                    onDeleted: () => widget.onRemoveCert(c),
-                  )).toList(),
+                  children: widget.certifications
+                      .map(
+                        (c) => Chip(
+                          label: Text(c, style: AppTextStyles.caption),
+                          backgroundColor: AppColors.primaryContainer
+                              .withValues(alpha: 0.3),
+                          side: const BorderSide(color: AppColors.primary),
+                          deleteIcon: const Icon(Icons.close, size: 14),
+                          onDeleted: () => widget.onRemoveCert(c),
+                        ),
+                      )
+                      .toList(),
                 ),
                 const SizedBox(height: 12),
               ],
@@ -436,7 +464,9 @@ class _BrandTabState extends State<_BrandTab> {
                       controller: widget.certInputCtrl,
                       decoration: InputDecoration(
                         hintText: 'e.g. ISO 9001, IARI Certified',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         isDense: true,
                       ),
                       onSubmitted: (_) => widget.onAddCert(),
@@ -446,9 +476,12 @@ class _BrandTabState extends State<_BrandTab> {
                   FilledButton(
                     onPressed: widget.onAddCert,
                     style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12)),
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
                     child: const Icon(Icons.add, size: 18, color: Colors.white),
                   ),
                 ],
@@ -464,8 +497,10 @@ class _BrandTabState extends State<_BrandTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Paste a YouTube URL or video ID',
-                  style: AppTextStyles.caption),
+              Text(
+                'Paste a YouTube URL or video ID',
+                style: AppTextStyles.caption,
+              ),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -474,7 +509,9 @@ class _BrandTabState extends State<_BrandTab> {
                       controller: widget.videoInputCtrl,
                       decoration: InputDecoration(
                         hintText: 'https://youtube.com/watch?v=...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         isDense: true,
                         errorText: widget.videoError,
                       ),
@@ -486,9 +523,12 @@ class _BrandTabState extends State<_BrandTab> {
                   FilledButton(
                     onPressed: widget.onAddVideo,
                     style: FilledButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12)),
+                      backgroundColor: Colors.red,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
                     child: const Icon(Icons.add, size: 18, color: Colors.white),
                   ),
                 ],
@@ -500,7 +540,7 @@ class _BrandTabState extends State<_BrandTab> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: widget.videos.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
                     itemBuilder: (_, i) {
                       final id = widget.videos[i];
                       return Stack(
@@ -508,17 +548,20 @@ class _BrandTabState extends State<_BrandTab> {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: CachedNetworkImage(
+                              memCacheWidth: 1000,
                               imageUrl:
                                   'https://img.youtube.com/vi/$id/mqdefault.jpg',
                               width: 100,
                               height: 110,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(
+                              errorWidget: (_, _, _) => Container(
                                 width: 100,
                                 height: 110,
                                 color: Colors.black12,
-                                child: const Icon(Icons.play_circle_outline,
-                                    color: Colors.red),
+                                child: const Icon(
+                                  Icons.play_circle_outline,
+                                  color: Colors.red,
+                                ),
                               ),
                             ),
                           ),
@@ -533,8 +576,11 @@ class _BrandTabState extends State<_BrandTab> {
                                   color: Colors.black54,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: const Icon(Icons.close,
-                                    size: 14, color: Colors.white),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),
@@ -543,9 +589,11 @@ class _BrandTabState extends State<_BrandTab> {
                             left: 0,
                             right: 0,
                             child: Center(
-                              child: Icon(Icons.play_circle_filled,
-                                  color: Colors.white.withValues(alpha: 0.8),
-                                  size: 28),
+                              child: Icon(
+                                Icons.play_circle_filled,
+                                color: Colors.white.withValues(alpha: 0.8),
+                                size: 28,
+                              ),
                             ),
                           ),
                         ],
@@ -574,8 +622,7 @@ class _ProductsTab extends ConsumerWidget {
     final catalogAsync = ref.watch(manufacturerCatalogProvider(phone));
     return catalogAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) =>
-          const Center(child: Text('Could not load products.')),
+      error: (_, _) => const Center(child: Text('Could not load products.')),
       data: (products) {
         if (products.isEmpty) {
           return const Center(
@@ -584,11 +631,16 @@ class _ProductsTab extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inventory_2_outlined,
-                      size: 48, color: AppColors.primaryContainer),
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 48,
+                    color: AppColors.primaryContainer,
+                  ),
                   SizedBox(height: 12),
-                  Text('No products yet',
-                      style: TextStyle(color: AppColors.onSurfaceVariant)),
+                  Text(
+                    'No products yet',
+                    style: TextStyle(color: AppColors.onSurfaceVariant),
+                  ),
                 ],
               ),
             ),
@@ -597,7 +649,7 @@ class _ProductsTab extends ConsumerWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: products.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
             final p = products[i];
             return Container(
@@ -616,14 +668,18 @@ class _ProductsTab extends ConsumerWidget {
                       height: 56,
                       child: p.hasImages
                           ? CachedNetworkImage(
+                              memCacheWidth: 1000,
                               imageUrl: p.imageUrl,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => const Icon(
-                                  Icons.inventory_2_outlined,
-                                  color: AppColors.primaryLight),
+                              errorWidget: (_, _, _) => const Icon(
+                                Icons.inventory_2_outlined,
+                                color: AppColors.primaryLight,
+                              ),
                             )
-                          : const Icon(Icons.inventory_2_outlined,
-                              color: AppColors.primaryLight),
+                          : const Icon(
+                              Icons.inventory_2_outlined,
+                              color: AppColors.primaryLight,
+                            ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -633,8 +689,10 @@ class _ProductsTab extends ConsumerWidget {
                       children: [
                         Text(p.name, style: AppTextStyles.bodyMedium),
                         Text(p.category, style: AppTextStyles.caption),
-                        Text('₹${p.price.toStringAsFixed(0)}',
-                            style: AppTextStyles.price),
+                        Text(
+                          '₹${p.price.toStringAsFixed(0)}',
+                          style: AppTextStyles.price,
+                        ),
                       ],
                     ),
                   ),
@@ -659,8 +717,7 @@ class _StoresTab extends ConsumerWidget {
     final networkAsync = ref.watch(retailerNetworkProvider(phone));
     return networkAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) =>
-          const Center(child: Text('Could not load stores.')),
+      error: (_, _) => const Center(child: Text('Could not load stores.')),
       data: (retailers) {
         final active = retailers.where((r) => r.isActive).toList();
         if (active.isEmpty) {
@@ -670,11 +727,16 @@ class _StoresTab extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.store_outlined,
-                      size: 48, color: AppColors.primaryContainer),
+                  Icon(
+                    Icons.store_outlined,
+                    size: 48,
+                    color: AppColors.primaryContainer,
+                  ),
                   SizedBox(height: 12),
-                  Text('No active stores yet',
-                      style: TextStyle(color: AppColors.onSurfaceVariant)),
+                  Text(
+                    'No active stores yet',
+                    style: TextStyle(color: AppColors.onSurfaceVariant),
+                  ),
                 ],
               ),
             ),
@@ -683,7 +745,7 @@ class _StoresTab extends ConsumerWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: active.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
             final r = active[i];
             return Container(
@@ -702,8 +764,11 @@ class _StoresTab extends ConsumerWidget {
                       color: AppColors.primaryContainer.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.store_outlined,
-                        color: AppColors.primary, size: 20),
+                    child: const Icon(
+                      Icons.store_outlined,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -743,9 +808,10 @@ class _Section extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 4,
-              offset: const Offset(0, 2)),
+            color: AppColors.cardShadow,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(

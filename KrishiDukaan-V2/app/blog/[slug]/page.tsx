@@ -44,10 +44,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const post = await getPublishedPostBySlug(slug);
   if (!post) return { title: "Post Not Found | KrishiDukan Blog" };
 
-  const description =
-    (post.excerpt || post.title).slice(0, 300);
+  const description = (post.excerpt || post.title).slice(0, 300);
   const canonicalPath = `/blog/${encodeURIComponent(post.slug || slug)}`;
   const images = post.coverImage ? [{ url: post.coverImage }] : undefined;
+  const published = toIso(post.publishedAt);
+  const modified = toIso(post.updatedAt) ?? published;
 
   return {
     title: `${post.title} | KrishiDukan Blog`,
@@ -58,10 +59,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: post.title,
       description,
       url: `${SITE_URL}${canonicalPath}`,
+      siteName: "KrishiDukan",
       ...(images ? { images } : {}),
       ...(post.author ? { authors: [post.author] } : {}),
-      ...(toIso(post.publishedAt) ? { publishedTime: toIso(post.publishedAt) } : {}),
-      ...(toIso(post.updatedAt) ? { modifiedTime: toIso(post.updatedAt) } : {}),
+      ...(published ? { publishedTime: published } : {}),
+      ...(modified ? { modifiedTime: modified } : {}),
       ...(post.tags?.length ? { tags: post.tags } : {}),
     },
     twitter: {
@@ -90,7 +92,7 @@ export default async function BlogPostPage({ params }: PageProps) {
   const modified = toIso(post.updatedAt) ?? published;
   const canonicalUrl = `${SITE_URL}/blog/${encodeURIComponent(post.slug || slug)}`;
 
-  // ── JSON-LD: BlogPosting + BreadcrumbList ──
+  // ── JSON-LD: BlogPosting ──
   const articleLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -113,6 +115,7 @@ export default async function BlogPostPage({ params }: PageProps) {
     url: canonicalUrl,
   };
 
+  // ── JSON-LD: BreadcrumbList ──
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",

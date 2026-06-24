@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/image_utils.dart';
 import 'listing_model.dart';
 
 class AvailabilityEntry {
@@ -74,6 +75,8 @@ class CatalogModel {
   final Map<String, double> sellerDiscounts;
 
   // Merging / web schema fields
+  final String? manufacturerId;
+  final String? manufacturerPhone;
   final String? source;
   final String? retailerId;
   final String? retailerPhone;
@@ -107,6 +110,8 @@ class CatalogModel {
     this.variants,
     this.maxDiscountPct = 0,
     this.sellerDiscounts = const {},
+    this.manufacturerId,
+    this.manufacturerPhone,
     this.source,
     this.retailerId,
     this.retailerPhone,
@@ -119,7 +124,13 @@ class CatalogModel {
     this.collectionPath = 'catalog',
   });
 
-  String get imageUrl => images.isNotEmpty ? images.first : '';
+  // Platform-resolved image URLs (proxied on web so cross-origin hosts without
+  // CORS still render — see resolveImageUrl). Use these in the UI, not the raw
+  // `images` list.
+  String get imageUrl =>
+      images.isNotEmpty ? resolveImageUrl(images.first) : '';
+  List<String> get displayImages =>
+      images.map(resolveImageUrl).toList(growable: false);
   bool get hasImages => images.isNotEmpty;
   bool get hasNpk =>
       nitrogen != null && phosphorus != null && potassium != null;
@@ -145,6 +156,8 @@ class CatalogModel {
     List<VariantModel>? variants,
     double? maxDiscountPct,
     Map<String, double>? sellerDiscounts,
+    String? manufacturerId,
+    String? manufacturerPhone,
     String? source,
     String? retailerId,
     String? retailerPhone,
@@ -177,6 +190,8 @@ class CatalogModel {
       variants: variants ?? this.variants,
       maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
       sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
+      manufacturerId: manufacturerId ?? this.manufacturerId,
+      manufacturerPhone: manufacturerPhone ?? this.manufacturerPhone,
       source: source ?? this.source,
       retailerId: retailerId ?? this.retailerId,
       retailerPhone: retailerPhone ?? this.retailerPhone,
@@ -239,6 +254,8 @@ class CatalogModel {
       }
     }
 
+    final manufacturerId = d['manufacturerId'] as String?;
+    final manufacturerPhone = d['manufacturerPhone'] as String?;
     final source = d['source'] as String?;
     final retailerId = d['retailerId'] as String?;
     final retailerPhone = d['retailerPhone'] as String?;
@@ -277,6 +294,8 @@ class CatalogModel {
       isActive: d['isActive'] as bool? ?? true,
       variants: parsedVariants,
       maxDiscountPct: maxDiscountPct,
+      manufacturerId: manufacturerId,
+      manufacturerPhone: manufacturerPhone,
       source: source,
       retailerId: retailerId,
       retailerPhone: retailerPhone,

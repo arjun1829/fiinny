@@ -13,6 +13,8 @@ import '../data/catalog_repository.dart';
 import '../data/listing_repository.dart';
 import '../data/review_repository.dart';
 import '../data/store_repository.dart';
+import '../../../core/models/brand_model.dart';
+import '../../brand/data/brand_repository.dart';
 
 // ── Marketplace state ──────────────────────────────────────────────────────
 
@@ -373,4 +375,36 @@ final userStoreReviewProvider =
   final phone = userAsync.value?.phone ?? '';
   if (phone.isEmpty) return Future.value(null);
   return _reviewRepo.getUserStoreReview(storePhone, phone);
+});
+
+final brandRepositoryProvider = Provider((_) => BrandRepository());
+
+final brandByUidProvider =
+    FutureProvider.family<BrandModel?, String>((ref, uid) {
+  return ref.read(brandRepositoryProvider).fetchBrandByUid(uid);
+});
+
+/// Resolves a product's manufacturer brand robustly. Phone is the reliable key
+/// — manufacturers live at `manufacturers/{phone}`, a direct doc read — so we
+/// try it first and only fall back to the UID `where`-query (which misses when
+/// `manufacturerId` is actually a phone, or when auth UIDs differ, e.g. UAT).
+final productBrandProvider =
+    FutureProvider.family<BrandModel?, ({String? uid, String? phone})>(
+        (ref, ids) async {
+  final repo = ref.read(brandRepositoryProvider);
+  final phone = ids.phone;
+  if (phone != null && phone.isNotEmpty) {
+    final byPhone = await repo.fetchBrandByPhone(phone);
+    if (byPhone != null) return byPhone;
+  }
+  final uid = ids.uid;
+  if (uid != null && uid.isNotEmpty) {
+    return repo.fetchBrandByUid(uid);
+  }
+  return null;
+});
+
+final brandProductsProvider =
+    FutureProvider.family<List<CatalogModel>, String>((ref, phone) {
+  return ref.read(brandRepositoryProvider).fetchBrandProducts(phone);
 });

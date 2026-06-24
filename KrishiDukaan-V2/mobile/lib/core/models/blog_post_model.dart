@@ -35,7 +35,7 @@ class BlogPostModel {
       content: d['content'] as String? ?? '',
       coverImage: d['coverImage'] as String?,
       tags: List<String>.from(d['tags'] as List? ?? []),
-      author: d['author'] as String? ?? 'KrishiDukaan',
+      author: d['author'] as String? ?? 'KrishiDukan',
       readTime: (d['readTime'] as num?)?.toInt(),
       publishedAt: (d['publishedAt'] as Timestamp?)?.toDate(),
     );

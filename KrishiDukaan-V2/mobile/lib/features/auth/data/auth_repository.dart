@@ -78,6 +78,58 @@ class AuthRepository {
     });
   }
 
+  /// Saves profile-completion fields. Mirrors the web: writes the completion
+  /// fields to users/{phone} and, for sellers, the business profile to the
+  /// role-specific collection (retailers/manufacturers) so it shows on their
+  /// store/brand page.
+  Future<void> saveProfile({
+    required String phone,
+    required String role,
+    required String name,
+    String? email,
+    String? businessName,
+    String? address,
+    String? city,
+    String? state,
+    String? pincode,
+  }) async {
+    final isSeller = role == 'retailer' || role == 'manufacturer';
+
+    // 1. users/{phone} — completion fields the dashboard checks.
+    await _db.collection('users').doc(phone).set({
+      'name': name,
+      'ownerName': name,
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (isSeller) 'businessName': businessName ?? '',
+      'address': ?address,
+      'city': ?city,
+      'state': ?state,
+      'pincode': ?pincode,
+      'profileCompleted': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // 2. Sellers: mirror the business profile to their role collection so the
+    //    store/brand page and availability storeName resolve correctly.
+    if (isSeller) {
+      final col = role == 'manufacturer' ? 'manufacturers' : 'retailers';
+      await _db.collection(col).doc(phone).set({
+        // Write aliased name keys so every reader resolves the shop name.
+        'name': businessName ?? name,
+        'businessName': businessName ?? '',
+        'storeName': businessName ?? '',
+        'ownerName': name,
+        'phone': phone,
+        'ownerPhone': phone,
+        'address': ?address,
+        'city': ?city,
+        'state': ?state,
+        'pincode': ?pincode,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+  }
+
   /// Ensures uidIndex/{uid} exists — called on every login (not just signup).
   /// Existing web-registered users may have users/{phone} but no uidIndex entry,
   /// which breaks all myPhone()-based security rules.

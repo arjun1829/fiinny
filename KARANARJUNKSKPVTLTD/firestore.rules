@@ -162,6 +162,57 @@ service cloud.firestore {
         allow read, write: if request.auth != null && isAdminOrAnalyst();
       }
 
+      // ─── Finance operations (HighRadius-style O2C + S2P) ──────────────────
+      // The ledger (glAccounts, journalEntries) and party balances are owned by
+      // Cloud Functions (Admin SDK bypasses these rules). Clients read, never
+      // write. NOTE: full DB-level enforcement also requires retiring the
+      // permissive `match /{document=**}` catch-all at the bottom of this file
+      // (a tracked hardening step) — until then these write:false rules express
+      // intent and bind once the catch-all is removed.
+
+      // Chart of accounts — Function-written only.
+      match /glAccounts/{acctId} {
+        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow write: if false;
+      }
+
+      // Double-entry journal — Function-written only.
+      match /journalEntries/{entryId} {
+        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow write: if false;
+      }
+
+      // Unified party master. Staff manage master + credit fields; the
+      // arBalance / apBalance fields are Function-owned and must not change on a
+      // client write. Linked retailer/manufacturer portals may read their own.
+      match /accounts/{accountId} {
+        allow read: if request.auth != null && (
+          (getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()) ||
+          (hasRole('retailer') && getLinkedId() == accountId) ||
+          (hasRole('manufacturer') && getLinkedId() == accountId)
+        );
+        allow create: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()
+          && request.resource.data.arBalance == 0 && request.resource.data.apBalance == 0;
+        allow update: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()
+          && request.resource.data.arBalance == resource.data.arBalance
+          && request.resource.data.apBalance == resource.data.apBalance;
+        allow delete: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+      }
+
+      // Operational finance documents — staff CRUD; Functions post the matching
+      // journal entries. These are source docs, not the ledger itself.
+      match /bills/{billId}             { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /payments/{paymentId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /cashApplications/{caId}    { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /bankAccounts/{baId}        { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /creditReviews/{crId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /collectionActivities/{aId} { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /promiseToPay/{ptpId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /disputes/{dId}             { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /promotions/{pId}           { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /promotionClaims/{pcId}     { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+      match /contracts/{cId}            { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+
       match /settings/rolePermissions {
         allow read: if request.auth != null;
         allow write: if request.auth != null && request.auth.uid != null && isAdminOrAnalyst();

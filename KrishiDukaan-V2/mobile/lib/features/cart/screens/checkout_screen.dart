@@ -90,7 +90,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         'key': razorpayKey,
         'order_id': _razorpayOrderId,
         'amount': amount,
-        'name': 'KrishiDukaan',
+        'name': 'KrishiDukan',
         'description': 'Order Payment',
         'prefill': {
           'contact': user.phoneNumber,

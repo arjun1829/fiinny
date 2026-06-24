@@ -89,9 +89,13 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
                   children: [
                     const AppBrandIcon(size: 30),
                     const SizedBox(width: 10),
-                    Text('Crop Hubs',
-                        style: AppTextStyles.heading2
-                            .copyWith(color: Colors.white, fontSize: 18)),
+                    Text(
+                      'Crop Hubs',
+                      style: AppTextStyles.heading2.copyWith(
+                        color: Colors.white,
+                        fontSize: 18,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -108,9 +112,7 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
               ),
 
               // ── Content ──
-              SliverToBoxAdapter(
-                child: HubContentWidget(hub: hub),
-              ),
+              SliverToBoxAdapter(child: HubContentWidget(hub: hub)),
             ],
           );
         },
@@ -146,7 +148,10 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: Colors.white,
       height: 60,
@@ -164,7 +169,9 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 7),
+                        horizontal: 16,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: selected.id == h.id
                             ? AppColors.primary
@@ -178,8 +185,9 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
                         boxShadow: selected.id == h.id
                             ? [
                                 BoxShadow(
-                                  color:
-                                      AppColors.primary.withValues(alpha: 0.25),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.25,
+                                  ),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -284,6 +292,7 @@ class _HeroSection extends StatelessWidget {
           // Background image
           hub.heroImage.isNotEmpty
               ? CachedNetworkImage(
+                  memCacheWidth: 1000,
                   imageUrl: hub.heroImage,
                   fit: BoxFit.cover,
                   errorWidget: (_, _, _) => Container(
@@ -316,8 +325,10 @@ class _HeroSection extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(20),
@@ -370,15 +381,34 @@ class _CropStatCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = [
-      _Stat('Climate', hub.idealClimate ?? 'Tropical', Icons.wb_sunny_outlined,
-          const Color(0xFFFFF3E0), const Color(0xFFE65100)),
-      _Stat('Soil Type', hub.soilType ?? 'Loamy', Icons.landscape_outlined,
-          const Color(0xFFFFF8E1), const Color(0xFF5D4037)),
-      _Stat('Water Needs', hub.waterNeeds ?? 'Moderate',
-          Icons.water_drop_outlined, const Color(0xFFE3F2FD),
-          const Color(0xFF1565C0)),
-      _Stat('Best Season', hub.bestSeason ?? 'Spring', Icons.event_outlined,
-          const Color(0xFFE8F5E9), AppColors.primary),
+      _Stat(
+        'Climate',
+        hub.idealClimate ?? 'Tropical',
+        Icons.wb_sunny_outlined,
+        const Color(0xFFFFF3E0),
+        const Color(0xFFE65100),
+      ),
+      _Stat(
+        'Soil Type',
+        hub.soilType ?? 'Loamy',
+        Icons.landscape_outlined,
+        const Color(0xFFFFF8E1),
+        const Color(0xFF5D4037),
+      ),
+      _Stat(
+        'Water Needs',
+        hub.waterNeeds ?? 'Moderate',
+        Icons.water_drop_outlined,
+        const Color(0xFFE3F2FD),
+        const Color(0xFF1565C0),
+      ),
+      _Stat(
+        'Best Season',
+        hub.bestSeason ?? 'Spring',
+        Icons.event_outlined,
+        const Color(0xFFE8F5E9),
+        AppColors.primary,
+      ),
     ];
 
     return SizedBox(
@@ -387,7 +417,7 @@ class _CropStatCards extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: stats.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final s = stats[i];
           return Container(
@@ -474,9 +504,12 @@ class _GrowthJourneySection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Growth Journey',
-                        style: AppTextStyles.heading2
-                            .copyWith(fontWeight: FontWeight.w900)),
+                    Text(
+                      'Growth Journey',
+                      style: AppTextStyles.heading2.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     Text(
                       'FROM SEED TO HARVEST',
                       style: AppTextStyles.caption.copyWith(
@@ -489,18 +522,24 @@ class _GrowthJourneySection extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primaryContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: AppColors.primaryContainer.withValues(alpha: 0.5)),
+                    color: AppColors.primaryContainer.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.eco_outlined,
-                        size: 14, color: AppColors.primary),
+                    const Icon(
+                      Icons.eco_outlined,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'Complete Cycle',
@@ -522,7 +561,7 @@ class _GrowthJourneySection extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: hub.growthStages.length,
-              separatorBuilder: (_, __) => _StageConnector(),
+              separatorBuilder: (_, _) => _StageConnector(),
               itemBuilder: (_, i) {
                 final stage = hub.growthStages[i];
                 return _GrowthStageCard(stage: stage, index: i);
@@ -539,11 +578,7 @@ class _StageConnector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
-        width: 24,
-        height: 2,
-        color: AppColors.divider,
-      ),
+      child: Container(width: 24, height: 2, color: AppColors.divider),
     );
   }
 }
@@ -603,10 +638,12 @@ class _GrowthStageCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(stage.phase,
-                    style: AppTextStyles.bodyMedium.copyWith(fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                child: Text(
+                  stage.phase,
+                  style: AppTextStyles.bodyMedium.copyWith(fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -655,7 +692,9 @@ class _GrowthStageCard extends StatelessWidget {
                   .map(
                     (p) => Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceVariant,
                         borderRadius: BorderRadius.circular(6),
@@ -704,7 +743,8 @@ class _SeedsCard extends StatelessWidget {
                 .map(
                   (seed) => GestureDetector(
                     onTap: () => context.go(
-                        '/marketplace?search=${Uri.encodeComponent(seed.name)}'),
+                      '/marketplace?search=${Uri.encodeComponent(seed.name)}',
+                    ),
                     child: _SeedTile(seed: seed),
                   ),
                 )
@@ -716,7 +756,8 @@ class _SeedsCard extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 44),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               side: const BorderSide(color: AppColors.divider),
             ),
             child: Text(
@@ -747,6 +788,7 @@ class _SeedTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: seed.img.isNotEmpty
                 ? CachedNetworkImage(
+                    memCacheWidth: 1000,
                     imageUrl: seed.img,
                     fit: BoxFit.cover,
                     width: double.infinity,
@@ -800,7 +842,8 @@ class _NutritionCard extends StatelessWidget {
           ...hub.nutrition.map(
             (item) => GestureDetector(
               onTap: () => context.go(
-                  '/marketplace?search=${Uri.encodeComponent(item.name)}'),
+                '/marketplace?search=${Uri.encodeComponent(item.name)}',
+              ),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
@@ -819,33 +862,43 @@ class _NutritionCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: AppColors.divider),
                       ),
-                      child: Icon(_nutritionIcon(item.icon),
-                          color: AppColors.primary, size: 22),
+                      child: Icon(
+                        _nutritionIcon(item.icon),
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(item.name,
-                              style: AppTextStyles.caption.copyWith(
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.3,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          Text(item.desc,
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.onSurfaceVariant,
-                                fontSize: 10,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
+                          Text(
+                            item.name,
+                            style: AppTextStyles.caption.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            item.desc,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.chevron_right,
-                        size: 16, color: AppColors.onSurfaceVariant),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: AppColors.onSurfaceVariant,
+                    ),
                   ],
                 ),
               ),
@@ -853,13 +906,13 @@ class _NutritionCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           FilledButton(
-            onPressed: () =>
-                context.go('/marketplace?category=fertilizers'),
+            onPressed: () => context.go('/marketplace?category=fertilizers'),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primary,
               minimumSize: const Size(double.infinity, 44),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: Text(
               'EXPLORE FERTILIZERS',
@@ -904,11 +957,12 @@ class _IrrigationCard extends StatelessWidget {
                 children: [
                   if (irr.image.isNotEmpty)
                     CachedNetworkImage(
+                      memCacheWidth: 1000,
                       imageUrl: irr.image,
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => Container(
-                          color:
-                              AppColors.primary.withValues(alpha: 0.15)),
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                      ),
                     )
                   else
                     Container(color: AppColors.primary.withValues(alpha: 0.15)),
@@ -929,12 +983,15 @@ class _IrrigationCard extends StatelessWidget {
                     bottom: 10,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3)),
+                          color: Colors.white.withValues(alpha: 0.3),
+                        ),
                       ),
                       child: Text(
                         'SYSTEM SETUP',
@@ -959,16 +1016,20 @@ class _IrrigationCard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(item.name,
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.onSurfaceVariant,
-                        fontSize: 13,
-                      )),
-                  Text(item.price,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.secondary,
-                        fontSize: 13,
-                      )),
+                  Text(
+                    item.name,
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    item.price,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.secondary,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1002,13 +1063,16 @@ class _CommonMistakesSection extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: Colors.red.withValues(alpha: 0.3)),
+                      color: Colors.red.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -1053,7 +1117,8 @@ class _CommonMistakesSection extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1)),
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1066,8 +1131,11 @@ class _CommonMistakesSection extends StatelessWidget {
                         color: Colors.red.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.close,
-                          color: Colors.red, size: 12),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.red,
+                        size: 12,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -1121,8 +1189,11 @@ class _AdvisorySection extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppColors.divider),
                   ),
-                  child: const Icon(Icons.check_circle_outline,
-                      color: AppColors.primary, size: 28),
+                  child: const Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1133,10 +1204,11 @@ class _AdvisorySection extends StatelessWidget {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
-                              color:
-                                  AppColors.primary.withValues(alpha: 0.1),
+                              color: AppColors.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -1168,8 +1240,9 @@ class _AdvisorySection extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               hub.advisory.title,
-              style: AppTextStyles.heading2
-                  .copyWith(fontWeight: FontWeight.w900),
+              style: AppTextStyles.heading2.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1194,7 +1267,8 @@ class _AdvisorySection extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -1254,9 +1328,12 @@ class _FaqSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Farmers\' Wisdom',
-                style: AppTextStyles.heading2
-                    .copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              'Farmers\' Wisdom',
+              style: AppTextStyles.heading2.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
             Text(
               'ESSENTIAL KNOWLEDGE FOR ${hub.name.toUpperCase()}',
               style: AppTextStyles.caption.copyWith(
@@ -1286,8 +1363,7 @@ class _FaqSection extends StatelessWidget {
                           width: 22,
                           height: 22,
                           decoration: BoxDecoration(
-                            color:
-                                AppColors.primary.withValues(alpha: 0.1),
+                            color: AppColors.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Center(
@@ -1304,8 +1380,9 @@ class _FaqSection extends StatelessWidget {
                         Expanded(
                           child: Text(
                             faq.question,
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(fontSize: 13),
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ],
@@ -1379,9 +1456,12 @@ class _SectionCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(title,
-                    style: AppTextStyles.heading3
-                        .copyWith(fontWeight: FontWeight.w900)),
+                child: Text(
+                  title,
+                  style: AppTextStyles.heading3.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
               Container(
                 width: 40,

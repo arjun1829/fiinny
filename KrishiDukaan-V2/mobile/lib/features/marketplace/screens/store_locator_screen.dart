@@ -14,6 +14,39 @@ import '../../../core/widgets/app_top_bar.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
 
+void _showFullStoreImage(BuildContext context, String imageUrl) {
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(8),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 4.0,
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.contain,
+              placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+              errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
+            ),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class StoreLocatorScreen extends ConsumerStatefulWidget {
   const StoreLocatorScreen({super.key});
 
@@ -55,10 +88,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
     setState(() => _selectedStoreId = store.id);
 
     if (panMap && store.hasLocation) {
-      _mapController.move(
-        ll.LatLng(store.lat!, store.lng!),
-        15,
-      );
+      _mapController.move(ll.LatLng(store.lat!, store.lng!), 15);
     }
 
     // Scroll the list to the selected card
@@ -111,23 +141,27 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
             const SizedBox(width: 10),
             Text(
               'Store Locator',
-              style: AppTextStyles.heading2
-                  .copyWith(color: Colors.white, fontSize: 18),
+              style: AppTextStyles.heading2.copyWith(
+                color: Colors.white,
+                fontSize: 18,
+              ),
             ),
           ],
         ),
       ),
       body: storesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => Center(
+        error: (_, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.store_outlined,
-                  size: 48, color: AppColors.onSurfaceVariant),
+              const Icon(
+                Icons.store_outlined,
+                size: 48,
+                color: AppColors.onSurfaceVariant,
+              ),
               const SizedBox(height: 12),
-              Text('Could not load stores',
-                  style: AppTextStyles.bodyMedium),
+              Text('Could not load stores', style: AppTextStyles.bodyMedium),
             ],
           ),
         ),
@@ -135,9 +169,12 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
           final stores = _filteredStores(allStores);
           final selected = stores.firstWhere(
             (s) => s.id == _selectedStoreId,
-            orElse: () => stores.isNotEmpty ? stores.first : StoreModel(id: '', name: ''),
+            orElse: () =>
+                stores.isNotEmpty ? stores.first : StoreModel(id: '', name: ''),
           );
-          final hasSelected = _selectedStoreId != null && stores.any((s) => s.id == _selectedStoreId);
+          final hasSelected =
+              _selectedStoreId != null &&
+              stores.any((s) => s.id == _selectedStoreId);
 
           return Stack(
             children: [
@@ -163,12 +200,14 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                       children: [
                         TextField(
                           controller: _searchCtrl,
-                          onChanged: (v) =>
-                              setState(() => _searchQuery = v),
+                          onChanged: (v) => setState(() => _searchQuery = v),
                           decoration: InputDecoration(
                             hintText: 'Search stores by name or area...',
-                            prefixIcon: const Icon(Icons.search,
-                                size: 20, color: AppColors.onSurfaceVariant),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              size: 20,
+                              color: AppColors.onSurfaceVariant,
+                            ),
                             suffixIcon: _searchQuery.isNotEmpty
                                 ? IconButton(
                                     icon: const Icon(Icons.clear, size: 18),
@@ -180,15 +219,21 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                 : null,
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
-                                vertical: 10, horizontal: 12),
+                              vertical: 10,
+                              horizontal: 12,
+                            ),
                             border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    const BorderSide(color: AppColors.divider)),
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: AppColors.divider,
+                              ),
+                            ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: const BorderSide(
-                                  color: AppColors.primary, width: 2),
+                                color: AppColors.primary,
+                                width: 2,
+                              ),
                             ),
                             filled: true,
                             fillColor: AppColors.surfaceVariant,
@@ -215,16 +260,19 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.store_outlined,
-                                    size: 40,
-                                    color: AppColors.onSurfaceVariant),
+                                const Icon(
+                                  Icons.store_outlined,
+                                  size: 40,
+                                  color: AppColors.onSurfaceVariant,
+                                ),
                                 const SizedBox(height: 12),
                                 Text(
                                   _searchQuery.isEmpty
                                       ? 'No stores available'
                                       : 'No stores match "$_searchQuery"',
                                   style: AppTextStyles.bodyMedium.copyWith(
-                                      color: AppColors.onSurfaceVariant),
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
                                 ),
                               ],
                             ),
@@ -245,7 +293,9 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                 isSelected: isSelected,
                                 onTap: () => _selectStore(store),
                                 onMapTap: () => _openMapExpanded(store),
-                                onCall: store.phone != null && store.phone!.isNotEmpty
+                                onCall:
+                                    store.phone != null &&
+                                        store.phone!.isNotEmpty
                                     ? () => _callStore(store.phone!)
                                     : null,
                                 onNavigate: store.hasLocation
@@ -317,13 +367,17 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: const [
                       BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 4,
-                          offset: Offset(0, 2))
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
                     ],
                   ),
-                  child: const Icon(Icons.my_location,
-                      color: Colors.white, size: 18),
+                  child: const Icon(
+                    Icons.my_location,
+                    color: Colors.white,
+                    size: 18,
+                  ),
                 ),
               ),
             // Store markers
@@ -343,21 +397,26 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                           : AppColors.secondary,
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: Colors.white, width: isSelected ? 3 : 2),
+                        color: Colors.white,
+                        width: isSelected ? 3 : 2,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: (isSelected
-                                  ? AppColors.primary
-                                  : AppColors.secondary)
-                              .withValues(alpha: 0.4),
+                          color:
+                              (isSelected
+                                      ? AppColors.primary
+                                      : AppColors.secondary)
+                                  .withValues(alpha: 0.4),
                           blurRadius: isSelected ? 8 : 4,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    child: Icon(Icons.store,
-                        color: Colors.white,
-                        size: isSelected ? 24 : 18),
+                    child: Icon(
+                      Icons.store,
+                      color: Colors.white,
+                      size: isSelected ? 24 : 18,
+                    ),
                   ),
                 ),
               );
@@ -444,8 +503,11 @@ class _MapOverlay extends StatelessWidget {
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 2),
                           ),
-                          child: const Icon(Icons.my_location,
-                              color: Colors.white, size: 18),
+                          child: const Icon(
+                            Icons.my_location,
+                            color: Colors.white,
+                            size: 18,
+                          ),
                         ),
                       ),
                       ...stores.where((s) => s.hasLocation).map((s) {
@@ -463,22 +525,26 @@ class _MapOverlay extends StatelessWidget {
                                     : AppColors.secondary,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                    color: Colors.white,
-                                    width: isSelected ? 3 : 2),
+                                  color: Colors.white,
+                                  width: isSelected ? 3 : 2,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: (isSelected
-                                            ? AppColors.primary
-                                            : AppColors.secondary)
-                                        .withValues(alpha: 0.5),
+                                    color:
+                                        (isSelected
+                                                ? AppColors.primary
+                                                : AppColors.secondary)
+                                            .withValues(alpha: 0.5),
                                     blurRadius: isSelected ? 10 : 4,
                                     offset: const Offset(0, 3),
                                   ),
                                 ],
                               ),
-                              child: Icon(Icons.store,
-                                  color: Colors.white,
-                                  size: isSelected ? 26 : 20),
+                              child: Icon(
+                                Icons.store,
+                                color: Colors.white,
+                                size: isSelected ? 26 : 20,
+                              ),
                             ),
                           ),
                         );
@@ -510,33 +576,44 @@ class _MapOverlay extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             clipBehavior: Clip.antiAlias,
-                            child: focusedStore!.logo != null &&
+                            child:
+                                focusedStore!.logo != null &&
                                     focusedStore!.logo!.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: focusedStore!.logo!,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => const Icon(
+                                ? GestureDetector(
+                                    onTap: () => _showFullStoreImage(context, focusedStore!.logo!),
+                                    child: CachedNetworkImage(
+                                      memCacheWidth: 1000,
+                                      imageUrl: focusedStore!.logo!,
+                                      fit: BoxFit.contain,
+                                      errorWidget: (_, _, _) => const Icon(
                                         Icons.store,
-                                        color: AppColors.primary),
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
                                   )
-                                : const Icon(Icons.store,
-                                    color: AppColors.primary),
+                                : const Icon(
+                                    Icons.store,
+                                    color: AppColors.primary,
+                                  ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(focusedStore!.name,
-                                    style: AppTextStyles.bodyMedium,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
+                                Text(
+                                  focusedStore!.name,
+                                  style: AppTextStyles.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 if (focusedStore!.address != null &&
                                     focusedStore!.address!.isNotEmpty)
                                   Text(
                                     focusedStore!.address!,
                                     style: AppTextStyles.caption.copyWith(
-                                        color: AppColors.onSurfaceVariant),
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -557,10 +634,10 @@ class _MapOverlay extends StatelessWidget {
                             label: const Text('Back to List'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.onSurfaceVariant,
-                              side: const BorderSide(
-                                  color: AppColors.divider),
+                              side: const BorderSide(color: AppColors.divider),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
@@ -575,8 +652,8 @@ class _MapOverlay extends StatelessWidget {
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppColors.primary,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -584,8 +661,7 @@ class _MapOverlay extends StatelessWidget {
                       ],
                     ),
                   ),
-                  SizedBox(
-                      height: MediaQuery.of(context).padding.bottom),
+                  SizedBox(height: MediaQuery.of(context).padding.bottom),
                 ],
               ),
             ),
@@ -665,21 +741,28 @@ class _StoreCard extends StatelessWidget {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: store.logo != null && store.logo!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: store.logo!,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Icon(
+                          ? GestureDetector(
+                              onTap: () => _showFullStoreImage(context, store.logo!),
+                              child: CachedNetworkImage(
+                                memCacheWidth: 1000,
+                                imageUrl: store.logo!,
+                                fit: BoxFit.contain,
+                                errorWidget: (_, _, _) => Icon(
                                   Icons.store,
                                   color: isSelected
                                       ? Colors.white
                                       : AppColors.onSurfaceVariant,
-                                  size: 20),
+                                  size: 20,
+                                ),
+                              ),
                             )
-                          : Icon(Icons.store,
+                          : Icon(
+                              Icons.store,
                               color: isSelected
                                   ? Colors.white
                                   : AppColors.onSurfaceVariant,
-                              size: 20),
+                              size: 20,
+                            ),
                     ),
                     const SizedBox(width: 12),
 
@@ -704,7 +787,8 @@ class _StoreCard extends StatelessWidget {
                             Text(
                               store.ownerName!,
                               style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.onSurfaceVariant),
+                                color: AppColors.onSurfaceVariant,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -712,19 +796,24 @@ class _StoreCard extends StatelessWidget {
                               store.averageRating! > 0)
                             Row(
                               children: [
-                                const Icon(Icons.star,
-                                    color: Colors.orange, size: 12),
+                                const Icon(
+                                  Icons.star,
+                                  color: Colors.orange,
+                                  size: 12,
+                                ),
                                 const SizedBox(width: 2),
                                 Text(
                                   store.averageRating!.toStringAsFixed(1),
                                   style: AppTextStyles.caption.copyWith(
-                                      fontWeight: FontWeight.w700),
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                                 if (store.totalReviews != null)
                                   Text(
                                     '  (${store.totalReviews})',
                                     style: AppTextStyles.caption.copyWith(
-                                        color: AppColors.onSurfaceVariant),
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
                                   ),
                               ],
                             ),
@@ -738,7 +827,9 @@ class _StoreCard extends StatelessWidget {
                         onTap: onMapTap,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary,
                             borderRadius: BorderRadius.circular(10),
@@ -746,15 +837,20 @@ class _StoreCard extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.map_outlined,
-                                  color: Colors.white, size: 12),
+                              const Icon(
+                                Icons.map_outlined,
+                                color: Colors.white,
+                                size: 12,
+                              ),
                               const SizedBox(width: 4),
-                              Text('MAP',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.5,
-                                  )),
+                              Text(
+                                'MAP',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -763,12 +859,17 @@ class _StoreCard extends StatelessWidget {
                 ),
 
                 // Address - only show when selected/expanded
-                if (isSelected && store.address != null && store.address!.isNotEmpty) ...[
+                if (isSelected &&
+                    store.address != null &&
+                    store.address!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_outlined,
-                          size: 14, color: AppColors.onSurfaceVariant),
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 14,
+                        color: AppColors.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -776,11 +877,10 @@ class _StoreCard extends StatelessWidget {
                             store.address,
                             if (store.city != null) store.city,
                             if (store.state != null) store.state,
-                          ]
-                              .where((s) => s != null && s.isNotEmpty)
-                              .join(', '),
+                          ].where((s) => s != null && s.isNotEmpty).join(', '),
                           style: AppTextStyles.caption.copyWith(
-                              color: AppColors.onSurfaceVariant),
+                            color: AppColors.onSurfaceVariant,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -802,14 +902,14 @@ class _StoreCard extends StatelessWidget {
                             label: const Text('Call'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.primary,
-                              side: const BorderSide(
-                                  color: AppColors.primary),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 8),
+                              side: const BorderSide(color: AppColors.primary),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               textStyle: AppTextStyles.caption.copyWith(
-                                  fontWeight: FontWeight.w700),
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
@@ -818,18 +918,21 @@ class _StoreCard extends StatelessWidget {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: onReviewsTap,
-                          icon: const Icon(Icons.rate_review_outlined, size: 14),
+                          icon: const Icon(
+                            Icons.rate_review_outlined,
+                            size: 14,
+                          ),
                           label: Text('Reviews (${store.totalReviews ?? 0})'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.primary,
-                            side: const BorderSide(
-                                color: AppColors.primary),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 8),
+                            side: const BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             textStyle: AppTextStyles.caption.copyWith(
-                                fontWeight: FontWeight.w700),
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -842,12 +945,13 @@ class _StoreCard extends StatelessWidget {
                             label: const Text('Directions'),
                             style: FilledButton.styleFrom(
                               backgroundColor: AppColors.primary,
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               textStyle: AppTextStyles.caption.copyWith(
-                                  fontWeight: FontWeight.w700),
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),

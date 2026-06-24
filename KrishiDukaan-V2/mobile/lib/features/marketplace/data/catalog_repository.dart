@@ -66,7 +66,7 @@ class CatalogRepository {
       // Per-seller discount map: nameKey -> { normalizedPhone: discountPct }
       // Phones are stored in both +91-prefixed and 10-digit forms; normalise to
       // 10-digit so product_detail lookup (which also normalises) always matches.
-      String _normPhone(String? p) {
+      String normPhone(String? p) {
         if (p == null || p.isEmpty) return '';
         if (p.startsWith('+91') && p.length > 3) return p.substring(3);
         if (p.startsWith('91') && p.length == 12) return p.substring(2);
@@ -78,10 +78,10 @@ class CatalogRepository {
         if (pct <= 0.0) return;
         final map = sellerDiscountsByKey[key] ?? <String, double>{};
         // Store by both normalized phone and original uid so callers using either key find it
-        final normPhone = _normPhone(phone);
-        if (normPhone.isNotEmpty) {
-          map[normPhone] = pct;
-          map['+91$normPhone'] = pct; // cover +91 variant too
+        final normalizedPhone = normPhone(phone);
+        if (normalizedPhone.isNotEmpty) {
+          map[normalizedPhone] = pct;
+          map['+91$normalizedPhone'] = pct; // cover +91 variant too
         }
         if (uid != null && uid.isNotEmpty && !uid.startsWith('+')) map[uid] = pct;
         sellerDiscountsByKey[key] = map;
@@ -370,6 +370,12 @@ class CatalogRepository {
     for (final p in list) {
       if (p.id == catalogId) return p;
     }
+    try {
+      final doc = await _db.collection('products').doc(catalogId).get();
+      if (doc.exists) {
+        return CatalogModel.fromFirestore(doc);
+      }
+    } catch (_) {}
     return null;
   }
 
