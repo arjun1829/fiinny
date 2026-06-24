@@ -50,7 +50,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
   const [title, setTitle] = useState(initial?.title ?? "");
   const [slug, setSlug] = useState(initial?.slug ?? "");
   const [excerpt, setExcerpt] = useState(initial?.excerpt ?? "");
-  const [author, setAuthor] = useState(initial?.author ?? "KrishiDukaan Team");
+  const [author, setAuthor] = useState(initial?.author ?? "KrishiDukan Team");
   const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
   const [coverImage, setCoverImage] = useState(initial?.coverImage ?? "");
   const [readTime, setReadTime] = useState<number>(initial?.readTime ?? 5);
