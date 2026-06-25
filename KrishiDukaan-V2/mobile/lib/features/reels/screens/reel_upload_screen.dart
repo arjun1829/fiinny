@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,12 +22,12 @@ class ReelUploadScreen extends ConsumerStatefulWidget {
 }
 
 class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
-  File? _videoFile;
+  XFile? _pickedFile;
   VideoPlayerController? _previewController;
   final _captionController = TextEditingController();
   ListingModel? _selectedProduct;
 
-  // Two-phase progress: compress → upload
+  // Two-phase progress: compress (mobile-only) → upload
   bool _processing = false;
   bool _compressing = false;
   double _compressProgress = 0;
@@ -35,8 +36,10 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
   @override
   void dispose() {
-    _compressSubscription?.unsubscribe();
-    VideoCompress.cancelCompression();
+    if (!kIsWeb) {
+      _compressSubscription?.unsubscribe();
+      VideoCompress.cancelCompression();
+    }
     _previewController?.dispose();
     _captionController.dispose();
     super.dispose();
@@ -50,64 +53,74 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     );
     if (picked == null) return;
 
-    final file = File(picked.path);
     _previewController?.dispose();
-    final controller = VideoPlayerController.file(file);
+
+    // On web, picked.path is a blob:// URL — networkUrl works with it.
+    // On mobile, we use the file path directly.
+    final controller = kIsWeb
+        ? VideoPlayerController.networkUrl(Uri.parse(picked.path))
+        : VideoPlayerController.file(File(picked.path));
+
     await controller.initialize();
     controller.setLooping(true);
     controller.play();
 
     setState(() {
-      _videoFile = file;
+      _pickedFile = picked;
       _previewController = controller;
     });
   }
 
   Future<void> _upload() async {
-    if (_videoFile == null) return;
+    if (_pickedFile == null) return;
     final user = ref.read(currentUserProvider).value;
     if (user == null) return;
 
     setState(() {
       _processing = true;
-      _compressing = true;
+      _compressing = !kIsWeb; // web skips compression phase
       _compressProgress = 0;
       _uploadProgress = 0;
     });
 
-    File fileToUpload = _videoFile!;
-
     try {
-      // ── Phase 1: Compress ────────────────────────────────────────────
-      _compressSubscription =
-          VideoCompress.compressProgress$.subscribe((progress) {
-        if (mounted) setState(() { _compressProgress = progress / 100; });
-      });
+      File? fileToUpload;
 
-      final info = await VideoCompress.compressVideo(
-        _videoFile!.path,
-        quality: VideoQuality.MediumQuality,
-        deleteOrigin: false,
-        includeAudio: true,
-      );
+      if (!kIsWeb) {
+        // ── Phase 1: Compress (mobile only) ───────────────────────────
+        _compressSubscription =
+            VideoCompress.compressProgress$.subscribe((progress) {
+          if (mounted) setState(() { _compressProgress = progress / 100; });
+        });
 
-      _compressSubscription?.unsubscribe();
-      _compressSubscription = null;
+        final info = await VideoCompress.compressVideo(
+          _pickedFile!.path,
+          quality: VideoQuality.MediumQuality,
+          deleteOrigin: false,
+          includeAudio: true,
+        );
 
-      if (info?.file != null) {
-        fileToUpload = info!.file!;
+        _compressSubscription?.unsubscribe();
+        _compressSubscription = null;
+
+        fileToUpload =
+            info?.file ?? File(_pickedFile!.path);
+
+        if (mounted) setState(() { _compressing = false; });
       }
 
-      if (mounted) setState(() { _compressing = false; });
-
       // ── Phase 2: Upload ──────────────────────────────────────────────
+      final bytes = kIsWeb ? await _pickedFile!.readAsBytes() : null;
+
       await ref.read(reelsRepoProvider).uploadReel(
             shopOwnerId: user.phone,
             shopName: user.businessName ?? user.name,
             videoFile: fileToUpload,
+            videoBytes: bytes,
             caption: _captionController.text.trim(),
             linkedProductId: _selectedProduct?.catalogId,
             linkedProductName: _selectedProduct?.productName,
+            linkedProductImageUrl: _selectedProduct?.imageUrl,
             onProgress: (p) {
               if (mounted) setState(() { _uploadProgress = p; });
             },
@@ -126,9 +139,11 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
         }
       }
     } catch (e) {
-      _compressSubscription?.unsubscribe();
-      _compressSubscription = null;
-      VideoCompress.cancelCompression();
+      if (!kIsWeb) {
+        _compressSubscription?.unsubscribe();
+        _compressSubscription = null;
+        VideoCompress.cancelCompression();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed: $e')),
@@ -161,7 +176,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
           style: AppTextStyles.heading2.copyWith(color: Colors.white),
         ),
         actions: [
-          if (_videoFile != null && !_processing)
+          if (_pickedFile != null && !_processing)
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: FilledButton(
@@ -423,7 +438,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: _videoFile != null
+                      backgroundColor: _pickedFile != null
                           ? AppColors.primary
                           : AppColors.divider,
                       foregroundColor: Colors.white,
@@ -433,10 +448,10 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                       ),
                     ),
                     onPressed:
-                        (_videoFile != null && !_processing) ? _upload : null,
+                        (_pickedFile != null && !_processing) ? _upload : null,
                     icon: const Icon(Icons.upload_rounded),
                     label: Text(
-                      _videoFile == null ? 'Pick a video first' : 'Post Reel',
+                      _pickedFile == null ? 'Pick a video first' : 'Post Reel',
                       style: AppTextStyles.button
                           .copyWith(color: Colors.white),
                     ),
@@ -487,13 +502,15 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Phase 1: Compress
-                      _PhaseRow(
-                        label: 'Compress',
-                        progress: _compressing ? _compressProgress : 1.0,
-                        done: !_compressing,
-                      ),
-                      const SizedBox(height: 10),
+                      // Phase 1: Compress (mobile only)
+                      if (!kIsWeb) ...[
+                        _PhaseRow(
+                          label: 'Compress',
+                          progress: _compressing ? _compressProgress : 1.0,
+                          done: !_compressing,
+                        ),
+                        const SizedBox(height: 10),
+                      ],
 
                       // Phase 2: Upload
                       _PhaseRow(

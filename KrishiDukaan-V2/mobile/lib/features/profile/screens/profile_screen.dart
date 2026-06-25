@@ -208,6 +208,12 @@ class _ProfileBody extends ConsumerWidget {
                 // guard on /dashboard, so they can purchase a subscription.
                 onTap: () => context.push('/dashboard'),
               ),
+            if (user.isSeller)
+              _LinkRow(
+                icon: Icons.storefront_outlined,
+                label: isHindi ? 'मेरी दुकान' : 'My Shop',
+                onTap: () => context.push('/shop/${user.phone}'),
+              ),
           ],
         ),
         const SizedBox(height: 12),

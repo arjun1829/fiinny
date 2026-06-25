@@ -36,6 +36,7 @@ import '../../features/welcome/screens/splash_screen.dart';
 import '../../features/welcome/screens/welcome_screen.dart';
 import '../../features/reels/screens/reels_feed_screen.dart';
 import '../../features/reels/screens/reel_upload_screen.dart';
+import '../../features/reels/screens/shop_profile_screen.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
@@ -211,11 +212,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           reason: state.uri.queryParameters['reason'],
         ),
       ),
-      // ── Reels upload (outside shell) ──────────────────────────────────
+      // ── Reels upload + shop profile (outside shell) ───────────────────
       GoRoute(
         path: '/reels/upload',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const ReelUploadScreen(),
+      ),
+      GoRoute(
+        path: '/shop/:phone',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => ShopProfileScreen(
+          shopPhone: state.pathParameters['phone']!,
+        ),
       ),
       // ── Dashboard routes ─────────────────────────────────────────────────
       GoRoute(

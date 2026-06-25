@@ -8,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 
 class ReelsFeedScreen extends ConsumerStatefulWidget {
@@ -21,6 +22,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     with WidgetsBindingObserver {
   final _pageController = PageController();
   final Map<String, VideoPlayerController> _controllers = {};
+  final Set<String> _viewedReelIds = {};
   int _currentPage = 0;
   bool _initialized = false;
 
@@ -78,6 +80,12 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
       _controllers[reels[index].id]?.play();
       _ensureController(index + 1, reels);
       if (index > 0) _ensureController(index - 1, reels);
+      // Count a view once per reel per session
+      final reelId = reels[index].id;
+      if (!_viewedReelIds.contains(reelId)) {
+        _viewedReelIds.add(reelId);
+        ref.read(reelsRepoProvider).incrementViewsCount(reelId);
+      }
     }
     final toDispose = _controllers.keys.where((id) {
       final idx = reels.indexWhere((r) => r.id == id);
@@ -95,12 +103,32 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     final feedAsync = ref.watch(reelsFeedProvider);
     final currentUser = ref.watch(currentUserProvider).value;
 
+    // Pause/resume when the user switches away from / back to the reels tab.
+    ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
+      const reelsTab = 4;
+      if (tabIndex != reelsTab) {
+        for (final c in _controllers.values) {
+          c.pause();
+        }
+      } else {
+        final reels = ref.read(reelsFeedProvider).value ?? [];
+        if (_currentPage < reels.length) {
+          _controllers[reels[_currentPage].id]?.play();
+        }
+      }
+    });
+
     ref.listen<AsyncValue<List<ReelModel>>>(reelsFeedProvider, (prev, next) {
       if (!_initialized && next.value != null && next.value!.isNotEmpty) {
         _initialized = true;
         final reels = next.value!;
         _ensureController(0, reels);
         _ensureController(1, reels);
+        // First reel is shown immediately — count its view
+        if (reels.isNotEmpty && !_viewedReelIds.contains(reels[0].id)) {
+          _viewedReelIds.add(reels[0].id);
+          ref.read(reelsRepoProvider).incrementViewsCount(reels[0].id);
+        }
       }
     });
 
@@ -493,6 +521,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                 _ProfileAvatarButton(
                   imageUrl: widget.reel.shopProfilePic,
                   shopName: widget.reel.shopName,
+                  shopPhone: widget.reel.shopOwnerId,
                   isFollowing: _isFollowing ?? false,
                   onFollowTap: _toggleFollow,
                 ),
@@ -520,6 +549,13 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                   label: 'Share',
                   onTap: _share,
                 ),
+                const SizedBox(height: 20),
+                _ActionButton(
+                  icon: Icons.play_arrow_rounded,
+                  iconColor: Colors.white70,
+                  label: _formatCount(widget.reel.viewsCount),
+                  onTap: () {},
+                ),
               ],
             ),
           ),
@@ -538,13 +574,17 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '@${widget.reel.shopName}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                  GestureDetector(
+                    onTap: () =>
+                        context.push('/shop/${widget.reel.shopOwnerId}'),
+                    child: Text(
+                      '@${widget.reel.shopName}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                      ),
                     ),
                   ),
                   if (widget.reel.caption.isNotEmpty) ...[
@@ -566,6 +606,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                       productName:
                           widget.reel.linkedProductName ?? 'View Product',
                       productId: widget.reel.linkedProductId!,
+                      productImageUrl: widget.reel.linkedProductImageUrl,
                       currentUserId: widget.currentUserId,
                     ),
                   ],
@@ -590,12 +631,14 @@ class _ReelPageState extends ConsumerState<_ReelPage>
 class _ProfileAvatarButton extends StatelessWidget {
   final String? imageUrl;
   final String shopName;
+  final String shopPhone;
   final bool isFollowing;
   final VoidCallback onFollowTap;
 
   const _ProfileAvatarButton({
     required this.imageUrl,
     required this.shopName,
+    required this.shopPhone,
     required this.isFollowing,
     required this.onFollowTap,
   });
@@ -606,18 +649,21 @@ class _ProfileAvatarButton extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-          child: ClipOval(
-            child: imageUrl != null
-                ? Image.network(imageUrl!, fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => _initials())
-                : _initials(),
+        GestureDetector(
+          onTap: () => context.push('/shop/$shopPhone'),
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: ClipOval(
+              child: imageUrl != null
+                  ? Image.network(imageUrl!, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _initials())
+                  : _initials(),
+            ),
           ),
         ),
         Positioned(
@@ -707,11 +753,13 @@ class _ActionButton extends StatelessWidget {
 class _ProductCard extends StatelessWidget {
   final String productName;
   final String productId;
+  final String? productImageUrl;
   final String? currentUserId;
 
   const _ProductCard({
     required this.productName,
     required this.productId,
+    this.productImageUrl,
     this.currentUserId,
   });
 
@@ -734,8 +782,7 @@ class _ProductCard extends StatelessWidget {
         context.push('/product/$productId');
       },
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(24),
@@ -744,8 +791,23 @@ class _ProductCard extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.shopping_bag_outlined,
-                color: Colors.white, size: 16),
+            if (productImageUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.network(
+                  productImageUrl!,
+                  width: 26,
+                  height: 26,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(
+                      Icons.shopping_bag_outlined,
+                      color: Colors.white,
+                      size: 16),
+                ),
+              )
+            else
+              const Icon(Icons.shopping_bag_outlined,
+                  color: Colors.white, size: 16),
             const SizedBox(width: 6),
             Flexible(
               child: Text(

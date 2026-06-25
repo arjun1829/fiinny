@@ -5,6 +5,17 @@ import '../constants/app_colors.dart';
 import '../providers/cart_provider.dart';
 import '../providers/user_provider.dart';
 
+/// Tracks which bottom-nav tab is currently visible.
+/// ReelsFeedScreen listens to this to pause video when leaving the reels tab.
+final activeShellIndexProvider =
+    NotifierProvider<_ActiveTabNotifier, int>(_ActiveTabNotifier.new);
+
+class _ActiveTabNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+  void setIndex(int index) => state = index;
+}
+
 class AppShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
   const AppShell({super.key, required this.navigationShell});
@@ -64,11 +75,21 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentIndex = navigationShell.currentIndex;
+
+    // Notify listeners (e.g. ReelsFeedScreen) that the active tab changed.
+    // Must be post-frame to avoid mutating provider state during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(activeShellIndexProvider) != currentIndex) {
+        ref.read(activeShellIndexProvider.notifier).setIndex(currentIndex);
+      }
+    });
+
     final cartCount = ref.watch(cartCountProvider);
     final userModel = ref.watch(currentUserProvider).value;
     final isSeller = userModel?.isSeller ?? false;
     final canAccess = ref.watch(canAccessDashboardProvider);
-    final isReelsTab = navigationShell.currentIndex == 4;
+    final isReelsTab = currentIndex == 4;
 
     Widget? fab;
     if (isReelsTab && isSeller) {
