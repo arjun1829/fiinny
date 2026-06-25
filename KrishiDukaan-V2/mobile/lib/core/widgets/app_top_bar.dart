@@ -4,6 +4,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../providers/location_provider.dart';
 import 'app_brand_icon.dart';
+import 'package:go_router/go_router.dart';
 
 /// Shared gradient used by every top bar so all tabs look consistent.
 /// Horizontal on purpose: widgets stacked vertically (app bar + search block)
@@ -32,7 +33,10 @@ class TopBarTitle extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const AppBrandIcon(size: 30),
+            GestureDetector(
+              onTap: () => context.go('/profile'),
+              child: const AppBrandIcon(size: 30),
+            ),
             const SizedBox(width: 10),
             Flexible(
               child: Text(

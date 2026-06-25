@@ -126,11 +126,23 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       final stores = allStores
           .where((s) {
             final nameMatch = s.name.toLowerCase().contains(queryLower);
-            final cityMatch = s.city?.toLowerCase().contains(queryLower) ?? false;
-            final stateMatch = s.state?.toLowerCase().contains(queryLower) ?? false;
             final phoneMatch = s.phone?.contains(queryLower) ?? false;
-            return nameMatch || cityMatch || stateMatch || phoneMatch;
+            return nameMatch || phoneMatch;
           })
+          .toList();
+          
+      // Sort to prioritize name start matches
+      stores.sort((a, b) {
+        final aName = a.name.toLowerCase();
+        final bName = b.name.toLowerCase();
+        final aStarts = aName.startsWith(queryLower);
+        final bStarts = bName.startsWith(queryLower);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return 0;
+      });
+
+      final storeSuggestions = stores
           .take(8)
           .map((s) => {
                 'id': s.id,
@@ -144,7 +156,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       if (mounted) {
         setState(() {
           _suggestionProducts = prods;
-          _suggestionStores = stores;
+          _suggestionStores = storeSuggestions;
         });
       }
     } catch (e) {
@@ -293,7 +305,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                                   : const Icon(Icons.agriculture),
                               title: Text(p.name),
                               subtitle: const Text('Product'),
-                              onTap: () => context.go('/product/${p.id}'),
+                              onTap: () => context.push('/product/${p.id}'),
                             ),
                           ),
 
@@ -396,7 +408,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         final product = state.products[index];
         return ProductCard(
           product: product,
-          onTap: () => context.go('/product/${product.id}'),
+          onTap: () => context.push('/product/${product.id}'),
         );
       },
     );

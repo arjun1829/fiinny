@@ -321,6 +321,24 @@ class CatalogRepository {
 
         return nameMatch || descMatch || catMatch || storeMatch || availMatch;
       }).toList();
+
+      // Sort by relevance: name match > category/store match > description match
+      filtered.sort((a, b) {
+        final aName = a.name.toLowerCase();
+        final bName = b.name.toLowerCase();
+        
+        final aNameStarts = aName.startsWith(query);
+        final bNameStarts = bName.startsWith(query);
+        if (aNameStarts && !bNameStarts) return -1;
+        if (!aNameStarts && bNameStarts) return 1;
+
+        final aNameContains = aName.contains(query);
+        final bNameContains = bName.contains(query);
+        if (aNameContains && !bNameContains) return -1;
+        if (!aNameContains && bNameContains) return 1;
+
+        return 0; // maintain original order for other matches
+      });
     }
 
     return filtered;

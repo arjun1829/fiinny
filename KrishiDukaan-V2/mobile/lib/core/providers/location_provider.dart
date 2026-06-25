@@ -43,6 +43,12 @@ final locationNameProvider = FutureProvider<String>((ref) async {
       AppConfig.googleMapsApiKey,
     );
     if (details != null) {
+      if (details.sublocality != null && details.sublocality!.isNotEmpty) {
+        if (details.city != null && details.city!.isNotEmpty) {
+          return '${details.sublocality}, ${details.city}';
+        }
+        return details.sublocality!;
+      }
       if (details.city != null && details.city!.isNotEmpty) {
         if (details.state != null && details.state!.isNotEmpty) {
           return '${details.city}, ${details.state}';

@@ -259,7 +259,7 @@ class HomeScreen extends ConsumerWidget {
                                 itemBuilder: (_, i) => ProductCard(
                                   product: products[i],
                                   onTap: () =>
-                                      context.go('/product/${products[i].id}'),
+                                      context.push('/product/${products[i].id}'),
                                 ),
                               ),
                       );
@@ -904,7 +904,7 @@ class _TopDealsRail extends ConsumerWidget {
                   width: 160,
                   child: ProductCard(
                     product: deals[i],
-                    onTap: () => context.go('/product/${deals[i].id}'),
+                    onTap: () => context.push('/product/${deals[i].id}'),
                   ),
                 ),
               ),
