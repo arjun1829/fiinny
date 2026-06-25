@@ -3,58 +3,105 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/app_colors.dart';
 import '../providers/cart_provider.dart';
+import '../providers/user_provider.dart';
 
 class AppShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
   const AppShell({super.key, required this.navigationShell});
 
+  static const _destinations = [
+    _ShellDestination(
+      label: 'Home',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home_rounded,
+    ),
+    _ShellDestination(
+      label: 'Market',
+      icon: Icons.storefront_outlined,
+      selectedIcon: Icons.storefront_rounded,
+    ),
+    _ShellDestination(
+      label: 'Hubs',
+      icon: Icons.warehouse_outlined,
+      selectedIcon: Icons.warehouse_rounded,
+    ),
+    _ShellDestination(
+      label: 'Stores',
+      icon: Icons.location_on_outlined,
+      selectedIcon: Icons.location_on_rounded,
+    ),
+    _ShellDestination(
+      label: 'AgriReels',
+      icon: Icons.play_circle_outline_rounded,
+      selectedIcon: Icons.play_circle_rounded,
+    ),
+  ];
+
+  void _showSubscriptionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Subscription Required'),
+        content: const Text(
+          'An active subscription is required to upload reels.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/subscription');
+            },
+            child: const Text('Subscribe Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cartCount = ref.watch(cartCountProvider);
-    final destinations = const [
-      _ShellDestination(
-        label: 'Home',
-        icon: Icons.home_outlined,
-        selectedIcon: Icons.home_rounded,
-      ),
-      _ShellDestination(
-        label: 'Market',
-        icon: Icons.storefront_outlined,
-        selectedIcon: Icons.storefront_rounded,
-      ),
-      _ShellDestination(
-        label: 'Hubs',
-        icon: Icons.warehouse_outlined,
-        selectedIcon: Icons.warehouse_rounded,
-      ),
-      _ShellDestination(
-        label: 'Stores',
-        icon: Icons.location_on_outlined,
-        selectedIcon: Icons.location_on_rounded,
-      ),
-      _ShellDestination(
-        label: 'Account',
-        icon: Icons.person_outline_rounded,
-        selectedIcon: Icons.person_rounded,
-      ),
-    ];
+    final userModel = ref.watch(currentUserProvider).value;
+    final isSeller = userModel?.isSeller ?? false;
+    final canAccess = ref.watch(canAccessDashboardProvider);
+    final isReelsTab = navigationShell.currentIndex == 4;
+
+    Widget? fab;
+    if (isReelsTab && isSeller) {
+      fab = FloatingActionButton(
+        backgroundColor: AppColors.secondary,
+        foregroundColor: Colors.white,
+        onPressed: () {
+          if (canAccess) {
+            context.push('/reels/upload');
+          } else {
+            _showSubscriptionDialog(context);
+          }
+        },
+        child: const Icon(Icons.video_call_rounded, size: 26),
+      );
+    } else if (!isReelsTab && cartCount > 0) {
+      fab = Container(
+        margin: const EdgeInsets.only(bottom: 12, right: 12),
+        child: FloatingActionButton(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          onPressed: () => context.push('/cart'),
+          child: Badge(
+            label: Text('$cartCount', style: const TextStyle(fontSize: 10)),
+            child: const Icon(Icons.shopping_cart, size: 24),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: navigationShell,
-      floatingActionButton: navigationShell.currentIndex != 4 && cartCount > 0
-          ? Container(
-              margin: const EdgeInsets.only(bottom: 12, right: 12), // lowered the FAB slightly and inset from right
-              child: FloatingActionButton(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                onPressed: () => context.push('/cart'),
-                child: Badge(
-                  label: Text('$cartCount', style: const TextStyle(fontSize: 10)),
-                  child: const Icon(Icons.shopping_cart, size: 24),
-                ),
-              ),
-            )
-          : null,
+      floatingActionButton: fab,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -74,11 +121,10 @@ class AppShell extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(
-              children: List.generate(destinations.length, (index) {
-                final destination = destinations[index];
+              children: List.generate(_destinations.length, (index) {
                 return Expanded(
                   child: _ShellNavItem(
-                    destination: destination,
+                    destination: _destinations[index],
                     isSelected: navigationShell.currentIndex == index,
                     onTap: () => navigationShell.goBranch(
                       index,
@@ -120,9 +166,8 @@ class _ShellNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = isSelected
-        ? AppColors.primary
-        : AppColors.onSurfaceVariant;
+    final iconColor =
+        isSelected ? AppColors.primary : AppColors.onSurfaceVariant;
 
     return InkWell(
       onTap: onTap,

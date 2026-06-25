@@ -40,7 +40,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ],
         ),
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: true,
       ),
       body: userAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

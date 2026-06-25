@@ -34,7 +34,7 @@ class TopBarTitle extends ConsumerWidget {
         Row(
           children: [
             GestureDetector(
-              onTap: () => context.go('/profile'),
+              onTap: () => context.push('/profile'),
               child: const AppBrandIcon(size: 30),
             ),
             const SizedBox(width: 10),
