@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
@@ -82,10 +83,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
       if (index > 0) _ensureController(index - 1, reels);
       // Count a view once per reel per session
       final reelId = reels[index].id;
-      if (!_viewedReelIds.contains(reelId)) {
-        _viewedReelIds.add(reelId);
-        ref.read(reelsRepoProvider).incrementViewsCount(reelId);
-      }
+      _markReelAsSeen(reelId);
     }
     final toDispose = _controllers.keys.where((id) {
       final idx = reels.indexWhere((r) => r.id == id);
@@ -125,9 +123,8 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
         _ensureController(0, reels);
         _ensureController(1, reels);
         // First reel is shown immediately — count its view
-        if (reels.isNotEmpty && !_viewedReelIds.contains(reels[0].id)) {
-          _viewedReelIds.add(reels[0].id);
-          ref.read(reelsRepoProvider).incrementViewsCount(reels[0].id);
+        if (reels.isNotEmpty) {
+          _markReelAsSeen(reels[0].id);
         }
       }
     });
@@ -248,6 +245,24 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _markReelAsSeen(String reelId) async {
+    if (!_viewedReelIds.contains(reelId)) {
+      _viewedReelIds.add(reelId);
+      ref.read(reelsRepoProvider).incrementViewsCount(reelId);
+      
+      final prefs = await SharedPreferences.getInstance();
+      final seenReels = prefs.getStringList('seen_reels') ?? [];
+      if (!seenReels.contains(reelId)) {
+        seenReels.add(reelId);
+        // Keep the list from growing indefinitely
+        if (seenReels.length > 500) {
+          seenReels.removeAt(0);
+        }
+        await prefs.setStringList('seen_reels', seenReels);
+      }
+    }
   }
 }
 

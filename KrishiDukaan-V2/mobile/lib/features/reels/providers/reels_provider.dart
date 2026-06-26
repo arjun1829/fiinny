@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/reel_comment_model.dart';
 import '../../../core/models/user_model.dart';
@@ -9,8 +10,27 @@ final _repo = ReelsRepository();
 
 final reelsRepoProvider = Provider((_) => _repo);
 
-final reelsFeedProvider = FutureProvider<List<ReelModel>>((ref) {
-  return _repo.fetchFeed();
+final reelsFeedProvider = FutureProvider<List<ReelModel>>((ref) async {
+  final reels = await _repo.fetchFeed(limit: 50);
+  
+  final prefs = await SharedPreferences.getInstance();
+  final seenReelsIds = prefs.getStringList('seen_reels') ?? [];
+  
+  final unseenReels = <ReelModel>[];
+  final seenReels = <ReelModel>[];
+  
+  for (final reel in reels) {
+    if (seenReelsIds.contains(reel.id)) {
+      seenReels.add(reel);
+    } else {
+      unseenReels.add(reel);
+    }
+  }
+  
+  unseenReels.shuffle();
+  seenReels.shuffle();
+  
+  return [...unseenReels, ...seenReels];
 });
 
 final sellerReelsProvider =
