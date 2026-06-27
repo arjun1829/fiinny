@@ -58,6 +58,19 @@ interface Task {
     createdAt: any;
 }
 
+/** B2B sales order doc — only the fields this page reads for delete/reversal. */
+interface SalesOrder {
+    id: string;
+    orderNumber?: string;
+    invoiceNumber?: string;
+    grandTotal?: number;
+    netAmount?: number;
+    totalAmount?: number;
+    amountPaid?: number;
+    paymentStatus?: string;
+    [key: string]: unknown;
+}
+
 interface Note {
     id: string;
     content: string;
@@ -87,6 +100,10 @@ export default function WorklistDetailsPage() {
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
     const [paymentNotes, setPaymentNotes] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+
+    // Sales Order delete confirmation
+    const [soToDelete, setSoToDelete] = useState<SalesOrder | null>(null);
+    const [deletingSO, setDeletingSO] = useState(false);
 
     // Quick Paid Modal
     const [quickPaidOrder, setQuickPaidOrder] = useState<Order | null>(null);
@@ -329,6 +346,39 @@ export default function WorklistDetailsPage() {
         } catch (error) {
             console.error("Error deleting order:", error);
             alert(t('worklist_details.order_error'));
+        }
+    };
+
+    // ─── Delete a B2B Sales Order (with denormalized-total reversal) ───
+    // Mirrors the financial bookkeeping applied when the order was created/paid:
+    // reverse its contribution to retailer totalSales / totalPaid / outstandingAmount.
+    const handleDeleteSalesOrder = async (so: SalesOrder) => {
+        if (!id || !tenantId || !so) return;
+        setDeletingSO(true);
+        try {
+            const salesSub = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+            const paidSub = Number(so.amountPaid ?? (so.paymentStatus === 'Paid' ? salesSub : 0));
+            const outstandingSub = Math.max(0, salesSub - paidSub);
+
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+                totalSales: Math.max(0, (Number(retailer?.totalSales) || 0) - salesSub),
+                totalPaid: Math.max(0, (Number(retailer?.totalPaid) || 0) - paidSub),
+                outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - outstandingSub),
+            });
+
+            // Delete the order doc (the salesOrders listener removes the card automatically).
+            await deleteDoc(getTenantDoc(db, tenantId, 'salesOrders', so.id));
+
+            // Refresh retailer totals into state (same idiom used across this page).
+            const updatedSnap = await getDoc(getTenantDoc(db, tenantId, 'retailers', id));
+            setRetailer({ id: updatedSnap.id, ...updatedSnap.data() } as Retailer);
+
+            setSoToDelete(null);
+        } catch (error) {
+            console.error('Error deleting sales order:', error);
+            alert(t('worklist_details.order_error'));
+        } finally {
+            setDeletingSO(false);
         }
     };
 
@@ -944,6 +994,13 @@ export default function WorklistDetailsPage() {
                                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
                                                 <Printer size={14} /> View / Print Invoice
                                             </button>
+                                            {userRole === 'admin' && (
+                                                <button className="btn" onClick={() => setSoToDelete(so)}
+                                                    title="Delete this sales order"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
+                                                    <Trash2 size={14} /> Delete
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1020,6 +1077,41 @@ export default function WorklistDetailsPage() {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Sales Order Confirmation Modal */}
+                {soToDelete && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: '440px', padding: '2rem', position: 'relative' }}>
+                            <button onClick={() => !deletingSO && setSoToDelete(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+                            <h2 style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger)' }}>
+                                <AlertTriangle size={22} /> Delete Sales Order?
+                            </h2>
+                            <p style={{ color: 'var(--text-secondary)', marginBottom: '0.75rem', fontSize: '0.9rem' }}>
+                                Invoice: <strong style={{ color: 'var(--text-primary)' }}>{soToDelete.orderNumber || soToDelete.invoiceNumber || soToDelete.id.slice(-8).toUpperCase()}</strong>
+                                {' · '}
+                                <strong style={{ color: 'var(--secondary)' }}>₹{Number(soToDelete.grandTotal || soToDelete.netAmount || soToDelete.totalAmount || 0).toLocaleString()}</strong>
+                            </p>
+                            <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                                This will permanently delete this Sales Order. The following will be updated automatically:
+                            </p>
+                            <ul style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', margin: '0 0 1rem', paddingLeft: '1.25rem', lineHeight: 1.7 }}>
+                                <li>Total Sales, Amount Paid &amp; Outstanding Dues</li>
+                                <li>Partner Analytics &amp; order counts</li>
+                                <li>Outstanding Statement</li>
+                            </ul>
+                            <p style={{ color: 'var(--danger)', fontSize: '0.82rem', fontWeight: 600, marginBottom: '1.25rem' }}>This action cannot be undone.</p>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button type="button" className="btn btn-secondary" onClick={() => setSoToDelete(null)} disabled={deletingSO} style={{ flex: 1 }}>
+                                    {t('common.cancel')}
+                                </button>
+                                <button type="button" className="btn" onClick={() => handleDeleteSalesOrder(soToDelete)} disabled={deletingSO}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none', cursor: deletingSO ? 'not-allowed' : 'pointer' }}>
+                                    {deletingSO ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />} Delete Sales Order
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
