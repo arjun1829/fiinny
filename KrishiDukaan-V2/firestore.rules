@@ -450,7 +450,7 @@ service cloud.firestore {
         request.resource.data.manufacturerId == request.auth.uid ||
         isAdmin()
       );
-           allow update: if isAdmin() || (isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         (
@@ -477,6 +477,12 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
+        // Phone-keyed reads — required so the seat-stats queries that filter by
+        // ownerPhone / manufacturerPhone are authorized. The dashboard "Listing
+        // Seats" card depends on these; without them the query is denied and the
+        // whole card silently disappears.
+        resource.data.ownerPhone == myPhone() ||
+        resource.data.manufacturerPhone == myPhone() ||
         phoneMatches(resource.data.retailerDocId) ||
         // Admin-assigned listings key ownerId by the seller's phone, not their UID.
         phoneMatches(resource.data.ownerId)
@@ -601,6 +607,21 @@ service cloud.firestore {
       allow read, write: if isAdmin() || (isAuthed() && myPhone() == phone);
     }
 
+    // ─── usernames ───────────────────────────────────────────────────────────
+    // Doc ID = lowercase handle (e.g. "agriking").
+    // Public read for search. Only the owning seller (phone match) or admin writes.
+    // Uniqueness is enforced at the doc level — a create fails if the doc already exists.
+    match /usernames/{handle} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.phone == myPhone()
+        && myRole() in ['retailer', 'manufacturer'];
+      allow update: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+      allow delete: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+    }
+
     // ─── reels ───────────────────────────────────────────────────────────────
     // Public read. Any authenticated user can create.
     // Only the shop owner (matched by phone) or admin can update/delete.
@@ -614,17 +635,23 @@ service cloud.firestore {
         && request.resource.data.shopOwnerId == myPhone();
       allow update: if isAdmin()
         || (isAuthed() && phoneMatches(resource.data.shopOwnerId))
-        // Allow any authed user to increment viewsCount only
-        || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']));
+        // Allow any authed user to increment the counter fields only
+        // (likesCount via toggleLike, commentsCount via addComment, viewsCount via incrementViewsCount)
+        || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['viewsCount', 'likesCount', 'commentsCount']));
       allow delete: if isAdmin()
         || (isAuthed() && phoneMatches(resource.data.shopOwnerId));
 
       match /reel_comments/{commentId} {
         allow read: if true;
+        // Accept userId match via uidIndex (myPhone) OR directly from the auth token
+        // phone_number claim — guards against missing uidIndex on first login.
         allow create: if isAuthed()
-          && request.resource.data.userId == myPhone();
+          && (request.resource.data.userId == myPhone()
+              || request.resource.data.userId == request.auth.token.phone_number);
         allow delete: if isAdmin()
-          || (isAuthed() && phoneMatches(resource.data.userId));
+          || (isAuthed() && phoneMatches(resource.data.userId))
+          || (isAuthed() && resource.data.userId == request.auth.token.phone_number);
       }
     }
 
@@ -642,4 +669,4 @@ service cloud.firestore {
       allow write: if isAuthed();
     }
   }
-}
+  }

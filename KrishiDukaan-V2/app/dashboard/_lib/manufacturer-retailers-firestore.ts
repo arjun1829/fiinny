@@ -976,6 +976,93 @@ export async function linkExistingRetailerToNetwork(input: {
 }
 
 /**
+ * Links a retailer who already has a `retailers/{phone}` document to this
+ * manufacturer's network without touching their existing retailer profile.
+ *
+ * Used by the bulk upload "Add Existing to My Network" flow. Unlike
+ * createNetworkRetailer, this function never writes to the `retailers`
+ * collection — the existing retailer's data is the source of truth.
+ *
+ * Idempotent: if the relationship already exists (status active or invited)
+ * the call is a no-op and resolves normally.
+ *
+ * Returns `{ alreadyLinked: true }` when skipped, `{ alreadyLinked: false }`
+ * when a new relationship was created.
+ */
+export async function linkRetailerByPhone(
+  manufacturerId: string,
+  manufacturerName: string,
+  normalizedPhone: string,
+): Promise<{ alreadyLinked: boolean }> {
+  // Idempotency guard — skip if relationship already exists
+  const existing = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("manufacturerId", "==", manufacturerId),
+      where("retailerPhone", "==", normalizedPhone),
+      where("status", "in", ["active", "invited"]),
+      limit(1),
+    ),
+  );
+  if (!existing.empty) return { alreadyLinked: true };
+
+  // Read retailer profile for display fields (do NOT write back to it)
+  const rSnap = await getDoc(doc(db, "retailers", normalizedPhone));
+  const rd = rSnap.exists() ? (rSnap.data() as Record<string, unknown>) : {};
+  const shopName  = String(rd.shopName  ?? rd.businessName ?? normalizedPhone);
+  const ownerName = String(rd.ownerName ?? shopName);
+  const retailerId = String(rd.uid ?? rd.retailerId ?? rd.userId ?? "");
+
+  const inviteCode = await generateUniqueInviteCode();
+  const manufacturerPhone = await resolvePhone(manufacturerId);
+  const now = serverTimestamp();
+
+  const inviteRef = doc(collection(db, COLLECTION));
+  const invitePayload: Record<string, unknown> = {
+    id: inviteRef.id,
+    manufacturerId,
+    manufacturerPhone: manufacturerPhone ?? null,
+    retailerDocId: normalizedPhone,
+    retailerId,
+    shopName,
+    ownerName,
+    retailerEmail: String(rd.email ?? ""),
+    retailerPhone: normalizedPhone,
+    inviteCode,
+    // If the retailer already has a UID they have an account — activate directly
+    status: retailerId ? "active" : "invited",
+    claimable: !retailerId,
+    onboardingStatus: retailerId ? "active" : "pending",
+    assignedSeat: false,
+    seatAssignedAt: null,
+    createdBy: manufacturerId,
+    addedAt: now,
+  };
+  if (rd.address) invitePayload.address = rd.address;
+  if (rd.geo)     invitePayload.geo     = rd.geo;
+  await setDoc(inviteRef, invitePayload);
+
+  // Subcollection mirror (fire-and-forget)
+  if (manufacturerPhone) {
+    syncRetailerMirror(manufacturerPhone, normalizedPhone, {
+      retailerDocId: normalizedPhone,
+      retailerPhone: normalizedPhone,
+      manufacturerPhone,
+      retailerId,
+      shopName,
+      ownerName,
+      status: invitePayload.status,
+      onboardingStatus: invitePayload.onboardingStatus,
+      addedAt: now,
+      ...(rd.address ? { address: rd.address } : {}),
+      ...(rd.geo     ? { geo:     rd.geo     } : {}),
+    }).catch(() => {});
+  }
+
+  return { alreadyLinked: false };
+}
+
+/**
  * Called after a product is successfully assigned to a retailer.
  * Sets assignedSeat: true on the manufacturerRetailers link doc and its mirror,
  * and sets active: true + assignedSeat: true on the global retailers doc so the
