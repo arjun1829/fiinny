@@ -50,6 +50,8 @@ export type ManufacturerProductInput = {
   videoUrl?: string;
   /** Ingredient / nutrient composition (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
   composition?: { name: string; value: string }[];
+  /** Free-form additional fields entered by the seller — stored as-is, displayed on the product detail page. */
+  customFields?: { title: string; value: string }[];
   /** @deprecated Legacy fertilizer fields — still accepted for backward compat. */
   nitrogen?: string;
   phosphorus?: string;
@@ -123,6 +125,7 @@ export async function createManufacturerProduct(
     categoryInfo: input.categoryInfo ?? null,
     videoUrl: input.videoUrl?.trim() || null,
     composition: input.composition?.length ? input.composition : null,
+    customFields: input.customFields?.length ? input.customFields : null,
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
@@ -267,7 +270,8 @@ export async function updateManufacturerProduct(
   if (input.images !== undefined)      patch.images      = input.images;
   if (input.categoryInfo !== undefined)    patch.categoryInfo    = input.categoryInfo ?? null;
   if (input.videoUrl !== undefined)        patch.videoUrl        = input.videoUrl.trim() || null;
-  if (input.composition !== undefined)     patch.composition     = input.composition?.length ? input.composition : null;
+  if (input.composition !== undefined)  patch.composition  = input.composition?.length ? input.composition : null;
+  if (input.customFields !== undefined) patch.customFields = input.customFields?.length ? input.customFields : null;
   if (input.gstApplicable !== undefined) {
     patch.gstApplicable = input.gstApplicable;
     patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;

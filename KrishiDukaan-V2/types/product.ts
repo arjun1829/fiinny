@@ -70,6 +70,8 @@ export type MarketplaceProduct = {
 
   /** Product detail enrichment */
   composition?: { name: string; value: string; color?: string }[];
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[];
   benefits?: string[];
   application?: string;
 
