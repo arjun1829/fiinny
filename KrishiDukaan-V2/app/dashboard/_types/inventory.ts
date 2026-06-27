@@ -43,6 +43,8 @@ export interface ProductDoc {
   videoUrl?: string | null;
   /** Composition / ingredient list (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
   composition?: { name: string; value: string }[] | null;
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[] | null;
   /** @deprecated Legacy fertilizer flat fields — backward compat only. */
   nitrogen?: string;
   phosphorus?: string;
@@ -172,6 +174,10 @@ export interface InventoryRow {
   // ── Composition ───────────────────────────────────────────────────────────────
   /** Ingredient / nutrient breakdown for Fertilizers, Pesticides, Herbicides, Bio-Stimulants. */
   composition?: { name: string; value: string }[];
+
+  // ── Custom fields ─────────────────────────────────────────────────────────────
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[];
 
   // ── Category-specific info ────────────────────────────────────────────────────
   /** Structured category info (new schema). */

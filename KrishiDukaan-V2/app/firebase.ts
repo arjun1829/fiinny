@@ -363,6 +363,7 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         images: Array.isArray(data.images) ? data.images : undefined,
         videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
         composition: Array.isArray(data.composition) ? data.composition : undefined,
+        customFields: Array.isArray(data.customFields) ? data.customFields : undefined,
       } as MarketplaceProduct;
     });
 

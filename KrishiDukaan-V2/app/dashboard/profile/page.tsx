@@ -151,7 +151,8 @@ function OnlineDeliveryToggle({ value, onChange }: { value: boolean; onChange: (
 async function uploadImageToStorage(file: File, pathPrefix: string): Promise<string> {
   const toUpload = await compressImage(file);
   const path = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), toUpload);
+  const contentType = toUpload.type || file.type || "image/jpeg";
+  const snap = await uploadBytes(storageRef(storage, path), toUpload, { contentType });
   return getDownloadURL(snap.ref);
 }
 
