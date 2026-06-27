@@ -50,6 +50,10 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
         c.pause();
       }
     } else {
+      // Only resume if the reels tab is still active — otherwise the user
+      // foregrounded the app while on a different tab and the reel must stay silent.
+      const reelsTab = 4;
+      if (ref.read(activeShellIndexProvider) != reelsTab) return;
       final reels = ref.read(reelsFeedProvider).value ?? [];
       if (_currentPage < reels.length) {
         _controllers[reels[_currentPage].id]?.play();
@@ -422,6 +426,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
   }
 
   void _openComments() {
+    ref.read(reelCommentSheetOpenProvider.notifier).setOpen(true);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -434,14 +439,25 @@ class _ReelPageState extends ConsumerState<_ReelPage>
           if (mounted) setState(() { _commentsCount++; });
         },
       ),
-    );
+    ).whenComplete(() {
+      if (mounted) ref.read(reelCommentSheetOpenProvider.notifier).setOpen(false);
+    });
   }
 
   void _share() {
+    final shopLink = 'https://krishidukan.com/shop/${widget.reel.shopOwnerId}';
+    final parts = <String>[
+      if (widget.reel.title.isNotEmpty) widget.reel.title,
+      if (widget.reel.caption.isNotEmpty) widget.reel.caption,
+      '',
+      '${widget.reel.shopName} on AgriReels — KrishiDukaan',
+      shopLink,
+    ];
     SharePlus.instance.share(ShareParams(
-      text:
-          '${widget.reel.shopName} on AgriReels — KrishiDukaan\n\n${widget.reel.caption}',
-      subject: 'AgriReels — ${widget.reel.shopName}',
+      text: parts.join('\n'),
+      subject: widget.reel.title.isNotEmpty
+          ? widget.reel.title
+          : '${widget.reel.shopName} on AgriReels',
     ));
   }
 

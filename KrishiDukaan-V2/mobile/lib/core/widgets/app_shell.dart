@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/app_colors.dart';
 import '../providers/cart_provider.dart';
 import '../providers/user_provider.dart';
+import '../../features/reels/providers/reels_provider.dart';
 
 /// Tracks which bottom-nav tab is currently visible.
 /// ReelsFeedScreen listens to this to pause video when leaving the reels tab.
@@ -81,9 +82,10 @@ class AppShell extends ConsumerWidget {
     final isSeller = userModel?.isSeller ?? false;
     final canAccess = ref.watch(canAccessDashboardProvider);
     final isReelsTab = currentIndex == 4;
+    final commentSheetOpen = ref.watch(reelCommentSheetOpenProvider);
 
     Widget? fab;
-    if (isReelsTab && isSeller) {
+    if (isReelsTab && isSeller && !commentSheetOpen) {
       fab = FloatingActionButton(
         backgroundColor: AppColors.secondary,
         foregroundColor: Colors.white,

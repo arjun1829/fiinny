@@ -10,6 +10,16 @@ final _repo = ReelsRepository();
 
 final reelsRepoProvider = Provider((_) => _repo);
 
+// Tracks when the comment sheet is open so AppShell can hide the upload FAB.
+final reelCommentSheetOpenProvider =
+    NotifierProvider<_CommentSheetNotifier, bool>(_CommentSheetNotifier.new);
+
+class _CommentSheetNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void setOpen(bool open) => state = open;
+}
+
 final reelsFeedProvider = FutureProvider<List<ReelModel>>((ref) async {
   final reels = await _repo.fetchFeed(limit: 50);
   
