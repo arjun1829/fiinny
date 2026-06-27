@@ -5,6 +5,8 @@ type WaTemplate =
   | "subscription_welcome"
   | "subscription_expiry"
   | "order_notification"
+  | "retailer_onboarding"
+  | "product_assignment"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;
@@ -65,7 +67,7 @@ export async function queueSubscriptionWelcome(
   const payload: WaPayload = { name };
   return queueWaNotification(
     phone,
-    `नमस्ते ${name} जी! 🌱\n\nKrishi Dukan में आपका स्वागत है। आपकी सदस्यता सक्रिय हो गई है।\n\nकिसी भी सहायता के लिए हमसे संपर्क करें।`,
+    `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://www.krishidukan.com`,
     {
       template: "subscription_welcome",
       payload,
@@ -84,7 +86,7 @@ export async function queueSubscriptionExpiry(
   const payload: WaPayload = { name, expiryDate };
   return queueWaNotification(
     phone,
-    `नमस्ते ${name} जी,\n\nआपकी Krishi Dukan सदस्यता ${expiryDate} को समाप्त हो रही है। ⏰\n\nसदस्यता नवीनीकृत करने के लिए ऐप खोलें।`,
+    `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://www.krishidukan.com`,
     {
       template: "subscription_expiry",
       payload,
@@ -108,7 +110,7 @@ export async function queueOrderNotification(
   const payload: WaPayload = { customerName, itemSummary, total };
   return queueWaNotification(
     phone,
-    `नया ऑर्डर मिला! 🛒\n\n${customerName} ने ${itemSummary} का ऑर्डर दिया है।\nकुल: ₹${total}\n\nKrishi Dukan ऐप में देखें।`,
+    `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customerName}\nप्रॉडक्ट: ${itemSummary}\nएकूण रक्कम: ₹${total}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
     {
       template: "order_notification",
       payload,

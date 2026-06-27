@@ -13,6 +13,8 @@ export type WaTemplate =
   | "subscription_welcome"
   | "subscription_expiry"
   | "order_notification"
+  | "retailer_onboarding"
+  | "product_assignment"
   | "generic";
 
 /** Dynamic values substituted into the template at render time. */
