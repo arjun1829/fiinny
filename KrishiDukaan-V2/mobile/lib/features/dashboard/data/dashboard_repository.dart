@@ -34,8 +34,11 @@ class DashboardRepository {
     // Products: phone, retailerId (legacy), and ownerId (web new schema)
     final productFutures = <Future<QuerySnapshot>>[
       _db.collection('products').where('retailerPhone', isEqualTo: sellerPhone).get(),
+      _db.collection('products').where('manufacturerPhone', isEqualTo: sellerPhone).get(),
       if (uid.isNotEmpty)
         _db.collection('products').where('retailerId', isEqualTo: uid).get(),
+      if (uid.isNotEmpty)
+        _db.collection('products').where('manufacturerId', isEqualTo: uid).get(),
       if (uid.isNotEmpty)
         _db.collection('products').where('ownerId', isEqualTo: uid).get(),
     ];
@@ -91,14 +94,13 @@ class DashboardRepository {
 
     final streams = <Stream<QuerySnapshot>>[
       _db.collection('products').where('retailerPhone', isEqualTo: sellerPhone).snapshots(),
+      _db.collection('products').where('manufacturerPhone', isEqualTo: sellerPhone).snapshots(),
       _db.collection('listings').where('sellerPhone', isEqualTo: sellerPhone).snapshots(),
     ];
     if (uid.isNotEmpty) {
       streams.add(_db.collection('products').where('retailerId', isEqualTo: uid).snapshots());
-      streams.add(_db.collection('products')
-          .where('ownerId', isEqualTo: uid)
-          .where('ownerType', isEqualTo: 'retailer')
-          .snapshots());
+      streams.add(_db.collection('products').where('manufacturerId', isEqualTo: uid).snapshots());
+      streams.add(_db.collection('products').where('ownerId', isEqualTo: uid).snapshots());
     }
 
     if (streams.length == 1) {

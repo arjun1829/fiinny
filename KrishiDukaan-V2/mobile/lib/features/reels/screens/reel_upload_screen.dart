@@ -24,8 +24,13 @@ class ReelUploadScreen extends ConsumerStatefulWidget {
 class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
   XFile? _pickedFile;
   VideoPlayerController? _previewController;
+  final _titleController = TextEditingController();
   final _captionController = TextEditingController();
+  final _tagSearchController = TextEditingController();
   ListingModel? _selectedProduct;
+  final List<Map<String, dynamic>> _taggedShops = [];
+  List<Map<String, dynamic>> _tagSuggestions = [];
+  bool _tagSearching = false;
 
   // Two-phase progress: compress (mobile-only) → upload
   bool _processing = false;
@@ -41,8 +46,33 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       VideoCompress.cancelCompression();
     }
     _previewController?.dispose();
+    _titleController.dispose();
     _captionController.dispose();
+    _tagSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _searchTags(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      if (mounted) setState(() => _tagSuggestions = []);
+      return;
+    }
+    if (mounted) setState(() => _tagSearching = true);
+    final repo = ref.read(reelsRepoProvider);
+    final results = await repo.searchShops(q);
+    if (!mounted) return;
+    // Exclude already-tagged and self
+    final user = ref.read(currentUserProvider).value;
+    final excluded = {
+      ..._taggedShops.map((t) => t['phone'] as String),
+      if (user != null) user.phone,
+    };
+    setState(() {
+      _tagSuggestions =
+          results.where((r) => !excluded.contains(r['phone'])).toList();
+      _tagSearching = false;
+    });
   }
 
   Future<void> _pickVideo() async {
@@ -117,10 +147,12 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             shopName: user.businessName ?? user.name,
             videoFile: fileToUpload,
             videoBytes: bytes,
+            title: _titleController.text.trim(),
             caption: _captionController.text.trim(),
             linkedProductId: _selectedProduct?.catalogId,
             linkedProductName: _selectedProduct?.productName,
             linkedProductImageUrl: _selectedProduct?.imageUrl,
+            taggedShops: List.from(_taggedShops),
             onProgress: (p) {
               if (mounted) setState(() { _uploadProgress = p; });
             },
@@ -295,16 +327,38 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // ── Caption ───────────────────────────────────────────────
-                Text('Caption', style: AppTextStyles.heading3),
+                // ── Title ────────────────────────────────────────────────
+                Text('Title', style: AppTextStyles.heading3),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _titleController,
+                  enabled: !_processing,
+                  maxLines: 1,
+                  maxLength: 60,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. New wheat spray now available!',
+                    hintStyle: AppTextStyles.body
+                        .copyWith(color: Colors.black38),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Description ───────────────────────────────────────────
+                Text('Description', style: AppTextStyles.heading3),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _captionController,
                   enabled: !_processing,
                   maxLines: 3,
-                  maxLength: 200,
+                  maxLength: 300,
                   decoration: InputDecoration(
-                    hintText: 'Describe your reel...',
+                    hintText: 'Tell viewers more about this reel...',
                     hintStyle: AppTextStyles.body
                         .copyWith(color: Colors.black38),
                     border: OutlineInputBorder(
@@ -427,6 +481,118 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                           style: AppTextStyles.price,
                         ),
                       ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+
+                // ── Tag sellers (collaboration) ───────────────────────────
+                Text('Tag Sellers (Collaboration)',
+                    style: AppTextStyles.heading3),
+                const SizedBox(height: 4),
+                Text(
+                  'Tagged sellers will show this reel on their shop profile.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+
+                // Chips of already-tagged sellers
+                if (_taggedShops.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: _taggedShops.map((shop) {
+                      return Chip(
+                        avatar: const Icon(Icons.storefront_outlined, size: 14),
+                        label: Text(
+                          shop['username'] != null
+                              ? '@${shop['username']}'
+                              : (shop['businessName'] as String? ?? ''),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 14),
+                        onDeleted: _processing
+                            ? null
+                            : () => setState(
+                                () => _taggedShops.remove(shop)),
+                        backgroundColor: AppColors.primaryContainer
+                            .withValues(alpha: 0.3),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // Search field
+                TextField(
+                  controller: _tagSearchController,
+                  enabled: !_processing,
+                  decoration: InputDecoration(
+                    hintText: 'Search by @username or shop name…',
+                    prefixIcon: _tagSearching
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : const Icon(Icons.person_add_alt_1_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  onChanged: (v) {
+                    _searchTags(v);
+                  },
+                ),
+
+                // Suggestions dropdown
+                if (_tagSuggestions.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: AppColors.divider),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: _tagSuggestions.map((shop) {
+                        return ListTile(
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: AppColors.primaryContainer,
+                            child: Text(
+                              (shop['businessName'] as String? ?? '?')
+                                  .substring(0, 1)
+                                  .toUpperCase(),
+                              style: TextStyle(
+                                  color: AppColors.primary, fontSize: 12),
+                            ),
+                          ),
+                          title: Text(shop['businessName'] ?? ''),
+                          subtitle: shop['username'] != null
+                              ? Text(
+                                  '@${shop['username']}',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primary),
+                                )
+                              : null,
+                          onTap: () => setState(() {
+                            _taggedShops.add(shop);
+                            _tagSuggestions = [];
+                            _tagSearchController.clear();
+                          }),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ],

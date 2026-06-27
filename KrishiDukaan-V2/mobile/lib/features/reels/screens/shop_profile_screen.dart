@@ -77,6 +77,14 @@ class ShopProfileScreen extends ConsumerWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              if ((user?.username ?? '').isNotEmpty)
+                                Text(
+                                  '@${user!.username}',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               if ((user?.city ?? '').isNotEmpty)
                                 Row(
                                   children: [
@@ -235,7 +243,9 @@ class ShopProfileScreen extends ConsumerWidget {
                       final reel = reels[index];
                       return _ReelGridCard(
                         reel: reel,
-                        isOwner: isOwnShop,
+                        isOwner: isOwnShop &&
+                            reel.shopOwnerId == shopPhone,
+                        shopPhone: shopPhone,
                         currentUserId: currentUser?.phone,
                         currentUserName: currentUser?.businessName ??
                             currentUser?.name ??
@@ -425,6 +435,7 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
 class _ReelGridCard extends StatelessWidget {
   final ReelModel reel;
   final bool isOwner;
+  final String shopPhone;
   final String? currentUserId;
   final String currentUserName;
   final List<ReelModel> allReels;
@@ -435,6 +446,7 @@ class _ReelGridCard extends StatelessWidget {
   const _ReelGridCard({
     required this.reel,
     required this.isOwner,
+    required this.shopPhone,
     required this.currentUserId,
     required this.currentUserName,
     required this.allReels,
@@ -516,6 +528,35 @@ class _ReelGridCard extends StatelessWidget {
                 ],
               ),
             ),
+            // Collab badge — shown when reel was posted by another seller
+            // who tagged this shop, or when this reel has tagged partners
+            if (reel.shopOwnerId != shopPhone ||
+                reel.taggedShopIds.isNotEmpty)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.people_alt_rounded,
+                          color: Colors.white, size: 9),
+                      SizedBox(width: 3),
+                      Text('collab',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
             // Owner actions (3-dot menu)
             if (isOwner)
               Positioned(
@@ -645,6 +686,7 @@ class _EditReelSheet extends ConsumerStatefulWidget {
 }
 
 class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
+  late TextEditingController _titleCtrl;
   late TextEditingController _captionCtrl;
   ListingModel? _selectedProduct;
   bool _saving = false;
@@ -652,11 +694,13 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
   @override
   void initState() {
     super.initState();
+    _titleCtrl = TextEditingController(text: widget.reel.title);
     _captionCtrl = TextEditingController(text: widget.reel.caption);
   }
 
   @override
   void dispose() {
+    _titleCtrl.dispose();
     _captionCtrl.dispose();
     super.dispose();
   }
@@ -666,6 +710,7 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
     try {
       await ref.read(reelsRepoProvider).updateReel(
             widget.reel.id,
+            title: _titleCtrl.text.trim(),
             caption: _captionCtrl.text.trim(),
             linkedProductId: _selectedProduct?.catalogId ??
                 widget.reel.linkedProductId,
@@ -724,11 +769,25 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
           Text('Edit Reel', style: AppTextStyles.heading3),
           const SizedBox(height: 14),
           TextField(
+            controller: _titleCtrl,
+            maxLines: 1,
+            maxLength: 60,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              labelText: 'Title',
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: AppColors.background,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
             controller: _captionCtrl,
             maxLines: 3,
-            maxLength: 200,
+            maxLength: 300,
             decoration: InputDecoration(
-              labelText: 'Caption',
+              labelText: 'Description',
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
               filled: true,

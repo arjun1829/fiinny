@@ -49,6 +49,11 @@ class HomeScreen extends ConsumerWidget {
                 onPressed: () => _openSearch(context),
               ),
               const NotificationBell(),
+              TopBarAction(
+                icon: Icons.person_outline,
+                tooltip: 'Profile',
+                onPressed: () => context.push('/profile'),
+              ),
             ],
           ),
           SliverToBoxAdapter(
@@ -87,6 +92,60 @@ class HomeScreen extends ConsumerWidget {
                   // Rotating promo banners — gives the page a lively hero strip
                   const _PromoCarousel(),
                   const SizedBox(height: 24),
+
+                  // Trending Near You
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Trending Near You', style: AppTextStyles.heading3),
+                      TextButton(
+                        onPressed: () => context.go('/marketplace'),
+                        child: const Text('See all'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final trending = ref.watch(trendingProductsProvider);
+                      return trending.when(
+                        loading: () => GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: 4,
+                          itemBuilder: (_, _) => _PlaceholderProductCard(),
+                        ),
+                        error: (_, _) => const SizedBox.shrink(),
+                        data: (products) => products.isEmpty
+                            ? const SizedBox.shrink()
+                            : GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      childAspectRatio: 0.75,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                    ),
+                                itemCount: products.length,
+                                itemBuilder: (_, i) => ProductCard(
+                                  product: products[i],
+                                  onTap: () =>
+                                      context.push('/product/${products[i].id}'),
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
 
                   // Category cards grid
                   Text('Shop by Category', style: AppTextStyles.heading3),

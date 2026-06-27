@@ -20,13 +20,30 @@ class ReelsRepository {
     return snap.docs.map(ReelModel.fromFirestore).toList();
   }
 
+  /// Returns all reels for a shop: their own + any reels they were tagged in.
   Future<List<ReelModel>> fetchSellerReels(String shopOwnerId) async {
-    final snap = await _db
+    final ownQ = _db
         .collection('reels')
         .where('shopOwnerId', isEqualTo: shopOwnerId)
         .orderBy('createdAt', descending: true)
         .get();
-    return snap.docs.map(ReelModel.fromFirestore).toList();
+
+    final taggedQ = _db
+        .collection('reels')
+        .where('taggedShopIds', arrayContains: shopOwnerId)
+        .orderBy('createdAt', descending: true)
+        .get();
+
+    final snaps = await Future.wait([ownQ, taggedQ]);
+    final seen = <String>{};
+    final merged = <ReelModel>[];
+    for (final snap in snaps) {
+      for (final doc in snap.docs) {
+        if (seen.add(doc.id)) merged.add(ReelModel.fromFirestore(doc));
+      }
+    }
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
   }
 
   Future<ReelModel?> fetchReelById(String reelId) async {
@@ -134,12 +151,14 @@ class ReelsRepository {
 
   Future<void> updateReel(
     String reelId, {
+    required String title,
     required String caption,
     String? linkedProductId,
     String? linkedProductName,
     String? linkedProductImageUrl,
   }) async {
     await _db.collection('reels').doc(reelId).update({
+      'title': title,
       'caption': caption,
       'linkedProductId': linkedProductId,
       'linkedProductName': linkedProductName,
@@ -161,6 +180,82 @@ class ReelsRepository {
     } catch (_) {}
   }
 
+  // ── Username ──────────────────────────────────────────────────────────────
+
+  /// Returns true if [username] is available for [myPhone] to claim.
+  /// Also returns true if the caller already owns it.
+  Future<bool> checkUsernameAvailable(String username, String myPhone) async {
+    final doc = await _db.collection('usernames').doc(username).get();
+    if (!doc.exists) return true;
+    return (doc.data()?['phone'] as String?) == myPhone;
+  }
+
+  Future<void> setUsername({
+    required String username,
+    required String phone,
+    required String businessName,
+    required String role,
+    String? oldUsername,
+  }) async {
+    final batch = _db.batch();
+    if (oldUsername != null &&
+        oldUsername.isNotEmpty &&
+        oldUsername != username) {
+      batch.delete(_db.collection('usernames').doc(oldUsername));
+    }
+    batch.set(_db.collection('usernames').doc(username), {
+      'username': username,
+      'phone': phone,
+      'businessName': businessName,
+      'businessNameSearch': businessName.toLowerCase(),
+      'role': role,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(_db.collection('users').doc(phone), {'username': username});
+    await batch.commit();
+  }
+
+  /// Prefix-searches `usernames` collection by handle and business name.
+  Future<List<Map<String, dynamic>>> searchShops(String query) async {
+    final q = query.toLowerCase().trim();
+    if (q.isEmpty) return [];
+
+    final end = q.substring(0, q.length - 1) +
+        String.fromCharCode(q.codeUnitAt(q.length - 1) + 1);
+
+    final byHandle = _db
+        .collection('usernames')
+        .where('username', isGreaterThanOrEqualTo: q)
+        .where('username', isLessThan: end)
+        .limit(5)
+        .get();
+
+    final byName = _db
+        .collection('usernames')
+        .where('businessNameSearch', isGreaterThanOrEqualTo: q)
+        .where('businessNameSearch', isLessThan: end)
+        .limit(5)
+        .get();
+
+    final results = await Future.wait([byHandle, byName]);
+    final seen = <String>{};
+    final merged = <Map<String, dynamic>>[];
+    for (final snap in results) {
+      for (final doc in snap.docs) {
+        final phone = doc.data()['phone'] as String? ?? '';
+        if (seen.add(phone)) {
+          merged.add({
+            'phone': phone,
+            'username': doc.id,
+            'businessName': doc.data()['businessName'] as String? ?? '',
+            'role': doc.data()['role'] as String? ?? '',
+          });
+        }
+      }
+    }
+    return merged.take(6).toList();
+  }
+
   // ── Upload ────────────────────────────────────────────────────────────────
 
   Future<void> uploadReel({
@@ -169,10 +264,12 @@ class ReelsRepository {
     String? shopProfilePic,
     File? videoFile,
     Uint8List? videoBytes,
+    required String title,
     required String caption,
     String? linkedProductId,
     String? linkedProductName,
     String? linkedProductImageUrl,
+    List<Map<String, dynamic>> taggedShops = const [],
     void Function(double progress)? onProgress,
   }) async {
     assert(videoFile != null || videoBytes != null,
@@ -202,15 +299,20 @@ class ReelsRepository {
     final snapshot = await uploadTask;
     final videoUrl = await snapshot.ref.getDownloadURL();
 
+    final taggedShopIds = taggedShops.map((t) => t['phone'] as String).toList();
+
     await docRef.set({
       'shopOwnerId': shopOwnerId,
       'shopName': shopName,
       'shopProfilePic': ?shopProfilePic,
       'videoUrl': videoUrl,
+      'title': title,
       'caption': caption,
       'linkedProductId': ?linkedProductId,
       'linkedProductName': ?linkedProductName,
       'linkedProductImageUrl': ?linkedProductImageUrl,
+      'taggedShops': taggedShops,
+      'taggedShopIds': taggedShopIds,
       'likesCount': 0,
       'commentsCount': 0,
       'viewsCount': 0,

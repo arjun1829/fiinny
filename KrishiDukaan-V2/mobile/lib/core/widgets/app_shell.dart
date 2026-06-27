@@ -76,15 +76,6 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentIndex = navigationShell.currentIndex;
-
-    // Notify listeners (e.g. ReelsFeedScreen) that the active tab changed.
-    // Must be post-frame to avoid mutating provider state during build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (ref.read(activeShellIndexProvider) != currentIndex) {
-        ref.read(activeShellIndexProvider.notifier).setIndex(currentIndex);
-      }
-    });
-
     final cartCount = ref.watch(cartCountProvider);
     final userModel = ref.watch(currentUserProvider).value;
     final isSeller = userModel?.isSeller ?? false;
@@ -147,10 +138,15 @@ class AppShell extends ConsumerWidget {
                   child: _ShellNavItem(
                     destination: _destinations[index],
                     isSelected: navigationShell.currentIndex == index,
-                    onTap: () => navigationShell.goBranch(
-                      index,
-                      initialLocation: index == navigationShell.currentIndex,
-                    ),
+                    onTap: () {
+                      ref
+                          .read(activeShellIndexProvider.notifier)
+                          .setIndex(index);
+                      navigationShell.goBranch(
+                        index,
+                        initialLocation: index == navigationShell.currentIndex,
+                      );
+                    },
                   ),
                 );
               }),

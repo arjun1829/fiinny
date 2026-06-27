@@ -286,7 +286,7 @@ class _ReelPage extends ConsumerStatefulWidget {
 }
 
 class _ReelPageState extends ConsumerState<_ReelPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   bool? _isLiked;
   bool? _isFollowing;
   late int _likesCount;
@@ -294,12 +294,16 @@ class _ReelPageState extends ConsumerState<_ReelPage>
   bool _showPauseIcon = false;
   late AnimationController _likeAnimController;
   late Animation<double> _likeScale;
+  late AnimationController _heartAnimController;
+  late Animation<double> _heartScale;
+  late Animation<double> _heartOpacity;
 
   @override
   void initState() {
     super.initState();
     _likesCount = widget.reel.likesCount;
     _commentsCount = widget.reel.commentsCount;
+
     _likeAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -316,12 +320,44 @@ class _ReelPageState extends ConsumerState<_ReelPage>
         weight: 50,
       ),
     ]).animate(_likeAnimController);
+
+    // Double-tap heart burst
+    _heartAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _heartScale = TweenSequence([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.2)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.2, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 20,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 40,
+      ),
+    ]).animate(_heartAnimController);
+    _heartOpacity = TweenSequence([
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 60),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 40,
+      ),
+    ]).animate(_heartAnimController);
+
     _loadInteractionState();
   }
 
   @override
   void dispose() {
     _likeAnimController.dispose();
+    _heartAnimController.dispose();
     super.dispose();
   }
 
@@ -428,6 +464,13 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     }
   }
 
+  void _onDoubleTap() {
+    // Like if not already liked
+    if (_isLiked == false) _toggleLike();
+    // Always burst the heart
+    _heartAnimController.forward(from: 0);
+  }
+
   void _showLoginPrompt() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -449,6 +492,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
         // ── Video background ─────────────────────────────────────────────
         GestureDetector(
           onTap: _togglePlayPause,
+          onDoubleTap: _onDoubleTap,
           child: Container(
             color: Colors.black,
             child: controller != null
@@ -485,7 +529,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
           Center(
             child: Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.black45,
                 shape: BoxShape.circle,
               ),
@@ -493,6 +537,30 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                   color: Colors.white, size: 48),
             ),
           ),
+
+        // ── Double-tap heart burst ────────────────────────────────────────
+        AnimatedBuilder(
+          animation: _heartAnimController,
+          builder: (_, _) {
+            if (_heartAnimController.isDismissed) return const SizedBox.shrink();
+            return Center(
+              child: Opacity(
+                opacity: _heartOpacity.value,
+                child: Transform.scale(
+                  scale: _heartScale.value,
+                  child: const Icon(
+                    Icons.favorite_rounded,
+                    color: Colors.white,
+                    size: 100,
+                    shadows: [
+                      Shadow(color: Colors.black38, blurRadius: 12),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
 
         // ── Top gradient (status bar readability) ────────────────────────
         Positioned(
@@ -602,13 +670,27 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                       ),
                     ),
                   ),
-                  if (widget.reel.caption.isNotEmpty) ...[
+                  if (widget.reel.title.isNotEmpty) ...[
                     const SizedBox(height: 5),
+                    Text(
+                      widget.reel.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        shadows: [Shadow(color: Colors.black54, blurRadius: 5)],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (widget.reel.caption.isNotEmpty) ...[
+                    const SizedBox(height: 3),
                     Text(
                       widget.reel.caption,
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
+                        color: Colors.white70,
+                        fontSize: 12,
                         shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
                       ),
                       maxLines: 2,
