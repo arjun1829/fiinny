@@ -76,6 +76,7 @@ const KrishiDukanPage        = lazy(() => import('./pages/KrishiDukanPage'));
 const SupplierLedgerPage     = lazy(() => import('./pages/SupplierLedgerPage'));
 const SupplierLedgerDetailPage = lazy(() => import('./pages/SupplierLedgerDetailPage'));
 const CareOffReconcilePage    = lazy(() => import('./pages/CareOffReconcilePage'));
+const SupplierInvoicePage     = lazy(() => import('./pages/SupplierInvoicePage'));
 
 // Full-page spinner shown while a lazy chunk is loading
 function PageLoader() {
@@ -444,6 +445,7 @@ function AppRoutes() {
       <Route path="/supplier-ledger" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerPage /></ProtectedRoute>} />
       <Route path="/supplier-ledger/:id" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerDetailPage /></ProtectedRoute>} />
       <Route path="/careoff-sync" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="accounts"><CareOffReconcilePage /></ProtectedRoute>} />
+      <Route path="/supplier-invoice" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierInvoicePage /></ProtectedRoute>} />
       <Route path="/delivery-challans" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DeliveryChallansPage /></ProtectedRoute>} />
       <Route path="/gst-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><GSTReportsPage /></ProtectedRoute>} />
       <Route path="/financial-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><FinancialReportsPage /></ProtectedRoute>} />

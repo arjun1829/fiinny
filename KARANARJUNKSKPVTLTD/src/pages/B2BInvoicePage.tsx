@@ -312,6 +312,49 @@ export default function B2BInvoicePage() {
         return `SIPL/${y.toString().slice(-2)}-${(y + 1).toString().slice(-2)}/${seq.toString().padStart(3, '0')}`;
     };
 
+    // ─── Print (snapshot the live invoice DOM into a new window) ───
+    // Shared by Save & Print and the print-only action so there is one print path.
+    // Snapshotting into a separate window fixes the iOS Safari blank-print race.
+    const printInvoiceDOM = (invNoLabel: string) => {
+        const container = document.querySelector('.b2b-card') as HTMLElement | null;
+        const html = container ? container.outerHTML : document.body.innerHTML;
+        const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+            .map(el => el.outerHTML).join('\n');
+        const win = window.open('', '_blank');
+        if (!win) {
+            window.print();
+            return;
+        }
+        win.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B2B Invoice ${invNoLabel}</title>
+${styles}
+<style>
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-scheme: light !important; }
+  html, body { background: #fff !important; color: #000 !important; margin: 0; padding: 0; }
+  .b2b-wrapper { background: #fff !important; padding: 0 !important; }
+  .no-print { display: none !important; }
+  .b2b-card { box-shadow: none !important; border: none !important; border-radius: 0 !important; margin: 0 !important; padding: 10px !important; background: #fff !important; color: #000 !important; }
+  input, select, textarea { display: none !important; }
+  .print-val { display: inline !important; font-family: 'Times New Roman', serif; color: #000; }
+  .b2b-table { border-collapse: collapse; width: 100%; }
+  .b2b-table th, .b2b-table td { border: 1px solid #222 !important; padding: 2px 3px !important; font-size: 0.78rem !important; }
+  @media print { .no-print { display: none !important; } }
+</style>
+</head><body>${html}</body></html>`);
+        win.document.close();
+        win.focus();
+        setTimeout(() => { win.print(); }, 700);
+    };
+
+    // ─── Print only (no save, no counter increment) ───
+    // Prints the current invoice as-shown using the on-screen preview number.
+    const handlePrintOnly = () => {
+        if (activeRows.length === 0) { alert('Please add at least one item.'); return; }
+        printInvoiceDOM(header.invoiceNo || nextInvoiceNo);
+    };
+
     // ─── Save ───
     const handleSave = async (isPrint = false) => {
         if (!tenantId) return;
@@ -388,40 +431,9 @@ export default function B2BInvoicePage() {
                 // Snapshot DOM -> new window to fix iOS Safari blank print
                 // (window.print() on same page would race with resetForm() clearing state)
                 setTimeout(() => {
-                    const container = document.querySelector('.b2b-card') as HTMLElement | null;
-                    const html = container ? container.outerHTML : document.body.innerHTML;
-                    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-                        .map(el => el.outerHTML).join('\n');
-                    const win = window.open('', '_blank');
-                    if (!win) {
-                        window.print();
-                        resetForm();
-                        return;
-                    }
-                    win.document.write(`<!DOCTYPE html><html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>B2B Invoice ${invNo}</title>
-${styles}
-<style>
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-scheme: light !important; }
-  html, body { background: #fff !important; color: #000 !important; margin: 0; padding: 0; }
-  .b2b-wrapper { background: #fff !important; padding: 0 !important; }
-  .no-print { display: none !important; }
-  .b2b-card { box-shadow: none !important; border: none !important; border-radius: 0 !important; margin: 0 !important; padding: 10px !important; background: #fff !important; color: #000 !important; }
-  input, select, textarea { display: none !important; }
-  .print-val { display: inline !important; font-family: 'Times New Roman', serif; color: #000; }
-  .b2b-table { border-collapse: collapse; width: 100%; }
-  .b2b-table th, .b2b-table td { border: 1px solid #222 !important; padding: 2px 3px !important; font-size: 0.78rem !important; }
-  @media print { .no-print { display: none !important; } }
-</style>
-</head><body>${html}</body></html>`);
-                    win.document.close();
-                    win.focus();
-                    setTimeout(() => { win.print(); }, 700);
+                    printInvoiceDOM(invNo);
                     // Safe to reset now — new window has a static clone
                     resetForm();
-                    return;
                 }, 200);
                 return;
             }
@@ -896,6 +908,14 @@ ${styles}
                         style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 2rem', fontSize: '1rem', borderRadius: '8px', background: '#1565C0', color: '#fff', border: 'none', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}
                     >
                         {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />} Save & Print
+                    </button>
+                    <button
+                        onClick={handlePrintOnly}
+                        disabled={isProcessing}
+                        title="Print the current invoice without saving"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 2rem', fontSize: '1rem', borderRadius: '8px', background: 'transparent', color: '#1565C0', border: '2px solid #1565C0', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+                    >
+                        <Printer size={18} /> Print Invoice
                     </button>
                     <button
                         onClick={() => handleSave(false)}
