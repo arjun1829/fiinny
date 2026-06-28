@@ -13,6 +13,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../dashboard/data/dashboard_repository.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
+import '../../marketplace/data/catalog_repository.dart';
 import '../data/manufacturer_repository.dart';
 import '../providers/manufacturer_provider.dart';
 
@@ -562,6 +563,11 @@ class _ProductSheetState extends State<_ProductSheet> {
   bool _saving = false;
   late bool _isActive;
 
+  // Catalog autofill
+  final _catalogRepo = CatalogRepository();
+  List<CatalogModel> _catalogOptions = [];
+  List<CatalogModel> _nameSuggestions = [];
+
   final List<VariantModel> _variants = [];
   late List<TextEditingController> _imageUrlCtrls;
 
@@ -595,6 +601,13 @@ class _ProductSheetState extends State<_ProductSheet> {
     );
     _category = _matchCategory(p?.category);
     _isActive = p == null ? true : p.isActive;
+
+    // Load all products for name autofill (only when adding new)
+    if (p == null) {
+      _catalogRepo.fetchAllMergedProducts().then((list) {
+        if (mounted) setState(() => _catalogOptions = list);
+      });
+    }
 
     if (p?.variants != null) {
       _variants.addAll(p!.variants!);
@@ -733,12 +746,74 @@ class _ProductSheetState extends State<_ProductSheet> {
                 TextField(
                   controller: _nameCtrl,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Bharat 2 In 1',
+                    hintText: 'Type to search existing products or enter new…',
+                    prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                  onChanged: (val) {
+                    final q = val.toLowerCase().trim();
+                    setState(() {
+                      _nameSuggestions = q.isEmpty
+                          ? []
+                          : _catalogOptions
+                              .where((c) =>
+                                  c.name.toLowerCase().contains(q))
+                              .take(6)
+                              .toList();
+                    });
+                  },
                 ),
+                if (_nameSuggestions.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.divider),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _nameSuggestions.length,
+                      itemBuilder: (ctx, i) {
+                        final cat = _nameSuggestions[i];
+                        return ListTile(
+                          dense: true,
+                          leading: cat.images.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    cat.images.first,
+                                    width: 36,
+                                    height: 36,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        const Icon(Icons.agriculture, size: 28),
+                                  ),
+                                )
+                              : const Icon(Icons.agriculture, size: 28),
+                          title: Text(cat.name,
+                              style: AppTextStyles.bodyMedium),
+                          subtitle: Text(cat.category,
+                              style: AppTextStyles.caption),
+                          onTap: () => setState(() {
+                            _nameCtrl.text = cat.name;
+                            _category = _matchCategory(cat.category);
+                            _descCtrl.text = cat.description ?? '';
+                            for (int j = 0;
+                                j < cat.images.length && j < 5;
+                                j++) {
+                              _imageUrlCtrls[j].text = cat.images[j];
+                            }
+                            _nameSuggestions = [];
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
 
                 Text(

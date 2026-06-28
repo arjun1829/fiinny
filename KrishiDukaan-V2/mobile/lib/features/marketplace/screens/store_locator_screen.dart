@@ -358,87 +358,88 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
     required double userLng,
     required bool locationLoading,
   }) {
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: ll.LatLng(userLat, userLng),
-        initialZoom: 12,
-      ),
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.karanarjuntechnologies.krishidukan',
-        ),
-        MarkerLayer(
-          markers: [
-            // User location marker (only show if not using default)
-            if (!locationLoading)
-              Marker(
-                point: ll.LatLng(userLat, userLng),
-                width: 36,
-                height: 36,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.info,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: ll.LatLng(userLat, userLng),
+            initialZoom: 12,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.karanarjuntechnologies.krishidukan',
+            ),
+            MarkerLayer(
+              markers: [
+                // User location marker (only show if not using default)
+                if (!locationLoading)
+                  Marker(
+                    point: ll.LatLng(userLat, userLng),
+                    width: 36,
+                    height: 36,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.info,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.my_location,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-            // Store markers
-            ...stores.where((s) => s.hasLocation).map((s) {
-              final isSelected = s.id == _selectedStoreId;
-              return Marker(
-                point: ll.LatLng(s.lat!, s.lng!),
-                width: isSelected ? 48 : 40,
-                height: isSelected ? 48 : 40,
-                child: GestureDetector(
-                  onTap: () => _selectStore(s, panMap: false),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.secondary,
-                      shape: BoxShape.circle,
-                      border: Border.all(
+                      child: const Icon(
+                        Icons.my_location,
                         color: Colors.white,
-                        width: isSelected ? 3 : 2,
+                        size: 18,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color:
-                              (isSelected
-                                      ? AppColors.primary
-                                      : AppColors.secondary)
-                                  .withValues(alpha: 0.4),
-                          blurRadius: isSelected ? 8 : 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.store,
-                      color: Colors.white,
-                      size: isSelected ? 24 : 18,
                     ),
                   ),
-                ),
-              );
-            }),
+                // Store markers
+                ...stores.where((s) => s.hasLocation).map((s) {
+                  final isSelected = s.id == _selectedStoreId;
+                  return Marker(
+                    point: ll.LatLng(s.lat!, s.lng!),
+                    width: isSelected ? 40 : 28,
+                    height: isSelected ? 40 : 28,
+                    alignment: Alignment.topCenter,
+                    child: GestureDetector(
+                      onTap: () => _selectStore(s, panMap: false),
+                      child: Icon(
+                        Icons.location_on,
+                        color: isSelected ? AppColors.primary : Colors.red,
+                        size: isSelected ? 40 : 28,
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
           ],
+        ),
+        Positioned(
+          bottom: 12,
+          right: 12,
+          child: FloatingActionButton.small(
+            heroTag: 'recenter_map',
+            backgroundColor: Colors.white,
+            foregroundColor: AppColors.primary,
+            onPressed: () {
+              _mapController.move(ll.LatLng(userLat, userLng), 14);
+            },
+            child: const Icon(Icons.my_location),
+          ),
         ),
       ],
     );
@@ -531,37 +532,22 @@ class _MapOverlay extends StatelessWidget {
                         final isSelected = s.id == selectedStoreId;
                         return Marker(
                           point: ll.LatLng(s.lat!, s.lng!),
-                          width: isSelected ? 52 : 42,
-                          height: isSelected ? 52 : 42,
+                          width: isSelected ? 48 : 36,
+                          height: isSelected ? 48 : 36,
+                          alignment: Alignment.topCenter,
                           child: GestureDetector(
                             onTap: () => onMarkerTap(s),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : AppColors.secondary,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: isSelected ? 3 : 2,
+                            child: Icon(
+                              Icons.location_on,
+                              color: isSelected ? AppColors.primary : Colors.red,
+                              size: isSelected ? 48 : 36,
+                              shadows: const [
+                                Shadow(
+                                  color: Colors.black26,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color:
-                                        (isSelected
-                                                ? AppColors.primary
-                                                : AppColors.secondary)
-                                            .withValues(alpha: 0.5),
-                                    blurRadius: isSelected ? 10 : 4,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.store,
-                                color: Colors.white,
-                                size: isSelected ? 26 : 20,
-                              ),
+                              ],
                             ),
                           ),
                         );

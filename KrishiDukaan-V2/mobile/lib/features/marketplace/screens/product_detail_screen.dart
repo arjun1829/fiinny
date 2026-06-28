@@ -113,7 +113,13 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
-                      onTap: () => context.pop(),
+                      onTap: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/');
+                        }
+                      },
                       child: const Icon(
                         Icons.arrow_back,
                         color: Colors.white,
@@ -1320,7 +1326,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               itemBuilder: (_, i) {
                 final p = products[i];
                 return GestureDetector(
-                  onTap: () => context.go('/product/${p.id}'),
+                  onTap: () => context.push('/product/${p.id}'),
                   child: Container(
                     width: 140,
                     decoration: BoxDecoration(

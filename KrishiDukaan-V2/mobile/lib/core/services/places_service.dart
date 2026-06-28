@@ -9,6 +9,7 @@ class PlaceSuggestion {
 
 class PlaceDetails {
   final String name;
+  final String? sublocality;
   final String? city;
   final String? state;
   final String? pincode;
@@ -17,6 +18,7 @@ class PlaceDetails {
   final double? lng;
   const PlaceDetails({
     required this.name,
+    this.sublocality,
     this.city,
     this.state,
     this.pincode,
@@ -88,10 +90,13 @@ class PlacesService {
   }
 
   static PlaceDetails _parseResult(Map<String, dynamic> result) {
-    String? city, state, pincode;
+    String? sublocality, city, state, pincode;
     final components = result['address_components'] as List? ?? [];
     for (final c in components) {
       final types = (c['types'] as List).cast<String>();
+      if (types.contains('sublocality_level_1') || types.contains('sublocality') || types.contains('neighborhood')) {
+        sublocality ??= c['long_name'] as String?;
+      }
       if (types.contains('locality')) city = c['long_name'] as String?;
       if (types.contains('administrative_area_level_1')) {
         state = c['long_name'] as String?;
@@ -105,6 +110,7 @@ class PlacesService {
         : result['formatted_address'] as String? ?? '';
     return PlaceDetails(
       name: name,
+      sublocality: sublocality,
       city: city,
       state: state,
       pincode: pincode,
