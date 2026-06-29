@@ -1031,12 +1031,6 @@ export default function ProductDetailView({
               <ICONS.Share className="w-4 h-4" />
             </button>
 
-            <HelperTooltip side="bottom" textKey="productQualityBadge">
-              <div className="absolute top-14 right-3 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
-                <ICONS.Check className="w-4 h-4" />
-                {t('premiumGrade')}
-              </div>
-            </HelperTooltip>
           </motion.div>
           {galleryImages.length > 1 && (
             <div className="flex gap-3">
@@ -1058,7 +1052,23 @@ export default function ProductDetailView({
           )}
 
           {/* Variant selector — moved directly below the product image/gallery.
-              Selection, variant-switching and price-update logic are unchanged. */}
+              Single-variant: display-only chip showing package size.
+              Multi-variant: interactive selector. Price/variant logic unchanged. */}
+          {productVariants && productVariants.length === 1 && (
+            <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
+              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                {t('packageSizeLabel')}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <div className="rounded-xl border-2 border-primary bg-primary/5 px-4 py-2 text-sm font-bold flex flex-col items-center min-w-[72px]">
+                  <span className="text-on-surface">{productVariants[0].unit}</span>
+                  <span className="text-xs font-extrabold mt-0.5 text-secondary">
+                    ₹{productVariants[0].price.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {productVariants && productVariants.length > 1 && (
             <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
               <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">

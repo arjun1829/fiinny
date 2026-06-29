@@ -2301,6 +2301,9 @@ export async function adminAssignProductToSeller(
     store: sellerName,
     source: 'admin_assigned',
     isActive: true,
+    // New assigned copies always start offline — seller must explicitly enable delivery.
+    sellMode: 'offline_store_only',
+    isOnline: false,
     // Live and in-stock immediately so the product is testable without the
     // seller logging in to set stock/availability themselves.
     stock: 'In Stock',
@@ -2313,7 +2316,7 @@ export async function adminAssignProductToSeller(
       storeName: sellerName,
       stockLevel: 'In Stock',
       sellingPrice: Number(src.price ?? 0),
-      isOnline: src.isOnline === true || src.sellMode === 'online_delivery',
+      isOnline: false,
     }],
     assignedByAdmin: adminUid,
     assignedAt: now,

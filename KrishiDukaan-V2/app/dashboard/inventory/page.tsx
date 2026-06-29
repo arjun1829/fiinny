@@ -213,6 +213,7 @@ export default function InventoryPage() {
   const [profile, setProfile] = useState<any>(null);
   const [role, setRole] = useState<UserRole>("retailer");
   const [accountDeliveryEnabled, setAccountDeliveryEnabled] = useState<boolean | undefined>(undefined);
+  const [accountGstRegistered,   setAccountGstRegistered]   = useState<boolean | undefined>(undefined);
   const [seatStats, setSeatStats] = useState<SeatStats>(DEFAULT_STATS);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -295,6 +296,7 @@ export default function InventoryPage() {
       profileData?.role === "manufacturer" ? "manufacturer" : "retailer";
     setRole(resolvedRole);
     setAccountDeliveryEnabled(!!(profileData as any)?.onlineDelivery);
+    setAccountGstRegistered(!!(profileData as any)?.gstRegistered);
     let rDocId = profileData?.retailerDocId;
 
     (async () => {
@@ -489,6 +491,7 @@ export default function InventoryPage() {
             role={role}
             userId={userId}
             accountDeliveryEnabled={accountDeliveryEnabled}
+            accountGstRegistered={accountGstRegistered}
             rows={rows.filter(r =>
               !search || r.productName.toLowerCase().includes(search.toLowerCase())
             )}
@@ -576,6 +579,7 @@ export default function InventoryPage() {
                 seatStats={seatStats}
                 storeName={profile?.shopName}
                 accountDeliveryEnabled={accountDeliveryEnabled}
+                accountGstRegistered={accountGstRegistered}
               />
               <BulkProductUpload
                 userId={userId}
