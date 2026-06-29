@@ -6,6 +6,7 @@ class ReelModel {
   final String shopName;
   final String? shopProfilePic;
   final String videoUrl;
+  final String? thumbnailUrl;
   final String title;
   final String caption;
   final String? linkedProductId;
@@ -25,6 +26,7 @@ class ReelModel {
     required this.shopName,
     this.shopProfilePic,
     required this.videoUrl,
+    this.thumbnailUrl,
     this.title = '',
     required this.caption,
     this.linkedProductId,
@@ -46,6 +48,7 @@ class ReelModel {
       shopName: data['shopName'] as String? ?? '',
       shopProfilePic: data['shopProfilePic'] as String?,
       videoUrl: data['videoUrl'] as String? ?? '',
+      thumbnailUrl: data['thumbnailUrl'] as String?,
       title: data['title'] as String? ?? '',
       caption: data['caption'] as String? ?? '',
       linkedProductId: data['linkedProductId'] as String?,
@@ -84,6 +87,7 @@ class ReelModel {
         shopName: shopName,
         shopProfilePic: shopProfilePic,
         videoUrl: videoUrl,
+        thumbnailUrl: thumbnailUrl,
         title: title ?? this.title,
         caption: caption ?? this.caption,
         linkedProductId: linkedProductId ?? this.linkedProductId,

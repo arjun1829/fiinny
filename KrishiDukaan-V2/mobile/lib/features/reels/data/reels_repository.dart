@@ -53,15 +53,24 @@ class ReelsRepository {
     return ReelModel.fromFirestore(doc);
   }
 
+  /// Reels linked to a product — most-viewed first, capped at 5.
+  ///
+  /// Deliberately a plain equality query (no composite index needed): a product
+  /// has only a handful of reels, so sorting in memory is cheaper and far more
+  /// robust than depending on a deployed Firestore index. It also avoids the
+  /// orderBy gotcha where docs missing `viewsCount` get silently dropped.
   Future<List<ReelModel>> fetchProductReels(String productId) async {
     final snap = await _db
         .collection('reels')
         .where('linkedProductId', isEqualTo: productId)
-        .orderBy('viewsCount', descending: true)
-        .orderBy('createdAt', descending: true)
-        .limit(5)
+        .limit(50)
         .get();
-    return snap.docs.map(ReelModel.fromFirestore).toList();
+    final reels = snap.docs.map(ReelModel.fromFirestore).toList();
+    reels.sort((a, b) {
+      final byViews = b.viewsCount.compareTo(a.viewsCount);
+      return byViews != 0 ? byViews : b.createdAt.compareTo(a.createdAt);
+    });
+    return reels.take(5).toList();
   }
 
   // ── Comments ──────────────────────────────────────────────────────────────
@@ -276,6 +285,7 @@ class ReelsRepository {
     String? shopProfilePic,
     File? videoFile,
     Uint8List? videoBytes,
+    File? thumbnailFile,
     required String title,
     required String caption,
     String? linkedProductId,
@@ -311,6 +321,15 @@ class ReelsRepository {
     final snapshot = await uploadTask;
     final videoUrl = await snapshot.ref.getDownloadURL();
 
+    // Poster frame (mobile generates it; web reels fall back to a placeholder).
+    String? thumbnailUrl;
+    if (thumbnailFile != null) {
+      final thumbSnap = await _storage
+          .ref('reels/${docRef.id}/thumb.jpg')
+          .putFile(thumbnailFile, SettableMetadata(contentType: 'image/jpeg'));
+      thumbnailUrl = await thumbSnap.ref.getDownloadURL();
+    }
+
     final taggedShopIds = taggedShops.map((t) => t['phone'] as String).toList();
 
     await docRef.set({
@@ -318,6 +337,7 @@ class ReelsRepository {
       'shopName': shopName,
       'shopProfilePic': ?shopProfilePic,
       'videoUrl': videoUrl,
+      'thumbnailUrl': ?thumbnailUrl,
       'title': title,
       'caption': caption,
       'linkedProductId': ?linkedProductId,

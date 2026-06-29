@@ -587,26 +587,30 @@ class _Promo {
   final String title;
   final String subtitle;
   final String cta;
-  final IconData icon;
-  final List<Color> colors;
+  final String image;        // background photo
+  final List<Color> colors;  // brand tint painted over the photo (+ fallback)
   final String route;
 
   const _Promo({
     required this.title,
     required this.subtitle,
     required this.cta,
-    required this.icon,
+    required this.image,
     required this.colors,
     required this.route,
   });
 }
 
+// Banner photos are easy to swap — just change the `image` URL. The `colors`
+// tint keeps the white text readable over any photo and acts as the fallback
+// if the image fails to load.
 const _promos = <_Promo>[
   _Promo(
     title: 'Best prices on\nfertilizers & seeds',
     subtitle: 'Compare nearby stores and save on every order',
     cta: 'Shop deals',
-    icon: Icons.local_offer,
+    image:
+        'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=800&q=80',
     colors: [AppColors.primary, AppColors.primaryLight],
     route: '/marketplace',
   ),
@@ -614,7 +618,8 @@ const _promos = <_Promo>[
     title: '100% genuine\nagri products',
     subtitle: 'Verified sellers, premium-grade inputs for your farm',
     cta: 'Browse catalog',
-    icon: Icons.verified,
+    image:
+        'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=800&q=80',
     colors: [Color(0xFF0E7490), Color(0xFF22D3EE)],
     route: '/marketplace',
   ),
@@ -622,7 +627,8 @@ const _promos = <_Promo>[
     title: 'Find a trusted\nstore near you',
     subtitle: 'Locate krishi stores around your village',
     cta: 'Open store locator',
-    icon: Icons.storefront,
+    image:
+        'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=800&q=80',
     colors: [Color(0xFFB45309), Color(0xFFF59E0B)],
     route: '/stores',
   ),
@@ -708,11 +714,8 @@ class _PromoCard extends StatelessWidget {
         onTap: () => context.go(promo.route),
         child: Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: promo.colors,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            // Solid base = fallback colour shown while/if the photo can't load.
+            color: promo.colors.first,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
@@ -722,75 +725,101 @@ class _PromoCard extends StatelessWidget {
               ),
             ],
           ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -12,
-                bottom: -12,
-                child: Icon(
-                  promo.icon,
-                  size: 120,
-                  color: Colors.white.withValues(alpha: 0.12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Real photo background
+                CachedNetworkImage(
+                  imageUrl: resolveImageUrl(promo.image),
+                  fit: BoxFit.cover,
+                  memCacheWidth: 800,
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  placeholder: (_, _) => _tintGradient(),
+                  errorWidget: (_, _, _) => _tintGradient(),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      promo.title,
-                      style: AppTextStyles.heading2.copyWith(
-                        color: Colors.white,
-                        height: 1.15,
-                        fontSize: 20,
+                // Brand-coloured tint so the white text stays readable over
+                // any photo (strongest on the left where the text sits).
+                _tintGradient(),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        promo.title,
+                        style: AppTextStyles.heading2.copyWith(
+                          color: Colors.white,
+                          height: 1.15,
+                          fontSize: 20,
+                          shadows: const [
+                            Shadow(color: Colors.black45, blurRadius: 6),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      promo.subtitle,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.white.withValues(alpha: 0.9),
+                      const SizedBox(height: 6),
+                      Text(
+                        promo.subtitle,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          shadows: const [
+                            Shadow(color: Colors.black38, blurRadius: 5),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            promo.cta,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.onSurface,
-                              fontWeight: FontWeight.w800,
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              promo.cta,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.onSurface,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward,
-                              size: 14, color: AppColors.onSurface),
-                        ],
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_forward,
+                                size: 14, color: AppColors.onSurface),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _tintGradient() => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              promo.colors.first.withValues(alpha: 0.92),
+              promo.colors.last.withValues(alpha: 0.45),
+            ],
+          ),
+        ),
+      );
 }
 
 // ─────────────────────────── Benefits strip ────────────────────────────────

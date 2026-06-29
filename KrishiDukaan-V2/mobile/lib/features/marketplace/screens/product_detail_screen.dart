@@ -9,6 +9,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/brand_model.dart';
 import '../../../core/models/listing_model.dart';
+import '../../../core/models/reel_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/providers/cart_provider.dart';
 import '../../../core/models/cart_model.dart';
@@ -1256,6 +1257,33 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
   // ─────────────────────────── Similar products ──────────────────────────────
 
+  /// Reel poster: the generated video frame if present, else the linked
+  /// product image, else a branded gradient. Lets old reels (no stored frame)
+  /// still look like a video via the product image they were linked to.
+  Widget _reelThumbnail(ReelModel reel) {
+    final thumb = (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty)
+        ? reel.thumbnailUrl!
+        : (reel.linkedProductImageUrl ?? '');
+    if (thumb.isEmpty) return _reelGradient();
+    return CachedNetworkImage(
+      imageUrl: thumb,
+      fit: BoxFit.cover,
+      memCacheWidth: 300,
+      placeholder: (_, _) => _reelGradient(),
+      errorWidget: (_, _, _) => _reelGradient(),
+    );
+  }
+
+  Widget _reelGradient() => const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppColors.primaryDark, AppColors.primary],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
+
   Widget _buildReelsSection(String catalogId) {
     final reelsAsync = ref.watch(productReelsProvider(catalogId));
     return reelsAsync.when(
@@ -1294,49 +1322,82 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         ),
                       );
                     },
-                    child: Container(
-                      width: 110,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        gradient: const LinearGradient(
-                          colors: [AppColors.primaryDark, AppColors.primary],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          const Center(
-                            child: Icon(Icons.play_circle_outline_rounded,
-                                color: Colors.white54, size: 36),
-                          ),
-                          Positioned(
-                            left: 6,
-                            right: 6,
-                            bottom: 6,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.play_arrow_rounded, color: Colors.white60, size: 12),
-                                    const SizedBox(width: 2),
-                                    Text('${reel.viewsCount}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 110,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Poster frame (or linked product image) so the
+                            // card reads as a video, not a coloured box.
+                            _reelThumbnail(reel),
+                            // Legibility scrim under the play button + labels.
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black26,
+                                    Colors.transparent,
+                                    Colors.black54,
                                   ],
+                                  stops: [0.0, 0.5, 1.0],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '@${reel.shopName}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                            // Center play button — clearly a tappable video.
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.play_arrow_rounded,
+                                    color: Colors.white, size: 26),
+                              ),
+                            ),
+                            Positioned(
+                              left: 6,
+                              right: 6,
+                              bottom: 6,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.play_arrow_rounded,
+                                          color: Colors.white70, size: 12),
+                                      const SizedBox(width: 2),
+                                      Text('${reel.viewsCount}',
+                                          style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '@${reel.shopName}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        shadows: [
+                                          Shadow(
+                                              color: Colors.black54,
+                                              blurRadius: 4)
+                                        ]),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
