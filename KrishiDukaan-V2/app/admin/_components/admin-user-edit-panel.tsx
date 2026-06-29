@@ -62,7 +62,8 @@ function extractAddressFields(place: any): Partial<ProfileForm> {
 async function uploadImage(file: File, prefix: string): Promise<string> {
   const toUpload = await compressImage(file);
   const path = `${prefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), toUpload);
+  const contentType = toUpload.type || file.type || "image/jpeg";
+  const snap = await uploadBytes(storageRef(storage, path), toUpload, { contentType });
   return getDownloadURL(snap.ref);
 }
 
@@ -308,13 +309,15 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
     if (!file.type.startsWith("image/")) return;
     setUploadingLogo(true);
     try { const url = await uploadImage(file, "profile-images/logos"); setForm(p => ({ ...p, logoUrl: url })); }
-    catch { /* silent */ } finally { setUploadingLogo(false); }
+    catch (e) { setSaveMsg({ ok: false, text: e instanceof Error ? e.message : "Logo upload failed. Please try again." }); }
+    finally { setUploadingLogo(false); }
   };
   const handleBannerFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
     setUploadingBanner(true);
     try { const url = await uploadImage(file, "profile-images/banners"); setForm(p => ({ ...p, bannerUrl: url })); }
-    catch { /* silent */ } finally { setUploadingBanner(false); }
+    catch (e) { setSaveMsg({ ok: false, text: e instanceof Error ? e.message : "Banner upload failed. Please try again." }); }
+    finally { setUploadingBanner(false); }
   };
 
   // ── Role conversion ────────────────────────────────────────────────────────

@@ -33,6 +33,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   int _selectedVariantIdx = 0;
   int _activeImageIdx = 0;
 
+  // Sellers are nearest-first; only the closest few are shown until the
+  // shopper taps "Show all". Keeps long seller lists from dominating the page.
+  static const _kStorePreviewLimit = 5;
+  bool _showAllStores = false;
+
   @override
   Widget build(BuildContext context) {
     final catalogAsync = ref.watch(catalogDetailProvider(widget.catalogId));
@@ -99,6 +104,24 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 pinned: true,
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
+                // Explicit back button with a dark scrim so it stays visible
+                // over any product image colour (white images hide a bare arrow).
+                leading: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => context.pop(),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
                 flexibleSpace: FlexibleSpaceBar(
                   background: _buildHeroImage(catalog),
                 ),
@@ -794,27 +817,68 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                 return const _EmptyListings();
               }
               final sellerDiscounts = catalog.sellerDiscounts;
+              final total = listings.length;
+              final hasMore = total > _kStorePreviewLimit;
+              final visible = (hasMore && !_showAllStores)
+                  ? listings.take(_kStorePreviewLimit).toList()
+                  : listings;
               return Column(
-                children: listings
-                    .map(
-                      (listing) => _SellerTile(
-                        listing: listing,
-                        catalogId: catalog.id,
-                        catalogName: catalog.name,
-                        catalogImage: catalog.imageUrl,
-                        displayPrice: displayPrice,
-                        // Match the store by phone first (reliable) then storeId.
-                        sellerDiscountPct:
-                            sellerDiscounts[listing.sellerPhone] ??
-                            sellerDiscounts[listing.id] ??
-                            0.0,
-                      ),
-                    )
-                    .toList(),
+                children: [
+                  ...visible.map(
+                    (listing) => _SellerTile(
+                      listing: listing,
+                      catalogId: catalog.id,
+                      catalogName: catalog.name,
+                      catalogImage: catalog.imageUrl,
+                      displayPrice: displayPrice,
+                      // Match the store by phone first (reliable) then storeId.
+                      sellerDiscountPct:
+                          sellerDiscounts[listing.sellerPhone] ??
+                          sellerDiscounts[listing.id] ??
+                          0.0,
+                    ),
+                  ),
+                  if (hasMore) _buildStoresToggle(total),
+                ],
               );
             },
           ),
         ],
+      ),
+    );
+  }
+
+  /// "Show all N stores" / "Show less" toggle shown when more sellers exist
+  /// than the preview limit.
+  Widget _buildStoresToggle(int total) {
+    final hidden = total - _kStorePreviewLimit;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => setState(() => _showAllStores = !_showAllStores),
+          icon: Icon(
+            _showAllStores ? Icons.expand_less : Icons.expand_more,
+            size: 18,
+          ),
+          label: Text(
+            _showAllStores
+                ? 'Show less'
+                : 'Show all $total stores (+$hidden more)',
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            side: const BorderSide(color: AppColors.primary),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -7,12 +7,13 @@ import { calcDiscount } from '../utils/discount';
 import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
 import type { BulkDiscountTier } from '../dashboard/_types/inventory';
 import { Tag, Layers } from 'lucide-react';
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
+import { StatusToast } from '../components/shared/status-toast';
 import {
   fetchRetailerPublicProfile,
   fetchRetailerProductSummaries,
@@ -523,21 +524,80 @@ export default function ProductDetailView({
   onBuyNow,
 }: ProductDetailViewProps) {
   const { t } = useI18n();
-  const product = products.find(p => p.id === productId) || products[0];
+
+  // Try to find the product in the already-fetched list first (fast path).
+  // If not found — e.g. the user deep-linked to a secondary doc ID that was
+  // deduplicated during the merge — fetch it directly from Firestore so we
+  // still get the full doc with manufacturerId, manufacturerPhone, etc.
+  const inMemoryProduct = productId ? products.find(p => p.id === productId) : null;
+  const [fetchedProduct, setFetchedProduct] = useState<MarketplaceProduct | null>(null);
+  const [productLoading, setProductLoading] = useState(false);
+
+  useEffect(() => {
+    if (!productId || inMemoryProduct) {
+      setFetchedProduct(null);
+      return;
+    }
+    let cancelled = false;
+    setProductLoading(true);
+    getDoc(doc(db, 'products', productId))
+      .then((snap) => {
+        if (cancelled || !snap.exists()) return;
+        const d = snap.data() as Record<string, unknown>;
+        const imgs: string[] = Array.isArray(d.images)
+          ? (d.images as string[])
+          : d.image
+          ? [String(d.image)]
+          : [];
+        setFetchedProduct({
+          id: snap.id,
+          name: String(d.name ?? ''),
+          price: Number(d.price ?? 0),
+          category: String(d.category ?? 'general'),
+          description: String(d.description ?? ''),
+          image: imgs[0] ?? '',
+          images: imgs,
+          stock: String(d.stock ?? 'In Stock'),
+          store: String(d.store ?? 'Local Store'),
+          distance: String(d.distance ?? 'Nearby'),
+          manufacturerId: d.manufacturerId ? String(d.manufacturerId) : undefined,
+          manufacturerPhone: d.manufacturerPhone ? String(d.manufacturerPhone) : undefined,
+          retailerId: d.retailerId ? String(d.retailerId) : undefined,
+          retailerPhone: d.retailerPhone ? String(d.retailerPhone) : undefined,
+          ownerId: d.ownerId ? String(d.ownerId) : undefined,
+          source: d.source ? String(d.source) : undefined,
+          sellMode: d.sellMode === 'offline_store_only' ? 'offline_store_only' : 'online_delivery',
+          isOnline: d.sellMode !== 'offline_store_only',
+          availability: Array.isArray(d.availability) ? (d.availability as any) : undefined,
+          variants: Array.isArray(d.variants) ? (d.variants as any) : undefined,
+          effectiveDiscountPct: 0,
+          maxDiscountPct: 0,
+          gstApplicable: d.gstApplicable === true,
+          categoryInfo: (d.categoryInfo && typeof d.categoryInfo === 'object' && !Array.isArray(d.categoryInfo))
+            ? d.categoryInfo as Record<string, string | string[]>
+            : undefined,
+          composition: Array.isArray(d.composition) ? (d.composition as any) : undefined,
+          customFields: Array.isArray(d.customFields) ? (d.customFields as any) : undefined,
+        } as MarketplaceProduct);
+      })
+      .catch(() => { /* silently ignore — product may not exist */ })
+      .finally(() => { if (!cancelled) setProductLoading(false); });
+    return () => { cancelled = true; };
+  }, [productId, inMemoryProduct]);
+
+  const product = inMemoryProduct ?? fetchedProduct ?? products[0];
+
+  // All hooks must be declared before any early returns (Rules of Hooks)
   const [expandedStoreId, setExpandedStoreId] = useState<string | null>(null);
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
   const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
-
-  // Variant selection — default to the first variant (or the product itself if no variants)
-  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
-  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
-  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
-  const displayStock = selectedVariant?.stock;
-  // Live store ratings keyed by phone — reflects new reviews instantly without a full refetch.
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const [activeImage, setActiveImage] = useState<string>('');
+  const [shareToast, setShareToast] = useState<string | null>(null);
+
   const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
     setLiveStoreRatings((prev) => {
       const cur = prev[phone];
@@ -546,11 +606,64 @@ export default function ProductDetailView({
     });
   }, []);
 
+  const handleShare = useCallback(async () => {
+    const productUrl = `https://krishidukan.com/?view=product&product=${product.id}`;
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: product.name, text: product.name, url: productUrl });
+        return;
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        // fall through to clipboard
+      }
+    }
+
+    // Try modern Clipboard API first, then execCommand as universal fallback
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(productUrl);
+      copied = true;
+    } catch {
+      // execCommand works without clipboard permission on all mobile browsers
+      try {
+        const el = document.createElement("textarea");
+        el.value = productUrl;
+        el.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(el);
+      } catch {
+        copied = false;
+      }
+    }
+
+    setShareToast(copied ? "Product link copied to clipboard." : `Share: ${productUrl}`);
+  }, [product]);
+
+  if (productLoading && !inMemoryProduct) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-on-surface-variant">Loading product…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Variant selection — default to the first variant (or the product itself if no variants)
+  const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
+  const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
+  const displayPrice = selectedVariant ? selectedVariant.price : product.price;
+  const displayStock = selectedVariant?.stock;
+
   // Gallery: use product.images if available, else fall back to product.image alone
   const galleryImages = (product.images && product.images.length > 0)
     ? product.images.slice(0, 5)
     : [product.image];
-  const [activeImage, setActiveImage] = useState(galleryImages[0]);
 
   useEffect(() => {
     if (product && product.id) {
@@ -908,8 +1021,18 @@ export default function ProductDetailView({
               );
             })()}
 
+            {/* Share icon — top-right corner, Amazon-style */}
+            <button
+              type="button"
+              onClick={handleShare}
+              aria-label="Share product"
+              className="absolute top-3 right-3 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-white/80 backdrop-blur-md shadow-md text-on-surface hover:bg-white hover:scale-105 active:scale-95 transition-all"
+            >
+              <ICONS.Share className="w-4 h-4" />
+            </button>
+
             <HelperTooltip side="bottom" textKey="productQualityBadge">
-              <div className="absolute top-6 right-6 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
+              <div className="absolute top-14 right-3 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
                 <ICONS.Check className="w-4 h-4" />
                 {t('premiumGrade')}
               </div>
@@ -1522,27 +1645,28 @@ export default function ProductDetailView({
         </section>
       )}
 
-      {/* Product Info — renders from categoryInfo (new) or legacy flat fields */}
+      {/* Product Info — category fields + custom fields, merged into one section */}
       {(() => {
-        // Resolve the effective category info using the backward-compat helper
         const rawData = product as unknown as Record<string, unknown>;
         const ci = product.categoryInfo && Object.keys(product.categoryInfo).length > 0
           ? product.categoryInfo
           : effectiveCategoryInfo(rawData);
 
-        if (!ci || Object.keys(ci).length === 0) return null;
-
-        // Find the field schema for this product's category
         const cat = product.category?.trim() || "";
         const activeCat: ProductCategory = isStandardCategory(cat) ? cat : "Other";
         const fields = CATEGORY_FIELDS[activeCat];
-        // Only show fields that have data
-        const filledFields = fields.filter(({ key }) => {
-          const v = ci[key];
-          return Array.isArray(v) ? v.length > 0 : !!(v as string)?.trim();
-        });
+        const filledFields = ci
+          ? fields.filter(({ key }) => {
+              const v = ci[key];
+              return Array.isArray(v) ? v.length > 0 : !!(v as string)?.trim();
+            })
+          : [];
 
-        if (!filledFields.length) return null;
+        const customFields = (
+          (product as any).customFields as { title: string; value: string }[] | undefined
+        )?.filter(f => f.title?.trim()) ?? [];
+
+        if (filledFields.length === 0 && customFields.length === 0) return null;
 
         return (
           <section>
@@ -1551,12 +1675,14 @@ export default function ProductDetailView({
               <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
             </div>
             <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
-              <div className="px-6 pt-5 pb-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary">{t('categoryInfoLabel', { category: activeCat })}</span>
-              </div>
+              {filledFields.length > 0 && (
+                <div className="px-6 pt-5 pb-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">{t('categoryInfoLabel', { category: activeCat })}</span>
+                </div>
+              )}
               <div className="divide-y divide-surface-container">
                 {filledFields.map(({ key, label, type }) => {
-                  const val = ci[key];
+                  const val = ci![key];
                   const isChips = CHIPS_FIELDS.has(key) || Array.isArray(val);
                   const isEmpty = Array.isArray(val) ? val.length === 0 : !(val as string)?.trim();
                   if (isEmpty) return null;
@@ -1579,6 +1705,12 @@ export default function ProductDetailView({
                     </div>
                   );
                 })}
+                {customFields.map((f, i) => (
+                  <div key={`cf-${i}`} className="px-6 py-4">
+                    <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">{f.title}</p>
+                    <p className="text-sm font-bold text-on-surface">{f.value}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </section>
@@ -1687,6 +1819,12 @@ export default function ProductDetailView({
       {product.id && (
         <ReviewSection targetId={product.id} targetType="product" />
       )}
+
+      <StatusToast
+        message={shareToast}
+        type="success"
+        onDismiss={() => setShareToast(null)}
+      />
     </div>
   );
 }

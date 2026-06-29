@@ -1,16 +1,13 @@
 flutter_native_splash:
-  # Full-screen green background — matches AppColors.primary
+  # Solid green — matches the Flutter SplashScreen gradient start color.
+  # No image here so the native splash fades seamlessly into the Flutter
+  # animated splash without a jarring logo jump.
   color: "#2E7D32"
   color_dark: "#1B5E20"
 
-  image: assets/icons/app_icon.png
-  image_dark: assets/icons/app_icon.png
-
   android_12:
-    image: assets/icons/app_icon.png
     color: "#2E7D32"
     color_dark: "#1B5E20"
-    icon_background_color: "#2E7D32"
 
   web: false
   ios: false

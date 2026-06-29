@@ -14,6 +14,7 @@ import {
   type ProductCategory, effectiveCategoryInfo,
 } from "../_lib/category-info";
 import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
+import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -439,6 +440,9 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [composition, setComposition] = useState<CompositionEntry[]>(
     Array.isArray((row as any).composition) ? (row as any).composition : [],
   );
+  const [customFields, setCustomFields] = useState<CustomFieldEntry[]>(
+    Array.isArray(row.customFields) ? row.customFields : [],
+  );
 
   // Category-specific info — initialise from categoryInfo or fall back to legacy flat fields
   const [categoryInfo, setCategoryInfo] = useState<Record<string, string>>(() => {
@@ -550,6 +554,7 @@ export function EditProductModal({ row, onClose, onSaved }: {
         images: imageUrls,
         videoUrl: videoUrl.trim() || undefined,
         composition: composition.filter(e => e.name.trim()),
+        customFields: customFields.filter(e => e.title.trim()),
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
         gstApplicable,
         gstRate: gstApplicable ? gstRate : 0,
@@ -714,6 +719,16 @@ export function EditProductModal({ row, onClose, onSaved }: {
               <CompositionEditor entries={composition} onChange={setComposition} disabled={saving} />
             </div>
           )}
+
+          {/* ── Custom Additional Fields ──────────────────────────────────── */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Plus className="h-4 w-4 text-primary" /> Additional Information
+              <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+            </div>
+            <p className="text-xs text-on-surface-variant">Add extra details that don't fit the standard fields — e.g. Yield Potential, Shelf Life, Certifications.</p>
+            <CustomFieldsEditor entries={customFields} onChange={setCustomFields} disabled={saving} />
+          </div>
 
           {/* ── Variants ──────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">

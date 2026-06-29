@@ -74,4 +74,5 @@ export const COMPOSITION_CATEGORIES = new Set([
   "Pesticides",
   "Herbicides",
   "Bio-Stimulants",
+  "Seeds",
 ]);

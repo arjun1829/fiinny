@@ -28,4 +28,10 @@ class AppConfig {
   static const defaultLng = 73.8567;
 
   static const firestorePageSize = 20;
+
+  // Customer support contact channels (shared with the website).
+  static const supportEmail = 'support@krishidukan.com';
+  static const supportPhone = '+918658032751';
+  // Digits only (no '+') for the WhatsApp deep link.
+  static const supportWhatsApp = '918658032751';
 }

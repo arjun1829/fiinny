@@ -28,12 +28,15 @@ class ProductCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: hasOffer ? Border.all(color: const Color(0xFF86EFAC)) : null,
+          border: hasOffer 
+              ? Border.all(color: const Color(0xFF86EFAC), width: 1.5)
+              : Border.all(color: AppColors.divider.withValues(alpha: 0.6)),
           boxShadow: [
             BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 16,
+              spreadRadius: 4,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -51,9 +54,13 @@ class ProductCard extends StatelessWidget {
                       ),
                       child: product.hasImages
                           ? CachedNetworkImage(
-                              memCacheWidth: 1000,
+                              // Resizing the image in memory significantly speeds up decoding and
+                              // makes scrolling the grid buttery smooth. 400px is plenty for a grid card.
+                              memCacheWidth: 400,
+                              maxWidthDiskCache: 600,
                               imageUrl: product.imageUrl,
                               fit: BoxFit.contain,
+                              fadeInDuration: const Duration(milliseconds: 250),
                               placeholder: (_, _) => Container(
                                 color: AppColors.surfaceVariant,
                                 child: const Center(

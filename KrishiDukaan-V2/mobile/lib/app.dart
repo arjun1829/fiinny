@@ -24,7 +24,10 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     ref.listenManual(currentUserProvider, (_, next) {
       final user = next.value;
       if (!kIsWeb && user != null && user.phone.isNotEmpty) {
-        NotificationService().initialize(user.phone);
+        NotificationService().initialize(
+          user.phone,
+          router: ref.read(routerProvider),
+        );
       }
     });
   }

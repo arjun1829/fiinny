@@ -11,8 +11,10 @@ import '../../../core/providers/location_provider.dart' as loc;
 import '../../../core/models/store_model.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_top_bar.dart';
+import '../../../core/utils/geo_utils.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
+import '../widgets/store_detail_sheet.dart';
 
 void _showFullStoreImage(BuildContext context, String imageUrl) {
   showDialog(
@@ -117,7 +119,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final storesAsync = ref.watch(storesListProvider);
+    final storesAsync = ref.watch(storesByDistanceProvider);
     final locationAsync = ref.watch(loc.locationProvider);
 
     // Always use a usable center — don't block on location
@@ -306,6 +308,21 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                     context: context,
                                     ref: ref,
                                     store: store,
+                                  );
+                                },
+                                onDetails: () {
+                                  showStoreDetailSheet(
+                                    context: context,
+                                    ref: ref,
+                                    store: store,
+                                    onCall:
+                                        store.phone != null &&
+                                            store.phone!.isNotEmpty
+                                        ? () => _callStore(store.phone!)
+                                        : null,
+                                    onNavigate: store.hasLocation
+                                        ? () => _navigate(store)
+                                        : null,
                                   );
                                 },
                               );
@@ -682,6 +699,7 @@ class _StoreCard extends StatelessWidget {
   final VoidCallback? onCall;
   final VoidCallback? onNavigate;
   final VoidCallback onReviewsTap;
+  final VoidCallback onDetails;
 
   const _StoreCard({
     super.key,
@@ -692,6 +710,7 @@ class _StoreCard extends StatelessWidget {
     this.onCall,
     this.onNavigate,
     required this.onReviewsTap,
+    required this.onDetails,
   });
 
   @override
@@ -792,10 +811,27 @@ class _StoreCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                          if (store.averageRating != null &&
-                              store.averageRating! > 0)
-                            Row(
-                              children: [
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (store.distanceKm != null) ...[
+                                const Icon(
+                                  Icons.near_me,
+                                  color: AppColors.primary,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  GeoUtils.formatDistance(store.distanceKm!),
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (store.averageRating != null &&
+                                  store.averageRating! > 0) ...[
                                 const Icon(
                                   Icons.star,
                                   color: Colors.orange,
@@ -810,12 +846,36 @@ class _StoreCard extends StatelessWidget {
                                 ),
                                 if (store.totalReviews != null)
                                   Text(
-                                    '  (${store.totalReviews})',
+                                    ' (${store.totalReviews})',
                                     style: AppTextStyles.caption.copyWith(
                                       color: AppColors.onSurfaceVariant,
                                     ),
                                   ),
                               ],
+                            ],
+                          ),
+                          if (store.isManufacturer)
+                            Container(
+                              margin: const EdgeInsets.only(top: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.secondary.withValues(
+                                  alpha: 0.15,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'BRAND / MANUFACTURER',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.secondary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 9,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
                             ),
                         ],
                       ),
@@ -957,6 +1017,43 @@ class _StoreCard extends StatelessWidget {
                         ),
                       ],
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: onDetails,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.info_outline,
+                            size: 14,
+                            color: AppColors.onSurface,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            store.isManufacturer
+                                ? 'View details & brand page'
+                                : 'View store details',
+                            style: AppTextStyles.caption.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 16,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ],

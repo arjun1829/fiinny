@@ -10,6 +10,7 @@ import {
   type ProductCategory, effectiveCategoryInfo,
 } from "../_lib/category-info";
 import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
+import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
@@ -139,6 +140,7 @@ type AdminProductPayload = {
   editProductId: string | null;
   videoUrl?: string;
   composition?: { name: string; value: string }[];
+  customFields?: { title: string; value: string }[];
 };
 
 type AddProductInventoryFormProps = {
@@ -498,6 +500,9 @@ export function AddProductInventoryForm({
   // Composition
   const [composition, setComposition] = useState<CompositionEntry[]>([]);
 
+  // Custom additional fields
+  const [customFields, setCustomFields] = useState<CustomFieldEntry[]>([]);
+
   // Search state
   const [suggestions,   setSuggestions]   = useState<SearchResult[]>([]);
   const [searching,     setSearching]     = useState(false);
@@ -548,6 +553,7 @@ export function AddProductInventoryForm({
     setSellMode(p.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery");
     setVideoUrl((p as any).videoUrl ?? "");
     setComposition(Array.isArray((p as any).composition) ? (p as any).composition : []);
+    setCustomFields(Array.isArray((p as any).customFields) ? (p as any).customFields : []);
     const ci = effectiveCategoryInfo(p as Record<string, unknown>);
     if (ci) {
       const flat: Record<string, string> = {};
@@ -742,6 +748,7 @@ export function AddProductInventoryForm({
           editProductId: initialProduct?.id ?? null,
           videoUrl: videoUrl.trim() || undefined,
           composition: composition.filter(e => e.name.trim()) as any,
+          customFields: customFields.filter(e => e.title.trim()),
         };
         if (onAdminSave) {
           await onAdminSave(adminPayload);
@@ -756,7 +763,7 @@ export function AddProductInventoryForm({
           setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
           setCategoryInfo({}); setShowAdditionalData(false);
           setGstApplicable(false); setGstRate(0); setSellMode("online_delivery");
-          setVariants([newVariant()]); setImages([newSlot()]);
+          setVariants([newVariant()]); setImages([newSlot()]); setCustomFields([]);
         }
         await onCreated();
         return;
@@ -773,6 +780,7 @@ export function AddProductInventoryForm({
           images: imageUrls,
           videoUrl: videoUrl.trim() || undefined,
           composition: composition.filter(e => e.name.trim()),
+          customFields: customFields.filter(e => e.title.trim()),
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable,
           gstRate: gstApplicable ? gstRate : 0,
@@ -791,6 +799,7 @@ export function AddProductInventoryForm({
           sellMode,
           existingProductId: existingProductId ?? undefined,
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
+          customFields: customFields.filter(e => e.title.trim()),
           gstApplicable,
           gstRate: gstApplicable ? gstRate : 0,
         });
@@ -1000,6 +1009,16 @@ export function AddProductInventoryForm({
             <CompositionEditor entries={composition} onChange={setComposition} disabled={isDisabled} />
           </div>
         )}
+
+        {/* ── Custom Additional Fields ──────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Plus className="h-4 w-4 text-primary" /> Additional Information
+            <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+          </div>
+          <p className="text-xs text-on-surface-variant -mt-1">Add any extra product details that don't fit the standard fields above — e.g. Yield Potential, Shelf Life, Certifications.</p>
+          <CustomFieldsEditor entries={customFields} onChange={setCustomFields} disabled={isDisabled} />
+        </div>
 
         {/* ── Section 2: Pack sizes & prices ────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">

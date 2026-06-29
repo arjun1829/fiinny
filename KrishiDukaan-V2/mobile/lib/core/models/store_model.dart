@@ -15,8 +15,14 @@ class StoreModel {
   final String? city;
   final String? state;
   final String? pincode;
+  // 'retailer' | 'manufacturer' | '' — drives the "Visit Brand Page" action.
+  final String role;
 
-  const StoreModel({
+  // Distance from the user in km. Set client-side after a Haversine calc;
+  // null when either the store or the user has no usable location.
+  double? distanceKm;
+
+  StoreModel({
     required this.id,
     required this.name,
     this.ownerName,
@@ -31,7 +37,19 @@ class StoreModel {
     this.city,
     this.state,
     this.pincode,
+    this.role = '',
+    this.distanceKm,
   });
 
   bool get hasLocation => lat != null && lng != null && lat != 0.0 && lng != 0.0;
+
+  bool get isManufacturer => role == 'manufacturer';
+
+  /// Full address line built from the parts we have, deduped of empties.
+  String get fullAddress => [
+        address,
+        city,
+        state,
+        pincode,
+      ].where((s) => s != null && s.trim().isNotEmpty).join(', ');
 }
