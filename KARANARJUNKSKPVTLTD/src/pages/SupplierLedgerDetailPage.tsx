@@ -471,9 +471,10 @@ export default function SupplierLedgerDetailPage() {
         <button onClick={() => navigate('/supplier-ledger')} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <ArrowLeft size={15} /> Back
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0 }} /> {supplier.name}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'flex-start', gap: '0.5rem', lineHeight: 1.25 }}>
+            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0, marginTop: '0.15rem' }} />
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{supplier.name}</span>
           </h1>
         </div>
         <button className="btn btn-secondary" onClick={() => setEditMode(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
