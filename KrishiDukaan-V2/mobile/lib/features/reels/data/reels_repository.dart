@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/reel_comment_model.dart';
 
+
 class ReelsRepository {
   final _db = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
@@ -50,6 +51,17 @@ class ReelsRepository {
     final doc = await _db.collection('reels').doc(reelId).get();
     if (!doc.exists) return null;
     return ReelModel.fromFirestore(doc);
+  }
+
+  Future<List<ReelModel>> fetchProductReels(String productId) async {
+    final snap = await _db
+        .collection('reels')
+        .where('linkedProductId', isEqualTo: productId)
+        .orderBy('viewsCount', descending: true)
+        .orderBy('createdAt', descending: true)
+        .limit(5)
+        .get();
+    return snap.docs.map(ReelModel.fromFirestore).toList();
   }
 
   // ── Comments ──────────────────────────────────────────────────────────────

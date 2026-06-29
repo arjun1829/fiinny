@@ -19,6 +19,9 @@ import '../../../core/widgets/expandable_text.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
 import '../widgets/store_selector_sheet.dart';
+import '../../reels/providers/reels_provider.dart';
+import '../../reels/screens/shop_profile_screen.dart';
+import '../../../core/providers/user_provider.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String catalogId;
@@ -194,6 +197,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     ],
 
                     const Divider(height: 1, thickness: 1),
+
+                    _buildReelsSection(widget.catalogId),
 
                     // ── Similar Products ────────────────────────────────────
                     if (similarProducts.isNotEmpty)
@@ -448,34 +453,6 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ),
             ),
           ),
-        // Premium badge
-        Positioned(
-          top: 60,
-          right: 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.verified, size: 12, color: AppColors.primary),
-                SizedBox(width: 4),
-                Text(
-                  'Premium Grade',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onPrimaryContainer,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1278,6 +1255,103 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 
   // ─────────────────────────── Similar products ──────────────────────────────
+
+  Widget _buildReelsSection(String catalogId) {
+    final reelsAsync = ref.watch(productReelsProvider(catalogId));
+    return reelsAsync.when(
+      data: (reels) {
+        if (reels.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: Text('Product Reels', style: AppTextStyles.heading3),
+            ),
+            SizedBox(
+              height: 180,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: reels.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final reel = reels[index];
+                  return GestureDetector(
+                    onTap: () {
+                      final user = ref.read(currentUserProvider).value;
+                      Navigator.of(context, rootNavigator: true).push(
+                        MaterialPageRoute(
+                          fullscreenDialog: true,
+                          builder: (_) => ProviderScope(
+                            child: StandaloneReelsFeed(
+                              reels: reels,
+                              initialIndex: index,
+                              currentUserId: user?.phone,
+                              currentUserName: user?.businessName ?? user?.name ?? '',
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 110,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: const LinearGradient(
+                          colors: [AppColors.primaryDark, AppColors.primary],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const Center(
+                            child: Icon(Icons.play_circle_outline_rounded,
+                                color: Colors.white54, size: 36),
+                          ),
+                          Positioned(
+                            left: 6,
+                            right: 6,
+                            bottom: 6,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.play_arrow_rounded, color: Colors.white60, size: 12),
+                                    const SizedBox(width: 2),
+                                    Text('${reel.viewsCount}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '@${reel.shopName}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1, thickness: 1),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
 
   Widget _buildSimilarProducts(List<CatalogModel> products) {
     return Padding(

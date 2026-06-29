@@ -226,6 +226,18 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                           ),
                           const Spacer(),
                           IconButton(
+                            icon: const Icon(Icons.search_rounded,
+                                color: Colors.white),
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => const _ShopSearchSheet(),
+                              );
+                            },
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.refresh_rounded,
                                 color: Colors.white70),
                             onPressed: () {
@@ -1157,6 +1169,131 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Shop Search Sheet ────────────────────────────────────────────────────────
+
+class _ShopSearchSheet extends ConsumerStatefulWidget {
+  const _ShopSearchSheet();
+
+  @override
+  ConsumerState<_ShopSearchSheet> createState() => _ShopSearchSheetState();
+}
+
+class _ShopSearchSheetState extends ConsumerState<_ShopSearchSheet> {
+  final _searchController = TextEditingController();
+  bool _isLoading = false;
+  List<Map<String, dynamic>> _results = [];
+
+  Future<void> _search(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _results = [];
+      });
+      return;
+    }
+    setState(() => _isLoading = true);
+    final results = await ref.read(reelsRepoProvider).searchShops(query);
+    if (mounted) {
+      setState(() {
+        _results = results;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          TextField(
+            controller: _searchController,
+            autofocus: true,
+            onChanged: _search,
+            decoration: InputDecoration(
+              hintText: 'Search username or shop...',
+              prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: AppColors.background,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _results.isEmpty && _searchController.text.isNotEmpty
+                    ? const Center(child: Text('No shops found'))
+                    : ListView.separated(
+                        itemCount: _results.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final shop = _results[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppColors.primaryContainer,
+                              child: Text(
+                                (shop['businessName'] as String? ?? '?')
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Text(shop['businessName'] ?? ''),
+                            subtitle: Text(
+                              '@${shop['username']}',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 12,
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              context.push('/shop/${shop['phone']}');
+                            },
+                          );
+                        },
+                      ),
           ),
         ],
       ),
