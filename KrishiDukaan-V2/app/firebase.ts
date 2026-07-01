@@ -2200,13 +2200,34 @@ export async function ensureSellerStorefront(seller: {
 
   const idVal = seller.uid || phone;
   const now = serverTimestamp();
+
+  // Build a GeoPoint only when valid (non-zero) coordinates are provided.
+  // profilePersistence.ts reads `data.geo` (GeoPoint) first, then `data.location`
+  // as a fallback.  Saving as a real GeoPoint ensures the Profile page pre-fills
+  // the map pin and the seller appears in nearby/map searches from day one.
+  const geoPoint =
+    seller.latitude && seller.longitude
+      ? new GeoPoint(seller.latitude, seller.longitude)
+      : null;
+
+  // `address` must be saved as a nested object — addressFromDoc() in profile-persistence
+  // reads data.address.line1 / .city / .state / .pincode. A flat string produces empty
+  // fields on the Profile page.
+  const addressObj = {
+    line1:   (seller.address || '').trim(),
+    city:    (seller.city    || '').trim(),
+    state:   (seller.state   || '').trim(),
+    pincode: (seller.pincode || '').trim(),
+  };
+
   const common: Record<string, unknown> = {
     phone,
     ownerName: (seller.name || '').trim(),
-    address: (seller.address || '').trim(),
-    city: (seller.city || '').trim(),
-    state: (seller.state || '').trim(),
-    pincode: (seller.pincode || '').trim(),
+    address: addressObj,
+    // Keep flat city/state/pincode too — some map queries filter on these directly.
+    city:    addressObj.city,
+    state:   addressObj.state,
+    pincode: addressObj.pincode,
     active: true,
     updatedAt: now,
     ...(seller.createdByAdmin ? { preCreatedByAdmin: seller.createdByAdmin } : {}),
@@ -2221,7 +2242,12 @@ export async function ensureSellerStorefront(seller: {
       shopName: (seller.shopName || seller.businessName || seller.name || '').trim(),
       status: 'active',
       userType: 'retailer',
-      location: { latitude: seller.latitude ?? 0, longitude: seller.longitude ?? 0 },
+      // Save as GeoPoint (primary) so parseGeo() returns a real GeoPoint.
+      // Also keep `location` for backward compat with callers that read it directly.
+      ...(geoPoint ? {
+        geo: geoPoint,
+        location: { latitude: geoPoint.latitude, longitude: geoPoint.longitude },
+      } : {}),
       products: [],
     }, { merge: true });
   } else {
@@ -2231,6 +2257,7 @@ export async function ensureSellerStorefront(seller: {
       userId: idVal,
       manufacturerId: idVal,
       businessName: (seller.businessName || seller.shopName || seller.name || '').trim(),
+      ...(geoPoint ? { geo: geoPoint } : {}),
     }, { merge: true });
   }
 }

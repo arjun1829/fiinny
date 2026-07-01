@@ -45,9 +45,8 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
 
   const [mfrSnap, retailerDocsSnap] = await Promise.all([
     getDoc(doc(db, "manufacturers", manufacturerPhone)),
-    // Fetch up to 100 linked retailer mirror docs (public subcollection).
-    // Raised from 50 → 100 to accommodate manufacturers with large retailer networks.
-    getDocs(query(collection(db, "manufacturers", manufacturerPhone, "retailers"), limit(100))),
+    // Fetch ALL linked retailer mirror docs — no limit, subcollection is scoped to one manufacturer.
+    getDocs(collection(db, "manufacturers", manufacturerPhone, "retailers")),
   ]);
 
   if (!mfrSnap.exists()) return null;
@@ -69,24 +68,38 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
   const brand = assembleBrandData(manufacturerPhone, mfrData, customization);
 
   // ── Products: manufacturer-owned catalog only ──────────────────────────────
-  // Fetch with a generous limit, then client-filter out retailer-assigned copies
-  // (those have source === "manufacturer_assigned") so they don't appear twice.
+  // Run two queries in parallel to cover both field schemas:
+  //   - new schema: manufacturerId == uid (set on products created via the new dashboard)
+  //   - legacy schema: ownerId == uid + ownerType == "manufacturer" (older products)
+  // Deduplicate by document ID, then exclude retailer-assigned copies.
   let products: BrandProductSummary[] = [];
   if (uid) {
-    const productsSnap = await getDocs(
-      query(
-        collection(db, "products"),
-        where("manufacturerId", "==", uid),
-        where("isActive", "==", true),
-        limit(60),
+    const [byManufacturerId, byOwnerId] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, "products"),
+          where("manufacturerId", "==", uid),
+          where("isActive", "==", true),
+        ),
       ),
-    );
-    products = productsSnap.docs
+      getDocs(
+        query(
+          collection(db, "products"),
+          where("ownerId", "==", uid),
+          where("ownerType", "==", "manufacturer"),
+        ),
+      ),
+    ]);
+
+    const seen = new Set<string>();
+    products = [...byManufacturerId.docs, ...byOwnerId.docs]
       .filter((d) => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
         const r = d.data() as Record<string, unknown>;
-        return r.source !== "manufacturer_assigned";
+        // exclude inactive and retailer-assigned copies
+        return r.isActive !== false && r.source !== "manufacturer_assigned";
       })
-      .slice(0, 30)
       .map((d) => {
         const r = d.data() as Record<string, unknown>;
         return {
@@ -129,7 +142,7 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
 
   // For each mirror, fetch the full retailers/{docId} profile in parallel to get geo/address.
   // retailerDocId field in the mirror points to the correct doc in the retailers collection.
-  // No slice cap — process all filtered mirrors (subcollection limit is 100 above).
+  // Process all filtered mirrors — no cap, subcollection is fetched in full.
   const retailers: BrandRetailerSummary[] = await Promise.all(
     activeMirrors.map(async (d) => {
       const r = d.data() as Record<string, unknown>;
