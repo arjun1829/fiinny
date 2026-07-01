@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle } from 'lucide-react';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where } from 'firebase/firestore';
@@ -104,6 +104,11 @@ export default function WorklistDetailsPage() {
     // Sales Order delete confirmation
     const [soToDelete, setSoToDelete] = useState<SalesOrder | null>(null);
     const [deletingSO, setDeletingSO] = useState(false);
+
+    // Multi-select state for Sales Orders
+    const [selectedSoIds, setSelectedSoIds] = useState<Set<string>>(new Set());
+    const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
 
     // Quick Paid Modal
     const [quickPaidOrder, setQuickPaidOrder] = useState<Order | null>(null);
@@ -379,6 +384,65 @@ export default function WorklistDetailsPage() {
             alert(t('worklist_details.order_error'));
         } finally {
             setDeletingSO(false);
+        }
+    };
+
+    // ─── Multi-select helpers ───
+    const toggleSoSelection = (soId: string) => {
+        setSelectedSoIds(prev => {
+            const next = new Set(prev);
+            if (next.has(soId)) next.delete(soId); else next.add(soId);
+            return next;
+        });
+    };
+
+    const handleSelectAllSOs = () => setSelectedSoIds(new Set(salesOrders.map((so: any) => so.id)));
+    const handleClearSoSelection = () => setSelectedSoIds(new Set());
+
+    // Bulk delete: sequentially apply the same financial reversal as single delete
+    const handleBulkDeleteConfirm = async () => {
+        if (!id || !tenantId) return;
+        setBulkDeleting(true);
+        try {
+            const selected = salesOrders.filter((so: any) => selectedSoIds.has(so.id));
+
+            // Compute aggregate financial reversal
+            let totalSalesReversal = 0;
+            let totalPaidReversal = 0;
+            let totalOutstandingReversal = 0;
+
+            for (const so of selected) {
+                const salesSub = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                const paidSub = Number(so.amountPaid ?? (so.paymentStatus === 'Paid' ? salesSub : 0));
+                const outstandingSub = Math.max(0, salesSub - paidSub);
+                totalSalesReversal += salesSub;
+                totalPaidReversal += paidSub;
+                totalOutstandingReversal += outstandingSub;
+            }
+
+            // Apply the aggregate reversal to the retailer doc in one write
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+                totalSales: Math.max(0, (Number(retailer?.totalSales) || 0) - totalSalesReversal),
+                totalPaid: Math.max(0, (Number(retailer?.totalPaid) || 0) - totalPaidReversal),
+                outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - totalOutstandingReversal),
+            });
+
+            // Delete all selected order docs
+            await Promise.all(
+                selected.map((so: any) => deleteDoc(getTenantDoc(db, tenantId, 'salesOrders', so.id)))
+            );
+
+            // Re-fetch retailer to sync state (same idiom as single delete)
+            const updatedSnap = await getDoc(getTenantDoc(db, tenantId, 'retailers', id));
+            setRetailer({ id: updatedSnap.id, ...updatedSnap.data() } as Retailer);
+
+            setSelectedSoIds(new Set());
+            setShowBulkDeleteModal(false);
+        } catch (error) {
+            console.error('Error bulk-deleting sales orders:', error);
+            alert('Error deleting orders. Please try again.');
+        } finally {
+            setBulkDeleting(false);
         }
     };
 
@@ -885,6 +949,45 @@ export default function WorklistDetailsPage() {
                                 <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Edit status &amp; payment inline → Save remarks</span>
                             </div>
 
+                            {/* Bulk Action Toolbar — visible when ≥1 Sales Order is selected */}
+                            {selectedSoIds.size > 0 && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
+                                    padding: '0.6rem 1rem', marginBottom: '0.75rem',
+                                    background: 'var(--primary-light)', borderRadius: '8px',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                }}>
+                                    <CheckSquare size={16} color="#fff" />
+                                    <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.88rem' }}>
+                                        {selectedSoIds.size} Sales Order{selectedSoIds.size !== 1 ? 's' : ''} Selected
+                                    </span>
+                                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                        <button
+                                            onClick={handleSelectAllSOs}
+                                            style={{ padding: '0.28rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.5)', background: 'transparent', color: '#fff', fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        >
+                                            Select All ({salesOrders.length})
+                                        </button>
+                                        <button
+                                            onClick={handleClearSoSelection}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.28rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.5)', background: 'transparent', color: '#fff', fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        >
+                                            <X size={12} /> Clear
+                                        </button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
+                                        {userRole === 'admin' && (
+                                            <button
+                                                onClick={() => setShowBulkDeleteModal(true)}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.32rem 0.9rem', borderRadius: '6px', border: '1px solid rgba(255,100,100,0.7)', background: 'rgba(239,68,68,0.2)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                                            >
+                                                <Trash2 size={14} /> Delete Selected
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {salesOrders.length === 0 ? (
                                 <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                     <ShoppingCart size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
@@ -896,14 +999,23 @@ export default function WorklistDetailsPage() {
                                 const color = statusColor[so.status?.toLowerCase()] || '#94a3b8';
                                 const date = so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
                                 const outstanding = Math.max(0, (Number(so.grandTotal) || 0) - (Number(so.amountPaid) || 0));
+                                const isSelected = selectedSoIds.has(so.id);
                                 return (
-                                    <div key={so.id} className="glass-panel" style={{ padding: '1.25rem', borderLeft: `4px solid ${color}`, transition: 'box-shadow 0.15s' }}
+                                    <div key={so.id} className="glass-panel" style={{ padding: '1.25rem', borderLeft: `4px solid ${isSelected ? 'var(--primary-light)' : color}`, transition: 'box-shadow 0.15s', outline: isSelected ? '2px solid var(--primary-light)' : 'none', outlineOffset: '-2px' }}
                                         onMouseOver={e => e.currentTarget.style.boxShadow = `0 4px 20px ${color}22`}
                                         onMouseOut={e => e.currentTarget.style.boxShadow = 'none'}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-                                            {/* Left: order info */}
+                                            {/* Left: checkbox + order info */}
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem' }}>
+                                                    {/* Selection checkbox */}
+                                                    <button
+                                                        onClick={() => toggleSoSelection(so.id)}
+                                                        title={isSelected ? 'Deselect order' : 'Select order'}
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, color: isSelected ? 'var(--primary-light)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}
+                                                    >
+                                                        {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
+                                                    </button>
                                                     <span style={{ fontWeight: 700, color: 'var(--primary-light)', fontSize: '1rem' }}>{so.orderNumber || so.invoiceNumber || so.id.slice(-8).toUpperCase()}</span>
                                                     <span style={{ background: `${color}22`, color, padding: '0.15rem 0.6rem', borderRadius: '99px', fontSize: '0.72rem', fontWeight: 700 }}>
                                                         {so.status?.toUpperCase() || 'DRAFT'}
@@ -1080,6 +1192,57 @@ export default function WorklistDetailsPage() {
                         </div>
                     </div>
                 )}
+
+                {/* Bulk Delete Confirmation Modal */}
+                {showBulkDeleteModal && (() => {
+                    const selectedOrders = salesOrders.filter((so: any) => selectedSoIds.has(so.id));
+                    const totalAmount = selectedOrders.reduce((sum: number, so: any) =>
+                        sum + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
+                    return (
+                        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '2rem', position: 'relative', maxHeight: '85vh', overflowY: 'auto' }}>
+                                <button onClick={() => !bulkDeleting && setShowBulkDeleteModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+                                <h2 style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger)' }}>
+                                    <AlertTriangle size={22} /> Delete {selectedOrders.length} Sales Order{selectedOrders.length !== 1 ? 's' : ''}?
+                                </h2>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '0.85rem' }}>
+                                    The following orders will be permanently deleted:
+                                </p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem', maxHeight: '200px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+                                    {selectedOrders.map((so: any) => (
+                                        <div key={so.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.45rem 0.75rem', background: 'var(--surface-raised)', borderRadius: '8px', fontSize: '0.82rem' }}>
+                                            <span style={{ fontWeight: 600, color: 'var(--primary-light)' }}>{so.orderNumber || so.invoiceNumber || so.id.slice(-8).toUpperCase()}</span>
+                                            <span style={{ color: 'var(--secondary)', fontWeight: 700 }}>₹{Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0).toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.75rem', background: 'hsla(0,84%,60%,0.08)', borderRadius: '8px', marginBottom: '0.85rem', fontSize: '0.88rem' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>Total amount being removed:</span>
+                                    <span style={{ fontWeight: 800, color: 'var(--danger)', fontSize: '1rem' }}>₹{totalAmount.toLocaleString()}</span>
+                                </div>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.83rem', marginBottom: '0.5rem' }}>
+                                    The following will be updated automatically:
+                                </p>
+                                <ul style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', margin: '0 0 0.85rem', paddingLeft: '1.25rem', lineHeight: 1.7 }}>
+                                    <li>Total Sales, Amount Paid &amp; Outstanding Dues</li>
+                                    <li>Partner Analytics &amp; order counts</li>
+                                    <li>Outstanding Statement</li>
+                                </ul>
+                                <p style={{ color: 'var(--danger)', fontSize: '0.82rem', fontWeight: 600, marginBottom: '1.25rem' }}>This action cannot be undone.</p>
+                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <button type="button" className="btn btn-secondary" onClick={() => setShowBulkDeleteModal(false)} disabled={bulkDeleting} style={{ flex: 1 }}>
+                                        Cancel
+                                    </button>
+                                    <button type="button" className="btn" onClick={handleBulkDeleteConfirm} disabled={bulkDeleting}
+                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none', cursor: bulkDeleting ? 'not-allowed' : 'pointer' }}>
+                                        {bulkDeleting ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+                                        {bulkDeleting ? 'Deleting…' : `Delete ${selectedOrders.length} Order${selectedOrders.length !== 1 ? 's' : ''}`}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Delete Sales Order Confirmation Modal */}
                 {soToDelete && (

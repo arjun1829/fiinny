@@ -215,7 +215,9 @@ export default function SupplierLedgerDetailPage() {
         .map(d => ({ id: d.id, ...d.data() } as SupplierInvoice))
         .sort((a, b) => sortVal(b.createdAt) - sortVal(a.createdAt));
 
-      const derivedInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedPoInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedInvInvoiced = invList.reduce((s, inv) => s + (Number(inv.netAmount) || 0), 0);
+      const derivedInvoiced = derivedPoInvoiced + derivedInvInvoiced;
       const derivedPaid = pmtsList.reduce((s, p) => s + (Number(p.amount) || 0), 0);
       const derivedOutstanding = derivedInvoiced - derivedPaid;
 
@@ -278,7 +280,7 @@ export default function SupplierLedgerDetailPage() {
     try {
       await deleteDoc(getTenantDoc(db, tenantId, 'supplierInvoices', inv.id));
       setInvToDelete(null);
-      await load();
+      await load(true);
     } catch (e: any) { alert(e.message); }
     finally { setDeletingInv(false); }
   };
