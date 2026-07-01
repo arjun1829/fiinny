@@ -3054,22 +3054,44 @@ export interface ContactMessage {
   createdAt: any;
   phone?: string;
   subject?: string;
+  role?: string;
 }
 
 export async function saveContactMessage(
   name: string,
   email: string,
   message: string,
-  extras?: { phone?: string; subject?: string },
+  extras?: { phone?: string; subject?: string; role?: string },
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'contactMessages'), {
     name: name.trim(),
     email: email.trim(),
     message: message.trim(),
-    ...(extras?.phone ? { phone: extras.phone.trim() } : {}),
-    ...(extras?.subject ? { subject: extras.subject } : {}),
+    ...(extras?.phone   ? { phone:   extras.phone.trim() } : {}),
+    ...(extras?.subject ? { subject: extras.subject }      : {}),
+    ...(extras?.role    ? { role:    extras.role }         : {}),
     createdAt: serverTimestamp(),
   });
+
+  // Fire-and-forget email notification to admin. Failures are logged but never
+  // surfaced to the user — the Firestore write above is the source of truth.
+  const submittedAt = new Date().toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+  fetch("/api/email/support-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userName:    name.trim(),
+      phone:       extras?.phone?.trim() ?? "",
+      role:        extras?.role ?? "",
+      subject:     extras?.subject ?? "",
+      message:     message.trim(),
+      submittedAt,
+    }),
+  }).catch((err) => console.error("[support-message] email notification failed:", err));
+
   return ref.id;
 }
 
