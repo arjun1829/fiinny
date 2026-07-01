@@ -2034,6 +2034,22 @@ export async function adminExtendSubscription(subId: string, userDocId: string, 
   }, { merge: true });
 }
 
+export async function adminSetSubscriptionExpiry(subId: string, userDocId: string, expiryDate: Date): Promise<void> {
+  const subRef = doc(db, 'subscriptions', subId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) throw new Error('Subscription not found.');
+  await setDoc(subRef, {
+    expiryDate: Timestamp.fromDate(expiryDate),
+    subscriptionStatus: 'active',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  await setDoc(doc(db, 'users', userDocId), {
+    isPaid: true,
+    subscriptionStatus: 'paid',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
 export async function adminManualActivate(
   userDocId: string,
   paymentId: string,

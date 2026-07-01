@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   fetchAllSubscriptions, fetchAllUsers,
-  adminRevokeSubscription, adminExtendSubscription, adminManualActivate,
+  adminRevokeSubscription, adminExtendSubscription, adminSetSubscriptionExpiry, adminManualActivate,
   adminUpdateSubscriptionSeats, fetchFailedPayments
 } from "../../firebase";
 
@@ -44,8 +44,14 @@ export default function AdminSubscriptionsPage() {
 
   // Actions state
   const [revoking, setRevoking] = useState<string | null>(null);
+  // `extending` = which panel is open (controls panel visibility only)
   const [extending, setExtending] = useState<string | null>(null);
+  // `confirming` = which Confirm button is in-flight (controls button disabled/spinner only)
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [extendMonths, setExtendMonths] = useState(1);
+  const [extendMode, setExtendMode] = useState<"preset" | "custom">("preset");
+  const [customExpiry, setCustomExpiry] = useState("");
+  const [sortMode, setSortMode] = useState<"recent" | "expiry">("recent");
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Edit seats
@@ -100,15 +106,27 @@ export default function AdminSubscriptionsPage() {
     return user?.name || user?.email || phone || "—";
   };
 
-  const filtered = subs.filter(s => {
-    const q = search.toLowerCase();
-    const phone = s.ownerPhone || s.ownerId || "";
-    const user = users.find(u => u.id === phone || u.uid === phone);
-    const nameStr = `${user?.name || ""} ${user?.email || ""} ${phone}`.toLowerCase();
-    const matchSearch = !q || nameStr.includes(q) || (s.razorpayPaymentId || "").toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || s.subscriptionStatus === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = subs
+    .filter(s => {
+      const q = search.toLowerCase();
+      const phone = s.ownerPhone || s.ownerId || "";
+      const user = users.find(u => u.id === phone || u.uid === phone);
+      const nameStr = `${user?.name || ""} ${user?.email || ""} ${phone}`.toLowerCase();
+      const matchSearch = !q || nameStr.includes(q) || (s.razorpayPaymentId || "").toLowerCase().includes(q);
+      const matchStatus = statusFilter === "all" || s.subscriptionStatus === statusFilter;
+      return matchSearch && matchStatus;
+    })
+    .sort((a, b) => {
+      if (sortMode === "expiry") {
+        const aMs = a.expiryDate?.toDate ? a.expiryDate.toDate().getTime() : Infinity;
+        const bMs = b.expiryDate?.toDate ? b.expiryDate.toDate().getTime() : Infinity;
+        return aMs - bMs;
+      }
+      // "recent": latest startDate first; missing startDate goes last
+      const aMs = a.startDate?.toDate ? a.startDate.toDate().getTime() : -Infinity;
+      const bMs = b.startDate?.toDate ? b.startDate.toDate().getTime() : -Infinity;
+      return bMs - aMs;
+    });
 
   const counts = {
     all: subs.length,
@@ -132,26 +150,48 @@ export default function AdminSubscriptionsPage() {
     try {
       const userDocId = sub.ownerPhone || sub.ownerId;
       await adminRevokeSubscription(userDocId);
-      await load();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Revoke failed.");
     } finally {
       setRevoking(null);
     }
+    // Refresh after the loading state is cleared so setLoading(true) inside load()
+    // doesn't remount the list while revoking is still set, causing a stuck spinner.
+    void load();
   };
 
   const handleExtend = async (sub: any) => {
-    setExtending(sub.id);
+    setConfirming(sub.id);   // disable + spinner on the Confirm button
+    setExtending(null);      // close the panel immediately (decoupled from write)
     setActionError(null);
     try {
       const userDocId = sub.ownerPhone || sub.ownerId;
       await adminExtendSubscription(sub.id, userDocId, extendMonths);
-      await load();
-      setExtending(null);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Extend failed.");
-      setExtending(null);
+    } finally {
+      setConfirming(null);   // always clears the button state
     }
+    void load();
+  };
+
+  const handleSetExpiry = async (sub: any) => {
+    if (!customExpiry) return;
+    const [y, m, d] = customExpiry.split("-").map(Number);
+    const date = new Date(y, m - 1, d, 23, 59, 59);
+    setConfirming(sub.id);
+    setExtending(null);
+    setActionError(null);
+    try {
+      const userDocId = sub.ownerPhone || sub.ownerId;
+      await adminSetSubscriptionExpiry(sub.id, userDocId, date);
+      setCustomExpiry("");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Set expiry failed.");
+    } finally {
+      setConfirming(null);
+    }
+    void load();
   };
 
   const filteredUsers = users.filter(u =>
@@ -168,12 +208,12 @@ export default function AdminSubscriptionsPage() {
       const userDocId = sub.ownerPhone || sub.ownerId;
       await adminUpdateSubscriptionSeats(sub.id, userDocId, newSeats);
       setEditingSeats(null);
-      await load();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to update seats.");
     } finally {
       setSavingSeats(false);
     }
+    void load();
   };
 
   const handleManualActivate = async (e: React.FormEvent) => {
@@ -271,6 +311,21 @@ export default function AdminSubscriptionsPage() {
             {s.charAt(0).toUpperCase() + s.slice(1)} ({counts[s as keyof typeof counts] ?? subs.length})
           </button>
         ))}
+      </div>
+
+      {/* Sort toggle */}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-on-surface-variant font-medium shrink-0">Sort:</span>
+        <div className="flex rounded-xl border border-outline-variant/30 overflow-hidden text-[11px] font-semibold">
+          <button type="button" onClick={() => setSortMode("recent")}
+            className={`px-3 py-1.5 transition-colors ${sortMode === "recent" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+            Recent
+          </button>
+          <button type="button" onClick={() => setSortMode("expiry")}
+            className={`px-3 py-1.5 transition-colors ${sortMode === "expiry" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+            Closest Expiry
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -372,7 +427,15 @@ export default function AdminSubscriptionsPage() {
                   <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
                     <button
                       type="button"
-                      onClick={() => setExtending(isExpanded ? null : sub.id)}
+                      onClick={() => {
+                        if (isExpanded) {
+                          setExtending(null);
+                        } else {
+                          setExtending(sub.id);
+                          setExtendMode("preset");
+                          setCustomExpiry("");
+                        }
+                      }}
                       className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded-xl border border-outline-variant/40 px-3 py-1.5 text-[11px] sm:text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">
                       <CalendarPlus className="h-3.5 w-3.5" />
                       Extend
@@ -395,23 +458,62 @@ export default function AdminSubscriptionsPage() {
 
                 {/* Extend panel */}
                 {isExpanded && (
-                  <div className="border-t border-outline-variant/20 bg-surface-container-low px-5 py-4">
-                    <p className="text-xs font-semibold text-on-surface-variant mb-3">Extend subscription by:</p>
-                    <div className="flex flex-wrap items-center gap-3">
-                      {DURATION_OPTIONS.map(m => (
-                        <button key={m} type="button" onClick={() => setExtendMonths(m)}
-                          className={`px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${extendMonths === m ? "bg-primary text-white border-primary" : "border-outline-variant/40 text-on-surface hover:bg-surface-container"}`}>
-                          {m} mo
+                  <div className="border-t border-outline-variant/20 bg-surface-container-low px-5 py-4 space-y-3">
+                    {/* Mode toggle */}
+                    <div className="flex items-center gap-3">
+                      <p className="text-xs font-semibold text-on-surface-variant">Extend by:</p>
+                      <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-[11px] font-semibold">
+                        <button type="button" onClick={() => setExtendMode("preset")}
+                          className={`px-3 py-1 transition-colors ${extendMode === "preset" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+                          Preset
                         </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => handleExtend(sub)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
-                        <Check className="h-4 w-4" />
-                        Confirm +{extendMonths} month{extendMonths > 1 ? "s" : ""}
-                      </button>
+                        <button type="button" onClick={() => setExtendMode("custom")}
+                          className={`px-3 py-1 transition-colors ${extendMode === "custom" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+                          Custom Date
+                        </button>
+                      </div>
                     </div>
+
+                    {extendMode === "preset" ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        {DURATION_OPTIONS.map(m => (
+                          <button key={m} type="button" onClick={() => setExtendMonths(m)}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${extendMonths === m ? "bg-primary text-white border-primary" : "border-outline-variant/40 text-on-surface hover:bg-surface-container"}`}>
+                            {m} mo
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => handleExtend(sub)} disabled={confirming === sub.id}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-60 transition-colors">
+                          {confirming === sub.id
+                            ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            : <Check className="h-4 w-4" />}
+                          Confirm +{extendMonths} month{extendMonths > 1 ? "s" : ""}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold text-on-surface-variant uppercase tracking-wide">New Expiry Date</label>
+                          <input
+                            type="date"
+                            min={new Date().toISOString().split("T")[0]}
+                            value={customExpiry}
+                            onChange={e => setCustomExpiry(e.target.value)}
+                            className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                        <button type="button" onClick={() => handleSetExpiry(sub)}
+                          disabled={!customExpiry || confirming === sub.id}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 transition-colors self-end">
+                          {confirming === sub.id
+                            ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            : <Check className="h-4 w-4" />}
+                          {customExpiry
+                            ? `Set to ${new Date(customExpiry + "T12:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`
+                            : "Set Expiry"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
