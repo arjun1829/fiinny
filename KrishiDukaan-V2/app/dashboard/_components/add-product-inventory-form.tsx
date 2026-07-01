@@ -156,10 +156,8 @@ type AddProductInventoryFormProps = {
   initialProduct?: any;
   /** Admin-only: custom save handler; receives validated payload. If omitted, falls back to adminCreateProduct/adminUpdateProduct. */
   onAdminSave?: (payload: AdminProductPayload) => Promise<void>;
-  /** When true, shows the Online Delivery toggle for non-admin sellers. */
+  /** When true, shows both Online Delivery and GST toggles for non-admin sellers. */
   accountDeliveryEnabled?: boolean;
-  /** When true, shows the GST Applicable toggle for non-admin sellers. Defaults to accountDeliveryEnabled when omitted. */
-  accountGstRegistered?: boolean;
 };
 
 const newVariant = (): Variant => ({
@@ -473,7 +471,6 @@ export function AddProductInventoryForm({
   initialProduct,
   onAdminSave,
   accountDeliveryEnabled,
-  accountGstRegistered,
 }: AddProductInventoryFormProps) {
   const { t } = useI18n();
 
@@ -519,7 +516,7 @@ export function AddProductInventoryForm({
   const [gstApplicable, setGstApplicable] = useState(false);
   const [gstRate,       setGstRate]       = useState<GstRate>(0);
 
-  // Online delivery — defaults to offline; only enabled when seller explicitly toggles it
+  // New products default to offline; seller opts in when account delivery is enabled
   const [sellMode, setSellMode] = useState<"online_delivery" | "offline_store_only">("offline_store_only");
 
   // Submit state
@@ -735,13 +732,11 @@ export function AddProductInventoryForm({
         : raw;
     });
 
-    // Enforce defaults: hide + coerce fields to false/offline when the account-level
-    // flags are off (and this is not an admin session).
+    // Both delivery and GST are gated on the same account-level flag.
+    // When the flag is off (or not yet loaded), coerce both to false/offline.
     const deliveryVisible = adminMode || accountDeliveryEnabled;
-    // GST uses its own flag; falls back to deliveryVisible when not provided (legacy callers).
-    const gstVisible = adminMode || (accountGstRegistered ?? accountDeliveryEnabled);
     const effectiveSellMode: "online_delivery" | "offline_store_only" = deliveryVisible ? sellMode : "offline_store_only";
-    const effectiveGstApplicable = gstVisible ? gstApplicable : false;
+    const effectiveGstApplicable = deliveryVisible ? gstApplicable : false;
 
     setSubmitting(true);
     setMessage(null);
@@ -1141,8 +1136,8 @@ export function AddProductInventoryForm({
             </div>
           )}
 
-          {/* GST — shown only when account has GST registration (gstRegistered flag, falls back to deliveryEnabled) */}
-          {(adminMode || (accountGstRegistered ?? accountDeliveryEnabled)) && (
+          {/* GST — shown only when account-level delivery is ON (same gate as the delivery toggle) */}
+          {(adminMode || accountDeliveryEnabled) && (
             <>
               <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
                 <div>

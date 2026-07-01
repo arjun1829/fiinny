@@ -21,10 +21,8 @@ type InventoryTableProps = {
   role: Role;
   userId?: string;
   disabled?: boolean;
-  /** When false, hides product-level delivery toggles (account-level delivery is OFF). */
+  /** When false, hides both Online Delivery and GST toggles (account-level delivery is OFF). */
   accountDeliveryEnabled?: boolean;
-  /** When false, hides GST Applicable toggle on products (account has no GST registration). */
-  accountGstRegistered?: boolean;
   onUpdated: () => Promise<void> | void;
   /** Activate/deactivate a product. isAssigned=true bypasses seat management. */
   onToggleActive?: (productId: string, inventoryId: string | undefined, isActive: boolean, isAssigned?: boolean) => Promise<void>;
@@ -561,7 +559,7 @@ function MobileProductCard({
 // ─── Shared Inventory Table ─────────────────────────────────────────────────
 
 export function InventoryTable({
-  rows, role, userId, disabled, accountDeliveryEnabled, accountGstRegistered, onUpdated, onToggleActive, onDelete,
+  rows, role, userId, disabled, accountDeliveryEnabled, onUpdated, onToggleActive, onDelete,
 }: InventoryTableProps) {
   const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
@@ -735,7 +733,6 @@ export function InventoryTable({
         <EditProductModal
           row={editing}
           accountDeliveryEnabled={accountDeliveryEnabled}
-          accountGstRegistered={accountGstRegistered}
           onClose={() => setEditing(null)}
           onSaved={() => { void onUpdated(); setEditing(null); }}
         />
