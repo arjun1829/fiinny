@@ -2,20 +2,22 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Save, Loader2, Printer, Search, ShoppingCart, Plus, Minus, Trash2,
-    CreditCard, Banknote, History, ExternalLink, Target, LayoutGrid, List,
+    CreditCard, Banknote, History, ExternalLink, Target, Pencil,
     Zap, CheckCircle2, ChevronRight, X, Phone, User, QrCode, Package,
     RotateCcw, Star, Smartphone, Columns, PlusCircle,
 } from 'lucide-react';
 import UpiQrCode from '../components/UpiQrCode';
 import ModuleGate from '../components/ModuleGate';
 import {
-    query, onSnapshot, addDoc,
+    query, onSnapshot, addDoc, doc, writeBatch,
     serverTimestamp, updateDoc,
     runTransaction, getDoc, getDocs, limit, orderBy, where, collection, increment,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { AGRI_CATEGORIES } from '../utils/constants';
 import { fetchInvoiceTemplate, fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -63,7 +65,6 @@ interface PaymentSplit {
     amount: number;
 }
 
-const CATEGORIES = ['All', 'Kirana', 'Beverages', 'Personal Care', 'Dairy', 'Snacks'];
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Card', 'Wallet', 'Khata'];
 const DENOMINATIONS = [10, 20, 50, 100, 200, 500, 2000];
 
@@ -77,15 +78,22 @@ const defaultCustomer = (): CustomerState => ({
 export default function POSPage() {
     const { t } = useTranslation();
     const { tenantId, hasModule } = useAuth();
+    const { showToast } = useToast();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
     // View States
-    const [isRetailMode, setIsRetailMode] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const searchRef = useRef<HTMLInputElement>(null);
+
+    // Quick add/edit product — manage inventory inline without leaving the POS
+    const [showProductModal, setShowProductModal] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    const openAddProduct = () => { setEditingProduct(null); setShowProductModal(true); };
+    const openEditProduct = (product: Product) => { setEditingProduct(product); setShowProductModal(true); };
 
     // ── Multi-bill tabs ─────────────────────────────────────────────────────
     const [billTabs, setBillTabs] = useState<BillTab[]>([{
@@ -336,33 +344,37 @@ export default function POSPage() {
                 invoiceDate: new Date().toISOString().split('T')[0],
             };
 
-            await addDoc(getTenantCollection(db, tenantId, 'salesOrders'), orderData);
+            // Persist the bill and deduct stock atomically in one batch — a
+            // half-saved sale can never leave inventory inconsistent.
+            const batch = writeBatch(db);
+            const soRef = doc(getTenantCollection(db, tenantId, 'salesOrders'));
+            batch.set(soRef, orderData);
 
-            // Inventory deduction
             for (const item of cart) {
-                const productRef = getTenantDoc(db, tenantId, 'products', item.id);
-                const q = item.cartQuantity;
-                let newLoose = (item.loosePieces || 0) - q;
+                let newLoose = (item.loosePieces || 0) - item.cartQuantity;
                 let newBoxes = item.quantity || 0;
                 while (newLoose < 0 && newBoxes > 0) {
                     newBoxes -= 1;
                     newLoose += (item.boxCapacity || 1);
                 }
-                await updateDoc(productRef, {
-                    quantity: newBoxes >= 0 ? newBoxes : 0,
-                    loosePieces: newBoxes >= 0 ? newLoose : 0,
+                // Never write negative stock — you can't sell what isn't there.
+                batch.update(getTenantDoc(db, tenantId, 'products', item.id), {
+                    quantity: Math.max(0, newBoxes),
+                    loosePieces: Math.max(0, newLoose),
                     updatedAt: serverTimestamp(),
                 });
             }
+            await batch.commit();
 
-            // Register customer if new
+            // Remember the walk-in customer for future lookup. Tagged channel:'pos'
+            // so B2C counter customers don't pollute the B2B Partner Worklist.
             if (customer.phone.length >= 5) {
                 const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1));
                 const snap = await getDocs(q);
                 if (snap.empty) {
                     await addDoc(getTenantCollection(db, tenantId, 'retailers'), {
                         name: customer.name, number: customer.phone, atPost: customer.address,
-                        pin: customer.pin, status: 'active', createdAt: serverTimestamp(),
+                        pin: customer.pin, status: 'active', channel: 'pos', createdAt: serverTimestamp(),
                     });
                 }
             }
@@ -386,8 +398,9 @@ export default function POSPage() {
                 });
             }
 
+            showToast(`Sale saved · ${billNumber} · ₹${Math.round(grandTotal).toLocaleString('en-IN')}`, 'success');
+
             // Print and reset
-            setIsRetailMode(false);
             setTimeout(() => {
                 window.print();
                 // Reset the active tab
@@ -397,12 +410,12 @@ export default function POSPage() {
                         : t,
                 ));
                 setRedeemPoints(0);
-                setIsRetailMode(true);
                 setIsProcessing(false);
             }, 500);
 
         } catch (e) {
             console.error(e);
+            showToast('Could not complete the sale. Please try again.', 'error');
             setIsProcessing(false);
         }
     };
@@ -447,6 +460,10 @@ export default function POSPage() {
         return (selectedCategory === 'All' || (p.type || '').toLowerCase() === selectedCategory.toLowerCase()) &&
             (p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode === searchQuery);
     });
+
+    // Category tabs are data-driven: only show categories that actually exist in
+    // inventory (plus All), so there are never empty dead tabs.
+    const categories = ['All', ...Array.from(new Set(products.map(p => (p.type || '').trim()).filter(Boolean))).sort()];
 
     // Split payment helpers
     const splitTotal = splits.reduce((s, sp) => s + (Number(sp.amount) || 0), 0);
@@ -503,14 +520,11 @@ export default function POSPage() {
                     </div>
                 </ModuleGate>
 
-                <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: '12px', padding: '0.2rem' }}>
-                    <button onClick={() => setIsRetailMode(true)} style={{ padding: '0.4rem 0.9rem', borderRadius: '10px', background: isRetailMode ? 'white' : 'transparent', color: isRetailMode ? 'var(--primary)' : 'var(--text-tertiary)', border: 'none', cursor: 'pointer', display: 'flex', gap: '0.4rem', alignItems: 'center', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <LayoutGrid size={16} /> Retail
-                    </button>
-                    <button onClick={() => setIsRetailMode(false)} style={{ padding: '0.4rem 0.9rem', borderRadius: '10px', background: !isRetailMode ? 'white' : 'transparent', color: !isRetailMode ? 'var(--primary)' : 'var(--text-tertiary)', border: 'none', cursor: 'pointer', display: 'flex', gap: '0.4rem', alignItems: 'center', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <List size={16} /> Form
-                    </button>
-                </div>
+                {/* Quick add a product to inventory without leaving billing */}
+                <button onClick={openAddProduct} title="Add a new product to inventory"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                    <PlusCircle size={16} /> New Product
+                </button>
             </header>
 
             {/* Multi-bill tabs bar */}
@@ -547,43 +561,55 @@ export default function POSPage() {
             <div style={{ display: 'flex', flex: 1 }}>
                 {/* Main product area */}
                 <main className="no-print" style={{ flex: 1, padding: '1.25rem', height: 'calc(100vh - 80px)', overflowY: 'auto' }}>
-                    {isRetailMode ? (
-                        <>
-                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
-                                {CATEGORIES.map(cat => (
-                                    <button key={cat} onClick={() => setSelectedCategory(cat)}
-                                        style={{
-                                            padding: '0.4rem 1.1rem', borderRadius: '20px', whiteSpace: 'nowrap', fontWeight: 600,
-                                            background: selectedCategory === cat ? 'var(--primary)' : 'white',
-                                            color: selectedCategory === cat ? 'white' : 'var(--text-secondary)',
-                                            border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.875rem',
-                                        }}>
-                                        {cat}
-                                    </button>
-                                ))}
-                            </div>
+                    <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                        {categories.map(cat => (
+                            <button key={cat} onClick={() => setSelectedCategory(cat)}
+                                style={{
+                                    padding: '0.4rem 1.1rem', borderRadius: '20px', whiteSpace: 'nowrap', fontWeight: 600,
+                                    background: selectedCategory === cat ? 'var(--primary)' : 'white',
+                                    color: selectedCategory === cat ? 'white' : 'var(--text-secondary)',
+                                    border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.875rem',
+                                }}>
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
 
-                            <div className="pos-grid">
-                                {filteredProducts.map(product => (
-                                    <div key={product.id} className="pos-card" onClick={() => addToCart(product)}>
-                                        <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)' }}>
-                                            {product.quantity || 0} Box {(product.loosePieces || 0) > 0 ? `+ ${product.loosePieces} ${product.baseUnit}` : ''}
-                                        </div>
-                                        <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', borderRadius: '8px', marginBottom: '0.6rem', overflow: 'hidden' }}>
-                                            {product.imageUrl
-                                                ? <img src={product.imageUrl} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                : <Package size={30} color="var(--text-tertiary)" />
-                                            }
-                                        </div>
-                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.2rem', height: '2.2rem', overflow: 'hidden', color: 'var(--text-primary)' }}>{product.name}</h4>
-                                        <p style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1rem', margin: 0 }}>₹{product.sellingPrice || product.maxRetailPrice}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
+                    {filteredProducts.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-tertiary)' }}>
+                            <Package size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
+                            <p style={{ marginBottom: '1.25rem' }}>
+                                {searchQuery
+                                    ? <>No product matches "<strong>{searchQuery}</strong>".</>
+                                    : <>No products in inventory yet.</>}
+                            </p>
+                            <button onClick={openAddProduct} className="btn" style={{ background: 'var(--primary)', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Plus size={18} /> {searchQuery ? <>Add "{searchQuery}" to inventory</> : 'Add Product'}
+                            </button>
+                        </div>
                     ) : (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '2rem' }}>
-                            <p className="text-center text-slate-500 italic">Form-based entry view — use the Retail tab to scan and add products.</p>
+                        <div className="pos-grid">
+                            {filteredProducts.map(product => (
+                                <div key={product.id} className="pos-card" onClick={() => addToCart(product)} style={{ position: 'relative' }}>
+                                    <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                                        {product.quantity || 0} Box {(product.loosePieces || 0) > 0 ? `+ ${product.loosePieces} ${product.baseUnit}` : ''}
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openEditProduct(product); }}
+                                        title="Edit product details"
+                                        style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2, width: '28px', height: '28px', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'rgba(255,255,255,0.92)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
+                                        <Pencil size={14} />
+                                    </button>
+                                    <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', borderRadius: '8px', marginBottom: '0.6rem', overflow: 'hidden' }}>
+                                        {product.imageUrl
+                                            ? <img src={product.imageUrl} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            : <Package size={30} color="var(--text-tertiary)" />
+                                        }
+                                    </div>
+                                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.2rem', height: '2.2rem', overflow: 'hidden', color: 'var(--text-primary)' }}>{product.name}</h4>
+                                    <p style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1rem', margin: 0 }}>₹{product.sellingPrice || product.maxRetailPrice}</p>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </main>
@@ -944,6 +970,17 @@ export default function POSPage() {
                 </div>
             )}
 
+            {/* ── Quick Add / Edit Product ─────────────────────────────────────────── */}
+            {showProductModal && tenantId && (
+                <QuickProductModal
+                    tenantId={tenantId}
+                    product={editingProduct}
+                    defaultName={editingProduct ? '' : searchQuery}
+                    products={products}
+                    onClose={() => { setShowProductModal(false); setEditingProduct(null); }}
+                />
+            )}
+
             {/* Hidden print layout */}
             <div className="print-only">
                 <TraditionalPrintLayout
@@ -1045,6 +1082,163 @@ function TraditionalPrintLayout({ cart, customer, branding, billNumber, subtotal
             <p style={{ textAlign: 'center', fontSize: '10px', marginTop: '30px', color: '#666' }}>
                 Computer Generated Invoice - No Signature Required
             </p>
+        </div>
+    );
+}
+
+// ── Quick Add / Edit Product ────────────────────────────────────────────────
+// A lightweight inventory form so the counter can add a missing product or fix a
+// price without leaving billing. Full pricing (box-level, PTR, image, etc.) stays
+// on the Inventory page; this writes the same `products` collection.
+interface QuickProductModalProps {
+    tenantId: string;
+    product: Product | null;
+    defaultName: string;
+    products: Product[];
+    onClose: () => void;
+}
+
+function QuickProductModal({ tenantId, product, defaultName, products, onClose }: QuickProductModalProps) {
+    const nextSku = () => {
+        let max = 0;
+        products.forEach(p => {
+            const m = /^KA-(\d+)$/i.exec(((p as any).productNumber || '').trim());
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return `KA-${String(max + 1).padStart(3, '0')}`;
+    };
+
+    const [form, setForm] = useState({
+        name: product?.name ?? defaultName ?? '',
+        type: product?.type || '',
+        sellingPrice: product?.sellingPrice || product?.maxRetailPrice || 0,
+        maxRetailPrice: product?.maxRetailPrice || 0,
+        purchasePrice: product?.purchasePrice || 0,
+        quantity: product?.quantity || 0,
+        loosePieces: product?.loosePieces || 0,
+        boxCapacity: product?.boxCapacity || 1,
+        baseUnit: (product?.baseUnit as string) || 'pcs',
+        gstPct: product?.gstPct ?? 5,
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (patch: Partial<typeof form>) => setForm(prev => ({ ...prev, ...patch }));
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!form.name.trim()) return;
+        setSaving(true);
+        try {
+            const margin = form.maxRetailPrice > 0
+                ? `${Math.round(((form.maxRetailPrice - form.purchasePrice) / form.maxRetailPrice) * 100)}%`
+                : 'N/A';
+            const data: any = {
+                name: form.name.trim(),
+                type: form.type,
+                sellingPrice: form.sellingPrice,
+                maxRetailPrice: form.maxRetailPrice || form.sellingPrice,
+                retailerPrice: product?.retailerPrice ?? form.sellingPrice,
+                purchasePrice: form.purchasePrice,
+                quantity: form.quantity,
+                loosePieces: form.loosePieces,
+                boxCapacity: form.boxCapacity || 1,
+                baseUnit: form.baseUnit,
+                gstPct: form.gstPct,
+                margin,
+                updatedAt: serverTimestamp(),
+            };
+            if (product) {
+                await updateDoc(getTenantDoc(db, tenantId, 'products', product.id), data);
+            } else {
+                await addDoc(getTenantCollection(db, tenantId, 'products'), {
+                    ...data,
+                    productNumber: nextSku(),
+                    category: 'B2B',
+                    createdAt: serverTimestamp(),
+                });
+            }
+            onClose();
+        } catch (err) {
+            console.error('Failed to save product', err);
+            alert('Could not save the product. Please try again.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const labelStyle: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' };
+    const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', boxSizing: 'border-box' };
+
+    return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+            onClick={onClose}>
+            <form onSubmit={handleSave} onClick={e => e.stopPropagation()}
+                style={{ background: 'white', borderRadius: '18px', padding: '1.5rem', maxWidth: '460px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {product ? <Pencil size={18} /> : <Plus size={18} />} {product ? 'Edit Product' : 'Add Product'}
+                    </h3>
+                    <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+                </div>
+
+                <div style={{ marginBottom: '0.9rem' }}>
+                    <label style={labelStyle}>Product Name *</label>
+                    <input required autoFocus value={form.name} onChange={e => set({ name: e.target.value })} placeholder="e.g. Power Plus 5000 ML" style={fieldStyle} />
+                </div>
+
+                <div style={{ marginBottom: '0.9rem' }}>
+                    <label style={labelStyle}>Category</label>
+                    <select value={form.type} onChange={e => set({ type: e.target.value })} style={fieldStyle}>
+                        <option value="">— Select category —</option>
+                        {AGRI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.9rem' }}>
+                    <div>
+                        <label style={labelStyle}>Selling Price (₹) *</label>
+                        <input required type="number" min="0" step="0.01" value={form.sellingPrice || ''} onChange={e => set({ sellingPrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>MRP (₹)</label>
+                        <input type="number" min="0" step="0.01" value={form.maxRetailPrice || ''} onChange={e => set({ maxRetailPrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Purchase Rate (₹)</label>
+                        <input type="number" min="0" step="0.01" value={form.purchasePrice || ''} onChange={e => set({ purchasePrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>GST %</label>
+                        <input type="number" min="0" value={form.gstPct} onChange={e => set({ gstPct: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Stock (Boxes)</label>
+                        <input type="number" min="0" value={form.quantity} onChange={e => set({ quantity: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Loose Pieces</label>
+                        <input type="number" min="0" value={form.loosePieces} onChange={e => set({ loosePieces: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Pcs / Box</label>
+                        <input type="number" min="1" value={form.boxCapacity} onChange={e => set({ boxCapacity: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Unit</label>
+                        <select value={form.baseUnit} onChange={e => set({ baseUnit: e.target.value })} style={fieldStyle}>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="ltr">Liters (ltr)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="g">Grams (g)</option>
+                            <option value="ml">Milliliters (ml)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" disabled={saving} className="btn" style={{ background: 'var(--primary)', color: 'white', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.6 : 1 }}>
+                    {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                    {product ? 'Save Changes' : 'Add to Inventory'}
+                </button>
+            </form>
         </div>
     );
 }
