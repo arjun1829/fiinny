@@ -447,9 +447,10 @@ service cloud.firestore {
       );
       allow list: if true;
       allow create: if isAuthed() && (
-        request.resource.data.manufacturerId == request.auth.uid
+        request.resource.data.manufacturerId == request.auth.uid ||
+        isAdmin()
       );
-      allow update: if isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         (
@@ -464,11 +465,11 @@ service cloud.firestore {
           request.resource.data.retailerId == request.auth.uid &&
           request.resource.data.claimable == false
         )
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone()
-      );
+      ));
     }
 
     match /retailerSeatListings/{docId} {
@@ -604,6 +605,68 @@ service cloud.firestore {
     // Only the cart owner or an admin may read or write.
     match /carts/{phone} {
       allow read, write: if isAdmin() || (isAuthed() && myPhone() == phone);
+    }
+
+    // ─── usernames ───────────────────────────────────────────────────────────
+    // Doc ID = lowercase handle (e.g. "agriking").
+    // Public read for search. Only the owning seller (phone match) or admin writes.
+    // Uniqueness is enforced at the doc level — a create fails if the doc already exists.
+    match /usernames/{handle} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.phone == myPhone()
+        && myRole() in ['retailer', 'manufacturer'];
+      allow update: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+      allow delete: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+    }
+
+    // ─── reels ───────────────────────────────────────────────────────────────
+    // Public read. Any authenticated user can create.
+    // Only the shop owner (matched by phone) or admin can update/delete.
+    // viewsCount increment is the only anonymous-adjacent write, but we keep
+    // write gated on auth to prevent abuse — unauthenticated viewers still
+    // generate a view event because the mobile calls incrementViewsCount only
+    // after the user has the app open (implying phone auth).
+    match /reels/{reelId} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.shopOwnerId == myPhone();
+      allow update: if isAdmin()
+        || (isAuthed() && phoneMatches(resource.data.shopOwnerId))
+        // Allow any authed user to increment the counter fields only
+        // (likesCount via toggleLike, commentsCount via addComment, viewsCount via incrementViewsCount)
+        || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['viewsCount', 'likesCount', 'commentsCount']));
+      allow delete: if isAdmin()
+        || (isAuthed() && phoneMatches(resource.data.shopOwnerId));
+
+      match /reel_comments/{commentId} {
+        allow read: if true;
+        // Accept userId match via uidIndex (myPhone) OR directly from the auth token
+        // phone_number claim — guards against missing uidIndex on first login.
+        allow create: if isAuthed()
+          && (request.resource.data.userId == myPhone()
+              || request.resource.data.userId == request.auth.token.phone_number);
+        allow delete: if isAdmin()
+          || (isAuthed() && phoneMatches(resource.data.userId))
+          || (isAuthed() && resource.data.userId == request.auth.token.phone_number);
+      }
+    }
+
+    // ─── reel_likes ──────────────────────────────────────────────────────────
+    // Doc ID = {reelId}_{userId}. Any authenticated user can like/unlike.
+    match /reel_likes/{likeId} {
+      allow read: if true;
+      allow write: if isAuthed();
+    }
+
+    // ─── follows ─────────────────────────────────────────────────────────────
+    // Doc ID = {followerId}_{shopId}. Any authenticated user can follow/unfollow.
+    match /follows/{followId} {
+      allow read: if true;
+      allow write: if isAuthed();
     }
   }
   }

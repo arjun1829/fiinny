@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
-  Package, ChevronRight, ExternalLink, UserPlus, Loader2, Link2, Trash2,
+  Package, ChevronRight, ChevronUp, ChevronDown, ExternalLink, UserPlus, Loader2, Link2, Trash2,
   SlidersHorizontal, Calendar, RotateCcw, MapPin, Truck, WifiOff, Tag, Receipt, LayoutDashboard,
 } from "lucide-react";
 import {
@@ -20,7 +20,7 @@ import { SearchableDropdown } from "../_components/searchable-dropdown";
 import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
 import { DiscountPanel } from "../../dashboard/_components/discount-panel";
 import {
-  addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp,
+  addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, GeoPoint,
   query, where, getDocs, limit,
 } from "firebase/firestore";
 
@@ -116,6 +116,7 @@ export default function AdminUsersPage() {
   const [filterMaxProducts, setFilterMaxProducts] = useState("");
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
   const [editUser, setEditUser] = useState<any | null>(null);
 
@@ -276,6 +277,15 @@ export default function AdminUsersPage() {
     return m;
   }, [allSubs]);
 
+  // Utility: extract a numeric timestamp from a Firestore Timestamp, Date, or string
+  const getTs = (val: any): number => {
+    if (!val) return 0;
+    if (typeof val.toDate === "function") return val.toDate().getTime();
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === "string" || typeof val === "number") return new Date(val).getTime();
+    return 0;
+  };
+
   // Utility: format a Firestore timestamp or date string nicely
   const fmtDate = (val: any): string => {
     if (!val) return "—";
@@ -315,16 +325,9 @@ export default function AdminUsersPage() {
       (!u.subscriptionStatus || u.subscriptionStatus === "" || u.subscriptionStatus === "free");
 
     // Date filtering — createdAt can be a Firestore Timestamp or a JS Date
-    const getTs = (val: any): number | null => {
-      if (!val) return null;
-      if (typeof val.toDate === "function") return val.toDate().getTime();
-      if (val instanceof Date) return val.getTime();
-      if (typeof val === "string" || typeof val === "number") return new Date(val).getTime();
-      return null;
-    };
     const uCreatedAt = getTs(u.createdAt);
-    const matchDateFrom = !filterDateFrom ? true : (uCreatedAt !== null ? uCreatedAt >= new Date(filterDateFrom).getTime() : false);
-    const matchDateTo   = !filterDateTo   ? true : (uCreatedAt !== null ? uCreatedAt <= new Date(filterDateTo).getTime() + 86399999 : false);
+    const matchDateFrom = !filterDateFrom ? true : (uCreatedAt > 0 ? uCreatedAt >= new Date(filterDateFrom).getTime() : false);
+    const matchDateTo   = !filterDateTo   ? true : (uCreatedAt > 0 ? uCreatedAt <= new Date(filterDateTo).getTime() + 86399999 : false);
 
     const pc = (productCounts.get(u.id) ?? 0);
     const matchMinProd = filterMinProducts === "" ? true : pc >= Number(filterMinProducts);
@@ -335,6 +338,11 @@ export default function AdminUsersPage() {
 
     return matchSearch && matchRole && matchActive && matchSubscription && matchDateFrom && matchDateTo && matchMinProd && matchMaxProd && matchCity && matchState;
   });
+
+  // Sort filtered results by createdAt (desc = newest first, asc = oldest first)
+  const sorted = [...filtered].sort((a, b) =>
+    sortOrder === "desc" ? getTs(b.createdAt) - getTs(a.createdAt) : getTs(a.createdAt) - getTs(b.createdAt),
+  );
 
   // Count how many advanced filters are active
   const activeAdvancedCount = [
@@ -616,9 +624,11 @@ export default function AdminUsersPage() {
             state:   createForm.state   || null,
             pincode: createForm.pincode || null,
           },
-          geo: (createForm.latitude && createForm.longitude)
-            ? { latitude: createForm.latitude, longitude: createForm.longitude }
-            : null,
+          // Must be a Firestore GeoPoint — plain {lat,lng} objects are not recognised
+          // by parseGeo() as instanceof GeoPoint and are ignored by the Profile page.
+          ...(createForm.latitude && createForm.longitude
+            ? { geo: new GeoPoint(createForm.latitude, createForm.longitude) }
+            : {}),
           ...(gstin.trim() ? { gstin: gstin.trim().toUpperCase() } : {}),
           isActive: true,
           subscriptionStatus,
@@ -851,12 +861,24 @@ export default function AdminUsersPage() {
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Subscription</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Products</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Seats</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Joined</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                    <button
+                      type="button"
+                      onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
+                      className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                      title={sortOrder === "desc" ? "Newest first — click for oldest first" : "Oldest first — click for newest first"}
+                    >
+                      Joined
+                      {sortOrder === "desc"
+                        ? <ChevronDown className="h-3 w-3 text-primary" />
+                        : <ChevronUp className="h-3 w-3 text-primary" />}
+                    </button>
+                  </th>
                   <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(u => (
+                {sorted.map(u => (
                   <tr key={u.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
                     <td className="px-5 py-3">
                       {(u.role === "retailer" || u.role === "manufacturer") ? (
@@ -932,7 +954,7 @@ export default function AdminUsersPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {sorted.length === 0 && (
                   <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-on-surface-variant">No users found.</td></tr>
                 )}
               </tbody>
@@ -940,7 +962,7 @@ export default function AdminUsersPage() {
           </div>
           {/* Mobile card list */}
           <div className="md:hidden divide-y divide-outline-variant/10">
-            {filtered.map(u => (
+            {sorted.map(u => (
               <div key={u.id} className="px-4 py-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -1005,7 +1027,7 @@ export default function AdminUsersPage() {
                 </div>
               </div>
             ))}
-            {filtered.length === 0 && (
+            {sorted.length === 0 && (
               <div className="px-4 py-10 text-center text-sm text-on-surface-variant">No users found.</div>
             )}
           </div>

@@ -1,22 +1,18 @@
+const SITE_URL = "https://krishidukan.com";
+
 /**
- * Public site URL (no trailing slash). Used for manufacturer → retailer invite links.
- * Example: https://app.example.com
+ * Public site URL (no trailing slash).
  */
 export function getPublicBaseUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim() || "";
-  return raw.replace(/\/$/, "");
+  return SITE_URL;
 }
 
 /**
  * Retailer signup URL with invite (existing app shell: ?view=signup).
+ * Always returns a fully-qualified URL.
  */
 export function buildSignupInviteUrl(inviteCode: string): string {
-  const base = getPublicBaseUrl();
-  const path = `/?view=signup&inviteCode=${encodeURIComponent(inviteCode.trim())}`;
-  if (!base) {
-    return path;
-  }
-  return `${base}${path}`;
+  return `${SITE_URL}/?view=signup&inviteCode=${encodeURIComponent(inviteCode.trim())}`;
 }
 
 export function buildWhatsAppShareUrl(text: string): string {

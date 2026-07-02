@@ -20,19 +20,19 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'mangoes',
     name: 'Mango',
-    heroImage: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=400&q=70',
     tagline: 'Orchard management essentials for the King of Fruits.',
     seeds: [
-      { name: 'Alphonso Sapling', price: 250, img: 'https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&q=80' },
-      { name: 'Kesar Sapling', price: 200, img: 'https://images.unsplash.com/photo-1605027990121-cbae9e0642df?auto=format&fit=crop&q=80' }
+      { name: 'Alphonso Sapling', price: 250, img: 'https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=400&q=70' },
+      { name: 'Kesar Sapling', price: 200, img: 'https://images.unsplash.com/photo-1605027990121-cbae9e0642df?auto=format&fit=crop&w=400&q=70' }
     ],
     nutrition: [
       { name: 'NPK 10:26:26', desc: 'Pre-flowering boost', icon: 'Sprout' },
       { name: 'Zinc Sulphate', desc: 'Healthy leaf growth', icon: 'Science' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Ring Irrigation Hose', price: '₹22/m' },
         { name: 'Sprinkler Head', price: '₹60/pc' }
@@ -96,19 +96,19 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'cherry',
     name: 'Cherry',
-    heroImage: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&w=400&q=70',
     tagline: 'Expert guidance for growing premium sweet and tart cherries.',
     seeds: [
-      { name: 'Stella Cherry Sapling', price: 450, img: 'https://images.unsplash.com/photo-1528821128474-27f963b062bf?auto=format&fit=crop&q=80' },
-      { name: 'Bing Cherry Sapling', price: 400, img: 'https://images.unsplash.com/photo-1559181567-c3190ca9959b?auto=format&fit=crop&q=80' }
+      { name: 'Stella Cherry Sapling', price: 450, img: 'https://images.unsplash.com/photo-1528821128474-27f963b062bf?auto=format&fit=crop&w=400&q=70' },
+      { name: 'Bing Cherry Sapling', price: 400, img: 'https://images.unsplash.com/photo-1559181567-c3190ca9959b?auto=format&fit=crop&w=400&q=70' }
     ],
     nutrition: [
       { name: 'Boron Solubor', desc: 'Crucial for flower set', icon: 'Science' },
       { name: 'Potassium Nitrate', desc: 'Fruit size & sweetness', icon: 'Water' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1598453472093-6e3e536102a3?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1598453472093-6e3e536102a3?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Drip Laterals', price: '₹20/m' },
         { name: 'Tensiometer', price: '₹1800/pc' }
@@ -134,19 +134,19 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'pomegranate',
     name: 'Pomegranate',
-    heroImage: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&w=400&q=70',
     tagline: 'Expert guidance and tools for growing premium export-quality pomegranates.',
     seeds: [
-      { name: 'Bhagwa Sapling', price: 150, img: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&q=80' },
-      { name: 'Ganesh Sapling', price: 120, img: 'https://images.unsplash.com/photo-1528821128474-27f963b062bf?auto=format&fit=crop&q=80' }
+      { name: 'Bhagwa Sapling', price: 150, img: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&w=400&q=70' },
+      { name: 'Ganesh Sapling', price: 120, img: 'https://images.unsplash.com/photo-1528821128474-27f963b062bf?auto=format&fit=crop&w=400&q=70' }
     ],
     nutrition: [
       { name: 'Calcium Nitrate', desc: 'Prevents fruit cracking', icon: 'Science' },
       { name: 'Boron', desc: 'Improves fruit set', icon: 'Sprout' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1598453472093-6e3e536102a3?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1598453472093-6e3e536102a3?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Inline Drip Tube', price: '₹18/m' },
         { name: 'Fertigation Pump', price: '₹2500/pc' }
@@ -172,19 +172,19 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'grapes',
     name: 'Grapes',
-    heroImage: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&w=400&q=70',
     tagline: 'Complete viticulture solutions for table and wine grape varieties.',
     seeds: [
-      { name: 'Thompson Seedless', price: 80, img: 'https://images.unsplash.com/photo-1537248174116-24f6fc1edff0?auto=format&fit=crop&q=80' },
-      { name: 'Sharad Seedless', price: 90, img: 'https://images.unsplash.com/photo-1616142718109-c16fbeae5604?auto=format&fit=crop&q=80' }
+      { name: 'Thompson Seedless', price: 80, img: 'https://images.unsplash.com/photo-1537248174116-24f6fc1edff0?auto=format&fit=crop&w=400&q=70' },
+      { name: 'Sharad Seedless', price: 90, img: 'https://images.unsplash.com/photo-1616142718109-c16fbeae5604?auto=format&fit=crop&w=400&q=70' }
     ],
     nutrition: [
       { name: 'Potassium Sulphate', desc: 'Enhances fruit size & sugar', icon: 'Science' },
       { name: 'Magnesium', desc: 'Prevents yellowing', icon: 'Water' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1582260656094-1a966774e1d1?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1582260656094-1a966774e1d1?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Dripper Line 2.4 LPH', price: '₹15/m' },
         { name: 'Moisture Sensor', price: '₹850/pc' }
@@ -210,11 +210,11 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'banana',
     name: 'Banana',
-    heroImage: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=400&q=70',
     tagline: 'Scale your plantation with tissue culture and expert management.',
     seeds: [
-      { name: 'G-9 Tissue Culture', price: 18, img: 'https://images.unsplash.com/photo-1571141380069-521a19e0576c?auto=format&fit=crop&q=80' },
+      { name: 'G-9 Tissue Culture', price: 18, img: 'https://images.unsplash.com/photo-1571141380069-521a19e0576c?auto=format&fit=crop&w=400&q=70' },
       { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
     ],
     nutrition: [
@@ -222,7 +222,7 @@ export const INITIAL_HUBS: Hub[] = [
       { name: 'Boron', desc: 'Prevents fruit cracking', icon: 'Sprout' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Drip system (2-way)', price: '₹45/plant' },
         { name: 'Venturi unit', price: '₹1500/pc' }
@@ -248,11 +248,11 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'sugarcane',
     name: 'Sugarcane',
-    heroImage: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&w=400&q=70',
     tagline: 'Advanced solutions for maximizing sugar recovery and tonnage.',
     seeds: [
-      { name: 'Co 86032 Sets', price: 450, img: 'https://images.unsplash.com/photo-1596436889106-be35e843f974?auto=format&fit=crop&q=80' },
+      { name: 'Co 86032 Sets', price: 450, img: 'https://images.unsplash.com/photo-1596436889106-be35e843f974?auto=format&fit=crop&w=400&q=70' },
       { name: 'Power Plus Booster', price: 2150, img: '/product-images/Product_Images/Power Plus.png' }
     ],
     nutrition: [
@@ -260,7 +260,7 @@ export const INITIAL_HUBS: Hub[] = [
       { name: 'DAP', desc: 'Root establishment', icon: 'Sprout' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1563514227147-6d2ff665a6a0?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1563514227147-6d2ff665a6a0?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Sub-surface Drip', price: '₹25/m' },
         { name: 'Pressure Gauge', price: '₹450/pc' }
@@ -285,11 +285,11 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'cotton',
     name: 'Cotton',
-    heroImage: 'https://images.unsplash.com/photo-1594904351111-a072f80b1a71?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1594904351111-a072f80b1a71?auto=format&fit=crop&w=400&q=70',
     iconImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAi13WleIFmuHicYHUY0W-rwufSddyMDo6kb2AcbrntT8BejZDYLjTxaKtV_Y7mnIsnnZJB27-jLhcDJJ-INGrThJKx-ezn-v1eICtCBg9KvmrOIjxCzqye2mi_tIn2fzO64bWu8QByBgH2JQTivKMjxsEsgphoj0fCIMsFB7enUvlyLg-6IkDTTWxfnEszM37GZrGUGaIDzJCwiztMcbaYmVPS8EIuSqQY0ewtQb8oZbCMTLeltwk9U7G9_lPwLTyFLt5WcDAd8f1r',
     tagline: 'High-performance seeds and protection for your cotton crop.',
     seeds: [
-      { name: 'BG-II Hybrid', price: 850, img: 'https://images.unsplash.com/photo-1599307767316-776533bb941c?auto=format&fit=crop&q=80' },
+      { name: 'BG-II Hybrid', price: 850, img: 'https://images.unsplash.com/photo-1599307767316-776533bb941c?auto=format&fit=crop&w=400&q=70' },
       { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
     ],
     nutrition: [
@@ -297,7 +297,7 @@ export const INITIAL_HUBS: Hub[] = [
       { name: 'Urea', desc: 'Vegetative growth boost', icon: 'Water' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1582260656094-1a966774e1d1?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1582260656094-1a966774e1d1?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Rain Pipe', price: '₹18/m' },
         { name: 'Water Pump 5HP', price: '₹15000/pc' }
@@ -323,11 +323,11 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'onion',
     name: 'Onion',
-    heroImage: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&w=400&q=70',
     tagline: 'Scale your onion production with expert insights and high-yield varieties.',
     seeds: [
-      { name: 'Bhima Super', price: 1200, img: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?auto=format&fit=crop&q=80' },
+      { name: 'Bhima Super', price: 1200, img: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?auto=format&fit=crop&w=400&q=70' },
       { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
     ],
     nutrition: [
@@ -335,7 +335,7 @@ export const INITIAL_HUBS: Hub[] = [
       { name: 'NPK 10:26:26', desc: 'Base dose for bulb development', icon: 'Sprout' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1592982537447-6f2a6a0c7c18?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1592982537447-6f2a6a0c7c18?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Drip Lateral (16mm)', price: '₹14/m' },
         { name: 'Venturi Injector', price: '₹1200/pc' }
@@ -361,15 +361,15 @@ export const INITIAL_HUBS: Hub[] = [
   {
     id: 'orange',
     name: 'Orange',
-    heroImage: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&q=80',
-    iconImage: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&q=80',
+    heroImage: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&w=400&q=70',
+    iconImage: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&w=400&q=70',
     tagline: 'Advanced Citrus Management for Vibrant Color and High Brix Value.',
     idealClimate: 'Warm temperate to Tropical (15°C - 35°C)',
     soilType: 'Deep, well-drained loamy soil',
     waterNeeds: 'Moderate but Regular',
     bestSeason: 'Spring Flowering',
     seeds: [
-      { name: 'Nagpur Mandarin', price: 120, img: 'https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&q=80' },
+      { name: 'Nagpur Mandarin', price: 120, img: 'https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&w=400&q=70' },
       { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
     ],
     nutrition: [
@@ -377,7 +377,7 @@ export const INITIAL_HUBS: Hub[] = [
       { name: 'Potassium Nitrate', desc: 'Improves fruit weight and rind quality', icon: 'Water' }
     ],
     irrigation: {
-      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1533728646964-b5b6329fc5f4?auto=format&fit=crop&w=400&q=70',
       items: [
         { name: 'Micro-sprinklers', price: '₹85/pc' },
         { name: 'Filter Unit', price: '₹3500/pc' }

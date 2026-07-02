@@ -1421,6 +1421,14 @@ export default function App() {
               if (coords) setCoordinates(coords);
             }}
             userCoords={coordinates}
+            globalSearch={mapFilterProductId ? '' : productSearch}
+            onClearGlobalSearch={() => setProductSearch('')}
+            onBrowseProducts={(store) => {
+              const name = store.name || store.shopName || '';
+              if (name) setProductSearch(name);
+              setSelectedCategory('all');
+              navigate('market');
+            }}
           />
         );
       case 'profile':
@@ -1675,7 +1683,7 @@ export default function App() {
             { key: 'home', icon: ICONS.Home, label: t('home'), active: currentView === 'home', onClick: () => navigate('home') },
             { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
             { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
-            { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => navigate('map') },
+            { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => { setProductSearch(''); navigate('map'); } },
             // Last item is always "Account" — behaviour depends on auth state
             {
               key: 'account',

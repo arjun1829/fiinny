@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt } from "lucide-react";
+import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt, Youtube } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { compressImage } from "../../utils/compressImage";
@@ -13,6 +13,8 @@ import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
   type ProductCategory, effectiveCategoryInfo,
 } from "../_lib/category-info";
+import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
+import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -303,6 +305,18 @@ function VariantRow({ v, i, disabled, isOnly, setV, removeV }: {
   );
 }
 
+function extractYouTubeId(url: string): string | null {
+  const t = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(t)) return t;
+  const m = t.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function isValidYouTubeUrl(url: string): boolean {
+  if (!url.trim()) return true; // empty is valid (optional field)
+  return extractYouTubeId(url) !== null;
+}
+
 function rowToImages(row: InventoryRow): ImgSlot[] {
   const urls = row.images.length ? row.images : (row.image ? [row.image] : []);
   return Array.from({ length: MAX_IMAGES }, (_, i) => ({
@@ -393,8 +407,10 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-export function EditProductModal({ row, onClose, onSaved }: {
+export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved }: {
   row: InventoryRow;
+  /** When false, both Online Delivery and GST fields are hidden and forced to their off defaults on save. */
+  accountDeliveryEnabled?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -420,6 +436,14 @@ export function EditProductModal({ row, onClose, onSaved }: {
   const [gstRate, setGstRate]             = useState<GstRate>(row.gstRate ?? 0);
   const [sellMode, setSellMode]           = useState<"online_delivery" | "offline_store_only">(
     row.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
+  );
+
+  const [videoUrl, setVideoUrl] = useState<string>((row as any).videoUrl ?? "");
+  const [composition, setComposition] = useState<CompositionEntry[]>(
+    Array.isArray((row as any).composition) ? (row as any).composition : [],
+  );
+  const [customFields, setCustomFields] = useState<CustomFieldEntry[]>(
+    Array.isArray(row.customFields) ? row.customFields : [],
   );
 
   // Category-specific info — initialise from categoryInfo or fall back to legacy flat fields
@@ -485,6 +509,10 @@ export function EditProductModal({ row, onClose, onSaved }: {
       setMessage({ type: "err", text: "Wait for uploads to complete." });
       return;
     }
+    if (videoUrl.trim() && !isValidYouTubeUrl(videoUrl)) {
+      setMessage({ type: "err", text: "Enter a valid YouTube URL (youtube.com or youtu.be)." });
+      return;
+    }
     const imageUrls = images.map((s) => s.url.trim()).filter(Boolean);
 
     // Resolve the saved category value
@@ -503,6 +531,11 @@ export function EditProductModal({ row, onClose, onSaved }: {
         ? raw.split(",").map((s) => s.trim()).filter(Boolean)
         : raw;
     });
+
+    // Both delivery and GST are gated on the same account-level flag.
+    const effectiveSellMode: "online_delivery" | "offline_store_only" =
+      accountDeliveryEnabled !== false ? sellMode : "offline_store_only";
+    const effectiveGstApplicable = accountDeliveryEnabled !== false ? gstApplicable : false;
 
     setSaving(true);
     setMessage(null);
@@ -526,17 +559,20 @@ export function EditProductModal({ row, onClose, onSaved }: {
         variants: parsedVariants,
         image: imageUrls[0] ?? "",
         images: imageUrls,
+        videoUrl: videoUrl.trim() || undefined,
+        composition: composition.filter(e => e.name.trim()),
+        customFields: customFields.filter(e => e.title.trim()),
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
-        gstApplicable,
-        gstRate: gstApplicable ? gstRate : 0,
+        gstApplicable: effectiveGstApplicable,
+        gstRate: effectiveGstApplicable ? gstRate : 0,
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
       });
 
       // Update sellMode separately — this cascades to assigned retailer copies.
-      if (sellMode !== row.sellMode) {
-        await updateProductSellMode(row.productId, sellMode);
+      if (effectiveSellMode !== row.sellMode) {
+        await updateProductSellMode(row.productId, effectiveSellMode);
       }
 
       // Update inventory: use first variant's stock; fall back to existing stockQuantity.
@@ -679,6 +715,28 @@ export function EditProductModal({ row, onClose, onSaved }: {
             onToggle={() => setShowAdditionalData((v) => !v)}
           />
 
+          {/* ── Composition ─────────────────────────────────────────────── */}
+          {COMPOSITION_CATEGORIES.has(category === "Other" ? (customCategory.trim() || "Other") : category) && (
+            <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <Layers className="h-4 w-4 text-primary" /> Composition
+                <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+              </div>
+              <p className="text-xs text-on-surface-variant">List active ingredients, nutrients, or chemical components with their concentrations.</p>
+              <CompositionEditor entries={composition} onChange={setComposition} disabled={saving} />
+            </div>
+          )}
+
+          {/* ── Custom Additional Fields ──────────────────────────────────── */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Plus className="h-4 w-4 text-primary" /> Additional Information
+              <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+            </div>
+            <p className="text-xs text-on-surface-variant">Add extra details that don't fit the standard fields — e.g. Yield Potential, Shelf Life, Certifications.</p>
+            <CustomFieldsEditor entries={customFields} onChange={setCustomFields} disabled={saving} />
+          </div>
+
           {/* ── Variants ──────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
@@ -714,84 +772,117 @@ export function EditProductModal({ row, onClose, onSaved }: {
             </div>
           </div>
 
-          {/* ── Online Delivery + GST ──────────────────────────────────────── */}
-          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
+          {/* ── Product Video ─────────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
+              <Youtube className="h-4 w-4 text-red-500" /> Product Video <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
             </div>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-on-surface">YouTube URL</span>
+              <input
+                type="url"
+                disabled={saving}
+                placeholder="https://www.youtube.com/watch?v=… or https://youtu.be/…"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                className={`rounded-xl border px-3 py-2.5 text-on-surface outline-none focus:ring-2 text-sm disabled:opacity-50 ${
+                  videoUrl.trim() && !isValidYouTubeUrl(videoUrl)
+                    ? "border-red-400 focus:border-red-400 focus:ring-red-200"
+                    : "border-outline-variant/40 bg-white focus:border-primary focus:ring-primary/20"
+                }`}
+              />
+              {videoUrl.trim() && !isValidYouTubeUrl(videoUrl) && (
+                <span className="text-xs text-red-500">Enter a valid YouTube URL (youtube.com or youtu.be).</span>
+              )}
+              {videoUrl.trim() && isValidYouTubeUrl(videoUrl) && (
+                <span className="text-xs text-primary flex items-center gap-1">
+                  ✓ Valid YouTube URL — video will appear on the product page.
+                </span>
+              )}
+            </label>
+          </div>
 
-            {/* Online Delivery toggle */}
-            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-on-surface">Online Delivery</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
+          {/* ── Online Delivery + GST — both shown only when account-level delivery is ON ── */}
+          {accountDeliveryEnabled !== false && (
+            <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
               </div>
-              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
-                {(["online_delivery", "offline_store_only"] as const).map((mode) => (
-                  <button key={mode} type="button" disabled={saving}
-                    onClick={() => setSellMode(mode)}
-                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                      sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
-                    }`}
-                  >
-                    {mode === "online_delivery" ? "Yes" : "No"}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
-              </div>
-              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
-                {([true, false] as const).map((v) => (
-                  <button key={String(v)} type="button" disabled={saving}
-                    onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
-                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                      gstApplicable === v
-                        ? "bg-primary text-white"
-                        : "text-on-surface-variant hover:bg-surface-container"
-                    }`}
-                  >
-                    {v ? "Yes" : "No"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {gstApplicable && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
-                <div className="flex flex-wrap gap-2">
-                  {GST_RATES.map((rate) => (
-                    <button key={rate} type="button" disabled={saving}
-                      onClick={() => setGstRate(rate)}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
-                        gstRate === rate
-                          ? "border-primary bg-primary text-white shadow-sm"
-                          : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+              {/* Online Delivery toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-on-surface">Online Delivery</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
+                </div>
+                <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                  {(["online_delivery", "offline_store_only"] as const).map((mode) => (
+                    <button key={mode} type="button" disabled={saving}
+                      onClick={() => setSellMode(mode)}
+                      className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                        sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
                       }`}
                     >
-                      {rate}%
+                      {mode === "online_delivery" ? "Yes" : "No"}
                     </button>
                   ))}
                 </div>
-                {gstApplicable && gstRate === 0 && (
-                  <p className="text-xs text-amber-700 flex items-center gap-1">
-                    0% GST selected — confirm this product is exempt or zero-rated.
-                  </p>
-                )}
               </div>
-            )}
 
-            {gstApplicable && gstRate > 0 && (
-              <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
-                GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+              {/* GST toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
+                </div>
+                <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                  {([true, false] as const).map((v) => (
+                    <button key={String(v)} type="button" disabled={saving}
+                      onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                      className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                        gstApplicable === v
+                          ? "bg-primary text-white"
+                          : "text-on-surface-variant hover:bg-surface-container"
+                      }`}
+                    >
+                      {v ? "Yes" : "No"}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
+
+              {gstApplicable && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
+                  <div className="flex flex-wrap gap-2">
+                    {GST_RATES.map((rate) => (
+                      <button key={rate} type="button" disabled={saving}
+                        onClick={() => setGstRate(rate)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                          gstRate === rate
+                            ? "border-primary bg-primary text-white shadow-sm"
+                            : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                        }`}
+                      >
+                        {rate}%
+                      </button>
+                    ))}
+                  </div>
+                  {gstApplicable && gstRate === 0 && (
+                    <p className="text-xs text-amber-700 flex items-center gap-1">
+                      0% GST selected — confirm this product is exempt or zero-rated.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {gstApplicable && gstRate > 0 && (
+                <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+                  GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -8,6 +8,7 @@ const PRIORITY_NAV = [
   { path: '/b2c-dashboard',    label: 'B2C Dashboard',    icon: <BarChart3 size={15} />,      screenKey: 'b2c_dashboard' as AppScreen },
   { path: '/analytics',        label: 'Analytics',        icon: <Layers size={15} />,         screenKey: 'analytics' as AppScreen },
   { path: '/worklist',         label: 'Worklist',          icon: <ReceiptText size={15} />,    screenKey: 'worklist' as AppScreen },
+  { path: '/supplier-ledger', label: 'Supplier Ledger',   icon: <ClipboardList size={15} />,  screenKey: 'worklist' as AppScreen },
   { path: '/inventory',        label: 'Inventory',         icon: <Package size={15} />,        screenKey: 'inventory' as AppScreen },
   { path: '/administration',   label: 'Administration',    icon: <ShieldAlert size={15} />,    screenKey: 'admin' as AppScreen },
   { path: '/b2b-invoice',      label: 'Billing & Invoice', icon: <ReceiptText size={15} />,   screenKey: 'worklist' as AppScreen },

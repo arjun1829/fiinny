@@ -9,7 +9,21 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e9a2d265-8629-4d11-8cd6-1d7b6b456f2a" name="Changes" comment="" />
+    <list default="true" id="e9a2d265-8629-4d11-8cd6-1d7b6b456f2a" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/.firebase/hosting.ZGlzdA.cache" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/.firebase/hosting.ZGlzdA.cache" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/firestore.rules" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/firestore.rules" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/App.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/components/HorizontalNavbar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/components/HorizontalNavbar.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/contexts/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/contexts/AuthContext.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/firebase.ts" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/firebase.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/pages/RateSheetPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/pages/RateSheetPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/pages/SupplierLedgerPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/pages/SupplierLedgerPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/utils/nandgaonImport.ts" beforeDir="false" afterPath="$PROJECT_DIR$/KARANARJUNKSKPVTLTD/src/utils/nandgaonImport.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KrishiDukaan-V2/mobile/pubspec.lock" beforeDir="false" afterPath="$PROJECT_DIR$/KrishiDukaan-V2/mobile/pubspec.lock" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

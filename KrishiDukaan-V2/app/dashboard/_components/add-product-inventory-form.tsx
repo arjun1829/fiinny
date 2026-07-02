@@ -3,12 +3,14 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2, PackagePlus, Plus, X, Upload, Link as LinkIcon,
-  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt,
+  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt, Youtube,
 } from "lucide-react";
 import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
   type ProductCategory, effectiveCategoryInfo,
 } from "../_lib/category-info";
+import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
+import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
@@ -54,6 +56,18 @@ const MAX_VARIANTS = 8;
 const MAX_IMAGES   = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function extractYouTubeId(url: string): string | null {
+  const t = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(t)) return t;
+  const m = t.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function isValidYouTubeUrl(url: string): boolean {
+  if (!url.trim()) return true;
+  return extractYouTubeId(url) !== null;
+}
 
 function buildUnit(v: Variant): string {
   if (v.unitType === "custom") return v.customUnit.trim();
@@ -124,6 +138,9 @@ type AdminProductPayload = {
   gstApplicable: boolean; gstRate: number;
   sellMode: "online_delivery" | "offline_store_only"; isOnline: boolean;
   editProductId: string | null;
+  videoUrl?: string;
+  composition?: { name: string; value: string }[];
+  customFields?: { title: string; value: string }[];
 };
 
 type AddProductInventoryFormProps = {
@@ -139,7 +156,7 @@ type AddProductInventoryFormProps = {
   initialProduct?: any;
   /** Admin-only: custom save handler; receives validated payload. If omitted, falls back to adminCreateProduct/adminUpdateProduct. */
   onAdminSave?: (payload: AdminProductPayload) => Promise<void>;
-  /** When true, shows the Online Delivery toggle for non-admin sellers. */
+  /** When true, shows both Online Delivery and GST toggles for non-admin sellers. */
   accountDeliveryEnabled?: boolean;
 };
 
@@ -477,6 +494,15 @@ export function AddProductInventoryForm({
   // Images
   const [images,      setImages]      = useState<ImageSlot[]>([newSlot()]);
 
+  // Video
+  const [videoUrl,    setVideoUrl]    = useState("");
+
+  // Composition
+  const [composition, setComposition] = useState<CompositionEntry[]>([]);
+
+  // Custom additional fields
+  const [customFields, setCustomFields] = useState<CustomFieldEntry[]>([]);
+
   // Search state
   const [suggestions,   setSuggestions]   = useState<SearchResult[]>([]);
   const [searching,     setSearching]     = useState(false);
@@ -490,8 +516,8 @@ export function AddProductInventoryForm({
   const [gstApplicable, setGstApplicable] = useState(false);
   const [gstRate,       setGstRate]       = useState<GstRate>(0);
 
-  // Online delivery (admin mode only — derived from sellMode)
-  const [sellMode, setSellMode] = useState<"online_delivery" | "offline_store_only">("online_delivery");
+  // New products default to offline; seller opts in when account delivery is enabled
+  const [sellMode, setSellMode] = useState<"online_delivery" | "offline_store_only">("offline_store_only");
 
   // Submit state
   const [submitting,    setSubmitting]    = useState(false);
@@ -525,6 +551,9 @@ export function AddProductInventoryForm({
     setGstApplicable(!!p.gstApplicable);
     setGstRate(p.gstRate ?? 0);
     setSellMode(p.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery");
+    setVideoUrl((p as any).videoUrl ?? "");
+    setComposition(Array.isArray((p as any).composition) ? (p as any).composition : []);
+    setCustomFields(Array.isArray((p as any).customFields) ? (p as any).customFields : []);
     const ci = effectiveCategoryInfo(p as Record<string, unknown>);
     if (ci) {
       const flat: Record<string, string> = {};
@@ -679,6 +708,10 @@ export function AddProductInventoryForm({
       setMessage({ type: "err", text: "Wait for image uploads to finish." });
       return;
     }
+    if (videoUrl.trim() && !isValidYouTubeUrl(videoUrl)) {
+      setMessage({ type: "err", text: "Enter a valid YouTube URL (youtube.com or youtu.be)." });
+      return;
+    }
 
     const imageUrls = images.map((s) => s.url.trim()).filter(Boolean);
 
@@ -699,6 +732,12 @@ export function AddProductInventoryForm({
         : raw;
     });
 
+    // Both delivery and GST are gated on the same account-level flag.
+    // When the flag is off (or not yet loaded), coerce both to false/offline.
+    const deliveryVisible = adminMode || accountDeliveryEnabled;
+    const effectiveSellMode: "online_delivery" | "offline_store_only" = deliveryVisible ? sellMode : "offline_store_only";
+    const effectiveGstApplicable = deliveryVisible ? gstApplicable : false;
+
     setSubmitting(true);
     setMessage(null);
     try {
@@ -710,9 +749,12 @@ export function AddProductInventoryForm({
           description, image: imageUrls[0] ?? undefined, images: imageUrls,
           isActive: true, source: "admin",
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
-          gstApplicable, gstRate: gstApplicable ? gstRate : 0,
-          sellMode, isOnline: sellMode === "online_delivery",
+          gstApplicable: effectiveGstApplicable, gstRate: effectiveGstApplicable ? gstRate : 0,
+          sellMode: effectiveSellMode, isOnline: effectiveSellMode === "online_delivery",
           editProductId: initialProduct?.id ?? null,
+          videoUrl: videoUrl.trim() || undefined,
+          composition: composition.filter(e => e.name.trim()) as any,
+          customFields: customFields.filter(e => e.title.trim()),
         };
         if (onAdminSave) {
           await onAdminSave(adminPayload);
@@ -726,8 +768,8 @@ export function AddProductInventoryForm({
           setName(""); setCategory(CATEGORIES[0]); setCustomCategory(""); setDescription("");
           setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
           setCategoryInfo({}); setShowAdditionalData(false);
-          setGstApplicable(false); setGstRate(0); setSellMode("online_delivery");
-          setVariants([newVariant()]); setImages([newSlot()]);
+          setGstApplicable(false); setGstRate(0); setSellMode("offline_store_only");
+          setVariants([newVariant()]); setImages([newSlot()]); setCustomFields([]);
         }
         await onCreated();
         return;
@@ -742,10 +784,13 @@ export function AddProductInventoryForm({
           description,
           image: imageUrls[0] ?? undefined,
           images: imageUrls,
+          videoUrl: videoUrl.trim() || undefined,
+          composition: composition.filter(e => e.name.trim()),
+          customFields: customFields.filter(e => e.title.trim()),
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
-          gstApplicable,
-          gstRate: gstApplicable ? gstRate : 0,
-          sellMode,
+          gstApplicable: effectiveGstApplicable,
+          gstRate: effectiveGstApplicable ? gstRate : 0,
+          sellMode: effectiveSellMode,
         });
       } else {
         await createProductAndInventory(userId, {
@@ -757,11 +802,12 @@ export function AddProductInventoryForm({
           description,
           imageUrl: imageUrls[0] ?? undefined,
           storeName: storeName || "My Store",
-          sellMode,
+          sellMode: effectiveSellMode,
           existingProductId: existingProductId ?? undefined,
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
-          gstApplicable,
-          gstRate: gstApplicable ? gstRate : 0,
+          customFields: customFields.filter(e => e.title.trim()),
+          gstApplicable: effectiveGstApplicable,
+          gstRate: effectiveGstApplicable ? gstRate : 0,
         });
       }
       setMessage({ type: "ok", text: isManufacturer ? t('formProductAdded') : t('formProductAddedInv') });
@@ -771,6 +817,8 @@ export function AddProductInventoryForm({
       setGstApplicable(false); setGstRate(0);
       setVariants([newVariant()]);
       setImages([newSlot()]);
+      setVideoUrl("");
+      setComposition([]);
       await onCreated();
     } catch (err) {
       setMessage({ type: "err", text: err instanceof Error ? err.message : "Failed to create product." });
@@ -956,6 +1004,28 @@ export function AddProductInventoryForm({
           onToggle={() => setShowAdditionalData((v) => !v)}
         />
 
+        {/* ── Composition (Fertilizers / Pesticides / Herbicides / Bio-Stimulants) */}
+        {COMPOSITION_CATEGORIES.has(category === "Other" ? (customCategory.trim() || "Other") : category) && (
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Layers className="h-4 w-4 text-primary" /> Composition
+              <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+            </div>
+            <p className="text-xs text-on-surface-variant -mt-1">List all active ingredients, nutrients, or chemical components with their concentrations.</p>
+            <CompositionEditor entries={composition} onChange={setComposition} disabled={isDisabled} />
+          </div>
+        )}
+
+        {/* ── Custom Additional Fields ──────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Plus className="h-4 w-4 text-primary" /> Additional Information
+            <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+          </div>
+          <p className="text-xs text-on-surface-variant -mt-1">Add any extra product details that don't fit the standard fields above — e.g. Yield Potential, Shelf Life, Certifications.</p>
+          <CustomFieldsEditor entries={customFields} onChange={setCustomFields} disabled={isDisabled} />
+        </div>
+
         {/* ── Section 2: Pack sizes & prices ────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -1009,7 +1079,36 @@ export function AddProductInventoryForm({
           <p className="text-xs text-on-surface-variant">{t('formImageHint')}</p>
         </div>
 
-        {/* ── Section 4: GST & Delivery ─────────────────────────────────────── */}
+        {/* ── Section 4: Product Video ──────────────────────────────────────── */}
+        <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <Youtube className="h-4 w-4 text-red-500" /> Product Video
+            <span className="text-xs font-normal text-on-surface-variant">(Optional)</span>
+          </div>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-on-surface">YouTube URL</span>
+            <input
+              type="url"
+              disabled={isDisabled}
+              placeholder="https://www.youtube.com/watch?v=… or https://youtu.be/…"
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              className={`rounded-xl border px-3 py-2.5 text-on-surface outline-none focus:ring-2 text-sm disabled:opacity-50 ${
+                videoUrl.trim() && !isValidYouTubeUrl(videoUrl)
+                  ? "border-red-400 focus:border-red-400 focus:ring-red-200"
+                  : "border-outline-variant/40 bg-surface-container-lowest focus:border-primary focus:ring-primary/20"
+              }`}
+            />
+            {videoUrl.trim() && !isValidYouTubeUrl(videoUrl) && (
+              <span className="text-xs text-red-500">Enter a valid YouTube URL (youtube.com or youtu.be).</span>
+            )}
+            {videoUrl.trim() && isValidYouTubeUrl(videoUrl) && (
+              <span className="text-xs text-primary">✓ Valid YouTube URL — video will appear on the product page.</span>
+            )}
+          </label>
+        </div>
+
+        {/* ── Section 5: GST & Delivery ─────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
             <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
@@ -1037,53 +1136,57 @@ export function AddProductInventoryForm({
             </div>
           )}
 
-          {/* GST — shown for both admin and sellers */}
-          <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
-              <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
-            </div>
-            <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
-              {([true, false] as const).map((v) => (
-                <button key={String(v)} type="button" disabled={isDisabled}
-                  onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
-                  className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                    gstApplicable === v ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
-                  }`}
-                >
-                  {v ? "Yes" : "No"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {gstApplicable && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
-              <div className="flex flex-wrap gap-2">
-                {GST_RATES.map((rate) => (
-                  <button key={rate} type="button" disabled={isDisabled}
-                    onClick={() => setGstRate(rate)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
-                      gstRate === rate
-                        ? "border-primary bg-primary text-white shadow-sm"
-                        : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
-                    }`}
-                  >
-                    {rate}%
-                  </button>
-                ))}
+          {/* GST — shown only when account-level delivery is ON (same gate as the delivery toggle) */}
+          {(adminMode || accountDeliveryEnabled) && (
+            <>
+              <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
+                </div>
+                <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                  {([true, false] as const).map((v) => (
+                    <button key={String(v)} type="button" disabled={isDisabled}
+                      onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                      className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                        gstApplicable === v ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
+                      }`}
+                    >
+                      {v ? "Yes" : "No"}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {gstApplicable && gstRate === 0 && (
-                <p className="text-xs text-amber-700">0% selected — confirm this product is exempt or zero-rated.</p>
-              )}
-            </div>
-          )}
 
-          {gstApplicable && gstRate > 0 && (
-            <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
-              GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
-            </div>
+              {gstApplicable && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
+                  <div className="flex flex-wrap gap-2">
+                    {GST_RATES.map((rate) => (
+                      <button key={rate} type="button" disabled={isDisabled}
+                        onClick={() => setGstRate(rate)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                          gstRate === rate
+                            ? "border-primary bg-primary text-white shadow-sm"
+                            : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                        }`}
+                      >
+                        {rate}%
+                      </button>
+                    ))}
+                  </div>
+                  {gstApplicable && gstRate === 0 && (
+                    <p className="text-xs text-amber-700">0% selected — confirm this product is exempt or zero-rated.</p>
+                  )}
+                </div>
+              )}
+
+              {gstApplicable && gstRate > 0 && (
+                <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+                  GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+                </div>
+              )}
+            </>
           )}
         </div>
 

@@ -43,17 +43,24 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
 } | null> {
   const db = getClientDb();
 
-  const [mfrSnap, brandSnap, retailerDocsSnap] = await Promise.all([
+  const [mfrSnap, retailerDocsSnap] = await Promise.all([
     getDoc(doc(db, "manufacturers", manufacturerPhone)),
-    getDoc(doc(db, "brandPages", manufacturerPhone)),
-    // Fetch up to 50 linked retailer mirror docs from subcollection (public list allowed)
-    getDocs(query(collection(db, "manufacturers", manufacturerPhone, "retailers"), limit(50))),
+    // Fetch ALL linked retailer mirror docs — no limit, subcollection is scoped to one manufacturer.
+    getDocs(collection(db, "manufacturers", manufacturerPhone, "retailers")),
   ]);
 
   if (!mfrSnap.exists()) return null;
 
   const mfrData = mfrSnap.data() as Record<string, unknown>;
   const uid = String(mfrData.uid ?? mfrData.manufacturerId ?? "");
+
+  // Brand page may be stored under phone (canonical) or uid (when manufacturer dashboard saved
+  // before uidIndex was created for the account). Try phone first, then uid as fallback.
+  let brandSnap = await getDoc(doc(db, "brandPages", manufacturerPhone));
+  if (!brandSnap.exists() && uid && uid !== manufacturerPhone) {
+    brandSnap = await getDoc(doc(db, "brandPages", uid));
+  }
+
   const customization = brandSnap.exists()
     ? (brandSnap.data() as Partial<BrandPageCustomization>)
     : null;
@@ -61,24 +68,38 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
   const brand = assembleBrandData(manufacturerPhone, mfrData, customization);
 
   // ── Products: manufacturer-owned catalog only ──────────────────────────────
-  // Fetch with a generous limit, then client-filter out retailer-assigned copies
-  // (those have source === "manufacturer_assigned") so they don't appear twice.
+  // Run two queries in parallel to cover both field schemas:
+  //   - new schema: manufacturerId == uid (set on products created via the new dashboard)
+  //   - legacy schema: ownerId == uid + ownerType == "manufacturer" (older products)
+  // Deduplicate by document ID, then exclude retailer-assigned copies.
   let products: BrandProductSummary[] = [];
   if (uid) {
-    const productsSnap = await getDocs(
-      query(
-        collection(db, "products"),
-        where("manufacturerId", "==", uid),
-        where("isActive", "==", true),
-        limit(60),
+    const [byManufacturerId, byOwnerId] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, "products"),
+          where("manufacturerId", "==", uid),
+          where("isActive", "==", true),
+        ),
       ),
-    );
-    products = productsSnap.docs
+      getDocs(
+        query(
+          collection(db, "products"),
+          where("ownerId", "==", uid),
+          where("ownerType", "==", "manufacturer"),
+        ),
+      ),
+    ]);
+
+    const seen = new Set<string>();
+    products = [...byManufacturerId.docs, ...byOwnerId.docs]
       .filter((d) => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
         const r = d.data() as Record<string, unknown>;
-        return r.source !== "manufacturer_assigned";
+        // exclude inactive and retailer-assigned copies
+        return r.isActive !== false && r.source !== "manufacturer_assigned";
       })
-      .slice(0, 30)
       .map((d) => {
         const r = d.data() as Record<string, unknown>;
         return {
@@ -100,18 +121,30 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
       : null;
   }
 
+  // Match Retailer Network dashboard logic: exclude only explicitly revoked/removed/inactive
+  // entries. "invited" retailers (pending claim) are visible — they appear in the dashboard too.
   const activeMirrors = retailerDocsSnap.docs.filter((d) => {
     const r = d.data() as Record<string, unknown>;
+    const status = String(r.status ?? "invited");
+    const onboarding = String(r.onboardingStatus ?? "active");
     return (
-      String(r.status ?? "") === "active" &&
-      String(r.onboardingStatus ?? "active") === "active"
+      status !== "revoked" &&
+      onboarding !== "removed" &&
+      onboarding !== "inactive"
     );
   });
 
+  // Debug: log mirror counts server-side so mismatches are visible in server logs.
+  console.log(
+    `[BrandPage] ${manufacturerPhone} — subcollection docs: ${retailerDocsSnap.docs.length}, ` +
+    `after filter: ${activeMirrors.length}`,
+  );
+
   // For each mirror, fetch the full retailers/{docId} profile in parallel to get geo/address.
   // retailerDocId field in the mirror points to the correct doc in the retailers collection.
+  // Process all filtered mirrors — no cap, subcollection is fetched in full.
   const retailers: BrandRetailerSummary[] = await Promise.all(
-    activeMirrors.slice(0, 20).map(async (d) => {
+    activeMirrors.map(async (d) => {
       const r = d.data() as Record<string, unknown>;
       const mirrorAddr = (r.address ?? {}) as Record<string, unknown>;
       const mirrorGeo = parseGeo(r.geo);
@@ -137,29 +170,52 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
         };
       }
 
-      // Otherwise fetch from retailers/{retailerDocId} (publicly readable)
+      // Slow path: fetch the retailer's global profile to get address/geo.
+      // Try retailers/{docId} first (may be stored as E164 "+91…" or bare 10-digit).
+      // Fall back to profiles/{docId} which is always publicly readable.
       const retailerDocId = String(r.retailerDocId ?? d.id);
-      try {
-        const rSnap = await getDoc(doc(db, "retailers", retailerDocId));
-        if (rSnap.exists()) {
-          const rd = rSnap.data() as Record<string, unknown>;
-          const rdAddr = (rd.address ?? {}) as Record<string, unknown>;
-          return {
-            phone: d.id,
-            secondaryPhone: String(rd.secondaryPhone ?? r.secondaryPhone ?? ""),
-            shopName: shopName || String(rd.shopName ?? rd.ownerName ?? ""),
-            ownerName: ownerName || String(rd.ownerName ?? ""),
-            address: {
-              city: String(rdAddr.city ?? mirrorAddr.city ?? ""),
-              state: String(rdAddr.state ?? mirrorAddr.state ?? ""),
-              line1: String(rdAddr.line1 ?? mirrorAddr.line1 ?? ""),
-            },
-            geo: parseGeo(rd.geo) ?? mirrorGeo,
-            logo: String(rd.logo ?? "") || mirrorLogo || undefined,
-          };
-        }
-      } catch {
-        // fall through to mirror data
+      // Derive the alternate phone format so we catch both stored forms.
+      const altRetailerId = retailerDocId.startsWith("+91")
+        ? retailerDocId.slice(3)
+        : `+91${retailerDocId}`;
+
+      const tryFetch = async (id: string) => {
+        try {
+          const snap = await getDoc(doc(db, "retailers", id));
+          if (snap.exists()) return snap.data() as Record<string, unknown>;
+        } catch { /* fall through */ }
+        return null;
+      };
+
+      const tryProfileFetch = async (id: string) => {
+        try {
+          const snap = await getDoc(doc(db, "profiles", id));
+          if (snap.exists()) return snap.data() as Record<string, unknown>;
+        } catch { /* fall through */ }
+        return null;
+      };
+
+      const rd =
+        (await tryFetch(retailerDocId)) ??
+        (retailerDocId !== altRetailerId ? await tryFetch(altRetailerId) : null) ??
+        (await tryProfileFetch(retailerDocId)) ??
+        (retailerDocId !== altRetailerId ? await tryProfileFetch(altRetailerId) : null);
+
+      if (rd) {
+        const rdAddr = (rd.address ?? {}) as Record<string, unknown>;
+        return {
+          phone: d.id,
+          secondaryPhone: String(rd.secondaryPhone ?? r.secondaryPhone ?? ""),
+          shopName: shopName || String(rd.shopName ?? rd.businessName ?? rd.ownerName ?? ""),
+          ownerName: ownerName || String(rd.ownerName ?? ""),
+          address: {
+            city: String(rdAddr.city ?? rd.city ?? mirrorAddr.city ?? ""),
+            state: String(rdAddr.state ?? rd.state ?? mirrorAddr.state ?? ""),
+            line1: String(rdAddr.line1 ?? mirrorAddr.line1 ?? ""),
+          },
+          geo: parseGeo(rd.geo) ?? mirrorGeo,
+          logo: String(rd.logo ?? "") || mirrorLogo || undefined,
+        };
       }
 
       return {

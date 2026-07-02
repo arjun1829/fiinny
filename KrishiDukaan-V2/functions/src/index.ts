@@ -1,6 +1,9 @@
 import * as admin from "firebase-admin";
 import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onRequest } from "firebase-functions/v2/https";
+import { logger } from "firebase-functions/v2";
+import { queueWaNotification, buildSignupInviteUrl } from "./wa-notify";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -481,6 +484,25 @@ export const notifySellerOnOrder = onDocumentCreated(
       `${customer} ordered ${itemSummary}${total != null ? ` · ₹${total}` : ""}`,
       { orderId: event.params.orderId }
     );
+
+    logger.info("[notifySellerOnOrder] resolved sellerPhone", { sellerPhone, orderId: event.params.orderId });
+    if (sellerPhone) {
+      const totalStr = total != null ? `\nएकूण रक्कम: ₹${total}` : "";
+      logger.info("[notifySellerOnOrder] before queueWaNotification");
+      await queueWaNotification(
+        sellerPhone,
+        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        {
+          template: "order_notification",
+          type: "order",
+          payload: { customerName: customer, itemSummary, total: total ?? 0 },
+          source: { event: "order_created", entityType: "order", entityId: event.params.orderId },
+        }
+      );
+      logger.info("[notifySellerOnOrder] after queueWaNotification");
+    } else {
+      logger.warn("[notifySellerOnOrder] skipping WA — sellerPhone is empty", { orderId: event.params.orderId });
+    }
   }
 );
 
@@ -584,6 +606,24 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       `${mfr} assigned "${productName}" to your store`,
       { productId: event.params.productId }
     );
+
+    logger.info("[notifyRetailerOnAssignment] resolved retailerPhone", { retailerPhone, productId: event.params.productId });
+    if (retailerPhone) {
+      logger.info("[notifyRetailerOnAssignment] before queueWaNotification");
+      await queueWaNotification(
+        retailerPhone,
+        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}\n\nप्रॉडक्टची माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        {
+          template: "product_assignment",
+          type: "onboarding",
+          payload: { productName, manufacturerName: mfr },
+          source: { event: "product_assigned", entityType: "product", entityId: event.params.productId },
+        }
+      );
+      logger.info("[notifyRetailerOnAssignment] after queueWaNotification");
+    } else {
+      logger.warn("[notifyRetailerOnAssignment] skipping WA — retailerPhone is empty", { productId: event.params.productId });
+    }
   }
 );
 
@@ -614,5 +654,180 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
       `${mfr} added you to their retailer network`,
       { inviteId: event.params.docId }
     );
+
+    logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
+    if (retailerPhone) {
+      const inviteCode = String(d.inviteCode ?? "").trim();
+      const signupLink = inviteCode ? buildSignupInviteUrl(inviteCode) : "";
+      const linkLine = signupLink
+        ? `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${signupLink}\n\nही लिंक फक्त तुमच्यासाठी आहे.`
+        : "";
+      logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
+      await queueWaNotification(
+        retailerPhone,
+        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.${linkLine}\n\nअधिक माहितीसाठी:\nhttps://www.krishidukan.com`,
+        {
+          template: "retailer_onboarding",
+          type: "onboarding",
+          payload: { manufacturerName: mfr, inviteCode, signupLink },
+          source: { event: "retailer_network_add", entityType: "manufacturerRetailer", entityId: event.params.docId },
+        }
+      );
+      logger.info("[notifyRetailerOnNetworkAdd] after queueWaNotification");
+    } else {
+      logger.warn("[notifyRetailerOnNetworkAdd] skipping WA — retailerPhone is empty", { docId: event.params.docId });
+    }
   }
 );
+
+/**
+ * New active subscription created → send WhatsApp welcome message to the owner.
+ * Fires on both admin-created and payment-created subscriptions.
+ */
+export const notifyOnSubscriptionCreated = onDocumentCreated(
+  "subscriptions/{subscriptionId}",
+  async (event) => {
+    const d = event.data?.data() as Record<string, unknown> | undefined;
+    if (!d) return;
+
+    // Only welcome on active subscriptions; skip free/trial/expired docs
+    if (String(d.subscriptionStatus ?? "") !== "active") return;
+
+    const ownerPhone = firstPhone(d.ownerPhone, d.ownerId);
+    if (!ownerPhone) return;
+
+    const name = await displayName(ownerPhone, "");
+
+    await queueWaNotification(
+      ownerPhone,
+      `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://www.krishidukan.com`,
+      {
+        template: "subscription_welcome",
+        type: "subscription",
+        payload: { name: name || ownerPhone },
+        source: {
+          event: "subscription_created",
+          entityType: "subscription",
+          entityId: event.params.subscriptionId,
+        },
+      }
+    );
+  }
+);
+
+/**
+ * Runs daily. Finds subscriptions expiring in exactly 7 days and sends a
+ * WhatsApp reminder. Marks each reminded subscription with reminderSent7d=true
+ * to prevent duplicate reminders.
+ */
+export const remindExpiringSubscriptions = onSchedule(
+  { schedule: "every 24 hours", timeZone: "Asia/Kolkata" },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const windowStart = admin.firestore.Timestamp.fromMillis(now.toMillis() + 6 * msPerDay);
+    const windowEnd   = admin.firestore.Timestamp.fromMillis(now.toMillis() + 8 * msPerDay);
+
+    // Query all active subs in the 7-day window; filter reminderSent7d in-memory
+    // so we catch docs where the field doesn't exist yet (new subscriptions).
+    const snap = await db
+      .collection("subscriptions")
+      .where("subscriptionStatus", "==", "active")
+      .where("expiryDate", ">=", windowStart)
+      .where("expiryDate", "<=", windowEnd)
+      .get();
+
+    const toProcess = snap.docs.filter((doc) => doc.data().reminderSent7d !== true);
+
+    if (toProcess.length === 0) {
+      console.log("[remindExpiringSubscriptions] No subscriptions expiring in 7 days");
+      return;
+    }
+
+    for (const subDoc of toProcess) {
+      const d = subDoc.data() as Record<string, unknown>;
+      const ownerPhone = firstPhone(d.ownerPhone, d.ownerId);
+      if (!ownerPhone) continue;
+
+      const expiryTs = d.expiryDate as admin.firestore.Timestamp | undefined;
+      const expiryDate = expiryTs
+        ? expiryTs.toDate().toLocaleDateString("mr-IN", { day: "numeric", month: "long", year: "numeric" })
+        : "लवकरच";
+
+      const name = await displayName(ownerPhone, "");
+
+      await queueWaNotification(
+        ownerPhone,
+        `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://www.krishidukan.com`,
+        {
+          template: "subscription_expiry",
+          type: "subscription",
+          payload: { name: name || ownerPhone, expiryDate },
+          source: {
+            event: "subscription_expiry_reminder",
+            entityType: "subscription",
+            entityId: subDoc.id,
+          },
+        }
+      );
+
+      await subDoc.ref.update({
+        reminderSent7d: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    logger.info(`[remindExpiringSubscriptions] Sent reminders for ${toProcess.length} subscription(s)`);
+  }
+);
+
+/**
+ * Temporary diagnostic endpoint — remove after confirming the pipeline works.
+ *
+ * Call:  GET https://<region>-<project>.cloudfunctions.net/waQueueDiagnostic?phone=+91XXXXXXXXXX
+ *
+ * It bypasses all trigger logic and calls queueWaNotification() directly.
+ * If a waNotifications doc appears → queue helper works; bug is in a trigger.
+ * If no doc appears → the problem is inside queueWaNotification() or Admin SDK init.
+ */
+export const waQueueDiagnostic = onRequest(async (req, res) => {
+  const phone = String(req.query.phone ?? "").trim();
+  if (!phone) {
+    res.status(400).json({ error: "Pass ?phone=+91XXXXXXXXXX" });
+    return;
+  }
+
+  logger.info("[waQueueDiagnostic] starting test write", { phone });
+
+  // Verify Admin SDK is initialised by reading any doc
+  try {
+    await admin.firestore().collection("_diagnostics").doc("ping").set({
+      ts: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    logger.info("[waQueueDiagnostic] Admin SDK Firestore write: OK");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("[waQueueDiagnostic] Admin SDK Firestore write FAILED", { error: msg });
+    res.status(500).json({ step: "admin_sdk_check", error: msg });
+    return;
+  }
+
+  // Now attempt the actual waNotifications write
+  const docId = await queueWaNotification(
+    phone,
+    "KrishiDukan WA pipeline diagnostic test 🔧",
+    {
+      template: "generic",
+      type: "general",
+      source: { event: "diagnostic_test", entityType: "diagnostic", entityId: "test" },
+    }
+  );
+
+  if (docId) {
+    logger.info("[waQueueDiagnostic] SUCCESS — waNotifications doc created", { docId });
+    res.status(200).json({ success: true, docId, phone });
+  } else {
+    logger.error("[waQueueDiagnostic] FAILED — queueWaNotification returned null (check logs above for the Firestore error)");
+    res.status(500).json({ success: false, phone, note: "queueWaNotification returned null — check Cloud Logging for [waQueue] FAILED entry" });
+  }
+});

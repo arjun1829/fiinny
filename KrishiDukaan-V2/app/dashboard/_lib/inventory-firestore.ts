@@ -109,6 +109,17 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
       : undefined,
+    videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
+    composition: Array.isArray(data.composition)
+      ? (data.composition as { name: string; value: string }[]).filter(
+          (c) => c && typeof c === "object" && c.name
+        )
+      : undefined,
+    customFields: Array.isArray(data.customFields)
+      ? (data.customFields as { title: string; value: string }[]).filter(
+          (f) => f && typeof f === "object" && f.title
+        )
+      : undefined,
     // Legacy fertilizer flat fields — kept for backward compat
     nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
     phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
@@ -415,6 +426,9 @@ export async function fetchRetailerInventoryRows(
         bulkDiscountEnabled: inv.bulkDiscountEnabled ?? false,
         bulkDiscountTiers: inv.bulkDiscountTiers ?? [],
         categoryInfo: p.categoryInfo,
+        videoUrl: p.videoUrl ?? undefined,
+        composition: p.composition ?? undefined,
+        customFields: p.customFields ?? undefined,
         nitrogen: p.nitrogen ?? "",
         phosphorus: p.phosphorus ?? "",
         potassium: p.potassium ?? "",
@@ -508,6 +522,9 @@ export async function fetchManufacturerCatalogueRows(
       originalProductId: raw.originalProductId ? String(raw.originalProductId) : null,
       updatedAt: timestampToDate(p.updatedAt),
       categoryInfo: p.categoryInfo,
+      videoUrl: p.videoUrl ?? undefined,
+      composition: p.composition ?? undefined,
+      customFields: p.customFields ?? undefined,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",
@@ -580,6 +597,8 @@ export type AddProductInventoryInput = {
   existingProductId?: string;
   /** Category-specific structured info (new schema). */
   categoryInfo?: Record<string, string | string[]>;
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[];
   /** GST configuration for this product. */
   gstApplicable?: boolean;
   gstRate?: 0 | 5 | 12 | 18 | 28;
@@ -667,6 +686,7 @@ export async function createProductAndInventory(
     originalProductId: input.existingProductId || null,
 
     categoryInfo: input.categoryInfo ?? null,
+    customFields: input.customFields?.length ? input.customFields : null,
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,

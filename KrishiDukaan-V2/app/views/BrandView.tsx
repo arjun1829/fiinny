@@ -104,7 +104,7 @@ function BrandGeoMap({
   );
 }
 
-// ─── Retailer store card — matches ProductDetailView card exactly ──────────────
+// ─── Retailer store card (matches ProductDetailView card sizing exactly) ─────────
 
 function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
   retailer: RetailerWithDistance;
@@ -122,14 +122,15 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
     <div className={`rounded-2xl border-2 transition-all cursor-pointer overflow-hidden ${
       isExpanded ? 'border-primary bg-white shadow-ambient' : 'border-surface-container bg-surface-container-low hover:border-outline-variant'
     }`}>
-      {/* Always-visible summary row */}
-      <div className="w-full flex items-center gap-2 p-4">
+      <div className="w-full flex items-center gap-1.5 md:gap-2 p-2.5 md:p-4">
         <button
           type="button"
           onClick={onToggle}
-          className="flex-1 min-w-0 flex items-center gap-4 text-left"
+          className="flex-1 min-w-0 flex items-center gap-3 md:gap-4 text-left"
         >
-          <div className={`rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${retailer.logo ? 'w-10 h-10' : 'p-2.5'}`}>
+          <div className={`rounded-xl overflow-hidden shrink-0 transition-colors ${
+            isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'
+          } ${retailer.logo ? 'w-10 h-10' : 'p-2.5'}`}>
             {retailer.logo ? (
               <img src={retailer.logo} alt={retailer.shopName} className="w-10 h-10 object-cover" />
             ) : (
@@ -137,11 +138,17 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <span className="block font-bold text-on-surface truncate">{retailer.shopName || 'Store'}</span>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
-                <MapPin className="w-3 h-3" />{retailer.distanceLabel || loc || 'Nearby'}
+            <span className="block font-bold text-on-surface text-sm md:text-base leading-snug truncate">
+              {retailer.shopName || 'Store'}
+            </span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+              <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 whitespace-nowrap">
+                <MapPin className="w-3 h-3 shrink-0" />
+                {retailer.distanceLabel || loc || 'Nearby'}
               </span>
+              {retailer.distanceLabel && loc && (
+                <span className="text-[10px] text-on-surface-variant/60 whitespace-nowrap">{loc}</span>
+              )}
             </div>
           </div>
           <ChevronRight className={`w-4 h-4 text-outline transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
@@ -159,7 +166,6 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
         )}
       </div>
 
-      {/* Expanded details */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
@@ -188,19 +194,118 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
                 {retailer.secondaryPhone ? (
                   <a
                     href={`tel:${retailer.secondaryPhone}`}
-                    className="flex-1 border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                     onClick={(e) => e.stopPropagation()}
+                    className="flex-1 border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                   >
                     <Phone className="w-3.5 h-3.5" /> Call 2
                   </a>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full border border-outline-variant text-on-surface-variant py-2.5 rounded-xl text-xs font-black uppercase tracking-widest opacity-60 cursor-not-allowed flex items-center justify-center gap-1.5"
+                ) : null}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Manufacturer card (always pinned first in the discovery panel) ────────────
+
+function ManufacturerCard({ brand, isExpanded, onToggle }: {
+  brand: ManufacturerBrandData;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const loc = [brand.address.city, brand.address.state].filter(Boolean).join(', ');
+  const mapsHref = brand.geo
+    ? `https://www.google.com/maps?q=${brand.geo.latitude},${brand.geo.longitude}`
+    : loc
+      ? `https://www.google.com/maps/search/${encodeURIComponent(loc)}`
+      : null;
+
+  return (
+    <div className={`rounded-2xl border-2 transition-all cursor-pointer overflow-hidden ${
+      isExpanded
+        ? 'border-amber-400 bg-amber-50 shadow-ambient'
+        : 'border-amber-200 bg-amber-50/40 hover:border-amber-300'
+    }`}>
+      <div className="w-full flex items-center gap-1.5 md:gap-2 p-2.5 md:p-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-3 md:gap-4 text-left"
+        >
+          <div className={`rounded-xl overflow-hidden shrink-0 transition-colors ${
+            brand.logo ? 'w-10 h-10' : `p-2.5 ${isExpanded ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-600'}`
+          }`}>
+            {brand.logo ? (
+              <img src={brand.logo} alt={brand.businessName} className="w-10 h-10 object-contain" />
+            ) : (
+              <Building2 className="w-5 h-5" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-bold text-on-surface text-sm md:text-base leading-snug truncate">
+                {brand.businessName}
+              </span>
+              <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black text-white">
+                <BadgeCheck className="w-2.5 h-2.5" /> Manufacturer
+              </span>
+            </div>
+            {loc && (
+              <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 mt-0.5 whitespace-nowrap">
+                <MapPin className="w-3 h-3 shrink-0" />{loc}
+              </span>
+            )}
+          </div>
+          <ChevronRight className={`w-4 h-4 text-outline transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
+        </button>
+        <a
+          href="#brand-products"
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-amber-500 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all"
+        >
+          <Package className="w-3.5 h-3.5" /> Products
+        </a>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 flex flex-col gap-3 border-t border-amber-100">
+              {(brand.address.line1 || loc) && (
+                <p className="pt-3 text-xs text-on-surface-variant flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3 shrink-0 text-amber-500" />
+                  {[brand.address.line1, loc].filter(Boolean).join(', ')}
+                </p>
+              )}
+              <div className="flex gap-2">
+                {brand.phone && (
+                  <a
+                    href={`tel:${brand.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <Phone className="w-3.5 h-3.5" /> Call Store
-                  </button>
+                    <Phone className="w-3.5 h-3.5" /> Call
+                  </a>
+                )}
+                {mapsHref && (
+                  <a
+                    href={mapsHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 bg-primary text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Navigation className="w-3.5 h-3.5" /> Directions
+                  </a>
                 )}
               </div>
             </div>
@@ -257,6 +362,7 @@ export default function BrandView({
 
   const showWhereToBuy = brand.geo || locationDisplay || retailers.length > 0;
   const hasMapData = brand.geo || retailers.some((r) => r.geo);
+
 
   return (
     <div className="flex flex-col">
@@ -420,80 +526,80 @@ export default function BrandView({
         </div>
       </section>
 
-      {/* ── Where to Buy ─────────────────────────────────────────────────────── */}
+      {/* ── Where to Find Us — retailer discovery panel ──────────────────────── */}
       {showWhereToBuy && (
         <section className="bg-white border-b border-surface-container">
           <div className="max-w-7xl mx-auto w-full px-6 md:px-10 py-12 flex flex-col gap-6">
 
+            {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Where to Find Us</p>
                 <h2 className="text-2xl font-bold text-on-surface">
                   {retailers.length > 0
-                    ? `Available at ${retailers.length} Store${retailers.length !== 1 ? 's' : ''}`
+                    ? `${retailers.length + 1} Location${retailers.length + 1 !== 1 ? 's' : ''}`
                     : 'Our Location'}
                 </h2>
-                {locationDisplay && <p className="text-on-surface-variant text-sm mt-0.5">{locationDisplay}</p>}
+                {locationDisplay && (
+                  <p className="text-on-surface-variant text-sm mt-0.5">{locationDisplay}</p>
+                )}
               </div>
               {onFindNearYou && (
-                <button onClick={onFindNearYou}
-                  className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all">
+                <button
+                  onClick={onFindNearYou}
+                  className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all"
+                >
                   <MapPin className="w-3.5 h-3.5" /> Find Near You
                 </button>
               )}
             </div>
 
-            {/* Map left + store cards right */}
             <div className="flex flex-col md:flex-row gap-5">
 
-              {/* Map */}
-              {hasMapData && (
-                <div className={`h-80 rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-surface-container ${
-                  retailersWithDistance.length > 0 ? 'md:flex-1' : 'w-full'
-                }`}>
+              {/* ── Map — LEFT, h-80 required so GoogleMap (height:100%) has a
+                  concrete pixel height. Shows placeholder when no geo data. ── */}
+              <div className="h-80 md:flex-1 rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-surface-container">
+                {hasMapData ? (
                   <BrandGeoMap manufacturerGeo={brand.geo} retailers={retailers} />
-                </div>
-              )}
+                ) : (
+                  <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-on-surface-variant/30">
+                    <MapPin className="w-8 h-8" />
+                    <span className="text-xs font-medium">Location data not available</span>
+                  </div>
+                )}
+              </div>
 
-              {/* Retailer store cards */}
-              {retailersWithDistance.length > 0 && (
-                <div className="md:flex-1 flex flex-col gap-2">
-                  <div className={`flex flex-col gap-3 ${
-                    retailersWithDistance.length > 4
-                      ? 'max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-outline-variant/40 scrollbar-track-transparent'
-                      : ''
-                  }`}>
-                    {retailersWithDistance.map((r) => (
-                      <RetailerStoreCard
-                        key={r.phone}
-                        retailer={r}
-                        isExpanded={expandedStoreId === r.phone}
-                        onToggle={() => setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)}
-                      />
-                    ))}
-                  </div>
-                  {retailersWithDistance.length > 4 && (
-                    <p className="text-[10px] text-on-surface-variant/60 text-center pt-0.5">
-                      Scroll to see all {retailersWithDistance.length} stores
-                    </p>
-                  )}
+              {/* ── Retailers — RIGHT, min-h-0 breaks flex-child height ambiguity.
+                  Block scroll container (not flex) avoids nested-flex + overflow-y
+                  height-collapse when item count exceeds max-height. ── */}
+              <div className="md:flex-1 min-h-0 flex flex-col">
+                <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                  <ManufacturerCard
+                    brand={brand}
+                    isExpanded={expandedStoreId === '__manufacturer__'}
+                    onToggle={() =>
+                      setExpandedStoreId(
+                        expandedStoreId === '__manufacturer__' ? null : '__manufacturer__',
+                      )
+                    }
+                  />
+                  {retailersWithDistance.map((r) => (
+                    <RetailerStoreCard
+                      key={r.phone}
+                      retailer={r}
+                      isExpanded={expandedStoreId === r.phone}
+                      onToggle={() =>
+                        setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)
+                      }
+                    />
+                  ))}
                 </div>
-              )}
-
-              {/* No map, no retailers — plain address fallback */}
-              {!hasMapData && retailers.length === 0 && locationDisplay && (
-                <div className="flex items-center gap-3 rounded-2xl border border-surface-container bg-surface-container-low p-5">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Store className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-on-surface text-sm">{brand.businessName}</p>
-                    <p className="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-2.5 h-2.5" /> {locationDisplay}
-                    </p>
-                  </div>
-                </div>
-              )}
+                {retailersWithDistance.length >= 5 && (
+                  <p className="text-[10px] text-on-surface-variant/60 text-center pt-1">
+                    {retailersWithDistance.length + 1} locations total · scroll to see all
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Map legend */}

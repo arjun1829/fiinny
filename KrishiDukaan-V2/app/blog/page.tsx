@@ -54,7 +54,7 @@ export default async function BlogListPage() {
       {/* Header */}
       <div className="bg-[#0d2b09] py-16 px-4 text-center">
         <Link href="/" className="inline-flex items-center gap-2 mb-8 text-white/60 text-sm font-semibold hover:text-white transition-colors">
-          ← Back to KrishiDukaan
+          ← Back to KrishiDukan
         </Link>
         <h1 className="text-4xl md:text-5xl font-black text-white mb-4">
           Krishi<span className="text-[#f4a500]">Dukan</span> Blog
@@ -148,7 +148,7 @@ export default async function BlogListPage() {
 
       {/* Footer */}
       <div className="border-t border-surface-container text-center py-8 text-xs text-on-surface-variant">
-        © {new Date().getFullYear()} KrishiDukaan · Connecting Indian farmers with verified retailers
+        © {new Date().getFullYear()} KrishiDukan · Connecting Indian farmers with verified retailers
       </div>
     </div>
   );

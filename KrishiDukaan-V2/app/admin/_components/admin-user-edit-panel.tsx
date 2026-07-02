@@ -15,6 +15,7 @@ import {
   adminFetchSubscriptionsByPhone,
   adminRevokeSubscription,
   adminExtendSubscription,
+  adminSetSubscriptionExpiry,
   adminUpdateSubscriptionSeats,
   adminActivateSubscriptionForPhone,
   adminConvertRetailerToManufacturer,
@@ -62,7 +63,8 @@ function extractAddressFields(place: any): Partial<ProfileForm> {
 async function uploadImage(file: File, prefix: string): Promise<string> {
   const toUpload = await compressImage(file);
   const path = `${prefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const snap = await uploadBytes(storageRef(storage, path), toUpload);
+  const contentType = toUpload.type || file.type || "image/jpeg";
+  const snap = await uploadBytes(storageRef(storage, path), toUpload, { contentType });
   return getDownloadURL(snap.ref);
 }
 
@@ -154,6 +156,8 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
   const [newSeatsInput,   setNewSeatsInput]   = useState("");
   const [extendDur,       setExtendDur]       = useState<1|3|6|12>(3);
   const [extending,       setExtending]       = useState(false);
+  const [extendMode,      setExtendMode]      = useState<"preset" | "custom">("preset");
+  const [customExpiry,    setCustomExpiry]    = useState("");
 
   // ── Load extended profile data from role collection ─────────────────────────
   useEffect(() => {
@@ -308,13 +312,15 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
     if (!file.type.startsWith("image/")) return;
     setUploadingLogo(true);
     try { const url = await uploadImage(file, "profile-images/logos"); setForm(p => ({ ...p, logoUrl: url })); }
-    catch { /* silent */ } finally { setUploadingLogo(false); }
+    catch (e) { setSaveMsg({ ok: false, text: e instanceof Error ? e.message : "Logo upload failed. Please try again." }); }
+    finally { setUploadingLogo(false); }
   };
   const handleBannerFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
     setUploadingBanner(true);
     try { const url = await uploadImage(file, "profile-images/banners"); setForm(p => ({ ...p, bannerUrl: url })); }
-    catch { /* silent */ } finally { setUploadingBanner(false); }
+    catch (e) { setSaveMsg({ ok: false, text: e instanceof Error ? e.message : "Banner upload failed. Please try again." }); }
+    finally { setUploadingBanner(false); }
   };
 
   // ── Role conversion ────────────────────────────────────────────────────────
@@ -368,7 +374,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
 
       setDeleteMsg({
         ok: true,
-        text: `Deleted. Products deactivated: ${result.productsDeactivated}, inventory: ${result.inventoryDeactivated}, seats released: ${result.seatsReleased}, subs cancelled: ${result.subscriptionsCancelled}.`,
+        text: `Deleted. Products deactivated: ${result.productsDeactivated}, inventory deleted: ${result.inventoryDeleted}, seat listings deleted: ${result.seatListingsDeleted}, subscriptions deleted: ${result.subscriptionsDeleted}, network relationships deleted: ${result.networkRelationshipsDeleted}.`,
       });
       onSaved();
       setTimeout(onClose, 2500);
@@ -439,6 +445,20 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
       await refreshSubs();
     } catch (e) {
       setSubError(e instanceof Error ? e.message : "Extend failed.");
+    } finally { setExtending(false); }
+  };
+
+  const handleSetExpiry = async () => {
+    if (!activeSub || !phone || !customExpiry) return;
+    const [y, m, d] = customExpiry.split("-").map(Number);
+    const date = new Date(y, m - 1, d, 23, 59, 59);
+    setExtending(true); setSubError(null);
+    try {
+      await adminSetSubscriptionExpiry(activeSub.id, phone, date);
+      await refreshSubs();
+      setCustomExpiry("");
+    } catch (e) {
+      setSubError(e instanceof Error ? e.message : "Set expiry failed.");
     } finally { setExtending(false); }
   };
 
@@ -868,24 +888,53 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
 
                         {/* Extend */}
                         <div className="px-4 py-3 space-y-2">
-                          <p className="text-xs font-semibold text-on-surface-variant">Extend Expiry</p>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {([1, 3, 6, 12] as const).map(m => (
-                              <button key={m} type="button"
-                                onClick={() => setExtendDur(m)}
-                                className={`flex-1 min-w-[3.5rem] py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                  extendDur === m
-                                    ? "bg-primary text-white border-primary shadow-sm"
-                                    : "bg-white text-on-surface-variant border-outline-variant/40 hover:bg-surface-container"
-                                }`}>
-                                {m === 12 ? "1 Yr" : `${m} Mo`}
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-on-surface-variant">Extend Expiry</p>
+                            <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-[10px] font-semibold shrink-0">
+                              <button type="button" onClick={() => setExtendMode("preset")}
+                                className={`px-2.5 py-1 transition-colors ${extendMode === "preset" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+                                Preset
                               </button>
-                            ))}
-                            <button type="button" onClick={handleExtend} disabled={extending}
-                              className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 disabled:opacity-60 whitespace-nowrap transition-colors">
-                              {extending ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "+ Extend"}
-                            </button>
+                              <button type="button" onClick={() => setExtendMode("custom")}
+                                className={`px-2.5 py-1 transition-colors ${extendMode === "custom" ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"}`}>
+                                Custom
+                              </button>
+                            </div>
                           </div>
+
+                          {extendMode === "preset" ? (
+                            <div className="flex gap-1.5 flex-wrap">
+                              {([1, 3, 6, 12] as const).map(m => (
+                                <button key={m} type="button"
+                                  onClick={() => setExtendDur(m)}
+                                  className={`flex-1 min-w-[3.5rem] py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                    extendDur === m
+                                      ? "bg-primary text-white border-primary shadow-sm"
+                                      : "bg-white text-on-surface-variant border-outline-variant/40 hover:bg-surface-container"
+                                  }`}>
+                                  {m === 12 ? "1 Yr" : `${m} Mo`}
+                                </button>
+                              ))}
+                              <button type="button" onClick={handleExtend} disabled={extending}
+                                className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 disabled:opacity-60 whitespace-nowrap transition-colors">
+                                {extending ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "+ Extend"}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="date"
+                                min={new Date().toISOString().split("T")[0]}
+                                value={customExpiry}
+                                onChange={e => setCustomExpiry(e.target.value)}
+                                className="flex-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                              />
+                              <button type="button" onClick={handleSetExpiry} disabled={extending || !customExpiry}
+                                className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 disabled:opacity-60 whitespace-nowrap transition-colors">
+                                {extending ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Set Date"}
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Deactivate */}

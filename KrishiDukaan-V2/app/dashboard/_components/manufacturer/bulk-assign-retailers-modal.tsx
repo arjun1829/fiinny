@@ -2,13 +2,18 @@
 
 import { useState, useMemo } from "react";
 import {
-  CheckSquare, Loader2, PackagePlus, Search, Square, Store, X, AlertTriangle,
+  CheckSquare, ChevronDown, ChevronUp, Loader2, PackagePlus,
+  Search, Square, Store, X, AlertTriangle,
 } from "lucide-react";
 import { bulkAssignProductsToRetailer } from "../../_lib/product-assignment-firestore";
 import { getAvailableSeats } from "../../_lib/subscriptions-firestore";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
+
+// Desktop: show first 5 before collapsing. Mobile (sm breakpoint) shows 3 via JS.
+const COLLAPSE_LIMIT_SM = 3;
+const COLLAPSE_LIMIT_MD = 5;
 
 type Props = {
   manufacturerId: string;
@@ -47,6 +52,7 @@ export function BulkAssignRetailersModal({
   const [status, setStatus]                         = useState<AssignStatus>("idle");
   const [results, setResults]                       = useState<PerRetailerResult[]>([]);
   const [globalError, setGlobalError]               = useState<string | null>(null);
+  const [showAllRetailers, setShowAllRetailers]     = useState(false);
 
   const filtered = useMemo(
     () => ownProducts.filter((p) => p.name.toLowerCase().includes(search.toLowerCase())),
@@ -56,6 +62,18 @@ export function BulkAssignRetailersModal({
   const availableSeats = getAvailableSeats(subs, seatListings);
   const neededSeats    = selectedProductIds.size * selectedRetailers.length;
   const tooFewSeats    = neededSeats > availableSeats;
+
+  // Responsive collapse limit — detect via matchMedia on first render
+  const collapseLimit =
+    typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches
+      ? COLLAPSE_LIMIT_SM
+      : COLLAPSE_LIMIT_MD;
+
+  const visibleRetailers = showAllRetailers
+    ? selectedRetailers
+    : selectedRetailers.slice(0, collapseLimit);
+  const hiddenCount = Math.max(0, selectedRetailers.length - collapseLimit);
+  const hasHidden   = hiddenCount > 0;
 
   const toggleProduct = (id: string) => {
     setSelectedProductIds((prev) => {
@@ -129,21 +147,62 @@ export function BulkAssignRetailersModal({
           </button>
         </div>
 
-        {/* Selected retailers summary */}
+        {/* Retailer list — bounded height so it never pushes products off-screen */}
         <div className="px-5 py-3 bg-primary/5 border-b border-primary/10 shrink-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1.5">Assigning to</p>
-          <div className="flex flex-wrap gap-1.5">
-            {selectedRetailers.map((r) => (
-              <span key={r.id} className="inline-flex items-center gap-1 rounded-full bg-white border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-on-surface">
-                <Store className="h-3 w-3 text-primary" /> {r.shopName || r.ownerName || "—"}
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+              Assigning to
+            </p>
+            {hasHidden && (
+              <button
+                type="button"
+                onClick={() => setShowAllRetailers((v) => !v)}
+                className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-primary hover:underline"
+              >
+                {showAllRetailers
+                  ? <><ChevronUp className="h-3 w-3" /> Show Less</>
+                  : <><ChevronDown className="h-3 w-3" /> Show All</>
+                }
+              </button>
+            )}
+          </div>
+
+          {/* Chips container: scrollable when expanded, clipped when collapsed */}
+          <div
+            className={`flex flex-wrap gap-1.5 transition-all ${
+              showAllRetailers
+                ? "max-h-36 overflow-y-auto pr-0.5"
+                : "overflow-hidden"
+            }`}
+          >
+            {visibleRetailers.map((r) => (
+              <span
+                key={r.id}
+                className="inline-flex items-center gap-1 rounded-full bg-white border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-on-surface"
+              >
+                <Store className="h-3 w-3 text-primary shrink-0" />
+                <span className="truncate max-w-[12rem]">
+                  {r.shopName || r.ownerName || "—"}
+                </span>
               </span>
             ))}
+
+            {/* "+N more" badge — visible only when collapsed and there are hidden retailers */}
+            {!showAllRetailers && hasHidden && (
+              <button
+                type="button"
+                onClick={() => setShowAllRetailers(true)}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
+              >
+                +{hiddenCount} more retailer{hiddenCount !== 1 ? "s" : ""}
+              </button>
+            )}
           </div>
         </div>
 
         {status === "done" ? (
-          /* Results screen */
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          /* ── Results screen ─────────────────────────────────────────────── */
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
             <div className="flex gap-4 text-sm">
               <span className="text-green-700 font-semibold">✓ {totalAssigned} assigned</span>
               {totalSkipped > 0 && <span className="text-amber-700 font-semibold">↷ {totalSkipped} skipped</span>}
@@ -151,9 +210,17 @@ export function BulkAssignRetailersModal({
             </div>
             <div className="space-y-2">
               {results.map((r) => (
-                <div key={r.retailer.id}
-                  className={`rounded-xl border px-3 py-2 text-xs ${r.error ? "border-red-200 bg-red-50" : "border-outline-variant/30 bg-surface-container-lowest"}`}>
-                  <p className="font-semibold text-on-surface mb-0.5">{r.retailer.shopName || r.retailer.ownerName}</p>
+                <div
+                  key={r.retailer.id}
+                  className={`rounded-xl border px-3 py-2 text-xs ${
+                    r.error
+                      ? "border-red-200 bg-red-50"
+                      : "border-outline-variant/30 bg-surface-container-lowest"
+                  }`}
+                >
+                  <p className="font-semibold text-on-surface mb-0.5">
+                    {r.retailer.shopName || r.retailer.ownerName}
+                  </p>
                   {r.error
                     ? <p className="text-red-600">{r.error}</p>
                     : <p className="text-on-surface-variant">{r.assigned.length} assigned · {r.skipped.length} already had</p>
@@ -163,9 +230,9 @@ export function BulkAssignRetailersModal({
             </div>
           </div>
         ) : (
-          /* Product selection screen */
+          /* ── Product selection screen ────────────────────────────────────── */
           <>
-            {/* Seat info + search */}
+            {/* Seat info + search + select-all — fixed, never scrolls away */}
             <div className="px-5 pt-4 pb-2 shrink-0 space-y-3">
               <div className="flex items-center justify-between text-xs text-on-surface-variant">
                 <span>{availableSeats} seat{availableSeats !== 1 ? "s" : ""} available</span>
@@ -187,8 +254,11 @@ export function BulkAssignRetailersModal({
                 />
               </div>
               {filtered.length > 0 && (
-                <button type="button" onClick={toggleAll}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
                   {selectedProductIds.size === filtered.length
                     ? <CheckSquare className="h-3.5 w-3.5" />
                     : <Square className="h-3.5 w-3.5" />
@@ -198,26 +268,34 @@ export function BulkAssignRetailersModal({
               )}
             </div>
 
-            {/* Product list */}
-            <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-1.5">
+            {/* Product list — independently scrollable, fills all remaining modal space */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-2 space-y-1.5">
               {filtered.length === 0 && (
                 <p className="text-sm text-on-surface-variant text-center py-8">No products found.</p>
               )}
               {filtered.map((p) => {
                 const checked = selectedProductIds.has(p.id);
                 return (
-                  <button key={p.id} type="button" onClick={() => toggleProduct(p.id)}
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => toggleProduct(p.id)}
                     className={`w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
                       checked
                         ? "border-primary/40 bg-primary/5"
                         : "border-outline-variant/30 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container-low"
-                    }`}>
+                    }`}
+                  >
                     {checked
                       ? <CheckSquare className="h-4 w-4 text-primary shrink-0" />
                       : <Square     className="h-4 w-4 text-on-surface-variant shrink-0" />
                     }
                     {p.image && (
-                      <img src={p.image} alt={p.name} className="h-8 w-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                      <img
+                        src={p.image}
+                        alt={p.name}
+                        className="h-8 w-8 rounded-lg object-cover shrink-0 border border-outline-variant/20"
+                      />
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold text-on-surface truncate">{p.name}</p>
@@ -230,24 +308,30 @@ export function BulkAssignRetailersModal({
 
             {/* Error */}
             {globalError && (
-              <div className="mx-5 mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shrink-0">
+              <div className="mx-5 mb-2 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shrink-0">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {globalError}
               </div>
             )}
 
-            {/* Footer */}
+            {/* Footer — always visible at the bottom */}
             <div className="px-5 py-4 border-t border-outline-variant/20 flex items-center justify-between gap-3 shrink-0">
               <p className="text-xs text-on-surface-variant">
                 {selectedProductIds.size} product{selectedProductIds.size !== 1 ? "s" : ""} selected
               </p>
               <div className="flex gap-2">
-                <button type="button" onClick={onClose}
-                  className="rounded-xl border border-outline-variant/40 px-4 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-outline-variant/40 px-4 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container"
+                >
                   Cancel
                 </button>
-                <button type="button" onClick={handleAssign}
+                <button
+                  type="button"
+                  onClick={handleAssign}
                   disabled={selectedProductIds.size === 0 || status === "running" || tooFewSeats}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:opacity-50">
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white hover:opacity-95 disabled:opacity-50"
+                >
                   {status === "running" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {status === "running" ? "Assigning…" : "Assign to All"}
                 </button>
@@ -259,8 +343,11 @@ export function BulkAssignRetailersModal({
         {/* Done footer */}
         {status === "done" && (
           <div className="px-5 py-4 border-t border-outline-variant/20 shrink-0">
-            <button type="button" onClick={onClose}
-              className="w-full rounded-xl bg-primary py-2 text-sm font-semibold text-white hover:opacity-95">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-xl bg-primary py-2 text-sm font-semibold text-white hover:opacity-95"
+            >
               Done
             </button>
           </div>
