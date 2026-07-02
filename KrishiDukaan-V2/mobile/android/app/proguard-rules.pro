@@ -15,6 +15,9 @@
     public void onPayment*(...);
 }
 
+# video_compress
+-keep class com.example.flutterVideoCompress.** { *; }
+
 # Kotlin coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}

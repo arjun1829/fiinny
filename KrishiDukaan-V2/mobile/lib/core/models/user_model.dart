@@ -18,6 +18,7 @@ class UserModel {
   final String? state;
   final String? pincode;
   final bool profileCompleted;
+  final String? username;
 
   const UserModel({
     required this.uid,
@@ -36,6 +37,7 @@ class UserModel {
     this.state,
     this.pincode,
     this.profileCompleted = false,
+    this.username,
   });
 
   /// True once the essential profile fields are filled. Sellers additionally
@@ -81,6 +83,7 @@ class UserModel {
       state: data['state'] as String?,
       pincode: data['pincode'] as String?,
       profileCompleted: data['profileCompleted'] as bool? ?? false,
+      username: data['username'] as String?,
     );
   }
 
@@ -110,6 +113,7 @@ class UserModel {
     int? productCount,
     String? fcmToken,
     DateTime? createdAt,
+    String? username,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -122,6 +126,7 @@ class UserModel {
       productCount: productCount ?? this.productCount,
       fcmToken: fcmToken ?? this.fcmToken,
       createdAt: createdAt ?? this.createdAt,
+      username: username ?? this.username,
     );
   }
 }

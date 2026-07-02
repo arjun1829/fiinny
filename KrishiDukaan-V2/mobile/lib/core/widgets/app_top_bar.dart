@@ -4,6 +4,8 @@ import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../providers/location_provider.dart';
 import 'app_brand_icon.dart';
+import 'package:go_router/go_router.dart';
+import 'package:geolocator/geolocator.dart';
 
 /// Shared gradient used by every top bar so all tabs look consistent.
 /// Horizontal on purpose: widgets stacked vertically (app bar + search block)
@@ -32,7 +34,10 @@ class TopBarTitle extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const AppBrandIcon(size: 30),
+            GestureDetector(
+              onTap: () => context.push('/profile'),
+              child: const AppBrandIcon(size: 30),
+            ),
             const SizedBox(width: 10),
             Flexible(
               child: Text(
@@ -65,7 +70,15 @@ class _LocationPill extends ConsumerWidget {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () => ref.invalidate(locationProvider),
+        onTap: () async {
+          final perm = await Geolocator.checkPermission();
+          if (perm == LocationPermission.deniedForever) {
+            await Geolocator.openAppSettings();
+          } else if (perm == LocationPermission.denied) {
+            await Geolocator.requestPermission();
+          }
+          ref.invalidate(locationProvider);
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           child: Row(
@@ -90,10 +103,13 @@ class _LocationPill extends ConsumerWidget {
                     'Detecting location...',
                     style: TextStyle(fontSize: 11, color: Colors.white70),
                   ),
-                  error: (_, _) => const Text(
-                    'Tap to retry location',
-                    style: TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
+                  error: (err, _) {
+                    final isDenied = err.toString().contains('permission_denied');
+                    return Text(
+                      isDenied ? 'Turn on location' : 'Tap to retry location',
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 2),

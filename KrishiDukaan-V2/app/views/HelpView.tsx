@@ -74,8 +74,9 @@ export default function HelpView({ onNavigate, user, userRole }: HelpViewProps) 
     setCError('');
     try {
       await saveContactMessage(cName || 'Anonymous', cEmail || 'not provided', cMessage, {
-        phone: cPhone || undefined,
+        phone:   cPhone || undefined,
         subject: cSubject,
+        role:    userRole || undefined,
       });
       setCStatus('success');
       setCMessage('');

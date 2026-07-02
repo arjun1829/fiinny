@@ -247,6 +247,7 @@
     "inventory":  {
                       "title":  "Rate Sheet",
                       "description":  "Manage products, pricing, and stock levels.",
+                      "search_placeholder":  "Search by name or SKU…",
                       "add_product":  "Add Product",
                       "edit_product":  "Edit Product",
                       "add_new_product":  "Add New Product",

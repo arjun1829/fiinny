@@ -34,13 +34,17 @@ import '../../features/notifications/notifications.dart';
 import '../../features/support/screens/support_screen.dart';
 import '../../features/welcome/screens/splash_screen.dart';
 import '../../features/welcome/screens/welcome_screen.dart';
+import '../../features/reels/screens/reels_feed_screen.dart';
+import '../../features/reels/screens/reel_upload_screen.dart';
+import '../../features/reels/screens/shop_profile_screen.dart';
+
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
 final _marketKey = GlobalKey<NavigatorState>(debugLabel: 'market');
 final _hubsKey = GlobalKey<NavigatorState>(debugLabel: 'hubs');
 final _storesKey = GlobalKey<NavigatorState>(debugLabel: 'stores');
-final _profileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
+final _reelsKey = GlobalKey<NavigatorState>(debugLabel: 'reels');
 
 final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _RouterRefreshNotifier(ref);
@@ -195,11 +199,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const SupportScreen(),
       ),
+      // Profile is now a full-screen pushed route (not a shell tab).
+      // Access it via the brand icon in the top bar or context.push('/profile').
+      GoRoute(
+        path: '/profile',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const ProfileScreen(),
+      ),
       GoRoute(
         path: '/profile/edit',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => ProfileEditScreen(
           reason: state.uri.queryParameters['reason'],
+        ),
+      ),
+      // ── Reels upload + shop profile (outside shell) ───────────────────
+      GoRoute(
+        path: '/reels/upload',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const ReelUploadScreen(),
+      ),
+      GoRoute(
+        path: '/shop/:phone',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => ShopProfileScreen(
+          shopPhone: state.pathParameters['phone']!,
         ),
       ),
       // ── Dashboard routes ─────────────────────────────────────────────────
@@ -289,12 +313,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             GoRoute(path: '/hubs', builder: (_, _) => const HubsScreen()),
           ]),
           StatefulShellBranch(navigatorKey: _storesKey, routes: [
-            GoRoute(path: '/stores', builder: (_, _) => const StoreLocatorScreen()),
-          ]),
-          StatefulShellBranch(navigatorKey: _profileKey, routes: [
             GoRoute(
-                path: '/profile',
-                builder: (_, _) => const ProfileScreen()),
+                path: '/stores',
+                builder: (_, _) => const StoreLocatorScreen()),
+          ]),
+          StatefulShellBranch(navigatorKey: _reelsKey, routes: [
+            GoRoute(
+                path: '/reels', builder: (_, _) => const ReelsFeedScreen()),
           ]),
         ],
       ),

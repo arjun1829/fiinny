@@ -6,6 +6,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd KrishiDukaan-V2 && npm run dev"],
       "port": 3000
+    },
+    {
+      "name": "karanarjun-main",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd KARANARJUNKSKPVTLTD && npm run dev -- --port 5300 --strictPort"],
+      "port": 5300
     }
   ]
 }

@@ -49,6 +49,11 @@ class HomeScreen extends ConsumerWidget {
                 onPressed: () => _openSearch(context),
               ),
               const NotificationBell(),
+              TopBarAction(
+                icon: Icons.person_outline,
+                tooltip: 'Profile',
+                onPressed: () => context.push('/profile'),
+              ),
             ],
           ),
           SliverToBoxAdapter(
@@ -84,84 +89,63 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 20),
 
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.primary.withValues(alpha: 0.08),
-                          Colors.white,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: AppColors.primaryContainer.withValues(
-                          alpha: 0.6,
-                        ),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Quick product search',
-                            style: AppTextStyles.heading3.copyWith(
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Search by product type, crop need, or nearby availability.',
-                            style: AppTextStyles.bodySmall,
-                          ),
-                          const SizedBox(height: 14),
-                          GestureDetector(
-                            onTap: () => _openSearch(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.cardShadow,
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.search,
-                                    color: AppColors.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Search fertilizers, seeds, pesticides...',
-                                    style: AppTextStyles.body.copyWith(
-                                      color: AppColors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
                   // Rotating promo banners — gives the page a lively hero strip
                   const _PromoCarousel(),
                   const SizedBox(height: 24),
+
+                  // Trending Near You
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Trending Near You', style: AppTextStyles.heading3),
+                      TextButton(
+                        onPressed: () => context.go('/marketplace'),
+                        child: const Text('See all'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final trending = ref.watch(trendingProductsProvider);
+                      return trending.when(
+                        loading: () => GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                childAspectRatio: 0.75,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: 4,
+                          itemBuilder: (_, _) => _PlaceholderProductCard(),
+                        ),
+                        error: (_, _) => const SizedBox.shrink(),
+                        data: (products) => products.isEmpty
+                            ? const SizedBox.shrink()
+                            : GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      childAspectRatio: 0.75,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                    ),
+                                itemCount: products.length,
+                                itemBuilder: (_, i) => ProductCard(
+                                  product: products[i],
+                                  onTap: () =>
+                                      context.push('/product/${products[i].id}'),
+                                ),
+                              ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
 
                   // Category cards grid
                   Text('Shop by Category', style: AppTextStyles.heading3),
@@ -259,7 +243,7 @@ class HomeScreen extends ConsumerWidget {
                                 itemBuilder: (_, i) => ProductCard(
                                   product: products[i],
                                   onTap: () =>
-                                      context.go('/product/${products[i].id}'),
+                                      context.push('/product/${products[i].id}'),
                                 ),
                               ),
                       );
@@ -603,26 +587,30 @@ class _Promo {
   final String title;
   final String subtitle;
   final String cta;
-  final IconData icon;
-  final List<Color> colors;
+  final String image;        // background photo
+  final List<Color> colors;  // brand tint painted over the photo (+ fallback)
   final String route;
 
   const _Promo({
     required this.title,
     required this.subtitle,
     required this.cta,
-    required this.icon,
+    required this.image,
     required this.colors,
     required this.route,
   });
 }
 
+// Banner photos are easy to swap — just change the `image` URL. The `colors`
+// tint keeps the white text readable over any photo and acts as the fallback
+// if the image fails to load.
 const _promos = <_Promo>[
   _Promo(
     title: 'Best prices on\nfertilizers & seeds',
     subtitle: 'Compare nearby stores and save on every order',
     cta: 'Shop deals',
-    icon: Icons.local_offer,
+    image:
+        'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=800&q=80',
     colors: [AppColors.primary, AppColors.primaryLight],
     route: '/marketplace',
   ),
@@ -630,7 +618,8 @@ const _promos = <_Promo>[
     title: '100% genuine\nagri products',
     subtitle: 'Verified sellers, premium-grade inputs for your farm',
     cta: 'Browse catalog',
-    icon: Icons.verified,
+    image:
+        'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=800&q=80',
     colors: [Color(0xFF0E7490), Color(0xFF22D3EE)],
     route: '/marketplace',
   ),
@@ -638,7 +627,8 @@ const _promos = <_Promo>[
     title: 'Find a trusted\nstore near you',
     subtitle: 'Locate krishi stores around your village',
     cta: 'Open store locator',
-    icon: Icons.storefront,
+    image:
+        'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=800&q=80',
     colors: [Color(0xFFB45309), Color(0xFFF59E0B)],
     route: '/stores',
   ),
@@ -724,11 +714,8 @@ class _PromoCard extends StatelessWidget {
         onTap: () => context.go(promo.route),
         child: Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: promo.colors,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            // Solid base = fallback colour shown while/if the photo can't load.
+            color: promo.colors.first,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
@@ -738,75 +725,101 @@ class _PromoCard extends StatelessWidget {
               ),
             ],
           ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -12,
-                bottom: -12,
-                child: Icon(
-                  promo.icon,
-                  size: 120,
-                  color: Colors.white.withValues(alpha: 0.12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Real photo background
+                CachedNetworkImage(
+                  imageUrl: resolveImageUrl(promo.image),
+                  fit: BoxFit.cover,
+                  memCacheWidth: 800,
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  placeholder: (_, _) => _tintGradient(),
+                  errorWidget: (_, _, _) => _tintGradient(),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      promo.title,
-                      style: AppTextStyles.heading2.copyWith(
-                        color: Colors.white,
-                        height: 1.15,
-                        fontSize: 20,
+                // Brand-coloured tint so the white text stays readable over
+                // any photo (strongest on the left where the text sits).
+                _tintGradient(),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        promo.title,
+                        style: AppTextStyles.heading2.copyWith(
+                          color: Colors.white,
+                          height: 1.15,
+                          fontSize: 20,
+                          shadows: const [
+                            Shadow(color: Colors.black45, blurRadius: 6),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      promo.subtitle,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.white.withValues(alpha: 0.9),
+                      const SizedBox(height: 6),
+                      Text(
+                        promo.subtitle,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          shadows: const [
+                            Shadow(color: Colors.black38, blurRadius: 5),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            promo.cta,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.onSurface,
-                              fontWeight: FontWeight.w800,
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              promo.cta,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.onSurface,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward,
-                              size: 14, color: AppColors.onSurface),
-                        ],
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_forward,
+                                size: 14, color: AppColors.onSurface),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _tintGradient() => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              promo.colors.first.withValues(alpha: 0.92),
+              promo.colors.last.withValues(alpha: 0.45),
+            ],
+          ),
+        ),
+      );
 }
 
 // ─────────────────────────── Benefits strip ────────────────────────────────
@@ -904,7 +917,7 @@ class _TopDealsRail extends ConsumerWidget {
                   width: 160,
                   child: ProductCard(
                     product: deals[i],
-                    onTap: () => context.go('/product/${deals[i].id}'),
+                    onTap: () => context.push('/product/${deals[i].id}'),
                   ),
                 ),
               ),

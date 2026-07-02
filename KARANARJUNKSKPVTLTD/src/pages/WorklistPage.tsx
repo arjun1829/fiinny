@@ -4,7 +4,7 @@ import {
     Download, FileSpreadsheet, Store, Search, Filter, ArrowUpDown,
     ArrowUpRight, Users, Building2, UserPlus, TrendingUp, AlertCircle,
     CheckCircle2, Bell, ShoppingCart, Truck, Clock, Mail, MessageSquare,
-    X, Copy, CheckSquare,
+    X, Copy, CheckSquare, FileText,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getDocs, orderBy, query, where } from 'firebase/firestore';
@@ -21,6 +21,7 @@ import PaymentRemindersPage from './PaymentRemindersPage';
 import OnlineOrdersPage from './OnlineOrdersPage';
 import DispatchBoardPage from './DispatchBoardPage';
 import PurchaseOrdersPage from './PurchaseOrdersPage';
+import B2BInvoiceWorklistPage from './B2BInvoiceWorklistPage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,10 +53,11 @@ interface ReminderEntry {
     closestCreditDays: number | null;
 }
 
-type ModuleTab = 'partners' | 'payment-reminders' | 'tracking-info' | 'online-orders' | 'purchase-orders';
+type ModuleTab = 'partners' | 'invoices' | 'payment-reminders' | 'tracking-info' | 'online-orders' | 'purchase-orders';
 
 const MODULE_TABS: { id: ModuleTab; label: string; icon: React.ReactNode }[] = [
     { id: 'partners',          label: 'Partners',          icon: <Building2 size={16} /> },
+    { id: 'invoices',          label: 'Invoices',          icon: <FileText size={16} /> },
     { id: 'payment-reminders', label: 'Payment Reminders', icon: <Bell size={16} /> },
     { id: 'tracking-info',     label: 'Tracking Info',     icon: <Truck size={16} /> },
     { id: 'online-orders',     label: 'Online Orders',     icon: <ShoppingCart size={16} /> },
@@ -120,6 +122,7 @@ export default function WorklistPage() {
 
             {/* ── Tab Content ── */}
             {moduleTab === 'partners'          && <PartnersTab />}
+            {moduleTab === 'invoices'          && <B2BInvoiceWorklistPage />}
             {moduleTab === 'payment-reminders' && <PaymentRemindersPage />}
             {moduleTab === 'tracking-info'     && <DispatchBoardPage />}
             {moduleTab === 'online-orders'     && <OnlineOrdersPage />}
@@ -206,46 +209,63 @@ function PartnersTab() {
         const fetchRetailers = async () => {
             if (!tenantId) return;
             try {
-                const q = query(getTenantCollection(db, tenantId, 'retailers'), orderBy('createdAt', 'desc'));
-                const querySnapshot = await getDocs(q);
-                const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Fetch retailers, all orders, and all salesOrders in parallel — 3 reads
+                // total instead of 2N+1 (previously one orders + one salesOrders query
+                // per retailer). Same documents read, but in 3 round-trips, not hundreds.
+                const [retailersSnap, ordersSnap, salesOrdersSnap] = await Promise.all([
+                    getDocs(query(getTenantCollection(db, tenantId, 'retailers'), orderBy('createdAt', 'desc'))),
+                    getDocs(getTenantCollection(db, tenantId, 'orders')),
+                    getDocs(getTenantCollection(db, tenantId, 'salesOrders')),
+                ]);
 
-                const retailersWithStatus: Retailer[] = [];
-                const chunkSize = 5;
-                for (let i = 0; i < data.length; i += chunkSize) {
-                    const chunk = data.slice(i, i + chunkSize);
-                    const chunkResults = await Promise.all(
-                        chunk.map(async (r) => {
-                            const ordersQ = query(getTenantCollection(db, tenantId, 'orders'), where('retailerId', '==', r.id));
-                            const ordersSnap = await getDocs(ordersQ);
-                            const orders = ordersSnap.docs.map(doc => doc.data() as { isDelivered?: boolean });
+                // Group orders by retailerId so each retailer is an O(1) lookup.
+                const ordersByRetailer = new Map<string, { isDelivered?: boolean }[]>();
+                ordersSnap.docs.forEach(doc => {
+                    const o = doc.data() as { retailerId?: string; isDelivered?: boolean };
+                    if (!o.retailerId) return;
+                    const arr = ordersByRetailer.get(o.retailerId);
+                    if (arr) arr.push(o); else ordersByRetailer.set(o.retailerId, [o]);
+                });
 
-                            const salesOrdersQ = query(getTenantCollection(db, tenantId, 'salesOrders'), where('retailerId', '==', r.id));
-                            const salesOrdersSnap = await getDocs(salesOrdersQ);
-                            const salesOrders = salesOrdersSnap.docs.map(doc => doc.data() as { status?: string; paymentStatus?: string; dueDate?: string });
+                // Group salesOrders by retailerId.
+                const salesByRetailer = new Map<string, { status?: string; paymentStatus?: string; dueDate?: string }[]>();
+                salesOrdersSnap.docs.forEach(doc => {
+                    const so = doc.data() as { retailerId?: string; status?: string; paymentStatus?: string; dueDate?: string };
+                    if (!so.retailerId) return;
+                    const arr = salesByRetailer.get(so.retailerId);
+                    if (arr) arr.push(so); else salesByRetailer.set(so.retailerId, [so]);
+                });
 
-                            const hasPendingPos = orders.some(o => !o.isDelivered);
-                            const hasPendingB2b = salesOrders.some(so => so.status === 'pending');
-                            const isBrandNew = orders.length === 0 && salesOrders.length === 0;
-                            const hasPending = isBrandNew || hasPendingPos || hasPendingB2b;
+                const today = new Date(); today.setHours(0, 0, 0, 0);
 
-                            const today = new Date(); today.setHours(0, 0, 0, 0);
-                            const pendingSOs = salesOrders.filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
-                            const dueDates = pendingSOs
-                                .map(so => so.dueDate ? new Date(so.dueDate) : null)
-                                .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
-                            const nearestDue = dueDates.length > 0
-                                ? dueDates.sort((a, b) => a.getTime() - b.getTime())[0]
-                                : null;
-                            const closestCreditDays: number | null = nearestDue !== null
-                                ? Math.round((nearestDue.getTime() - today.getTime()) / 864e5)
-                                : null;
+                const retailersWithStatus: Retailer[] = retailersSnap.docs
+                    // Exclude B2C walk-in customers auto-created at the POS counter —
+                    // they are not B2B partners and shouldn't appear in this worklist.
+                    .filter(d => (d.data() as { channel?: string }).channel !== 'pos')
+                    .map(doc => {
+                    const r = { id: doc.id, ...doc.data() } as Retailer;
+                    const orders = ordersByRetailer.get(r.id) ?? [];
+                    const salesOrders = salesByRetailer.get(r.id) ?? [];
 
-                            return { ...r, hasPendingOrders: hasPending, closestCreditDays } as Retailer;
-                        })
-                    );
-                    retailersWithStatus.push(...chunkResults);
-                }
+                    const hasPendingPos = orders.some(o => !o.isDelivered);
+                    const hasPendingB2b = salesOrders.some(so => so.status === 'pending');
+                    const isBrandNew = orders.length === 0 && salesOrders.length === 0;
+                    const hasPending = isBrandNew || hasPendingPos || hasPendingB2b;
+
+                    const pendingSOs = salesOrders.filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
+                    const dueDates = pendingSOs
+                        .map(so => so.dueDate ? new Date(so.dueDate) : null)
+                        .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+                    const nearestDue = dueDates.length > 0
+                        ? dueDates.sort((a, b) => a.getTime() - b.getTime())[0]
+                        : null;
+                    const closestCreditDays: number | null = nearestDue !== null
+                        ? Math.round((nearestDue.getTime() - today.getTime()) / 864e5)
+                        : null;
+
+                    return { ...r, hasPendingOrders: hasPending, closestCreditDays };
+                });
+
                 setRetailers(retailersWithStatus);
             } catch (error) {
                 console.error('Error fetching retailers: ', error);

@@ -13,6 +13,7 @@ import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
 
+
 const _categories = [
   'Pesticides',
   'Fertilizers',
@@ -51,6 +52,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   // Suggestions
   List<CatalogModel> _suggestionProducts = [];
   List<Map<String, dynamic>> _suggestionStores = [];
+  List<Map<String, dynamic>> _suggestionShops = [];
 
   @override
   void initState() {
@@ -110,6 +112,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         setState(() {
           _suggestionProducts = [];
           _suggestionStores = [];
+          _suggestionShops = [];
         });
       }
       return;
@@ -118,7 +121,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     try {
       // Products: reuse catalog repository
       final repo = ref.read(catalogRepositoryProvider);
-      final prods = await repo.fetchPage(searchQuery: query, limit: 8);
+      final prodsF = repo.fetchPage(searchQuery: query, limit: 8);
 
       // Stores: filter from pre-loaded stores list in memory
       final allStores = ref.read(storesListProvider).value ?? [];
@@ -126,11 +129,23 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       final stores = allStores
           .where((s) {
             final nameMatch = s.name.toLowerCase().contains(queryLower);
-            final cityMatch = s.city?.toLowerCase().contains(queryLower) ?? false;
-            final stateMatch = s.state?.toLowerCase().contains(queryLower) ?? false;
             final phoneMatch = s.phone?.contains(queryLower) ?? false;
-            return nameMatch || cityMatch || stateMatch || phoneMatch;
+            return nameMatch || phoneMatch;
           })
+          .toList();
+
+      // Sort to prioritize name start matches
+      stores.sort((a, b) {
+        final aName = a.name.toLowerCase();
+        final bName = b.name.toLowerCase();
+        final aStarts = aName.startsWith(queryLower);
+        final bStarts = bName.startsWith(queryLower);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return 0;
+      });
+
+      final storeSuggestions = stores
           .take(8)
           .map((s) => {
                 'id': s.id,
@@ -141,10 +156,14 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
               })
           .toList();
 
+      final results = await Future.wait([prodsF]);
+      final prods = results[0] as List<CatalogModel>;
+
       if (mounted) {
         setState(() {
           _suggestionProducts = prods;
-          _suggestionStores = stores;
+          _suggestionStores = storeSuggestions;
+          _suggestionShops = [];
         });
       }
     } catch (e) {
@@ -182,6 +201,11 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             icon: Icons.map_outlined,
             tooltip: 'Store locator',
             onPressed: () => context.go('/stores'),
+          ),
+          TopBarAction(
+            icon: Icons.person_outline,
+            tooltip: 'Profile',
+            onPressed: () => context.push('/profile'),
           ),
         ],
       ),
@@ -240,6 +264,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                               setState(() {
                                 _suggestionProducts = [];
                                 _suggestionStores = [];
+                                _suggestionShops = [];
                               });
                             },
                           )
@@ -259,16 +284,17 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                 ),
 
                 // Suggestions dropdown
-                if ((_suggestionProducts.isNotEmpty ||
+                if ((_suggestionShops.isNotEmpty ||
+                        _suggestionProducts.isNotEmpty ||
                         _suggestionStores.isNotEmpty) &&
                     _searchController.text.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(top: 8),
-                    constraints: const BoxConstraints(maxHeight: 220),
+                    constraints: const BoxConstraints(maxHeight: 280),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(color: Colors.black12, blurRadius: 8),
                       ],
                     ),
@@ -293,7 +319,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                                   : const Icon(Icons.agriculture),
                               title: Text(p.name),
                               subtitle: const Text('Product'),
-                              onTap: () => context.go('/product/${p.id}'),
+                              onTap: () => context.push('/product/${p.id}'),
                             ),
                           ),
 
@@ -305,7 +331,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                             (s) => ListTile(
                               leading: const Icon(Icons.store),
                               title: Text(s['name'] ?? s['phone'] ?? 'Store'),
-                              subtitle: const Text('Store'),
+                              subtitle: const Text('Nearby Store'),
                               onTap: () => _openStoreLocation(s),
                             ),
                           ),
@@ -396,7 +422,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         final product = state.products[index];
         return ProductCard(
           product: product,
-          onTap: () => context.go('/product/${product.id}'),
+          onTap: () => context.push('/product/${product.id}'),
         );
       },
     );

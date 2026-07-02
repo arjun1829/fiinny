@@ -195,3 +195,66 @@ export function buildProductAssignedEmail(params: {
 
   return { html, text };
 }
+
+// ─── Support Message Notification (admin alert) ───────────────────────────────
+
+export function buildSupportNotificationEmail(params: {
+  userName: string;
+  phone: string;
+  role: string;
+  subject: string;
+  message: string;
+  submittedAt: string;
+}) {
+  const { userName, phone, role, subject, message, submittedAt } = params;
+
+  const row = (label: string, value: string) =>
+    `<tr>
+      <td style="padding:6px 0;font-size:13px;color:#6b7280;white-space:nowrap;width:40%;">${label}</td>
+      <td style="padding:6px 0;font-size:13px;font-weight:600;color:#111827;">${value}</td>
+    </tr>`;
+
+  const html = wrapper(`
+    <h2 style="margin:0 0 4px;font-size:20px;font-weight:700;color:#111827;">New Support Message</h2>
+    <p style="margin:0 0 20px;font-size:14px;color:#6b7280;">Submitted via KrishiDukan Help &amp; Support</p>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+      <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.05em;">Sender Details</p>
+      <table style="width:100%;border-collapse:collapse;">
+        ${row("Name", userName || "—")}
+        ${row("Phone", phone || "—")}
+        ${row("Role", role ? role.charAt(0).toUpperCase() + role.slice(1) : "—")}
+        ${row("Submitted", submittedAt)}
+      </table>
+    </div>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.05em;">Subject</p>
+      <p style="margin:0;font-size:15px;font-weight:600;color:#111827;">${subject || "(no subject)"}</p>
+    </div>
+
+    <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;">
+      <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.05em;">Message</p>
+      <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${message}</p>
+    </div>
+
+    ${button("https://krishidukan.com/admin/messages", "View &amp; Resolve in Admin Panel →")}
+  `);
+
+  const text = [
+    "New Support Message — KrishiDukan",
+    "",
+    `Name:      ${userName || "—"}`,
+    `Phone:     ${phone || "—"}`,
+    `Role:      ${role || "—"}`,
+    `Submitted: ${submittedAt}`,
+    "",
+    `Subject: ${subject || "(no subject)"}`,
+    "",
+    message,
+    "",
+    "View & resolve: https://krishidukan.com/admin/messages",
+  ].join("\n");
+
+  return { html, text };
+}

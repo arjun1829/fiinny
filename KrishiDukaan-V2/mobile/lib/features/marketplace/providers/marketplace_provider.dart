@@ -178,6 +178,12 @@ final topDealsProvider = FutureProvider<List<CatalogModel>>((ref) async {
   return deals.take(10).toList();
 });
 
+/// "Trending Near You" — exactly as it works on the web (taking the top products)
+final trendingProductsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+  final all = await ref.watch(allMergedProductsProvider.future);
+  return all.take(10).toList();
+});
+
 final catalogDetailProvider =
     FutureProvider.family<CatalogModel?, String>((ref, catalogId) {
   return ref.read(catalogRepositoryProvider).fetchById(catalogId);

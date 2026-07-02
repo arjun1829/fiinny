@@ -20,7 +20,7 @@ import { SearchableDropdown } from "../_components/searchable-dropdown";
 import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
 import { DiscountPanel } from "../../dashboard/_components/discount-panel";
 import {
-  addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp,
+  addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, GeoPoint,
   query, where, getDocs, limit,
 } from "firebase/firestore";
 
@@ -624,9 +624,11 @@ export default function AdminUsersPage() {
             state:   createForm.state   || null,
             pincode: createForm.pincode || null,
           },
-          geo: (createForm.latitude && createForm.longitude)
-            ? { latitude: createForm.latitude, longitude: createForm.longitude }
-            : null,
+          // Must be a Firestore GeoPoint — plain {lat,lng} objects are not recognised
+          // by parseGeo() as instanceof GeoPoint and are ignored by the Profile page.
+          ...(createForm.latitude && createForm.longitude
+            ? { geo: new GeoPoint(createForm.latitude, createForm.longitude) }
+            : {}),
           ...(gstin.trim() ? { gstin: gstin.trim().toUpperCase() } : {}),
           isActive: true,
           subscriptionStatus,

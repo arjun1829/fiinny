@@ -9,18 +9,16 @@ class LatLng {
   const LatLng(this.lat, this.lng);
 }
 
-/// Provides user's current location. Falls back to Pune if permission denied.
+/// Provides user's current location. Throws 'permission_denied' when the user
+/// has not granted location access; falls back to Pune for other errors.
 final locationProvider = FutureProvider<LatLng>((ref) async {
-  try {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
-    }
+  final permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied ||
+      permission == LocationPermission.deniedForever) {
+    throw Exception('permission_denied');
+  }
 
+  try {
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,
@@ -43,6 +41,12 @@ final locationNameProvider = FutureProvider<String>((ref) async {
       AppConfig.googleMapsApiKey,
     );
     if (details != null) {
+      if (details.sublocality != null && details.sublocality!.isNotEmpty) {
+        if (details.city != null && details.city!.isNotEmpty) {
+          return '${details.sublocality}, ${details.city}';
+        }
+        return details.sublocality!;
+      }
       if (details.city != null && details.city!.isNotEmpty) {
         if (details.state != null && details.state!.isNotEmpty) {
           return '${details.city}, ${details.state}';
