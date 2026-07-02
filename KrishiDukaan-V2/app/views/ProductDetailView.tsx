@@ -6,7 +6,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { calcDiscount } from '../utils/discount';
 import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
 import type { BulkDiscountTier } from '../dashboard/_types/inventory';
-import { Tag, Layers } from 'lucide-react';
+import { Tag, Layers, ChevronDown } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
@@ -593,6 +593,8 @@ export default function ProductDetailView({
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
   const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [compositionOpen, setCompositionOpen] = useState(true);
+  const [insightsOpen, setInsightsOpen] = useState(true);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [activeImage, setActiveImage] = useState<string>('');
@@ -643,17 +645,6 @@ export default function ProductDetailView({
     setShareToast(copied ? "Product link copied to clipboard." : `Share: ${productUrl}`);
   }, [product]);
 
-  if (productLoading && !inMemoryProduct) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-          <p className="text-sm text-on-surface-variant">Loading product…</p>
-        </div>
-      </div>
-    );
-  }
-
   // Variant selection — default to the first variant (or the product itself if no variants)
   const productVariants = product.variants && product.variants.length > 0 ? product.variants : null;
   const selectedVariant = productVariants ? productVariants[selectedVariantIdx] : null;
@@ -666,14 +657,16 @@ export default function ProductDetailView({
     : [product.image];
 
   useEffect(() => {
-    if (product && product.id) {
-      trackProductClick(product.id);
-      const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
-      setActiveImage(imgs[0]);
-      setSelectedOrderStoreId(null);
-      setSelectedVariantIdx(0);
-    }
-  }, [product.id]);
+    // Guard: skip if this is the fallback product[0] standing in while the real
+    // product loads. product.id will change again once fetchedProduct arrives.
+    if (!product || !product.id) return;
+    if (productId && product.id !== productId) return;
+    trackProductClick(product.id);
+    const imgs = (product.images && product.images.length > 0) ? product.images.slice(0, 5) : [product.image];
+    setActiveImage(imgs[0]);
+    setSelectedOrderStoreId(null);
+    setSelectedVariantIdx(0);
+  }, [product.id, productId]);
 
   const sellerProducts = products.filter(p => {
     if (p.id === product.id) return false;
@@ -976,6 +969,19 @@ export default function ProductDetailView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayStores.length, product.id]);
 
+  // Loading guard goes here — after ALL hooks — so React always calls the same
+  // number of hooks regardless of loading state (fixes "fewer hooks" violation).
+  if (productLoading && !inMemoryProduct) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-on-surface-variant">Loading product…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 flex flex-col gap-10">
       {/* Breadcrumbs */}
@@ -1031,12 +1037,6 @@ export default function ProductDetailView({
               <ICONS.Share className="w-4 h-4" />
             </button>
 
-            <HelperTooltip side="bottom" textKey="productQualityBadge">
-              <div className="absolute top-14 right-3 bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 shadow-lg backdrop-blur-md cursor-help">
-                <ICONS.Check className="w-4 h-4" />
-                {t('premiumGrade')}
-              </div>
-            </HelperTooltip>
           </motion.div>
           {galleryImages.length > 1 && (
             <div className="flex gap-3">
@@ -1058,7 +1058,23 @@ export default function ProductDetailView({
           )}
 
           {/* Variant selector — moved directly below the product image/gallery.
-              Selection, variant-switching and price-update logic are unchanged. */}
+              Single-variant: display-only chip showing package size.
+              Multi-variant: interactive selector. Price/variant logic unchanged. */}
+          {productVariants && productVariants.length === 1 && (
+            <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
+              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                {t('packageSizeLabel')}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <div className="rounded-xl border-2 border-primary bg-primary/5 px-4 py-2 text-sm font-bold flex flex-col items-center min-w-[72px]">
+                  <span className="text-on-surface">{productVariants[0].unit}</span>
+                  <span className="text-xs font-extrabold mt-0.5 text-secondary">
+                    ₹{productVariants[0].price.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {productVariants && productVariants.length > 1 && (
             <div className="flex flex-col gap-2 pt-4 border-t border-surface-container">
               <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
@@ -1620,28 +1636,37 @@ export default function ProductDetailView({
       {/* ── Composition ─────────────────────────────────────────────────────── */}
       {Array.isArray(product.composition) && product.composition.length > 0 && (
         <section>
-          <div className="mb-6">
-            <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Ingredients &amp; Nutrients</p>
-            <h2 className="text-2xl font-bold text-on-surface">Composition</h2>
-          </div>
-          <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-surface-container bg-surface-container-low">
-                  <th className="px-6 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Component / Ingredient</th>
-                  <th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Value / %</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container">
-                {product.composition.map((entry, i) => (
-                  <tr key={i} className="hover:bg-surface-container-low/50 transition-colors">
-                    <td className="px-6 py-3 font-semibold text-on-surface">{entry.name}</td>
-                    <td className="px-6 py-3 text-right font-bold text-primary">{entry.value}</td>
+          <button
+            type="button"
+            onClick={() => setCompositionOpen((v) => !v)}
+            className="flex items-center justify-between w-full mb-4 text-left"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Ingredients &amp; Nutrients</p>
+              <h2 className="text-2xl font-bold text-on-surface">Composition</h2>
+            </div>
+            <ChevronDown className={`h-5 w-5 text-on-surface-variant transition-transform shrink-0 ${compositionOpen ? "rotate-180" : ""}`} />
+          </button>
+          {compositionOpen && (
+            <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-container bg-surface-container-low">
+                    <th className="px-6 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Component / Ingredient</th>
+                    <th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Value / %</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-surface-container">
+                  {product.composition.map((entry, i) => (
+                    <tr key={i} className="hover:bg-surface-container-low/50 transition-colors">
+                      <td className="px-6 py-3 font-semibold text-on-surface">{entry.name}</td>
+                      <td className="px-6 py-3 text-right font-bold text-primary">{entry.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
 
@@ -1670,11 +1695,18 @@ export default function ProductDetailView({
 
         return (
           <section>
-            <div className="flex items-center gap-2 mb-6">
-              <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
-              <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
-            </div>
-            <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setInsightsOpen((v) => !v)}
+              className="flex items-center justify-between w-full mb-4 text-left"
+            >
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-on-surface">{t('productInsightsTitle')}</h2>
+                <HelperIcon size="sm" variant="ghost" side="right" textKey="productInsights" ariaLabel="Product insights help" />
+              </div>
+              <ChevronDown className={`h-5 w-5 text-on-surface-variant transition-transform shrink-0 ${insightsOpen ? "rotate-180" : ""}`} />
+            </button>
+            {insightsOpen && <div className="bg-white rounded-3xl shadow-sm border border-surface-container overflow-hidden">
               {filledFields.length > 0 && (
                 <div className="px-6 pt-5 pb-1">
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">{t('categoryInfoLabel', { category: activeCat })}</span>
@@ -1712,7 +1744,7 @@ export default function ProductDetailView({
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
           </section>
         );
       })()}

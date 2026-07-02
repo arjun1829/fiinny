@@ -68,7 +68,7 @@ export const CATEGORY_FIELDS: Record<ProductCategory, CategoryField[]> = {
 
   "Bio-Stimulants": [
     { key: "keyIngredients",   label: "Key Ingredients",     type: "text",     placeholder: "e.g. Humic acid, Seaweed extract" },
-    { key: "benefits",         label: "Benefits",            type: "textarea", placeholder: "e.g. Improves root development, enhances nutrient uptake..." },
+    { key: "benefits",         label: "Benefits",            type: "chips",    placeholder: "e.g. Improves root development, Enhances nutrient uptake" },
     { key: "applicationMethod",label: "Application Method",  type: "text",     placeholder: "e.g. Soil drench, foliar spray" },
     { key: "dosage",           label: "Recommended Dosage",  type: "text",     placeholder: "e.g. 2–3 ml / Litre" },
     { key: "growthStage",      label: "Growth Stage",        type: "text",     placeholder: "e.g. Vegetative, Flowering" },
@@ -104,16 +104,20 @@ export const CATEGORY_FIELDS: Record<ProductCategory, CategoryField[]> = {
   ],
 
   Other: [
-    { key: "specifications",   label: "Specifications",   type: "textarea", placeholder: "List key product specifications..." },
-    { key: "application",      label: "Application",      type: "textarea", placeholder: "Describe how the product is used..." },
-    { key: "additionalNotes",  label: "Additional Notes", type: "textarea", placeholder: "Any other relevant information..." },
+    { key: "keyFeatures",      label: "Key Features / Product Info", type: "textarea", placeholder: "e.g. Non-ionic surfactant. Improves spreading and sticking of spray solutions..." },
+    { key: "benefits",         label: "Benefits",                    type: "chips",    placeholder: "e.g. Reduces surface tension, Improves coverage, Enhances absorption" },
+    { key: "applicationMethod",label: "Application Method",          type: "text",     placeholder: "e.g. Tank mix with pesticide or herbicide solution" },
+    { key: "dosage",           label: "Recommended Dosage",          type: "text",     placeholder: "e.g. 0.5 ml / Litre of spray solution" },
+    { key: "specifications",   label: "Specifications",              type: "textarea", placeholder: "List key product specifications..." },
+    { key: "application",      label: "Application",                 type: "textarea", placeholder: "Describe how the product is used..." },
+    { key: "additionalNotes",  label: "Additional Notes",            type: "textarea", placeholder: "Any other relevant information..." },
   ],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Chips fields that are stored as string[] instead of string. */
-export const CHIPS_FIELDS = new Set(["bestForCrops", "bestRegions"]);
+export const CHIPS_FIELDS = new Set(["bestForCrops", "bestRegions", "benefits"]);
 
 /** Convert a raw Firestore record to a typed CategoryInfo map. */
 export function parseCategoryInfo(

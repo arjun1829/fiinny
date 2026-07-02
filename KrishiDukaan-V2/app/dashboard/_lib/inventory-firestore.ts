@@ -524,6 +524,7 @@ export async function fetchManufacturerCatalogueRows(
       categoryInfo: p.categoryInfo,
       videoUrl: p.videoUrl ?? undefined,
       composition: p.composition ?? undefined,
+      customFields: p.customFields ?? undefined,
       nitrogen: p.nitrogen ?? "",
       phosphorus: p.phosphorus ?? "",
       potassium: p.potassium ?? "",

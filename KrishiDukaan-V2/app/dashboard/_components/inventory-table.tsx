@@ -21,7 +21,7 @@ type InventoryTableProps = {
   role: Role;
   userId?: string;
   disabled?: boolean;
-  /** When false, hides product-level delivery toggles (account-level delivery is OFF). */
+  /** When false, hides both Online Delivery and GST toggles (account-level delivery is OFF). */
   accountDeliveryEnabled?: boolean;
   onUpdated: () => Promise<void> | void;
   /** Activate/deactivate a product. isAssigned=true bypasses seat management. */
@@ -732,6 +732,7 @@ export function InventoryTable({
       {editing && (
         <EditProductModal
           row={editing}
+          accountDeliveryEnabled={accountDeliveryEnabled}
           onClose={() => setEditing(null)}
           onSaved={() => { void onUpdated(); setEditing(null); }}
         />

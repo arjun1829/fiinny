@@ -302,11 +302,13 @@ export default async function ProductPage({ params }: PageProps) {
         {product.benefits.length > 0 ? (
           <section className="mt-10">
             <h2 className="text-xl font-black text-on-surface mb-3">Key Benefits</h2>
-            <ul className="list-disc pl-6 space-y-1 text-on-surface">
+            <div className="flex flex-wrap gap-2">
               {product.benefits.map((b, i) => (
-                <li key={i}>{b}</li>
+                <span key={i} className="bg-surface-container px-3 py-1.5 rounded-full text-sm font-semibold text-on-surface-variant border border-surface-container-highest">
+                  {b}
+                </span>
               ))}
-            </ul>
+            </div>
           </section>
         ) : null}
 

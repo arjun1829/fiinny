@@ -407,8 +407,10 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
-export function EditProductModal({ row, onClose, onSaved }: {
+export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved }: {
   row: InventoryRow;
+  /** When false, both Online Delivery and GST fields are hidden and forced to their off defaults on save. */
+  accountDeliveryEnabled?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -530,6 +532,11 @@ export function EditProductModal({ row, onClose, onSaved }: {
         : raw;
     });
 
+    // Both delivery and GST are gated on the same account-level flag.
+    const effectiveSellMode: "online_delivery" | "offline_store_only" =
+      accountDeliveryEnabled !== false ? sellMode : "offline_store_only";
+    const effectiveGstApplicable = accountDeliveryEnabled !== false ? gstApplicable : false;
+
     setSaving(true);
     setMessage(null);
     try {
@@ -556,16 +563,16 @@ export function EditProductModal({ row, onClose, onSaved }: {
         composition: composition.filter(e => e.name.trim()),
         customFields: customFields.filter(e => e.title.trim()),
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
-        gstApplicable,
-        gstRate: gstApplicable ? gstRate : 0,
+        gstApplicable: effectiveGstApplicable,
+        gstRate: effectiveGstApplicable ? gstRate : 0,
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
       });
 
       // Update sellMode separately — this cascades to assigned retailer copies.
-      if (sellMode !== row.sellMode) {
-        await updateProductSellMode(row.productId, sellMode);
+      if (effectiveSellMode !== row.sellMode) {
+        await updateProductSellMode(row.productId, effectiveSellMode);
       }
 
       // Update inventory: use first variant's stock; fall back to existing stockQuantity.
@@ -795,84 +802,87 @@ export function EditProductModal({ row, onClose, onSaved }: {
             </label>
           </div>
 
-          {/* ── Online Delivery + GST ──────────────────────────────────────── */}
-          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
-              <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
-            </div>
+          {/* ── Online Delivery + GST — both shown only when account-level delivery is ON ── */}
+          {accountDeliveryEnabled !== false && (
+            <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <Receipt className="h-4 w-4 text-primary" /> GST &amp; Delivery
+              </div>
 
-            {/* Online Delivery toggle */}
-            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-on-surface">Online Delivery</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
-              </div>
-              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
-                {(["online_delivery", "offline_store_only"] as const).map((mode) => (
-                  <button key={mode} type="button" disabled={saving}
-                    onClick={() => setSellMode(mode)}
-                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                      sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
-                    }`}
-                  >
-                    {mode === "online_delivery" ? "Yes" : "No"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
-                <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
-              </div>
-              <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
-                {([true, false] as const).map((v) => (
-                  <button key={String(v)} type="button" disabled={saving}
-                    onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
-                    className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
-                      gstApplicable === v
-                        ? "bg-primary text-white"
-                        : "text-on-surface-variant hover:bg-surface-container"
-                    }`}
-                  >
-                    {v ? "Yes" : "No"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {gstApplicable && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
-                <div className="flex flex-wrap gap-2">
-                  {GST_RATES.map((rate) => (
-                    <button key={rate} type="button" disabled={saving}
-                      onClick={() => setGstRate(rate)}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
-                        gstRate === rate
-                          ? "border-primary bg-primary text-white shadow-sm"
-                          : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+              {/* Online Delivery toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-on-surface">Online Delivery</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Can buyers order this product for home delivery?</p>
+                </div>
+                <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                  {(["online_delivery", "offline_store_only"] as const).map((mode) => (
+                    <button key={mode} type="button" disabled={saving}
+                      onClick={() => setSellMode(mode)}
+                      className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                        sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
                       }`}
                     >
-                      {rate}%
+                      {mode === "online_delivery" ? "Yes" : "No"}
                     </button>
                   ))}
                 </div>
-                {gstApplicable && gstRate === 0 && (
-                  <p className="text-xs text-amber-700 flex items-center gap-1">
-                    0% GST selected — confirm this product is exempt or zero-rated.
-                  </p>
-                )}
               </div>
-            )}
 
-            {gstApplicable && gstRate > 0 && (
-              <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
-                GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+              {/* GST toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-on-surface">GST Applicable?</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">Is GST charged on this product?</p>
+                </div>
+                <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                  {([true, false] as const).map((v) => (
+                    <button key={String(v)} type="button" disabled={saving}
+                      onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                      className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                        gstApplicable === v
+                          ? "bg-primary text-white"
+                          : "text-on-surface-variant hover:bg-surface-container"
+                      }`}
+                    >
+                      {v ? "Yes" : "No"}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
+
+              {gstApplicable && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
+                  <div className="flex flex-wrap gap-2">
+                    {GST_RATES.map((rate) => (
+                      <button key={rate} type="button" disabled={saving}
+                        onClick={() => setGstRate(rate)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                          gstRate === rate
+                            ? "border-primary bg-primary text-white shadow-sm"
+                            : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                        }`}
+                      >
+                        {rate}%
+                      </button>
+                    ))}
+                  </div>
+                  {gstApplicable && gstRate === 0 && (
+                    <p className="text-xs text-amber-700 flex items-center gap-1">
+                      0% GST selected — confirm this product is exempt or zero-rated.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {gstApplicable && gstRate > 0 && (
+                <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+                  GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
