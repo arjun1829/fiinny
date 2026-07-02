@@ -462,7 +462,7 @@ class _ReelGridCard extends StatelessWidget {
         MaterialPageRoute(
           fullscreenDialog: true,
           builder: (_) => ProviderScope(
-            child: _SellerReelsFeed(
+            child: StandaloneReelsFeed(
               reels: allReels,
               initialIndex: startIndex,
               currentUserId: currentUserId,
@@ -937,13 +937,13 @@ class _ProductTile extends StatelessWidget {
 
 // ── Seller reels feed (fullscreen, from grid tap) ─────────────────────────────
 
-class _SellerReelsFeed extends ConsumerStatefulWidget {
+class StandaloneReelsFeed extends ConsumerStatefulWidget {
   final List<ReelModel> reels;
   final int initialIndex;
   final String? currentUserId;
   final String currentUserName;
 
-  const _SellerReelsFeed({
+  const StandaloneReelsFeed({
     required this.reels,
     required this.initialIndex,
     this.currentUserId,
@@ -951,10 +951,10 @@ class _SellerReelsFeed extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_SellerReelsFeed> createState() => _SellerReelsFeedState();
+  ConsumerState<StandaloneReelsFeed> createState() => _StandaloneReelsFeedState();
 }
 
-class _SellerReelsFeedState extends ConsumerState<_SellerReelsFeed>
+class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
     with WidgetsBindingObserver {
   late PageController _pageController;
   final Map<String, VideoPlayerController> _controllers = {};

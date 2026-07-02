@@ -9,6 +9,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/brand_model.dart';
 import '../../../core/models/listing_model.dart';
+import '../../../core/models/reel_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/providers/cart_provider.dart';
 import '../../../core/models/cart_model.dart';
@@ -19,6 +20,9 @@ import '../../../core/widgets/expandable_text.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
 import '../widgets/store_selector_sheet.dart';
+import '../../reels/providers/reels_provider.dart';
+import '../../reels/screens/shop_profile_screen.dart';
+import '../../../core/providers/user_provider.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   final String catalogId;
@@ -194,6 +198,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     ],
 
                     const Divider(height: 1, thickness: 1),
+
+                    _buildReelsSection(widget.catalogId),
 
                     // ── Similar Products ────────────────────────────────────
                     if (similarProducts.isNotEmpty)
@@ -448,34 +454,6 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ),
             ),
           ),
-        // Premium badge
-        Positioned(
-          top: 60,
-          right: 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.verified, size: 12, color: AppColors.primary),
-                SizedBox(width: 4),
-                Text(
-                  'Premium Grade',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onPrimaryContainer,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1278,6 +1256,163 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 
   // ─────────────────────────── Similar products ──────────────────────────────
+
+  /// Reel poster: the generated video frame if present, else the linked
+  /// product image, else a branded gradient. Lets old reels (no stored frame)
+  /// still look like a video via the product image they were linked to.
+  Widget _reelThumbnail(ReelModel reel) {
+    final thumb = (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty)
+        ? reel.thumbnailUrl!
+        : (reel.linkedProductImageUrl ?? '');
+    if (thumb.isEmpty) return _reelGradient();
+    return CachedNetworkImage(
+      imageUrl: thumb,
+      fit: BoxFit.cover,
+      memCacheWidth: 300,
+      placeholder: (_, _) => _reelGradient(),
+      errorWidget: (_, _, _) => _reelGradient(),
+    );
+  }
+
+  Widget _reelGradient() => const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppColors.primaryDark, AppColors.primary],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
+
+  Widget _buildReelsSection(String catalogId) {
+    final reelsAsync = ref.watch(productReelsProvider(catalogId));
+    return reelsAsync.when(
+      data: (reels) {
+        if (reels.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+              child: Text('Product Reels', style: AppTextStyles.heading3),
+            ),
+            SizedBox(
+              height: 180,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: reels.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final reel = reels[index];
+                  return GestureDetector(
+                    onTap: () {
+                      final user = ref.read(currentUserProvider).value;
+                      Navigator.of(context, rootNavigator: true).push(
+                        MaterialPageRoute(
+                          fullscreenDialog: true,
+                          builder: (_) => ProviderScope(
+                            child: StandaloneReelsFeed(
+                              reels: reels,
+                              initialIndex: index,
+                              currentUserId: user?.phone,
+                              currentUserName: user?.businessName ?? user?.name ?? '',
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 110,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Poster frame (or linked product image) so the
+                            // card reads as a video, not a coloured box.
+                            _reelThumbnail(reel),
+                            // Legibility scrim under the play button + labels.
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black26,
+                                    Colors.transparent,
+                                    Colors.black54,
+                                  ],
+                                  stops: [0.0, 0.5, 1.0],
+                                ),
+                              ),
+                            ),
+                            // Center play button — clearly a tappable video.
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.play_arrow_rounded,
+                                    color: Colors.white, size: 26),
+                              ),
+                            ),
+                            Positioned(
+                              left: 6,
+                              right: 6,
+                              bottom: 6,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.play_arrow_rounded,
+                                          color: Colors.white70, size: 12),
+                                      const SizedBox(width: 2),
+                                      Text('${reel.viewsCount}',
+                                          style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '@${reel.shopName}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        shadows: [
+                                          Shadow(
+                                              color: Colors.black54,
+                                              blurRadius: 4)
+                                        ]),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1, thickness: 1),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
 
   Widget _buildSimilarProducts(List<CatalogModel> products) {
     return Padding(

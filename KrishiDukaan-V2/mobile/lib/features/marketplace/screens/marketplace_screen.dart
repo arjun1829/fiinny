@@ -12,7 +12,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
-import '../../reels/data/reels_repository.dart';
+
 
 const _categories = [
   'Pesticides',
@@ -123,9 +123,6 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       final repo = ref.read(catalogRepositoryProvider);
       final prodsF = repo.fetchPage(searchQuery: query, limit: 8);
 
-      // Shops: username/business-name prefix search
-      final shopsF = ReelsRepository().searchShops(query);
-
       // Stores: filter from pre-loaded stores list in memory
       final allStores = ref.read(storesListProvider).value ?? [];
       final queryLower = query.toLowerCase();
@@ -159,15 +156,14 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
               })
           .toList();
 
-      final results = await Future.wait([prodsF, shopsF]);
+      final results = await Future.wait([prodsF]);
       final prods = results[0] as List<CatalogModel>;
-      final shops = results[1] as List<Map<String, dynamic>>;
 
       if (mounted) {
         setState(() {
           _suggestionProducts = prods;
           _suggestionStores = storeSuggestions;
-          _suggestionShops = shops;
+          _suggestionShops = [];
         });
       }
     } catch (e) {
@@ -305,40 +301,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                     child: ListView(
                       shrinkWrap: true,
                       children: [
-                        // Shop suggestions (username search) — shown first
-                        if (_suggestionShops.isNotEmpty)
-                          ..._suggestionShops.map(
-                            (shop) => ListTile(
-                              leading: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: AppColors.primaryContainer,
-                                child: Text(
-                                  (shop['businessName'] as String? ?? '?')
-                                      .substring(0, 1)
-                                      .toUpperCase(),
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              title: Text(shop['businessName'] ?? ''),
-                              subtitle: Text(
-                                '@${shop['username']}',
-                                style: const TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              onTap: () =>
-                                  context.push('/shop/${shop['phone']}'),
-                            ),
-                          ),
-
                         // Product suggestions
-                        if (_suggestionProducts.isNotEmpty &&
-                            _suggestionShops.isNotEmpty)
-                          const Divider(height: 1),
                         if (_suggestionProducts.isNotEmpty)
                           ..._suggestionProducts.map(
                             (p) => ListTile(

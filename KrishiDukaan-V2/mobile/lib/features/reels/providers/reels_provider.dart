@@ -48,6 +48,11 @@ final sellerReelsProvider =
   return _repo.fetchSellerReels(phone);
 });
 
+final productReelsProvider =
+    FutureProvider.family<List<ReelModel>, String>((ref, productId) {
+  return _repo.fetchProductReels(productId);
+});
+
 final followerCountProvider =
     FutureProvider.family<int, String>((ref, shopId) {
   return _repo.countFollowers(shopId);

@@ -75,15 +75,19 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     });
   }
 
+  // Reels are short-form. Capping length keeps files small — fast uploads and
+  // playback on rural networks, and low storage/bandwidth cost. image_picker's
+  // maxDuration isn't enforced for gallery picks on most platforms, so we also
+  // verify the real duration once the video loads (works on web + mobile).
+  static const _maxReelDuration = Duration(seconds: 90);
+
   Future<void> _pickVideo() async {
     final picker = ImagePicker();
     final picked = await picker.pickVideo(
       source: ImageSource.gallery,
-      maxDuration: const Duration(minutes: 3),
+      maxDuration: _maxReelDuration,
     );
     if (picked == null) return;
-
-    _previewController?.dispose();
 
     // On web, picked.path is a blob:// URL — networkUrl works with it.
     // On mobile, we use the file path directly.
@@ -92,6 +96,22 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
         : VideoPlayerController.file(File(picked.path));
 
     await controller.initialize();
+
+    // Enforce the cap ourselves — gallery picks ignore maxDuration on most
+    // platforms. Keep the previous selection if the new one is too long.
+    if (controller.value.duration > _maxReelDuration) {
+      await controller.dispose();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please choose a video under 90 seconds.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    _previewController?.dispose();
     controller.setLooping(true);
     controller.play();
 
@@ -115,6 +135,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
     try {
       File? fileToUpload;
+      File? thumbnailFile;
 
       if (!kIsWeb) {
         // ── Phase 1: Compress (mobile only) ───────────────────────────
@@ -136,6 +157,15 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
         fileToUpload =
             info?.file ?? File(_pickedFile!.path);
 
+        // Grab a poster frame so the reel shows a real thumbnail in lists
+        // (product page, shop grid). Best-effort — never block the upload.
+        try {
+          thumbnailFile = await VideoCompress.getFileThumbnail(
+            fileToUpload.path,
+            quality: 75,
+          );
+        } catch (_) {}
+
         if (mounted) setState(() { _compressing = false; });
       }
 
@@ -147,6 +177,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             shopName: user.businessName ?? user.name,
             videoFile: fileToUpload,
             videoBytes: bytes,
+            thumbnailFile: thumbnailFile,
             title: _titleController.text.trim(),
             caption: _captionController.text.trim(),
             linkedProductId: _selectedProduct?.catalogId,
@@ -317,7 +348,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Max 3 minutes',
+                                'Max 90 seconds',
                                 style: AppTextStyles.caption
                                     .copyWith(color: Colors.white38),
                               ),
