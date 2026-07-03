@@ -35,6 +35,10 @@ List<StoreOption> buildStoreOptions(
     CatalogModel catalog, List<ListingModel> listings) {
   final discounts = catalog.sellerDiscounts;
   final options = <StoreOption>[];
+  if (catalog.sellMode == 'offline_store_only' || catalog.isOnline == false) {
+    return options; // No online delivery available
+  }
+  
   for (final l in listings) {
     if (!l.isInStock || !l.isOnline) continue;
 

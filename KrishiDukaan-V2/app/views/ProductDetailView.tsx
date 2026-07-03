@@ -430,6 +430,131 @@ function ManufacturerBrandSection({
   );
 }
 
+// ─── Product Reels Section ────────────────────────────────────────────────────
+// In-store equivalent of the mobile app's "Product Reels" rail and the SSR
+// product page's "Product Videos" section: shows the top reels a seller linked
+// to this product, each linking to its /reels/{slug} SEO page.
+
+interface ProductReelItem {
+  id: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  title: string;
+  shopName: string;
+  viewsCount: number;
+  createdAtMs: number;
+}
+
+// Same slug convention as app/lib/seo/reels-server.ts buildReelSlug —
+// duplicated here as a tiny pure helper so the client bundle doesn't pull in
+// the server data layer.
+function reelSlug(title: string, id: string): string {
+  const base = title
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 70);
+  return base ? `${base}-${id}` : id;
+}
+
+function ProductReelsSection({ productId }: { productId: string }) {
+  const [reels, setReels] = useState<ProductReelItem[]>([]);
+
+  useEffect(() => {
+    if (!productId) { setReels([]); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, "reels"),
+            where("linkedProductId", "==", productId),
+            limit(50),
+          ),
+        );
+        if (cancelled) return;
+        const items: ProductReelItem[] = snap.docs
+          .map((d) => {
+            const data = d.data() as Record<string, unknown>;
+            return {
+              id: d.id,
+              videoUrl: String(data.videoUrl ?? ""),
+              thumbnailUrl: data.thumbnailUrl ? String(data.thumbnailUrl) : undefined,
+              title: String(data.title ?? ""),
+              shopName: String(data.shopName ?? ""),
+              viewsCount: Number(data.viewsCount) || 0,
+              createdAtMs:
+                (data.createdAt as { toMillis?: () => number })?.toMillis?.() ?? 0,
+            };
+          })
+          .filter((r) => r.videoUrl);
+        // Most-viewed first, capped at 5 — same rule as mobile + SSR page.
+        items.sort((a, b) => {
+          const byViews = b.viewsCount - a.viewsCount;
+          return byViews !== 0 ? byViews : b.createdAtMs - a.createdAtMs;
+        });
+        setReels(items.slice(0, 5));
+      } catch (err) {
+        console.warn("[ProductDetail] reels fetch failed:", err);
+        if (!cancelled) setReels([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [productId]);
+
+  if (reels.length === 0) return null;
+
+  return (
+    <section>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-on-surface">Product Reels</h2>
+          <p className="mt-0.5 text-xs text-on-surface-variant">
+            Watch this product in action — videos by sellers
+          </p>
+        </div>
+        <a
+          href="/reels"
+          className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:text-primary/80"
+        >
+          All AgriReels <ICONS.ChevronRight className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      <div className="flex gap-4 overflow-x-auto pb-4 snap-x hide-scrollbar">
+        {reels.map((reel) => (
+          <div
+            key={reel.id}
+            className="relative min-w-[240px] max-w-[240px] flex-shrink-0 snap-center overflow-hidden rounded-2xl bg-black"
+          >
+            <video
+              src={reel.videoUrl}
+              poster={reel.thumbnailUrl}
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-[9/16] w-full object-cover"
+            />
+            <a
+              href={`/reels/${reelSlug(reel.title, reel.id)}`}
+              className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-3"
+            >
+              {reel.title ? (
+                <p className="truncate text-sm font-bold text-white drop-shadow-md">{reel.title}</p>
+              ) : null}
+              <p className="truncate text-xs text-white/90 drop-shadow-md">
+                by {reel.shopName} · {reel.viewsCount.toLocaleString("en-IN")} views
+              </p>
+            </a>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── Similar Products Section ─────────────────────────────────────────────────
 
 function SimilarProductsSection({
@@ -1777,6 +1902,9 @@ export default function ProductDetailView({
           </section>
         );
       })()}
+
+      {/* Product Reels — seller videos linked to this product (mirrors mobile) */}
+      <ProductReelsSection productId={product.id} />
 
       {/*
         Similar Products — same-category items from the products already loaded into the

@@ -20,6 +20,11 @@ class UserModel {
   final bool profileCompleted;
   final String? username;
 
+  /// Seller's GST registration number. The canonical copy lives on
+  /// `retailers/{phone}.gstin` (what the web dashboard edits and the invoice
+  /// generator reads); this users-doc mirror is for quick prefill.
+  final String? gstin;
+
   const UserModel({
     required this.uid,
     required this.phone,
@@ -38,6 +43,7 @@ class UserModel {
     this.pincode,
     this.profileCompleted = false,
     this.username,
+    this.gstin,
   });
 
   /// True once the essential profile fields are filled. Sellers additionally
@@ -84,6 +90,7 @@ class UserModel {
       pincode: data['pincode'] as String?,
       profileCompleted: data['profileCompleted'] as bool? ?? false,
       username: data['username'] as String?,
+      gstin: data['gstin'] as String?,
     );
   }
 

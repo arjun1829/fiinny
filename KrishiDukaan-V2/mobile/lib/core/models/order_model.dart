@@ -12,6 +12,10 @@ class OrderModel {
   final List<OrderItemModel> items;
   final double subtotal;
   final double deliveryCharge;
+
+  /// Total GST for this order (written as `totalGst` at checkout).
+  final double totalGst;
+
   final double total;
   final String status;
   final OrderPaymentModel? payment;
@@ -30,6 +34,7 @@ class OrderModel {
     required this.items,
     required this.subtotal,
     required this.deliveryCharge,
+    this.totalGst = 0,
     required this.total,
     required this.status,
     this.payment,
@@ -104,6 +109,7 @@ class OrderModel {
       items: itemsList,
       subtotal: (d['subtotal'] as num?)?.toDouble() ?? 0.0,
       deliveryCharge: (d['deliveryCharge'] as num?)?.toDouble() ?? 0.0,
+      totalGst: (d['totalGst'] as num?)?.toDouble() ?? 0.0,
       total: (d['total'] as num?)?.toDouble() ??
           (d['grandTotal'] as num?)?.toDouble() ??
           (d['subtotal'] as num?)?.toDouble() ??

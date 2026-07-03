@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _cityCtrl = TextEditingController();
   final _stateCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
+  final _gstinCtrl = TextEditingController();
 
   bool _saving = false;
   bool _prefilled = false;
@@ -50,7 +52,25 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     _cityCtrl.dispose();
     _stateCtrl.dispose();
     _pincodeCtrl.dispose();
+    _gstinCtrl.dispose();
     super.dispose();
+  }
+
+  /// The canonical GSTIN lives on retailers/{phone} (that's what the web
+  /// dashboard edits), so when the users-doc mirror is empty pull it from
+  /// there — otherwise a GSTIN set on web would look blank here.
+  Future<void> _prefillGstinFromRoleDoc(String role, String phone) async {
+    final col = role == 'manufacturer' ? 'manufacturers' : 'retailers';
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(col)
+          .doc(phone)
+          .get();
+      final gstin = snap.data()?['gstin'] as String?;
+      if (mounted && gstin != null && gstin.isNotEmpty && _gstinCtrl.text.isEmpty) {
+        _gstinCtrl.text = gstin;
+      }
+    } catch (_) {}
   }
 
   String? _required(String? v) =>
@@ -75,6 +95,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         city: _cityCtrl.text.trim(),
         state: _stateCtrl.text.trim(),
         pincode: _pincodeCtrl.text.trim(),
+        gstin: _gstinCtrl.text.trim().toUpperCase(),
       );
 
       ref.invalidate(currentUserProvider);
@@ -129,6 +150,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           _cityCtrl.text = user.city ?? '';
           _stateCtrl.text = user.state ?? '';
           _pincodeCtrl.text = user.pincode ?? '';
+          _gstinCtrl.text = user.gstin ?? '';
+          if (user.isSeller && _gstinCtrl.text.isEmpty) {
+            _prefillGstinFromRoleDoc(user.role, user.phone);
+          }
           _prefilled = true;
         }
 
@@ -206,6 +231,26 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(6),
                           ]),
+                      const SizedBox(height: 12),
+                      // Printed on invoices (web + mobile). 15-char GSTIN.
+                      _field(_gstinCtrl, 'GSTIN (optional)',
+                          Icons.receipt_long_outlined,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(15),
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'[a-zA-Z0-9]')),
+                            TextInputFormatter.withFunction(
+                              (oldValue, newValue) => newValue.copyWith(
+                                  text: newValue.text.toUpperCase()),
+                            ),
+                          ],
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.length == 15
+                                ? null
+                                : 'GSTIN must be 15 characters';
+                          }),
                     ] else ...[
                       const SizedBox(height: 24),
                       Text('Delivery Address (optional)',

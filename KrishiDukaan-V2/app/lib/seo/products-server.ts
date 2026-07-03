@@ -30,6 +30,16 @@ const COPY_SOURCES = new Set([
   "admin_assigned",
 ]);
 
+export interface ProductReel {
+  id: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  title: string;
+  caption: string;
+  shopName: string;
+  viewsCount: number;
+}
+
 export interface SeoProduct {
   id: string;
   name: string;
@@ -144,6 +154,43 @@ export async function getProductById(id: string): Promise<SeoProduct | null> {
   } catch (err) {
     console.warn("[seo/products-server] getProductById failed:", err);
     return null;
+  }
+}
+
+export async function getReelsForProduct(productId: string): Promise<ProductReel[]> {
+  try {
+    if (!productId) return [];
+    const db = getClientDb();
+    const snap = await getDocs(
+      query(
+        collection(db, "reels"),
+        where("linkedProductId", "==", productId),
+        limit(50),
+      ),
+    );
+    const reels = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        videoUrl: str(data.videoUrl),
+        thumbnailUrl: data.thumbnailUrl ? str(data.thumbnailUrl) : undefined,
+        title: str(data.title),
+        caption: str(data.caption),
+        shopName: str(data.shopName),
+        viewsCount: Number(data.viewsCount) || 0,
+        createdAt: data.createdAt?.toMillis?.() || 0,
+      };
+    });
+    // Sort manually as Firestore requires composite index for query sorting
+    reels.sort((a, b) => {
+      const byViews = b.viewsCount - a.viewsCount;
+      if (byViews !== 0) return byViews;
+      return b.createdAt - a.createdAt;
+    });
+    return reels.slice(0, 5).map(({ createdAt, ...rest }) => rest);
+  } catch (err) {
+    console.warn("[seo/products-server] getReelsForProduct failed:", err);
+    return [];
   }
 }
 

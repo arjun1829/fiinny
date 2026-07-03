@@ -15,6 +15,7 @@ class OrderRepository {
     required Map<String, dynamic> customerAddress,
     required String razorpayOrderId,
     required String razorpayPaymentId,
+    required Map<String, double> deliveryChargesBySeller,
   }) async {
     final user = FirebaseAuth.instance.currentUser!;
 
@@ -33,6 +34,10 @@ class OrderRepository {
 
       final subtotal = sellerItems.fold(
           0.0, (acc, i) => acc + i.price * i.quantity);
+      final sellerGst = sellerItems.fold(
+          0.0, (acc, i) => acc + i.lineGst);
+      final deliveryCharge = deliveryChargesBySeller[sellerPhone] ?? 0.0;
+      final grandTotal = subtotal + sellerGst + deliveryCharge;
 
       final orderRef = _db.collection('orders').doc();
       batch.set(orderRef, {
@@ -55,18 +60,22 @@ class OrderRepository {
                   'quantity': i.quantity,
                   if (i.variantLabel != null) 'variantLabel': i.variantLabel,
                   'listingId': i.listingId,
+                  'gstApplicable': i.gstApplicable,
+                  'gstRate': i.gstRate,
+                  'gstAmount': i.unitGst,
                 })
             .toList(),
         'subtotal': subtotal,
-        'deliveryCharge': 0,
-        'total': subtotal,
+        'totalGst': sellerGst,
+        'deliveryCharge': deliveryCharge,
+        'total': grandTotal,
         // Rules require status == 'placed' on order create
         'status': 'placed',
         'payment': {
           'razorpayOrderId': razorpayOrderId,
           'razorpayPaymentId': razorpayPaymentId,
           'status': 'paid',
-          'amount': subtotal,
+          'amount': grandTotal,
         },
         'createdAt': FieldValue.serverTimestamp(),
       });

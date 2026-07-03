@@ -12,6 +12,7 @@ import {
   getAllListableProductsForSitemap,
   buildProductSlug,
 } from "./lib/seo/products-server";
+import { getReelsForSitemap, buildReelSlug } from "./lib/seo/reels-server";
 
 // Canonical public origin (kept in sync with app/layout.tsx and app/robots.ts).
 const SITE_URL =
@@ -102,6 +103,17 @@ async function brandEntries(): Promise<MetadataRoute.Sitemap> {
   }
 }
 
+// ─── Reel entries (dynamic, safe-fallback) ──────────────────────────────────
+async function reelEntries(): Promise<MetadataRoute.Sitemap> {
+  const reels = await getReelsForSitemap();
+  return reels.map((r) => ({
+    url: `${SITE_URL}/reels/${buildReelSlug(r.title, r.id)}`,
+    lastModified: r.createdAtMs ? new Date(r.createdAtMs) : new Date(),
+    changeFrequency: "weekly" as const,
+    priority: 0.7,
+  }));
+}
+
 // ─── Blog entries (dynamic, safe-fallback) ──────────────────────────────────
 async function blogEntries(): Promise<MetadataRoute.Sitemap> {
   try {
@@ -137,16 +149,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Dynamic sections fetched in parallel; each resolves to [] on failure so the
   // sitemap always renders the static + category baseline.
-  const [brands, posts, products] = await Promise.all([
+  const [brands, posts, products, reels] = await Promise.all([
     brandEntries(),
     blogEntries(),
     productEntries(),
+    reelEntries(),
   ]);
 
   return [
+    { url: `${SITE_URL}/reels`, lastModified: now, changeFrequency: "daily" as const, priority: 0.8 },
     ...staticEntries(now),
     ...categoryEntries(now),
     ...products,
+    ...reels,
     ...brands,
     ...posts,
   ];

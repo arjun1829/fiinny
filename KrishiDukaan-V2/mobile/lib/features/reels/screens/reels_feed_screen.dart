@@ -685,18 +685,44 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    onTap: () =>
-                        context.push('/shop/${widget.reel.shopOwnerId}'),
-                    child: Text(
-                      '@${widget.reel.shopName}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () =>
+                            context.push('/shop/${widget.reel.shopOwnerId}'),
+                        child: Text(
+                          '@${widget.reel.shopName}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _toggleFollow,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white, width: 1),
+                            borderRadius: BorderRadius.circular(4),
+                            color: (_isFollowing ?? false)
+                                ? Colors.transparent
+                                : Colors.white.withValues(alpha: 0.2),
+                          ),
+                          child: Text(
+                            (_isFollowing ?? false) ? 'Following' : 'Follow',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (widget.reel.title.isNotEmpty) ...[
                     const SizedBox(height: 5),
@@ -791,28 +817,6 @@ class _ProfileAvatarButton extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          bottom: -10,
-          child: GestureDetector(
-            onTap: onFollowTap,
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: isFollowing ? Colors.white : AppColors.secondary,
-                shape: BoxShape.circle,
-                boxShadow: const [
-                  BoxShadow(color: Colors.black38, blurRadius: 4),
-                ],
-              ),
-              child: Icon(
-                isFollowing ? Icons.check_rounded : Icons.add_rounded,
-                size: 14,
-                color: isFollowing ? AppColors.primary : Colors.white,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -892,18 +896,6 @@ class _ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        if (currentUserId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Login to view and buy products'),
-              action: SnackBarAction(
-                label: 'Login',
-                onPressed: () => context.push('/login'),
-              ),
-            ),
-          );
-          return;
-        }
         context.push('/product/$productId');
       },
       child: Container(

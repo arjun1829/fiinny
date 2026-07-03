@@ -20,6 +20,9 @@ class ListingModel {
   final List<String> images;
   final bool isActive;
   final bool isOnline;
+  final String? sellMode;
+  final bool? gstApplicable;
+  final double? gstRate;
   final DateTime? updatedAt;
 
   final String collectionPath;
@@ -47,6 +50,9 @@ class ListingModel {
     this.images = const [],
     this.isActive = true,
     this.isOnline = true,
+    this.sellMode,
+    this.gstApplicable,
+    this.gstRate,
     this.updatedAt,
     this.distanceKm,
     this.collectionPath = 'products',
@@ -116,7 +122,10 @@ class ListingModel {
       imageUrl: imgs.isNotEmpty ? imgs.first : null,
       images: imgs,
       isActive: d['isActive'] as bool? ?? true,
-      isOnline: d['isOnline'] as bool? ?? true,
+      isOnline: d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only"),
+      sellMode: d['sellMode'] as String?,
+      gstApplicable: d['gstApplicable'] as bool?,
+      gstRate: (d['gstRate'] as num?)?.toDouble(),
       updatedAt: updatedAt,
     );
   }
@@ -146,14 +155,21 @@ class VariantModel {
     required this.stock,
   });
 
+  /// Web stores variants as `{unit, price, stock}` (see inventory.ts
+  /// ProductVariant); `label` is the mobile-legacy key. Read both — otherwise
+  /// web-created products show blank size chips and, worse, the cart's
+  /// variantLabel is empty so the delivery weight estimate is always 0 kg.
   factory VariantModel.fromMap(Map<String, dynamic> m) => VariantModel(
-        label: m['label'] as String? ?? '',
+        label: m['label'] as String? ?? m['unit'] as String? ?? '',
         price: (m['price'] as num?)?.toDouble() ?? 0.0,
         stock: (m['stock'] as num?)?.toInt() ?? 0,
       );
 
+  // Write both keys so web (reads `unit`) and older mobile builds (read
+  // `label`) both resolve mobile-created variants.
   Map<String, dynamic> toMap() => {
         'label': label,
+        'unit': label,
         'price': price,
         'stock': stock,
       };

@@ -16,8 +16,6 @@ class CartScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(cartProvider);
-    final total = ref.watch(cartTotalProvider);
-    final savings = ref.watch(cartSavingsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -56,7 +54,7 @@ class CartScreen extends ConsumerWidget {
                     itemBuilder: (_, i) => _CartItemTile(item: items[i]),
                   ),
                 ),
-                _CheckoutBar(total: total, savings: savings),
+                const _CheckoutBar(),
               ],
             ),
     );
@@ -345,13 +343,16 @@ class _QtyControl extends ConsumerWidget {
   }
 }
 
-class _CheckoutBar extends StatelessWidget {
-  final double total;
-  final double savings;
-  const _CheckoutBar({required this.total, required this.savings});
+class _CheckoutBar extends ConsumerWidget {
+  const _CheckoutBar();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subtotal = ref.watch(cartTotalProvider);
+    final savings = ref.watch(cartSavingsProvider);
+    final totalGst = ref.watch(cartGstProvider);
+    final deliveryState = ref.watch(deliveryChargeProvider);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
@@ -364,40 +365,115 @@ class _CheckoutBar extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (savings > 0)
-                  Text(
-                    'You save ${CurrencyUtils.format(savings)}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: const Color(0xFF15803D),
-                      fontWeight: FontWeight.w700,
+      child: deliveryState.when(
+        data: (delivery) {
+          final grandTotal = subtotal + totalGst + delivery.totalCharge;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Breakdown
+              _buildSummaryRow('Subtotal (MRP)', subtotal),
+              if (deliveryState.isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Delivery Charges', style: AppTextStyles.bodySmall),
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                _buildSummaryRow(
+                  'Delivery Charges',
+                  delivery.totalCharge,
+                  isFree: delivery.totalCharge == 0,
+                ),
+              if (delivery.totalWeight > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Est. weight: ${delivery.totalWeight.toStringAsFixed(2)} kg',
+                        style: AppTextStyles.caption.copyWith(color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              if (totalGst > 0) _buildSummaryRow('Total GST', totalGst),
+              const Divider(height: 16),
+              // Grand Total & Checkout button
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (savings > 0)
+                          Text(
+                            'You save ${CurrencyUtils.format(savings)}',
+                            style: AppTextStyles.caption.copyWith(
+                              color: const Color(0xFF15803D),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        const Text('Grand Total', style: AppTextStyles.bodySmall),
+                        Text(
+                          CurrencyUtils.format(grandTotal),
+                          style: AppTextStyles.priceLarge,
+                        ),
+                      ],
                     ),
                   ),
-                const Text('Total', style: AppTextStyles.bodySmall),
-                Text(
-                  CurrencyUtils.format(total),
-                  style: AppTextStyles.priceLarge,
-                ),
-              ],
-            ),
-          ),
-          FilledButton(
-            onPressed: () => context.go('/checkout'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              minimumSize: const Size(160, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                  FilledButton(
+                    onPressed: deliveryState.isLoading ? null : () => context.go('/checkout'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      minimumSize: const Size(160, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Checkout', style: AppTextStyles.button),
+                  ),
+                ],
               ),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, st) => Text('Error loading delivery: $e'),
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, double amount, {bool isFree = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: AppTextStyles.bodySmall),
+          if (isFree)
+            Text(
+              'FREE',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: const Color(0xFF15803D),
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            Text(
+              CurrencyUtils.format(amount),
+              style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
             ),
-            child: const Text('Checkout', style: AppTextStyles.button),
-          ),
         ],
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
@@ -132,6 +133,31 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                     ),
                   ),
                 ),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () {
+                          final shareUrl = 'https://krishidukan.com/product/${catalog.id}';
+                          // ignore: deprecated_member_use
+                          Share.share('Check out ${catalog.name} on KrishiDukaan! $shareUrl');
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(
+                            Icons.share,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 flexibleSpace: FlexibleSpaceBar(
                   background: _buildHeroImage(catalog),
                 ),
@@ -349,8 +375,38 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     }
   }
 
+  /// The currently selected variant's label (e.g. "1kg", "500ml"). Drives the
+  /// delivery-charge weight estimate, so it must travel with every cart line.
+  ///
+  /// Most products have a single fixed pack size stored on the flat `unit`
+  /// field (web's `ProductDoc.unit`), not in `variants` — `variants` only
+  /// exists for products offering multiple selectable sizes. Falling back to
+  /// `catalog.unit` is required or every single-size product estimates 0kg
+  /// and delivery silently shows FREE when the web would charge for it.
+  String? _selectedVariantLabel(CatalogModel catalog) {
+    final variants = catalog.variants;
+    if (variants != null && variants.isNotEmpty) {
+      return variants[_selectedVariantIdx.clamp(0, variants.length - 1)].label;
+    }
+    return catalog.unit;
+  }
+
+  /// GST for a cart line: the seller copy's own fields when present, otherwise
+  /// the canonical product's — mirrors web, where GST lives on the product data.
+  static ({bool applicable, double rate}) _gstFor(
+      ListingModel listing, CatalogModel catalog) {
+    if (listing.gstApplicable == true && (listing.gstRate ?? 0) > 0) {
+      return (applicable: true, rate: listing.gstRate!);
+    }
+    if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0) {
+      return (applicable: true, rate: catalog.gstRate!);
+    }
+    return (applicable: false, rate: 0);
+  }
+
   void _addOptionToCart(CatalogModel catalog, StoreOption opt) {
     final listing = opt.listing;
+    final gst = _gstFor(listing, catalog);
     ref
         .read(cartProvider.notifier)
         .addItem(
@@ -365,6 +421,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             originalPrice: opt.originalPrice,
             discountPct: opt.discountPct,
             quantity: 1,
+            variantLabel: _selectedVariantLabel(catalog),
+            gstApplicable: gst.applicable,
+            gstRate: gst.rate,
           ),
         );
   }
@@ -595,6 +654,18 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ],
             ],
           ),
+          // GST is charged on top at checkout (same as web's cart), so the
+          // label must not claim the price is inclusive.
+          if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '+ ${catalog.gstRate!.toStringAsFixed(0)}% GST added at checkout',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            ),
           if (catalog.sellerCount > 0) ...[
             const SizedBox(height: 4),
             Text(
@@ -815,6 +886,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       catalogName: catalog.name,
                       catalogImage: catalog.imageUrl,
                       displayPrice: displayPrice,
+                      variantLabel: _selectedVariantLabel(catalog),
+                      gstApplicable: _gstFor(listing, catalog).applicable,
+                      gstRate: _gstFor(listing, catalog).rate,
                       // Match the store by phone first (reliable) then storeId.
                       sellerDiscountPct:
                           sellerDiscounts[listing.sellerPhone] ??
@@ -1612,6 +1686,14 @@ class _SellerTile extends ConsumerStatefulWidget {
   /// availability[] entry hasn't been mirrored with a discount yet.
   final double sellerDiscountPct;
 
+  /// Selected package-size label ("1kg", "500ml") — needed on the cart line
+  /// for the delivery weight estimate.
+  final String? variantLabel;
+
+  /// GST already resolved against listing + catalog by the parent screen.
+  final bool gstApplicable;
+  final double gstRate;
+
   const _SellerTile({
     required this.listing,
     required this.catalogId,
@@ -1619,6 +1701,9 @@ class _SellerTile extends ConsumerStatefulWidget {
     required this.catalogImage,
     required this.displayPrice,
     this.sellerDiscountPct = 0,
+    this.variantLabel,
+    this.gstApplicable = false,
+    this.gstRate = 0,
   });
 
   @override
@@ -2143,6 +2228,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             originalPrice: listing.price,
             discountPct: _discountPct,
             quantity: 1,
+            variantLabel: widget.variantLabel,
+            gstApplicable: widget.gstApplicable,
+            gstRate: widget.gstRate,
           ),
         );
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2178,6 +2266,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             originalPrice: listing.price,
             discountPct: _discountPct,
             quantity: 1,
+            variantLabel: widget.variantLabel,
+            gstApplicable: widget.gstApplicable,
+            gstRate: widget.gstRate,
           ),
         );
     context.go('/checkout');

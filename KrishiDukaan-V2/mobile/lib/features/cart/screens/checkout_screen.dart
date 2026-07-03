@@ -73,10 +73,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     try {
       final items = ref.read(cartProvider);
       final user = FirebaseAuth.instance.currentUser!;
+      final delivery = await ref.read(deliveryChargeProvider.future);
+      final gst = ref.read(cartGstProvider);
 
       final result = await _paymentService.createCartOrder(
         items: items,
         userId: user.uid,
+        clientDelivery: delivery.totalCharge,
+        clientGst: gst,
       );
 
       // The Razorpay API returns the order ID in the 'id' field, not 'orderId'
@@ -124,6 +128,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       // Write orders to Firestore (one per seller)
       final items = ref.read(cartProvider);
       final user = FirebaseAuth.instance.currentUser!;
+      final delivery = await ref.read(deliveryChargeProvider.future);
 
       await _orderRepo.createOrdersAfterPayment(
         items: items,
@@ -138,6 +143,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         },
         razorpayOrderId: response.orderId,
         razorpayPaymentId: response.paymentId,
+        deliveryChargesBySeller: delivery.bySellerCharge,
       );
 
       ref.read(cartProvider.notifier).clear();
@@ -162,7 +168,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(cartProvider);
-    final total = ref.watch(cartTotalProvider);
+    final subtotal = ref.watch(cartTotalProvider);
+    final gst = ref.watch(cartGstProvider);
+    final deliveryAsync = ref.watch(deliveryChargeProvider);
+
+    // While the delivery estimate loads, the grand total is unknown — the Pay
+    // button stays disabled so the shown amount always equals the charge.
+    final estimating = deliveryAsync.isLoading;
+    final deliveryCharge = deliveryAsync.value?.totalCharge ?? 0.0;
+    final grandTotal = subtotal + deliveryCharge + gst;
 
     return LoadingOverlay(
       isLoading: _isLoading,
@@ -254,11 +268,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                     )),
                 const Divider(),
+                _summaryRow('Subtotal', CurrencyUtils.format(subtotal)),
+                _summaryRow(
+                  'Delivery Charges',
+                  estimating
+                      ? '—'
+                      : deliveryCharge > 0
+                          ? CurrencyUtils.format(deliveryCharge)
+                          : 'FREE',
+                  valueColor: (!estimating && deliveryCharge == 0)
+                      ? AppColors.success
+                      : null,
+                ),
+                if (gst > 0) _summaryRow('Total GST', CurrencyUtils.format(gst)),
+                const Divider(),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Total', style: AppTextStyles.heading3),
-                    Text(CurrencyUtils.format(total),
+                    Text(
+                        estimating ? '—' : CurrencyUtils.format(grandTotal),
                         style: AppTextStyles.priceLarge),
                   ],
                 ),
@@ -268,14 +297,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   width: double.infinity,
                   height: 52,
                   child: FilledButton(
-                    onPressed: _isLoading ? null : _proceedToPayment,
+                    onPressed:
+                        (_isLoading || estimating) ? null : _proceedToPayment,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
                     child: Text(
-                      'Pay ${CurrencyUtils.format(total)}',
+                      estimating
+                          ? 'Calculating total…'
+                          : 'Pay ${CurrencyUtils.format(grandTotal)}',
                       style: AppTextStyles.button,
                     ),
                   ),
@@ -298,6 +330,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: AppTextStyles.body),
+          Text(
+            value,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: valueColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

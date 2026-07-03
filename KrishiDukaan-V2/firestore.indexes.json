@@ -169,6 +169,39 @@
         { "fieldPath": "retryCount",  "order": "ASCENDING" },
         { "fieldPath": "createdAt",   "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shopOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "follows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "followedShopId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taggedShopIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt",     "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linkedProductId", "order": "ASCENDING" },
+        { "fieldPath": "viewsCount",      "order": "DESCENDING" },
+        { "fieldPath": "createdAt",       "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

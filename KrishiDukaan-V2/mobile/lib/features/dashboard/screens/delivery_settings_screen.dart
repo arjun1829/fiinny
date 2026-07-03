@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
@@ -5,6 +6,15 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../data/dashboard_repository.dart';
 
+/// Seller delivery-charge configuration.
+///
+/// SCHEMA CONTRACT: the checkout estimators on BOTH platforms (web
+/// `useDeliveryEstimates`, mobile `deliveryChargeProvider`) read exactly
+/// `deliverySettings/{phone}.weightSlabs: [{minKg, maxKg, charge}]` — the
+/// same doc the web dashboard's Delivery Settings page edits. Do not invent
+/// other fields here: an earlier version of this screen saved
+/// `slabs/freeDelivery/flatCharge`, which no checkout ever read, so seller
+/// edits from mobile silently did nothing.
 class DeliverySettingsScreen extends ConsumerWidget {
   const DeliverySettingsScreen({super.key});
 
@@ -38,9 +48,6 @@ class _DeliverySettingsBody extends ConsumerStatefulWidget {
 
 class _DeliverySettingsBodyState
     extends ConsumerState<_DeliverySettingsBody> {
-  bool _freeDelivery = false;
-  final _flatChargeCtrl = TextEditingController();
-  bool _useSlabs = false;
   final List<_WeightSlab> _slabs = [];
   bool _saving = false;
   bool _loaded = false;
@@ -54,17 +61,14 @@ class _DeliverySettingsBodyState
   Future<void> _loadSettings() async {
     final data =
         await DashboardRepository().fetchDeliverySettings(widget.sellerPhone);
-    if (data == null || !mounted) return;
+    if (!mounted) return;
     setState(() {
-      _freeDelivery = data['freeDelivery'] as bool? ?? false;
-      _flatChargeCtrl.text =
-          '${(data['flatCharge'] as num? ?? 0).toInt()}';
-      _useSlabs = data['useSlabs'] as bool? ?? false;
-      final rawSlabs = data['slabs'] as List? ?? [];
+      final rawSlabs = data?['weightSlabs'] as List? ?? [];
       _slabs.addAll(rawSlabs.map((s) {
         final m = s as Map<String, dynamic>;
         return _WeightSlab(
-          upToKg: (m['upToKg'] as num?)?.toDouble() ?? 1,
+          minKg: (m['minKg'] as num?)?.toDouble() ?? 0,
+          maxKg: (m['maxKg'] as num?)?.toDouble() ?? 0,
           charge: (m['charge'] as num?)?.toDouble() ?? 0,
         );
       }));
@@ -72,10 +76,78 @@ class _DeliverySettingsBodyState
     });
   }
 
-  @override
-  void dispose() {
-    _flatChargeCtrl.dispose();
-    super.dispose();
+  void _addSlab() {
+    // Same default as web: new slab continues from the last one's max.
+    final lastMax = _slabs.isNotEmpty ? _slabs.last.maxKg : 0.0;
+    setState(() =>
+        _slabs.add(_WeightSlab(minKg: lastMax, maxKg: lastMax + 5, charge: 0)));
+  }
+
+  String? _validate() {
+    for (var i = 0; i < _slabs.length; i++) {
+      final s = _slabs[i];
+      if (s.minKg < 0) return 'Slab ${i + 1}: minimum weight cannot be negative.';
+      if (s.maxKg <= s.minKg) {
+        return 'Slab ${i + 1}: "to" weight must be greater than "from" weight.';
+      }
+      if (s.charge < 0) return 'Slab ${i + 1}: charge cannot be negative.';
+      for (var j = 0; j < i; j++) {
+        final o = _slabs[j];
+        if (s.minKg < o.maxKg && s.maxKg > o.minKg) {
+          return 'Slab ${i + 1} overlaps slab ${j + 1} — ranges must not overlap.';
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _save() async {
+    final error = _validate();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final sorted = [..._slabs]..sort((a, b) => a.minKg.compareTo(b.minKg));
+      await DashboardRepository().saveDeliverySettings(widget.sellerPhone, {
+        // Web's saveDeliverySettings also stores the phone on the doc body.
+        'sellerPhone': widget.sellerPhone,
+        'weightSlabs': sorted
+            .map((s) =>
+                {'minKg': s.minKg, 'maxKg': s.maxKg, 'charge': s.charge})
+            .toList(),
+        // Remove dead fields a previous version of this screen wrote, so the
+        // doc converges on the single schema checkout actually reads.
+        'slabs': FieldValue.delete(),
+        'freeDelivery': FieldValue.delete(),
+        'flatCharge': FieldValue.delete(),
+        'useSlabs': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Delivery settings saved'),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not save: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -102,123 +174,51 @@ class _DeliverySettingsBodyState
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Free delivery toggle
                 _Section(
-                  title: 'Free Delivery',
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Offer free delivery'),
-                    subtitle: const Text(
-                        'Customers get free delivery on all orders'),
-                    value: _freeDelivery,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (v) =>
-                        setState(() => _freeDelivery = v),
+                  title: 'Weight Slabs',
+                  trailing: TextButton.icon(
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Slab'),
+                    onPressed: _addSlab,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Charge customers based on the total order weight. '
+                        'Example: 0–5 kg → ₹50. Orders whose weight matches '
+                        'no slab are delivered free.',
+                        style: TextStyle(color: AppColors.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 12),
+                      if (_slabs.isEmpty)
+                        const Text(
+                          'No slabs yet — delivery is currently FREE for all '
+                          'your orders. Add a slab to start charging.',
+                          style: TextStyle(
+                              color: AppColors.onSurfaceVariant,
+                              fontWeight: FontWeight.w600),
+                        )
+                      else
+                        Column(
+                          children: _slabs
+                              .asMap()
+                              .entries
+                              .map((e) => _SlabRow(
+                                    key: ObjectKey(e.value),
+                                    slab: e.value,
+                                    onDelete: () => setState(
+                                        () => _slabs.removeAt(e.key)),
+                                  ))
+                              .toList(),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                if (!_freeDelivery) ...[
-                  // Flat charge
-                  _Section(
-                    title: 'Flat Delivery Charge',
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Use weight-based slabs'),
-                          value: _useSlabs,
-                          activeThumbColor: AppColors.primary,
-                          onChanged: (v) =>
-                              setState(() => _useSlabs = v),
-                        ),
-                        if (!_useSlabs) ...[
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _flatChargeCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Flat charge (₹)',
-                              border: OutlineInputBorder(),
-                              prefixText: '₹ ',
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Weight slabs
-                  if (_useSlabs) ...[
-                    _Section(
-                      title: 'Weight Slabs',
-                      trailing: TextButton.icon(
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Add Slab'),
-                        onPressed: () => setState(() => _slabs.add(
-                            _WeightSlab(upToKg: 1, charge: 0))),
-                      ),
-                      child: _slabs.isEmpty
-                          ? const Text(
-                              'No slabs yet. Add weight-based delivery charges.',
-                              style: TextStyle(
-                                  color: AppColors.onSurfaceVariant),
-                            )
-                          : Column(
-                              children: _slabs
-                                  .asMap()
-                                  .entries
-                                  .map((e) => _SlabRow(
-                                        index: e.key,
-                                        slab: e.value,
-                                        onDelete: () => setState(
-                                            () => _slabs
-                                                .removeAt(e.key)),
-                                        onChanged: (slab) =>
-                                            setState(() =>
-                                                _slabs[e.key] =
-                                                    slab),
-                                      ))
-                                  .toList(),
-                            ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                ],
-
                 const SizedBox(height: 80),
               ],
             ),
     );
-  }
-
-  Future<void> _save() async {
-    setState(() => _saving = true);
-    try {
-      final settings = <String, dynamic>{
-        'freeDelivery': _freeDelivery,
-        'flatCharge':
-            double.tryParse(_flatChargeCtrl.text.trim()) ?? 0,
-        'useSlabs': _useSlabs,
-        'slabs': _slabs
-            .map((s) => {'upToKg': s.upToKg, 'charge': s.charge})
-            .toList(),
-        'updatedAt': DateTime.now().toIso8601String(),
-      };
-      await DashboardRepository()
-          .saveDeliverySettings(widget.sellerPhone, settings);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Delivery settings saved'),
-            backgroundColor: AppColors.primary,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
   }
 }
 
@@ -263,22 +263,20 @@ class _Section extends StatelessWidget {
 }
 
 class _WeightSlab {
-  double upToKg;
+  double minKg;
+  double maxKg;
   double charge;
-  _WeightSlab({required this.upToKg, required this.charge});
+  _WeightSlab({required this.minKg, required this.maxKg, required this.charge});
 }
 
 class _SlabRow extends StatelessWidget {
-  final int index;
   final _WeightSlab slab;
   final VoidCallback onDelete;
-  final ValueChanged<_WeightSlab> onChanged;
 
   const _SlabRow({
-    required this.index,
+    super.key,
     required this.slab,
     required this.onDelete,
-    required this.onChanged,
   });
 
   @override
@@ -289,17 +287,29 @@ class _SlabRow extends StatelessWidget {
         children: [
           Expanded(
             child: TextFormField(
-              initialValue: '${slab.upToKg}',
-              keyboardType: TextInputType.number,
+              initialValue: '${slab.minKg}',
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Up to (kg)',
+                labelText: 'From (kg)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              onChanged: (v) {
-                slab.upToKg = double.tryParse(v) ?? slab.upToKg;
-                onChanged(slab);
-              },
+              onChanged: (v) => slab.minKg = double.tryParse(v) ?? slab.minKg,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextFormField(
+              initialValue: '${slab.maxKg}',
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'To (kg)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => slab.maxKg = double.tryParse(v) ?? slab.maxKg,
             ),
           ),
           const SizedBox(width: 8),
@@ -313,10 +323,7 @@ class _SlabRow extends StatelessWidget {
                 isDense: true,
                 prefixText: '₹ ',
               ),
-              onChanged: (v) {
-                slab.charge = double.tryParse(v) ?? slab.charge;
-                onChanged(slab);
-              },
+              onChanged: (v) => slab.charge = double.tryParse(v) ?? slab.charge,
             ),
           ),
           IconButton(
