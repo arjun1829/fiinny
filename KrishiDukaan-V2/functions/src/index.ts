@@ -459,6 +459,41 @@ async function displayName(phone: string, fallback: string): Promise<string> {
   return fallback;
 }
 
+/**
+ * Resolves a manufacturer's display name by trying phone variants first, then
+ * UID-keyed docs. Handles both phone-OTP accounts (phone is the doc key) and
+ * legacy UID-keyed accounts.
+ */
+async function manufacturerDisplayName(phone: string, uid: string, fallback: string): Promise<string> {
+  if (phone) {
+    const name = await displayName(phone, "");
+    if (name) return name;
+  }
+  if (uid) {
+    for (const col of ["manufacturers", "users"]) {
+      try {
+        const snap = await db.collection(col).doc(uid).get();
+        if (!snap.exists) continue;
+        const d = snap.data() ?? {};
+        const name = String(d.businessName ?? d.shopName ?? d.name ?? d.ownerName ?? "").trim();
+        if (name) return name;
+      } catch { /* keep trying */ }
+    }
+    // Also try resolving phone via uidIndex, then look up by phone
+    try {
+      const idxSnap = await db.collection("uidIndex").doc(uid).get();
+      if (idxSnap.exists) {
+        const resolvedPhone = String(idxSnap.data()?.phone ?? "").trim();
+        if (resolvedPhone && resolvedPhone !== phone) {
+          const name = await displayName(resolvedPhone, "");
+          if (name) return name;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return fallback;
+}
+
 /** New order placed → notify the seller (store owner). */
 export const notifySellerOnOrder = onDocumentCreated(
   "orders/{orderId}",
@@ -491,7 +526,7 @@ export const notifySellerOnOrder = onDocumentCreated(
       logger.info("[notifySellerOnOrder] before queueWaNotification");
       await queueWaNotification(
         sellerPhone,
-        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com`,
         {
           template: "order_notification",
           type: "order",
@@ -595,9 +630,10 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       d.manufacturerPhone,
       d.manufacturerId
     );
+    const mfrId = String(d.manufacturerId ?? "").trim();
     const mfr = String(
       d.assignedByManufacturerName ?? d.manufacturerName ?? d.brand ?? ""
-    ).trim() || (await displayName(mfrPhone, "A manufacturer"));
+    ).trim() || (await manufacturerDisplayName(mfrPhone, mfrId, "A manufacturer"));
 
     await notify(
       retailerPhone,
@@ -609,10 +645,34 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
 
     logger.info("[notifyRetailerOnAssignment] resolved retailerPhone", { retailerPhone, productId: event.params.productId });
     if (retailerPhone) {
+      // Look up the retailer's invite doc to check onboarding status and inviteCode.
+      // If not yet onboarded, append the signup link to the product message.
+      const manufacturerIdForQuery = String(d.manufacturerId ?? "").trim();
+      const retailerDocId = String(d.retailerDocId ?? "").trim();
+      let signupLinkLine = "";
+      if (manufacturerIdForQuery && retailerDocId) {
+        try {
+          const inviteSnap = await db.collection("manufacturerRetailers")
+            .where("manufacturerId", "==", manufacturerIdForQuery)
+            .where("retailerDocId", "==", retailerDocId)
+            .limit(1)
+            .get();
+          if (!inviteSnap.empty) {
+            const inv = inviteSnap.docs[0].data() as Record<string, unknown>;
+            const isOnboarded = String(inv.status ?? "").trim() === "active";
+            const inviteCode = String(inv.inviteCode ?? "").trim();
+            if (!isOnboarded && inviteCode) {
+              const link = buildSignupInviteUrl(inviteCode);
+              signupLinkLine = `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${link}\n\nही लिंक फक्त तुमच्यासाठी आहे.`;
+            }
+          }
+        } catch { /* non-critical — send the base message without link */ }
+      }
+
       logger.info("[notifyRetailerOnAssignment] before queueWaNotification");
       await queueWaNotification(
         retailerPhone,
-        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}\n\nप्रॉडक्टची माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}\n\nप्रॉडक्टची माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com${signupLinkLine}`,
         {
           template: "product_assignment",
           type: "onboarding",
@@ -639,13 +699,10 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
       d.retailerDocId,
       d.retailerId
     );
-    const mfr = String(
-      d.manufacturerName ?? d.manufacturerBusinessName ?? ""
-    ).trim() ||
-      (await displayName(
-        String(d.manufacturerPhone ?? ""),
-        "A manufacturer"
-      ));
+    const mfrPhone = String(d.manufacturerPhone ?? "").trim();
+    const mfrId = String(d.manufacturerId ?? "").trim();
+    const mfr = String(d.manufacturerName ?? d.manufacturerBusinessName ?? "").trim() ||
+      await manufacturerDisplayName(mfrPhone, mfrId, "A manufacturer");
 
     await notify(
       retailerPhone,
@@ -657,15 +714,18 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
 
     logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
     if (retailerPhone) {
+      // Only include the signup link for retailers who have not yet signed up.
+      // status "active" means the retailer already has an account.
+      const isOnboarded = String(d.status ?? "").trim() === "active";
       const inviteCode = String(d.inviteCode ?? "").trim();
-      const signupLink = inviteCode ? buildSignupInviteUrl(inviteCode) : "";
+      const signupLink = (!isOnboarded && inviteCode) ? buildSignupInviteUrl(inviteCode) : "";
       const linkLine = signupLink
         ? `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${signupLink}\n\nही लिंक फक्त तुमच्यासाठी आहे.`
         : "";
-      logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
+      logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode, isOnboarded });
       await queueWaNotification(
         retailerPhone,
-        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.${linkLine}\n\nअधिक माहितीसाठी:\nhttps://www.krishidukan.com`,
+        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.${linkLine}\n\nअधिक माहितीसाठी:\nhttps://krishidukan.com`,
         {
           template: "retailer_onboarding",
           type: "onboarding",
@@ -700,7 +760,7 @@ export const notifyOnSubscriptionCreated = onDocumentCreated(
 
     await queueWaNotification(
       ownerPhone,
-      `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://www.krishidukan.com`,
+      `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://krishidukan.com`,
       {
         template: "subscription_welcome",
         type: "subscription",
@@ -758,7 +818,7 @@ export const remindExpiringSubscriptions = onSchedule(
 
       await queueWaNotification(
         ownerPhone,
-        `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://www.krishidukan.com`,
+        `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://krishidukan.com`,
         {
           template: "subscription_expiry",
           type: "subscription",
