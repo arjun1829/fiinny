@@ -30,8 +30,8 @@ const DEFAULT_MAX_RETRIES = 3;
 
 /**
  * Queues a WhatsApp notification by writing to waNotifications.
- * The wa-service picks this up and sends it.
- * Never call WhatsApp Web directly — always go through this queue.
+ * The wa-cloud-service picks this up and sends it via the WhatsApp Cloud API.
+ * Never call the Cloud API directly from Functions — always go through this queue.
  */
 export async function queueWaNotification(
   phone: string,
@@ -40,32 +40,56 @@ export async function queueWaNotification(
 ): Promise<string | null> {
   const trimmed = phone.trim();
   if (!trimmed) return null;
-  logger.info("[waQueue] queueing notification", { phone: trimmed, template: opts.template ?? "generic" });
+
+  logger.info("[waQueue] queueing notification", {
+    phone: trimmed,
+    template: opts.template ?? "generic",
+  });
+
   try {
     const doc = await admin.firestore().collection("waNotifications").add({
+      // Recipient
       phone: trimmed,
+
+      // Content — message is kept for audit/debug; templateComponents are
+      // resolved by wa-cloud-service from template + payload at send time.
       message,
       template: opts.template ?? "generic",
       payload: opts.payload ?? {},
+
+      // Tracing
       source: opts.source ?? { event: "manual", entityType: "unknown", entityId: "" },
+
+      // Lifecycle — full schema so wa-cloud-service and webhooks can update in-place
       status: "pending",
       type: opts.type ?? "general",
+      metaMessageId: null,
+
+      // Timestamps
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       sentAt: null,
-      lastAttemptAt: null,
+      deliveredAt: null,
+      readAt: null,
+      failedAt: null,
+
+      // Retry
       retryCount: 0,
       maxRetries: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
-      error: null,
+      lastError: null,
     });
+
     logger.info("[waQueue] document created", { docId: doc.id, phone: trimmed });
     return doc.id;
   } catch (err) {
-    logger.error("[waQueue] Firestore add() FAILED — waNotification was NOT queued", {
-      phone: trimmed,
-      template: opts.template,
-      errorMessage: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
-    });
+    logger.error(
+      "[waQueue] Firestore add() FAILED — waNotification was NOT queued",
+      {
+        phone: trimmed,
+        template: opts.template,
+        errorMessage: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }
+    );
     return null;
   }
 }
