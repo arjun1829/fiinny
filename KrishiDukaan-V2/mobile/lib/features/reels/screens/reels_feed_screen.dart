@@ -4,13 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/utils/web_links.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
+import '../widgets/reel_filters.dart';
 
 class ReelsFeedScreen extends ConsumerStatefulWidget {
   const ReelsFeedScreen({super.key});
@@ -456,21 +459,111 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     });
   }
 
-  void _share() {
-    final shopLink = 'https://krishidukan.com/shop/${widget.reel.shopOwnerId}';
+  /// Share message leads with the reel's title + description. Both links are
+  /// real website routes (WebLinks slugs match the web's builders): the reel's
+  /// own page, and — when the seller linked a product — that product's page,
+  /// so the receiver can open exactly what was linked.
+  String get _shareText {
+    final reel = widget.reel;
+    final reelLink = WebLinks.reel(reel.title, reel.id);
+    final hasProduct = reel.linkedProductId != null &&
+        reel.linkedProductId!.isNotEmpty;
     final parts = <String>[
-      if (widget.reel.title.isNotEmpty) widget.reel.title,
-      if (widget.reel.caption.isNotEmpty) widget.reel.caption,
+      if (reel.title.isNotEmpty) '🎬 ${reel.title}',
+      if (reel.caption.isNotEmpty) reel.caption,
+      if (hasProduct) ...[
+        '',
+        '🛒 Buy ${reel.linkedProductName ?? 'this product'}:',
+        WebLinks.product(
+            reel.linkedProductName ?? '', reel.linkedProductId!),
+      ],
       '',
-      '${widget.reel.shopName} on AgriReels — KrishiDukaan',
-      shopLink,
+      'Watch on KrishiDukan AgriReels — by ${reel.shopName}:',
+      reelLink,
     ];
-    SharePlus.instance.share(ShareParams(
-      text: parts.join('\n'),
-      subject: widget.reel.title.isNotEmpty
-          ? widget.reel.title
-          : '${widget.reel.shopName} on AgriReels',
-    ));
+    return parts.join('\n');
+  }
+
+  void _share() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF25D366),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.chat, color: Colors.white),
+              ),
+              title: const Text('Share on WhatsApp',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(
+                widget.reel.title.isNotEmpty
+                    ? widget.reel.title
+                    : '${widget.reel.shopName} on AgriReels',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final url = Uri.parse(
+                    'https://wa.me/?text=${Uri.encodeComponent(_shareText)}');
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } else if (mounted) {
+                  // WhatsApp not installed — fall back to the system sheet.
+                  SharePlus.instance.share(ShareParams(text: _shareText));
+                }
+              },
+            ),
+            ListTile(
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.share_rounded,
+                    color: AppColors.primary),
+              ),
+              title: const Text('More options',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('SMS, Telegram, email…'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                SharePlus.instance.share(ShareParams(
+                  text: _shareText,
+                  subject: widget.reel.title.isNotEmpty
+                      ? widget.reel.title
+                      : '${widget.reel.shopName} on AgriReels',
+                ));
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   void _togglePlayPause() {
@@ -533,13 +626,16 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                               color: Colors.white38, strokeWidth: 2),
                         );
                       }
-                      return SizedBox.expand(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: value.size.width,
-                            height: value.size.height,
-                            child: VideoPlayer(controller),
+                      return applyReelFilter(
+                        widget.reel.filterId,
+                        SizedBox.expand(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: value.size.width,
+                              height: value.size.height,
+                              child: VideoPlayer(controller),
+                            ),
                           ),
                         ),
                       );
@@ -551,6 +647,13 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                   ),
           ),
         ),
+
+        // ── Seller's text overlay (from the upload editor) ───────────────
+        if (widget.reel.overlayText != null)
+          ReelTextOverlay(
+            text: widget.reel.overlayText!,
+            pos: widget.reel.overlayPos,
+          ),
 
         // ── Pause icon flash ─────────────────────────────────────────────
         if (_showPauseIcon)

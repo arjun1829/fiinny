@@ -292,6 +292,9 @@ class ReelsRepository {
     String? linkedProductName,
     String? linkedProductImageUrl,
     List<Map<String, dynamic>> taggedShops = const [],
+    String? filterId,
+    String? overlayText,
+    String? overlayPos,
     void Function(double progress)? onProgress,
   }) async {
     assert(videoFile != null || videoBytes != null,
@@ -345,6 +348,11 @@ class ReelsRepository {
       'linkedProductImageUrl': ?linkedProductImageUrl,
       'taggedShops': taggedShops,
       'taggedShopIds': taggedShopIds,
+      if (filterId != null && filterId != 'none') 'filterId': filterId,
+      if (overlayText != null && overlayText.isNotEmpty) ...{
+        'overlayText': overlayText,
+        'overlayPos': overlayPos ?? 'center',
+      },
       'likesCount': 0,
       'commentsCount': 0,
       'viewsCount': 0,

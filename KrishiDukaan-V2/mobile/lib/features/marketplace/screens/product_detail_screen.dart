@@ -16,6 +16,7 @@ import '../../../core/providers/cart_provider.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
+import '../../../core/utils/web_links.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/expandable_text.dart';
 import '../providers/marketplace_provider.dart';
@@ -142,9 +143,14 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       child: InkWell(
                         customBorder: const CircleBorder(),
                         onTap: () {
-                          final shareUrl = 'https://krishidukan.com/product/${catalog.id}';
+                          // WebLinks.product matches the web's /products/{slug}
+                          // route — the old /product/{id} form was a 404.
+                          final shareUrl =
+                              WebLinks.product(catalog.name, catalog.id);
                           // ignore: deprecated_member_use
-                          Share.share('Check out ${catalog.name} on KrishiDukaan! $shareUrl');
+                          Share.share(
+                            'Check out ${catalog.name} on KrishiDukan!\n$shareUrl',
+                          );
                         },
                         child: const Padding(
                           padding: EdgeInsets.all(8),
@@ -357,7 +363,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     _addOptionToCart(catalog, chosen);
 
     if (buyNow) {
-      context.go('/checkout');
+      context.push('/checkout');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -368,7 +374,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           action: SnackBarAction(
             label: 'View Cart',
             textColor: Colors.white,
-            onPressed: () => context.go('/cart'),
+            onPressed: () => context.push('/cart'),
           ),
         ),
       );
@@ -2240,7 +2246,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
         action: SnackBarAction(
           label: 'View Cart',
           textColor: Colors.white,
-          onPressed: () => context.go('/cart'),
+          onPressed: () => context.push('/cart'),
         ),
       ),
     );
@@ -2271,7 +2277,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             gstRate: widget.gstRate,
           ),
         );
-    context.go('/checkout');
+    context.push('/checkout');
   }
 }
 

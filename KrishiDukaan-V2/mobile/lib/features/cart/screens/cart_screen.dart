@@ -433,7 +433,7 @@ class _CheckoutBar extends ConsumerWidget {
                     ),
                   ),
                   FilledButton(
-                    onPressed: deliveryState.isLoading ? null : () => context.go('/checkout'),
+                    onPressed: deliveryState.isLoading ? null : () => context.push('/checkout'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       minimumSize: const Size(160, 48),

@@ -18,6 +18,11 @@ class StoreModel {
   // 'retailer' | 'manufacturer' | '' — drives the "Visit Brand Page" action.
   final String role;
 
+  /// The seller's own Google Maps / Google Business listing URL (set in their
+  /// profile). When present it beats raw coordinates for the "open in maps"
+  /// action — the listing shows photos, reviews and live timings.
+  final String? googleMapsUrl;
+
   // Distance from the user in km. Set client-side after a Haversine calc;
   // null when either the store or the user has no usable location.
   double? distanceKm;
@@ -38,10 +43,14 @@ class StoreModel {
     this.state,
     this.pincode,
     this.role = '',
+    this.googleMapsUrl,
     this.distanceKm,
   });
 
   bool get hasLocation => lat != null && lng != null && lat != 0.0 && lng != 0.0;
+
+  bool get hasGoogleListing =>
+      googleMapsUrl != null && googleMapsUrl!.trim().startsWith('http');
 
   bool get isManufacturer => role == 'manufacturer';
 

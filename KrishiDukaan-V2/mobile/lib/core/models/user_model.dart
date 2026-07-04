@@ -25,6 +25,10 @@ class UserModel {
   /// generator reads); this users-doc mirror is for quick prefill.
   final String? gstin;
 
+  /// Seller's Google Maps / Google Business listing URL. Shown to buyers in
+  /// the store locator instead of raw coordinates when present.
+  final String? googleMapsUrl;
+
   const UserModel({
     required this.uid,
     required this.phone,
@@ -44,6 +48,7 @@ class UserModel {
     this.profileCompleted = false,
     this.username,
     this.gstin,
+    this.googleMapsUrl,
   });
 
   /// True once the essential profile fields are filled. Sellers additionally
@@ -91,6 +96,7 @@ class UserModel {
       profileCompleted: data['profileCompleted'] as bool? ?? false,
       username: data['username'] as String?,
       gstin: data['gstin'] as String?,
+      googleMapsUrl: data['googleMapsUrl'] as String?,
     );
   }
 

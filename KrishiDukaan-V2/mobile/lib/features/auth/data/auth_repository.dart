@@ -93,6 +93,7 @@ class AuthRepository {
     String? state,
     String? pincode,
     String? gstin,
+    String? googleMapsUrl,
   }) async {
     final isSeller = role == 'retailer' || role == 'manufacturer';
 
@@ -107,6 +108,7 @@ class AuthRepository {
       'state': ?state,
       'pincode': ?pincode,
       if (isSeller && gstin != null) 'gstin': gstin,
+      if (isSeller && googleMapsUrl != null) 'googleMapsUrl': googleMapsUrl,
       'profileCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -130,6 +132,8 @@ class AuthRepository {
         'state': ?state,
         'pincode': ?pincode,
         'gstin': ?gstin,
+        // Buyer-facing "open in Google Maps" prefers this over coordinates.
+        'googleMapsUrl': ?googleMapsUrl,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }

@@ -9,6 +9,7 @@ import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
 import '../providers/reels_provider.dart';
+import '../widgets/reel_filters.dart';
 
 class ShopProfileScreen extends ConsumerWidget {
   final String shopPhone;
@@ -1182,13 +1183,16 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                             child: CircularProgressIndicator(
                                 color: Colors.white38, strokeWidth: 2));
                       }
-                      return SizedBox.expand(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: value.size.width,
-                            height: value.size.height,
-                            child: VideoPlayer(ctrl),
+                      return applyReelFilter(
+                        widget.reel.filterId,
+                        SizedBox.expand(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: value.size.width,
+                              height: value.size.height,
+                              child: VideoPlayer(ctrl),
+                            ),
                           ),
                         ),
                       );
@@ -1199,6 +1203,11 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                         color: Colors.white38, strokeWidth: 2)),
           ),
         ),
+        if (widget.reel.overlayText != null)
+          ReelTextOverlay(
+            text: widget.reel.overlayText!,
+            pos: widget.reel.overlayPos,
+          ),
         if (_showPause)
           Center(
             child: Container(
@@ -1343,10 +1352,15 @@ class _ProductBadge extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         if (currentUserId == null) {
+          // Carry the product as the post-login destination so the buyer
+          // lands right back on it after signing in (or onboarding).
+          final dest =
+              Uri.encodeComponent('/product/${reel.linkedProductId}');
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('Login to view and buy products'),
             action: SnackBarAction(
-                label: 'Login', onPressed: () => context.push('/login')),
+                label: 'Login',
+                onPressed: () => context.push('/login?redirect=$dest')),
           ));
           return;
         }

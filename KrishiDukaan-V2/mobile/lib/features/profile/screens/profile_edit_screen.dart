@@ -38,6 +38,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _stateCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
   final _gstinCtrl = TextEditingController();
+  final _mapsUrlCtrl = TextEditingController();
 
   bool _saving = false;
   bool _prefilled = false;
@@ -53,22 +54,29 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     _stateCtrl.dispose();
     _pincodeCtrl.dispose();
     _gstinCtrl.dispose();
+    _mapsUrlCtrl.dispose();
     super.dispose();
   }
 
-  /// The canonical GSTIN lives on retailers/{phone} (that's what the web
-  /// dashboard edits), so when the users-doc mirror is empty pull it from
-  /// there — otherwise a GSTIN set on web would look blank here.
-  Future<void> _prefillGstinFromRoleDoc(String role, String phone) async {
+  /// The canonical GSTIN + Google Maps link live on retailers/{phone} (what
+  /// the web dashboard edits), so when the users-doc mirrors are empty pull
+  /// them from there — otherwise values set on web would look blank here.
+  Future<void> _prefillFromRoleDoc(String role, String phone) async {
     final col = role == 'manufacturer' ? 'manufacturers' : 'retailers';
     try {
       final snap = await FirebaseFirestore.instance
           .collection(col)
           .doc(phone)
           .get();
-      final gstin = snap.data()?['gstin'] as String?;
-      if (mounted && gstin != null && gstin.isNotEmpty && _gstinCtrl.text.isEmpty) {
+      final d = snap.data();
+      if (!mounted || d == null) return;
+      final gstin = d['gstin'] as String?;
+      if (gstin != null && gstin.isNotEmpty && _gstinCtrl.text.isEmpty) {
         _gstinCtrl.text = gstin;
+      }
+      final mapsUrl = d['googleMapsUrl'] as String?;
+      if (mapsUrl != null && mapsUrl.isNotEmpty && _mapsUrlCtrl.text.isEmpty) {
+        _mapsUrlCtrl.text = mapsUrl;
       }
     } catch (_) {}
   }
@@ -96,6 +104,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         state: _stateCtrl.text.trim(),
         pincode: _pincodeCtrl.text.trim(),
         gstin: _gstinCtrl.text.trim().toUpperCase(),
+        googleMapsUrl: _mapsUrlCtrl.text.trim(),
       );
 
       ref.invalidate(currentUserProvider);
@@ -151,8 +160,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           _stateCtrl.text = user.state ?? '';
           _pincodeCtrl.text = user.pincode ?? '';
           _gstinCtrl.text = user.gstin ?? '';
-          if (user.isSeller && _gstinCtrl.text.isEmpty) {
-            _prefillGstinFromRoleDoc(user.role, user.phone);
+          _mapsUrlCtrl.text = user.googleMapsUrl ?? '';
+          if (user.isSeller &&
+              (_gstinCtrl.text.isEmpty || _mapsUrlCtrl.text.isEmpty)) {
+            _prefillFromRoleDoc(user.role, user.phone);
           }
           _prefilled = true;
         }
@@ -251,6 +262,30 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                                 ? null
                                 : 'GSTIN must be 15 characters';
                           }),
+                      const SizedBox(height: 12),
+                      // Shown to buyers in the Store Locator "Directions"
+                      // flow instead of raw coordinates — paste the "Share"
+                      // link of your Google Business / Maps listing.
+                      _field(_mapsUrlCtrl, 'Google Maps store link (optional)',
+                          Icons.map_outlined,
+                          keyboardType: TextInputType.url,
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.startsWith('http')
+                                ? null
+                                : 'Paste a full link starting with https://';
+                          }),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          'Open your shop on Google Maps → Share → Copy link, '
+                          'and paste it here. Buyers will see your Google '
+                          'listing with photos & reviews.',
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.onSurfaceVariant),
+                        ),
+                      ),
                     ] else ...[
                       const SizedBox(height: 24),
                       Text('Delivery Address (optional)',

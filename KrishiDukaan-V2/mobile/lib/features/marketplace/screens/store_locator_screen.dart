@@ -14,6 +14,7 @@ import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../providers/marketplace_provider.dart';
 import '../widgets/review_sheet.dart';
+import '../widgets/route_planner_sheet.dart';
 import '../widgets/store_detail_sheet.dart';
 
 void _showFullStoreImage(BuildContext context, String imageUrl) {
@@ -301,7 +302,14 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                     ? () => _callStore(store.phone!)
                                     : null,
                                 onNavigate: store.hasLocation
-                                    ? () => _navigate(store)
+                                    ? () => _navigate(
+                                          store,
+                                          allStores: allStores,
+                                          userLat: userLat,
+                                          userLng: userLng,
+                                          hasUserLocation:
+                                              locationAsync.value != null,
+                                        )
                                     : null,
                                 onReviewsTap: () {
                                   showStoreReviewsBottomSheet(
@@ -321,7 +329,14 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                         ? () => _callStore(store.phone!)
                                         : null,
                                     onNavigate: store.hasLocation
-                                        ? () => _navigate(store)
+                                        ? () => _navigate(
+                                              store,
+                                              allStores: allStores,
+                                              userLat: userLat,
+                                              userLng: userLng,
+                                              hasUserLocation:
+                                                  locationAsync.value != null,
+                                            )
                                         : null,
                                   );
                                 },
@@ -343,7 +358,13 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                   focusedStore: hasSelected ? selected : null,
                   onMarkerTap: (s) => setState(() => _selectedStoreId = s.id),
                   onClose: () => setState(() => _mapExpanded = false),
-                  onNavigate: (s) => _navigate(s),
+                  onNavigate: (s) => _navigate(
+                    s,
+                    allStores: allStores,
+                    userLat: userLat,
+                    userLng: userLng,
+                    hasUserLocation: locationAsync.value != null,
+                  ),
                 ),
             ],
           );
@@ -450,13 +471,24 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
     if (await canLaunchUrl(url)) await launchUrl(url);
   }
 
-  Future<void> _navigate(StoreModel store) async {
-    final url = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${store.lat},${store.lng}',
+  /// Opens the From → To route planner (Google-Maps-style) for [store].
+  /// Inside it, the store's own Google Business listing is surfaced when the
+  /// owner has added one; otherwise navigation falls back to coordinates.
+  void _navigate(
+    StoreModel store, {
+    required List<StoreModel> allStores,
+    required double userLat,
+    required double userLng,
+    required bool hasUserLocation,
+  }) {
+    showRoutePlannerSheet(
+      context,
+      stores: allStores,
+      destination: store,
+      userLat: userLat,
+      userLng: userLng,
+      hasUserLocation: hasUserLocation,
     );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
   }
 }
 

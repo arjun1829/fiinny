@@ -20,6 +20,12 @@ class ReelModel {
   final List<Map<String, dynamic>> taggedShops;
   final List<String> taggedShopIds;
 
+  /// Playback-time edits (see reel_filters.dart): a look filter id and an
+  /// optional text overlay. Rendered by every player, not burned into pixels.
+  final String? filterId;
+  final String? overlayText;
+  final String? overlayPos; // 'top' | 'center' | 'bottom'
+
   const ReelModel({
     required this.id,
     required this.shopOwnerId,
@@ -38,6 +44,9 @@ class ReelModel {
     required this.createdAt,
     this.taggedShops = const [],
     this.taggedShopIds = const [],
+    this.filterId,
+    this.overlayText,
+    this.overlayPos,
   });
 
   factory ReelModel.fromFirestore(DocumentSnapshot doc) {
@@ -66,6 +75,9 @@ class ReelModel {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      filterId: data['filterId'] as String?,
+      overlayText: data['overlayText'] as String?,
+      overlayPos: data['overlayPos'] as String?,
     );
   }
 
@@ -100,5 +112,8 @@ class ReelModel {
         createdAt: createdAt,
         taggedShops: taggedShops ?? this.taggedShops,
         taggedShopIds: taggedShopIds ?? this.taggedShopIds,
+        filterId: filterId,
+        overlayText: overlayText,
+        overlayPos: overlayPos,
       );
 }
