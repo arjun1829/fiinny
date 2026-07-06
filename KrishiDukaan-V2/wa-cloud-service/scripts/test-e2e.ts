@@ -88,26 +88,52 @@ async function testTemplateResolver(): Promise<void> {
     assert(params[2].text === "1200", "order_notification: {{3}} = total");
   }
 
-  // product_assignment — 2 body params
+  // product_assignment_onboarded — 1 body (2 params) + 1 button
   {
-    const c = resolveTemplateComponents("product_assignment", { productName: "NPK Fertiliser", manufacturerName: "AgriCorp" });
-    assert(c.length === 1, "product_assignment: 1 component");
-    assert(c[0].parameters.length === 2, "product_assignment: 2 parameters", `got ${c[0].parameters.length}`);
-    const params = c[0].parameters as Array<{ type: string; text: string }>;
-    assert(params[0].text === "NPK Fertiliser", "product_assignment: {{1}} = productName");
-    assert(params[1].text === "AgriCorp", "product_assignment: {{2}} = manufacturerName");
+    const c = resolveTemplateComponents("product_assignment_onboarded", {
+      manufacturerName: "AgriCorp", productName: "NPK Fertiliser", productId: "prod_abc123",
+    });
+    assert(c.length === 2, "product_assignment_onboarded: 2 components (body + button)", `got ${c.length}`);
+    assert(c[0].type === "body", "product_assignment_onboarded: c[0] = body");
+    assert(c[0].parameters.length === 2, "product_assignment_onboarded: body has 2 params", `got ${c[0].parameters.length}`);
+    const bodyParams = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(bodyParams[0].text === "AgriCorp", "product_assignment_onboarded: body {{1}} = manufacturerName");
+    assert(bodyParams[1].text === "NPK Fertiliser", "product_assignment_onboarded: body {{2}} = productName");
+    assert(c[1].type === "button" && c[1].sub_type === "url" && c[1].index === 0, "product_assignment_onboarded: c[1] = button url index=0");
+    const btnParam = c[1].parameters[0] as { type: string; text: string };
+    assert(btnParam.text === "prod_abc123", "product_assignment_onboarded: button {{1}} = productId (no full URL)");
   }
 
-  // retailer_onboarding — 2 body params, fallback link when signupLink empty
+  // product_assignment_pending_signup — 1 body (2 params) + 2 buttons
   {
-    const withLink = resolveTemplateComponents("retailer_onboarding", { manufacturerName: "SeedCo", signupLink: "https://krishidukan.com/?view=signup&inviteCode=ABC123" });
-    const params = withLink[0].parameters as Array<{ type: string; text: string }>;
-    assert(params[0].text === "SeedCo", "retailer_onboarding: {{1}} = manufacturerName");
-    assert(params[1].text.includes("inviteCode=ABC123"), "retailer_onboarding: {{2}} = signupLink with invite code");
+    const c = resolveTemplateComponents("product_assignment_pending_signup", {
+      manufacturerName: "AgriCorp", productName: "NPK Fertiliser", inviteCode: "INV456", productId: "prod_abc123",
+    });
+    assert(c.length === 3, "product_assignment_pending_signup: 3 components (body + 2 buttons)", `got ${c.length}`);
+    assert(c[0].type === "body", "product_assignment_pending_signup: c[0] = body");
+    const bodyParams = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(bodyParams[0].text === "AgriCorp", "product_assignment_pending_signup: body {{1}} = manufacturerName");
+    assert(bodyParams[1].text === "NPK Fertiliser", "product_assignment_pending_signup: body {{2}} = productName");
+    assert(c[1].type === "button" && c[1].sub_type === "url" && c[1].index === 0, "product_assignment_pending_signup: c[1] = button url index=0");
+    const btn0 = c[1].parameters[0] as { type: string; text: string };
+    assert(btn0.text === "INV456", "product_assignment_pending_signup: button[0] {{1}} = inviteCode (no full URL)");
+    assert(c[2].type === "button" && c[2].sub_type === "url" && c[2].index === 1, "product_assignment_pending_signup: c[2] = button url index=1");
+    const btn1 = c[2].parameters[0] as { type: string; text: string };
+    assert(btn1.text === "prod_abc123", "product_assignment_pending_signup: button[1] {{1}} = productId (no full URL)");
+  }
 
-    const noLink = resolveTemplateComponents("retailer_onboarding", { manufacturerName: "SeedCo", signupLink: "" });
-    const noLinkParams = noLink[0].parameters as Array<{ type: string; text: string }>;
-    assert(noLinkParams[1].text === "https://krishidukan.com", "retailer_onboarding: fallback to base URL when signupLink empty");
+  // retailer_onboarding — 1 body param + 1 button; inviteCode only (no full URL)
+  {
+    const c = resolveTemplateComponents("retailer_onboarding", { manufacturerName: "SeedCo", inviteCode: "ABC123" });
+    assert(c.length === 2, "retailer_onboarding: 2 components (body + button)", `got ${c.length}`);
+    assert(c[0].type === "body", "retailer_onboarding: c[0] = body");
+    assert(c[0].parameters.length === 1, "retailer_onboarding: body has 1 param", `got ${c[0].parameters.length}`);
+    const bodyParams = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(bodyParams[0].text === "SeedCo", "retailer_onboarding: body {{1}} = manufacturerName");
+    assert(c[1].type === "button" && c[1].sub_type === "url" && c[1].index === 0, "retailer_onboarding: c[1] = button url index=0");
+    const btnParam = c[1].parameters[0] as { type: string; text: string };
+    assert(btnParam.text === "ABC123", "retailer_onboarding: button {{1}} = inviteCode (no full URL)");
+    assert(!btnParam.text.includes("https://"), "retailer_onboarding: button param contains no URL");
   }
 
   // generic — empty (plain-text path)
@@ -151,11 +177,12 @@ async function testTemplateSends(testPhone: string): Promise<void> {
   process.env.WA_DEBUG = "true";
 
   const templates: Array<{ name: string; payload: Record<string, string | number | boolean> }> = [
-    { name: "subscription_welcome", payload: { name: "Test User" } },
-    { name: "subscription_expiry",  payload: { name: "Test User", expiryDate: "31 July 2025" } },
-    { name: "order_notification",   payload: { customerName: "Test Customer", itemSummary: "Urea 50kg", total: 1500 } },
-    { name: "product_assignment",   payload: { productName: "Test Product", manufacturerName: "Test Corp" } },
-    { name: "retailer_onboarding",  payload: { manufacturerName: "Test Corp", signupLink: "https://krishidukan.com/?view=signup&inviteCode=TEST" } },
+    { name: "subscription_welcome",          payload: { name: "Test User" } },
+    { name: "subscription_expiry",           payload: { name: "Test User", expiryDate: "31 July 2025" } },
+    { name: "order_notification",            payload: { customerName: "Test Customer", itemSummary: "Urea 50kg", total: 1500 } },
+    { name: "product_assignment_onboarded",  payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
+    { name: "product_assignment_pending_signup", payload: { manufacturerName: "Test Corp", productName: "Test Product", inviteCode: "TESTCODE", productId: "test_prod_id" } },
+    { name: "retailer_onboarding",           payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },
   ];
 
   for (const tmpl of templates) {

@@ -6,7 +6,8 @@ type WaTemplate =
   | "subscription_expiry"
   | "order_notification"
   | "retailer_onboarding"
-  | "product_assignment"
+  | "product_assignment_onboarded"
+  | "product_assignment_pending_signup"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;

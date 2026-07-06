@@ -37,17 +37,31 @@ export function resolveTemplateComponents(
       // {{1}} = customerName   {{2}} = itemSummary   {{3}} = total (₹ amount)
       return [body(p("customerName"), p("itemSummary"), p("total"))];
 
-    case "product_assignment":
-      // {{1}} = productName   {{2}} = manufacturerName
-      return [body(p("productName"), p("manufacturerName"))];
+    case "product_assignment_onboarded":
+      // Body: {{1}} = manufacturerName   {{2}} = productName
+      // Button 0 (Dynamic URL): {{1}} = productId (Meta appends to base URL)
+      return [
+        body(p("manufacturerName"), p("productName")),
+        { type: "button", sub_type: "url", index: 0, parameters: [t(p("productId"))] },
+      ];
 
-    case "retailer_onboarding": {
-      // {{1}} = manufacturerName   {{2}} = signupLink
-      // signupLink is empty when the retailer is already onboarded; fall back to
-      // the base URL so the parameter count still matches the approved template.
-      const link = p("signupLink") || "https://krishidukan.com";
-      return [body(p("manufacturerName"), link)];
-    }
+    case "product_assignment_pending_signup":
+      // Body: {{1}} = manufacturerName   {{2}} = productName
+      // Button 0 (Dynamic URL): {{1}} = inviteCode (signup URL)
+      // Button 1 (Dynamic URL): {{1}} = productId (product URL)
+      return [
+        body(p("manufacturerName"), p("productName")),
+        { type: "button", sub_type: "url", index: 0, parameters: [t(p("inviteCode"))] },
+        { type: "button", sub_type: "url", index: 1, parameters: [t(p("productId"))] },
+      ];
+
+    case "retailer_onboarding":
+      // Body: {{1}} = manufacturerName
+      // Button 0 (Dynamic URL): {{1}} = inviteCode (Meta appends to base URL)
+      return [
+        body(p("manufacturerName")),
+        { type: "button", sub_type: "url", index: 0, parameters: [t(p("inviteCode"))] },
+      ];
 
     case "generic":
     default:

@@ -16,7 +16,8 @@ export type WaTemplate =
   | "subscription_expiry"
   | "order_notification"
   | "retailer_onboarding"
-  | "product_assignment"
+  | "product_assignment_onboarded"
+  | "product_assignment_pending_signup"
   | "generic";
 
 /** Dynamic values substituted into the template at render time (for audit/debug). */

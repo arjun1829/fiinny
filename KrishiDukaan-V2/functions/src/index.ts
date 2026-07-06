@@ -3,7 +3,7 @@ import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/fire
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { queueWaNotification, buildSignupInviteUrl } from "./wa-notify";
+import { queueWaNotification } from "./wa-notify";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -645,11 +645,12 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
 
     logger.info("[notifyRetailerOnAssignment] resolved retailerPhone", { retailerPhone, productId: event.params.productId });
     if (retailerPhone) {
-      // Look up the retailer's invite doc to check onboarding status and inviteCode.
-      // If not yet onboarded, append the signup link to the product message.
       const manufacturerIdForQuery = String(d.manufacturerId ?? "").trim();
       const retailerDocId = String(d.retailerDocId ?? "").trim();
-      let signupLinkLine = "";
+      const productId = event.params.productId;
+
+      let isOnboarded = true;
+      let inviteCode = "";
       if (manufacturerIdForQuery && retailerDocId) {
         try {
           const inviteSnap = await db.collection("manufacturerRetailers")
@@ -659,25 +660,26 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
             .get();
           if (!inviteSnap.empty) {
             const inv = inviteSnap.docs[0].data() as Record<string, unknown>;
-            const isOnboarded = String(inv.status ?? "").trim() === "active";
-            const inviteCode = String(inv.inviteCode ?? "").trim();
-            if (!isOnboarded && inviteCode) {
-              const link = buildSignupInviteUrl(inviteCode);
-              signupLinkLine = `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${link}\n\nही लिंक फक्त तुमच्यासाठी आहे.`;
-            }
+            isOnboarded = String(inv.status ?? "").trim() === "active";
+            inviteCode = String(inv.inviteCode ?? "").trim();
           }
-        } catch { /* non-critical — send the base message without link */ }
+        } catch { /* non-critical — default to onboarded path */ }
       }
 
-      logger.info("[notifyRetailerOnAssignment] before queueWaNotification");
+      const template = isOnboarded ? "product_assignment_onboarded" : "product_assignment_pending_signup";
+      const payload = isOnboarded
+        ? { manufacturerName: mfr, productName, productId }
+        : { manufacturerName: mfr, productName, productId, inviteCode };
+
+      logger.info("[notifyRetailerOnAssignment] before queueWaNotification", { template, isOnboarded });
       await queueWaNotification(
         retailerPhone,
-        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}\n\nप्रॉडक्टची माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com${signupLinkLine}`,
+        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}`,
         {
-          template: "product_assignment",
+          template,
           type: "onboarding",
-          payload: { productName, manufacturerName: mfr },
-          source: { event: "product_assigned", entityType: "product", entityId: event.params.productId },
+          payload,
+          source: { event: "product_assigned", entityType: "product", entityId: productId },
         }
       );
       logger.info("[notifyRetailerOnAssignment] after queueWaNotification");
@@ -714,22 +716,15 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
 
     logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
     if (retailerPhone) {
-      // Only include the signup link for retailers who have not yet signed up.
-      // status "active" means the retailer already has an account.
-      const isOnboarded = String(d.status ?? "").trim() === "active";
       const inviteCode = String(d.inviteCode ?? "").trim();
-      const signupLink = (!isOnboarded && inviteCode) ? buildSignupInviteUrl(inviteCode) : "";
-      const linkLine = signupLink
-        ? `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${signupLink}\n\nही लिंक फक्त तुमच्यासाठी आहे.`
-        : "";
-      logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode, isOnboarded });
+      logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
       await queueWaNotification(
         retailerPhone,
-        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.${linkLine}\n\nअधिक माहितीसाठी:\nhttps://krishidukan.com`,
+        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.`,
         {
           template: "retailer_onboarding",
           type: "onboarding",
-          payload: { manufacturerName: mfr, inviteCode, signupLink },
+          payload: { manufacturerName: mfr, inviteCode },
           source: { event: "retailer_network_add", entityType: "manufacturerRetailer", entityId: event.params.docId },
         }
       );
