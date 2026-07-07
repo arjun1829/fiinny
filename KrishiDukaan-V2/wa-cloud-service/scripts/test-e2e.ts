@@ -57,24 +57,55 @@ async function testTemplateResolver(): Promise<void> {
 
   const { resolveTemplateComponents } = await import("../src/templateResolver");
 
-  // subscription_welcome — 1 body param
+  // subscription_welcome — 1 body param, ownerName → businessName → shopName → "User"
   {
-    const c = resolveTemplateComponents("subscription_welcome", { name: "Rajesh" });
+    // primary: ownerName wins
+    const c = resolveTemplateComponents("subscription_welcome", { ownerName: "Rajesh", businessName: "Rajesh Agro", shopName: "" });
     assert(c.length === 1, "subscription_welcome: 1 component", `got ${c.length}`);
     assert(c[0].type === "body", "subscription_welcome: component type=body");
     assert(c[0].parameters.length === 1, "subscription_welcome: 1 parameter", `got ${c[0].parameters.length}`);
-    const p = c[0].parameters[0];
-    assert(p.type === "text" && (p as { type: string; text: string }).text === "Rajesh", "subscription_welcome: name param = 'Rajesh'");
+    const p0 = c[0].parameters[0] as { type: string; text: string };
+    assert(p0.text === "Rajesh", "subscription_welcome: {{1}} = ownerName when present");
+
+    // fallback: businessName used when ownerName is absent
+    const c2 = resolveTemplateComponents("subscription_welcome", { ownerName: "", businessName: "Rajesh Agro", shopName: "" });
+    const p2 = c2[0].parameters[0] as { type: string; text: string };
+    assert(p2.text === "Rajesh Agro", "subscription_welcome: {{1}} falls back to businessName");
+
+    // last-resort: "User" when all name fields are empty
+    const c3 = resolveTemplateComponents("subscription_welcome", { ownerName: "", businessName: "", shopName: "" });
+    const p3 = c3[0].parameters[0] as { type: string; text: string };
+    assert(p3.text === "User", "subscription_welcome: {{1}} falls back to 'User'");
   }
 
-  // subscription_expiry — 2 body params
+  // subscription_expiry — 2 body params: ownerName fallback + formattedExpiryDate
   {
-    const c = resolveTemplateComponents("subscription_expiry", { name: "Meena", expiryDate: "15 ऑगस्ट 2025" });
+    const c = resolveTemplateComponents("subscription_expiry", { ownerName: "Meena", businessName: "", shopName: "", formattedExpiryDate: "15 July 2026" });
     assert(c.length === 1, "subscription_expiry: 1 component");
     assert(c[0].parameters.length === 2, "subscription_expiry: 2 parameters", `got ${c[0].parameters.length}`);
     const params = c[0].parameters as Array<{ type: string; text: string }>;
-    assert(params[0].text === "Meena", "subscription_expiry: {{1}} = name");
-    assert(params[1].text === "15 ऑगस्ट 2025", "subscription_expiry: {{2}} = expiryDate");
+    assert(params[0].text === "Meena", "subscription_expiry: {{1}} = ownerName");
+    assert(params[1].text === "15 July 2026", "subscription_expiry: {{2}} = formattedExpiryDate");
+
+    // fallback: businessName
+    const c2 = resolveTemplateComponents("subscription_expiry", { ownerName: "", businessName: "Meena Agro", shopName: "", formattedExpiryDate: "15 July 2026" });
+    const p2 = c2[0].parameters[0] as { type: string; text: string };
+    assert(p2.text === "Meena Agro", "subscription_expiry: {{1}} falls back to businessName");
+  }
+
+  // manufacturer_network_summary — 2 body params: ownerName fallback + retailerCount
+  {
+    const c = resolveTemplateComponents("manufacturer_network_summary", { ownerName: "Suresh", businessName: "", shopName: "", retailerCount: "42" });
+    assert(c.length === 1, "manufacturer_network_summary: 1 component");
+    assert(c[0].parameters.length === 2, "manufacturer_network_summary: 2 parameters", `got ${c[0].parameters.length}`);
+    const params = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(params[0].text === "Suresh", "manufacturer_network_summary: {{1}} = ownerName");
+    assert(params[1].text === "42", "manufacturer_network_summary: {{2}} = retailerCount");
+
+    // fallback to shopName
+    const c2 = resolveTemplateComponents("manufacturer_network_summary", { ownerName: "", businessName: "", shopName: "Suresh Seeds", retailerCount: "10" });
+    const p2 = c2[0].parameters[0] as { type: string; text: string };
+    assert(p2.text === "Suresh Seeds", "manufacturer_network_summary: {{1}} falls back to shopName");
   }
 
   // order_notification — 3 body params
@@ -177,9 +208,10 @@ async function testTemplateSends(testPhone: string): Promise<void> {
   process.env.WA_DEBUG = "true";
 
   const templates: Array<{ name: string; payload: Record<string, string | number | boolean> }> = [
-    { name: "subscription_welcome",          payload: { name: "Test User" } },
-    { name: "subscription_expiry",           payload: { name: "Test User", expiryDate: "31 July 2025" } },
+    { name: "subscription_welcome",          payload: { ownerName: "Test User", businessName: "", shopName: "" } },
+    { name: "subscription_expiry",           payload: { ownerName: "Test User", businessName: "", shopName: "", formattedExpiryDate: "31 July 2026" } },
     { name: "order_notification",            payload: { customerName: "Test Customer", itemSummary: "Urea 50kg", total: 1500 } },
+    { name: "manufacturer_network_summary",  payload: { ownerName: "Test Corp", businessName: "", shopName: "", retailerCount: "5" } },
     { name: "product_assignment_onboarded",  payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
     { name: "product_assignment_pending_signup", payload: { manufacturerName: "Test Corp", productName: "Test Product", inviteCode: "TESTCODE", productId: "test_prod_id" } },
     { name: "retailer_onboarding",           payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },

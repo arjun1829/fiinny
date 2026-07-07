@@ -8,6 +8,7 @@ type WaTemplate =
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
+  | "manufacturer_network_summary"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;

@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { queueWaNotification } from "../../../lib/wa-notify";
 import { getAdminDb } from "../../../lib/firebase-admin";
 
+/** Resolves the best available display name for a manufacturer doc. */
+function extractName(d: Record<string, unknown>): { ownerName: string; businessName: string; shopName: string } {
+  return {
+    ownerName:   String(d.ownerName   ?? "").trim(),
+    businessName: String(d.businessName ?? d.name ?? "").trim(),
+    shopName:    String(d.shopName    ?? "").trim(),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json() as {
@@ -13,8 +22,10 @@ export async function POST(request: Request) {
     const { manufacturerId = "", count = 0 } = body;
     let { manufacturerPhone = "" } = body;
 
+    const db = getAdminDb();
+
+    // Resolve phone from uidIndex → users if not provided directly
     if (!manufacturerPhone && manufacturerId) {
-      const db = getAdminDb();
       try {
         const idxSnap = await db.collection("uidIndex").doc(manufacturerId).get();
         if (idxSnap.exists) manufacturerPhone = String(idxSnap.data()?.phone ?? "").trim();
@@ -32,13 +43,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const dashboardLink = "https://krishidukan.com/dashboard/manufacturer/retailers";
+    // Resolve name fields — try manufacturers then users, by phone then by UID
+    let nameFields = { ownerName: "", businessName: "", shopName: "" };
+    const lookupKeys = [
+      ...(manufacturerPhone ? [manufacturerPhone] : []),
+      ...(manufacturerId ? [manufacturerId] : []),
+    ];
+    outer: for (const key of lookupKeys) {
+      for (const col of ["manufacturers", "users"]) {
+        try {
+          const snap = await db.collection(col).doc(key).get();
+          if (!snap.exists) continue;
+          const fields = extractName(snap.data() as Record<string, unknown>);
+          if (fields.ownerName || fields.businessName || fields.shopName) {
+            nameFields = fields;
+            break outer;
+          }
+        } catch { /* keep trying */ }
+      }
+    }
+
     await queueWaNotification(
       manufacturerPhone,
-      `✅ Retailer Network अपडेट\n\n${count} नवीन रिटेलर्स तुमच्या Network मध्ये सहभागी करण्यात आले आहेत.\n\nतुमचे Retailer Network पाहण्यासाठी Dashboard ला भेट द्या:\n${dashboardLink}`,
+      `${count} नवीन रिटेलर्स तुमच्या Network मध्ये सहभागी करण्यात आले आहेत.`,
       {
-        template: "generic",
+        template: "manufacturer_network_summary",
         type: "general",
+        payload: {
+          ownerName:    nameFields.ownerName,
+          businessName: nameFields.businessName,
+          shopName:     nameFields.shopName,
+          retailerCount: String(count),
+        },
         source: { event: "bulk_retailer_upload", entityType: "manufacturer", entityId: manufacturerId },
       }
     );

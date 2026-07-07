@@ -23,15 +23,27 @@ export function resolveTemplateComponents(
   payload: WaPayload
 ): WaTemplateComponent[] {
   const p = (key: string): string => String(payload[key] ?? "");
+  // Fallback chain applied to every template that uses an owner/business name.
+  const name = (): string =>
+    p("ownerName") || p("businessName") || p("shopName") || "User";
 
   switch (template) {
     case "subscription_welcome":
-      // {{1}} = retailer/owner name
-      return [body(p("name"))];
+      // {{1}} = ownerName → businessName → shopName → "User"
+      // Static URL button (https://krishidukan.com/dashboard) — no button component needed
+      return [body(name())];
 
     case "subscription_expiry":
-      // {{1}} = name   {{2}} = expiryDate (localised date string)
-      return [body(p("name"), p("expiryDate"))];
+      // {{1}} = ownerName → businessName → shopName → "User"
+      // {{2}} = formattedExpiryDate (human-readable, e.g. "15 July 2026")
+      // Static URL button (https://krishidukan.com/dashboard/settings) — no button component needed
+      return [body(name(), p("formattedExpiryDate"))];
+
+    case "manufacturer_network_summary":
+      // {{1}} = ownerName → businessName → shopName → "User"
+      // {{2}} = retailerCount
+      // Static URL button (https://krishidukan.com/dashboard/manufacturer/retailers) — no button component needed
+      return [body(name(), p("retailerCount"))];
 
     case "order_notification":
       // {{1}} = customerName   {{2}} = itemSummary   {{3}} = total (₹ amount)

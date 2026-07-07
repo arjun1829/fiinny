@@ -8,6 +8,7 @@ type WaTemplate =
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
+  | "manufacturer_network_summary"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;
@@ -77,15 +78,15 @@ export async function queueWaNotification(
 
 export async function queueSubscriptionWelcome(
   phone: string,
-  name: string,
-  opts: { source?: WaSourceEvent } = {}
+  ownerName: string,
+  opts: { source?: WaSourceEvent; businessName?: string; shopName?: string } = {}
 ) {
   return queueWaNotification(
     phone,
-    `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://krishidukan.com`,
+    `तुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.`,
     {
       template: "subscription_welcome",
-      payload: { name },
+      payload: { ownerName, businessName: opts.businessName ?? "", shopName: opts.shopName ?? "" },
       type: "subscription",
       source: opts.source ?? {
         event: "subscription_created",
@@ -98,16 +99,16 @@ export async function queueSubscriptionWelcome(
 
 export async function queueSubscriptionExpiry(
   phone: string,
-  name: string,
-  expiryDate: string,
-  opts: { source?: WaSourceEvent; subscriptionId?: string } = {}
+  ownerName: string,
+  formattedExpiryDate: string,
+  opts: { source?: WaSourceEvent; subscriptionId?: string; businessName?: string; shopName?: string } = {}
 ) {
   return queueWaNotification(
     phone,
-    `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://krishidukan.com`,
+    `तुमची Krishi Dukan सदस्यता ${formattedExpiryDate} रोजी संपणार आहे.`,
     {
       template: "subscription_expiry",
-      payload: { name, expiryDate },
+      payload: { ownerName, businessName: opts.businessName ?? "", shopName: opts.shopName ?? "", formattedExpiryDate },
       type: "subscription",
       source: opts.source ?? {
         event: "subscription_expiry",

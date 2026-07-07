@@ -18,6 +18,7 @@ export type WaTemplate =
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
+  | "manufacturer_network_summary"
   | "generic";
 
 /** Dynamic values substituted into the template at render time (for audit/debug). */

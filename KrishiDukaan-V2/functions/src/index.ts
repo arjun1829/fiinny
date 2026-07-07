@@ -751,15 +751,15 @@ export const notifyOnSubscriptionCreated = onDocumentCreated(
     const ownerPhone = firstPhone(d.ownerPhone, d.ownerId);
     if (!ownerPhone) return;
 
-    const name = await displayName(ownerPhone, "");
+    const ownerName = await displayName(ownerPhone, "");
 
     await queueWaNotification(
       ownerPhone,
-      `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://krishidukan.com`,
+      `तुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.`,
       {
         template: "subscription_welcome",
         type: "subscription",
-        payload: { name: name || ownerPhone },
+        payload: { ownerName: ownerName || ownerPhone, businessName: "", shopName: "" },
         source: {
           event: "subscription_created",
           entityType: "subscription",
@@ -805,19 +805,19 @@ export const remindExpiringSubscriptions = onSchedule(
       if (!ownerPhone) continue;
 
       const expiryTs = d.expiryDate as admin.firestore.Timestamp | undefined;
-      const expiryDate = expiryTs
-        ? expiryTs.toDate().toLocaleDateString("mr-IN", { day: "numeric", month: "long", year: "numeric" })
-        : "लवकरच";
+      const formattedExpiryDate = expiryTs
+        ? expiryTs.toDate().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+        : "soon";
 
-      const name = await displayName(ownerPhone, "");
+      const ownerName = await displayName(ownerPhone, "");
 
       await queueWaNotification(
         ownerPhone,
-        `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://krishidukan.com`,
+        `तुमची Krishi Dukan सदस्यता ${formattedExpiryDate} रोजी संपणार आहे.`,
         {
           template: "subscription_expiry",
           type: "subscription",
-          payload: { name: name || ownerPhone, expiryDate },
+          payload: { ownerName: ownerName || ownerPhone, businessName: "", shopName: "", formattedExpiryDate },
           source: {
             event: "subscription_expiry_reminder",
             entityType: "subscription",
