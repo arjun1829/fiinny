@@ -5,6 +5,7 @@ import {
   getProductById,
   extractIdFromSlug,
   buildProductSlug,
+  getReelsForProduct,
   type SeoProduct,
 } from "../../lib/seo/products-server";
 import {
@@ -12,6 +13,7 @@ import {
   isStandardCategory,
 } from "../../dashboard/_lib/category-info";
 import { categoryNameToSlug } from "../../lib/seo/category-meta";
+import { buildReelSlug } from "../../lib/seo/reels-server";
 
 // Incremental Static Regeneration — cached at the edge, refreshed hourly.
 export const revalidate = 3600;
@@ -111,6 +113,7 @@ export default async function ProductPage({ params }: PageProps) {
   const images = (product.images.length ? product.images : [product.image]).filter(
     Boolean,
   );
+  const reels = await getReelsForProduct(product.id);
 
   // ── JSON-LD: Product + Offer (+ AggregateRating) ──
   const productLd: Record<string, unknown> = {
@@ -307,6 +310,62 @@ export default async function ProductPage({ params }: PageProps) {
                 <span key={i} className="bg-surface-container px-3 py-1.5 rounded-full text-sm font-semibold text-on-surface-variant border border-surface-container-highest">
                   {b}
                 </span>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* Product Videos / Reels */}
+        {reels.length > 0 ? (
+          <section className="mt-10">
+            {/* VideoObject JSON-LD so each reel's title/description is
+                indexable from this product page too. */}
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{
+                __html: JSON.stringify(
+                  reels.map((reel) => ({
+                    "@context": "https://schema.org",
+                    "@type": "VideoObject",
+                    name: reel.title || `${product.name} video by ${reel.shopName}`,
+                    description:
+                      reel.caption || reel.title || `${product.name} product video`,
+                    contentUrl: reel.videoUrl,
+                    ...(reel.thumbnailUrl ? { thumbnailUrl: reel.thumbnailUrl } : {}),
+                    url: `${SITE_URL}/reels/${buildReelSlug(reel.title, reel.id)}`,
+                    interactionStatistic: {
+                      "@type": "InteractionCounter",
+                      interactionType: { "@type": "WatchAction" },
+                      userInteractionCount: reel.viewsCount,
+                    },
+                  })),
+                ),
+              }}
+            />
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xl font-black text-on-surface">Product Videos</h2>
+              <Link href="/reels" className="text-sm font-bold text-primary hover:underline">
+                All AgriReels →
+              </Link>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+              {reels.map((reel) => (
+                <div key={reel.id} className="min-w-[280px] max-w-[280px] snap-center rounded-2xl overflow-hidden bg-black flex-shrink-0 relative">
+                  <video
+                    src={reel.videoUrl}
+                    poster={reel.thumbnailUrl}
+                    controls
+                    className="w-full aspect-[9/16] object-cover"
+                    preload="metadata"
+                  />
+                  <Link
+                    href={`/reels/${buildReelSlug(reel.title, reel.id)}`}
+                    className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/60 to-transparent"
+                  >
+                    <p className="text-white font-bold text-sm truncate drop-shadow-md">{reel.title}</p>
+                    <p className="text-white/90 text-xs truncate drop-shadow-md">by {reel.shopName}</p>
+                  </Link>
+                </div>
               ))}
             </div>
           </section>

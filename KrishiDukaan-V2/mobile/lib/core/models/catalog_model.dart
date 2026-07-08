@@ -66,6 +66,11 @@ class CatalogModel {
   final bool isActive;
   /// Package size variants (label + price), same as web's variants[].
   final List<VariantModel>? variants;
+  /// Base pack size (e.g. "800ml", "1kg") — web's `ProductDoc.unit`. Present
+  /// on every product; `variants` is only for products offering MULTIPLE
+  /// selectable sizes on top of this. Drives the delivery weight estimate
+  /// for the common single-size product.
+  final String? unit;
   /// Highest discount % offered by any seller for this product.
   final double maxDiscountPct;
 
@@ -84,6 +89,8 @@ class CatalogModel {
   final String? stock;
   final bool? isOnline;
   final String? sellMode;
+  final bool? gstApplicable;
+  final double? gstRate;
   final List<AvailabilityEntry>? availability;
   final double? lowestPrice;
 
@@ -108,6 +115,7 @@ class CatalogModel {
     this.updatedAt,
     this.isActive = true,
     this.variants,
+    this.unit,
     this.maxDiscountPct = 0,
     this.sellerDiscounts = const {},
     this.manufacturerId,
@@ -119,6 +127,8 @@ class CatalogModel {
     this.stock,
     this.isOnline,
     this.sellMode,
+    this.gstApplicable,
+    this.gstRate,
     this.availability,
     this.lowestPrice,
     this.collectionPath = 'catalog',
@@ -154,6 +164,7 @@ class CatalogModel {
     DateTime? updatedAt,
     bool? isActive,
     List<VariantModel>? variants,
+    String? unit,
     double? maxDiscountPct,
     Map<String, double>? sellerDiscounts,
     String? manufacturerId,
@@ -165,6 +176,8 @@ class CatalogModel {
     String? stock,
     bool? isOnline,
     String? sellMode,
+    bool? gstApplicable,
+    double? gstRate,
     List<AvailabilityEntry>? availability,
     double? lowestPrice,
     String? collectionPath,
@@ -188,6 +201,7 @@ class CatalogModel {
       updatedAt: updatedAt ?? this.updatedAt,
       isActive: isActive ?? this.isActive,
       variants: variants ?? this.variants,
+      unit: unit ?? this.unit,
       maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
       sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
       manufacturerId: manufacturerId ?? this.manufacturerId,
@@ -199,6 +213,8 @@ class CatalogModel {
       stock: stock ?? this.stock,
       isOnline: isOnline ?? this.isOnline,
       sellMode: sellMode ?? this.sellMode,
+      gstApplicable: gstApplicable ?? this.gstApplicable,
+      gstRate: gstRate ?? this.gstRate,
       availability: availability ?? this.availability,
       lowestPrice: lowestPrice ?? this.lowestPrice,
       collectionPath: collectionPath ?? this.collectionPath,
@@ -263,6 +279,8 @@ class CatalogModel {
     final stock = d['stock']?.toString();
     final isOnline = d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only");
     final sellMode = d['sellMode'] as String? ?? "online_delivery";
+    final gstApplicable = d['gstApplicable'] as bool?;
+    final gstRate = (d['gstRate'] as num?)?.toDouble();
 
     final availability = availabilityList
         ?.map((v) => AvailabilityEntry.fromMap(Map<String, dynamic>.from(v as Map)))
@@ -293,6 +311,7 @@ class CatalogModel {
       updatedAt: updatedAt,
       isActive: d['isActive'] as bool? ?? true,
       variants: parsedVariants,
+      unit: d['unit'] as String?,
       maxDiscountPct: maxDiscountPct,
       manufacturerId: manufacturerId,
       manufacturerPhone: manufacturerPhone,
@@ -303,6 +322,8 @@ class CatalogModel {
       stock: stock,
       isOnline: isOnline,
       sellMode: sellMode,
+      gstApplicable: gstApplicable,
+      gstRate: gstRate,
       availability: availability,
     );
   }

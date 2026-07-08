@@ -1291,7 +1291,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
-            onRegisterClick={() => navigate('signup')}
+            onRegisterClick={() => navigate('login')}
           />
         );
       case 'market':
@@ -1517,8 +1517,14 @@ export default function App() {
           </div>
         );
       case 'login':
-        return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
+        return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
       case 'signup':
+        // Signup is now unified into the login flow (phone → OTP → onboarding
+        // for new numbers). The standalone signup form remains ONLY for
+        // manufacturer invite links, which pre-fill and lock the phone number.
+        if (!signupInviteCode && !user) {
+          return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
+        }
         // Already-logged-in user with no invite — send them home
         if (user && !signupInviteCode) {
           navigate('home');
@@ -1631,7 +1637,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
-            onRegisterClick={() => navigate('signup')}
+            onRegisterClick={() => navigate('login')}
           />
         );
     }

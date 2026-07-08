@@ -112,6 +112,8 @@ class OrderDetailScreen extends ConsumerWidget {
                           order.deliveryCharge == 0
                               ? 'Free'
                               : CurrencyUtils.format(order.deliveryCharge)),
+                      if (order.totalGst > 0)
+                        _PriceRow('GST', CurrencyUtils.format(order.totalGst)),
                       const Divider(),
                       _PriceRow('Total', CurrencyUtils.format(order.total),
                           bold: true),

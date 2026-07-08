@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/utils/web_links.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
@@ -509,7 +510,7 @@ class _RetailerTile extends ConsumerWidget {
   }
 
   Future<void> _shareOnWhatsApp(BuildContext context) async {
-    final inviteLink = 'https://krishidukan.com/signup?inviteCode=${retailer.inviteCode}';
+    final inviteLink = WebLinks.invite(retailer.inviteCode);
     final msg = 'Hey! I invite you to join my retailer network on Krishi Dukaan. '
         'Use my invite code: ${retailer.inviteCode} or sign up using this link: $inviteLink';
     final url = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(msg)}");
@@ -525,7 +526,7 @@ class _RetailerTile extends ConsumerWidget {
   }
 
   Future<void> _shareViaEmail(BuildContext context) async {
-    final inviteLink = 'https://krishidukan.com/signup?inviteCode=${retailer.inviteCode}';
+    final inviteLink = WebLinks.invite(retailer.inviteCode);
     final subject = 'Invitation to join Krishi Dukaan Retailer Network';
     final body = 'Hey!\n\nI invite you to join my retailer network on Krishi Dukaan.\n\n'
         'Use my invite code: ${retailer.inviteCode} or sign up using this link:\n$inviteLink';
@@ -542,7 +543,7 @@ class _RetailerTile extends ConsumerWidget {
   }
 
   void _copyInviteLink(BuildContext context) {
-    final inviteLink = 'https://krishidukan.com/signup?inviteCode=${retailer.inviteCode}';
+    final inviteLink = WebLinks.invite(retailer.inviteCode);
     Clipboard.setData(ClipboardData(text: inviteLink));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

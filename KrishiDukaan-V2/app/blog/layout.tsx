@@ -7,11 +7,11 @@ export const metadata: Metadata = {
   title: 'Blog — KrishiDukan | Agricultural Insights & Farming Tips',
   description: 'Expert advice, crop guides, and agri-retail news from the KrishiDukan team. Helping Indian farmers make better decisions.',
   openGraph: {
-    siteName: 'KrishiDukaan',
+    siteName: 'KrishiDukan',
     type: 'website',
     url: `${SITE_URL}/blog`,
-    title: 'Blog — KrishiDukaan | Agricultural Insights & Farming Tips',
-    description: 'Expert advice, crop guides, and agri-retail news from the KrishiDukaan team.',
+    title: 'Blog — KrishiDukan | Agricultural Insights & Farming Tips',
+    description: 'Expert advice, crop guides, and agri-retail news from the KrishiDukan team.',
     images: ['/images/og-default.png'],
   },
 };

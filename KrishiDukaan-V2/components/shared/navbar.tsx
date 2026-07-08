@@ -362,6 +362,13 @@ export function Navbar({
               <motion.div layoutId="activeTab" className="h-0.5 bg-primary mt-0.5 rounded-full" />
             )}
           </a>
+          <a
+            href="/reels"
+            data-tour-nav="reels"
+            className="text-xs font-semibold text-on-surface-variant transition-colors hover:text-primary whitespace-nowrap"
+          >
+            AgriReels
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">

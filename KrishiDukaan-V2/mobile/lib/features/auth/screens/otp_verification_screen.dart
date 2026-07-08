@@ -105,13 +105,21 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
           await ManufacturerRepository().claimInvite(widget.inviteCode!, phone);
         }
         if (!mounted) return;
-        // New retailer/manufacturer → subscription page first; the dashboard
-        // stays locked behind the paywall until they subscribe.
-        final role = widget.signupRole ?? 'consumer';
-        if (role == 'retailer' || role == 'manufacturer') {
-          context.go('/subscription?reason=new_account');
+        // A pending destination (e.g. the user was mid-checkout when asked to
+        // log in) always wins — buying shouldn't be interrupted by the seller
+        // subscription pitch; the /dashboard guard enforces the paywall later.
+        final redirect = widget.redirectAfterLogin;
+        if (redirect != null && redirect.isNotEmpty) {
+          context.go(redirect);
         } else {
-          context.go(widget.redirectAfterLogin ?? '/');
+          // New retailer/manufacturer → subscription page first; the dashboard
+          // stays locked behind the paywall until they subscribe.
+          final role = widget.signupRole ?? 'consumer';
+          if (role == 'retailer' || role == 'manufacturer') {
+            context.go('/subscription?reason=new_account');
+          } else {
+            context.go('/');
+          }
         }
       } else {
         // Check if user profile exists
@@ -119,12 +127,20 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
         if (!mounted) return;
 
         if (!exists) {
-          // New user → onboarding (role + name). Carry any invite code so an
-          // invited retailer still lands on the right pre-filled onboarding.
+          // New user → onboarding (role + name). Carry the invite code AND the
+          // post-login destination so finishing onboarding continues straight
+          // back to the cart/checkout the user came from.
           final invite = widget.inviteCode;
-          context.go((invite != null && invite.isNotEmpty)
-              ? '/onboarding?inviteCode=${Uri.encodeComponent(invite)}'
-              : '/onboarding');
+          final redirect = widget.redirectAfterLogin;
+          final params = <String>[
+            if (invite != null && invite.isNotEmpty)
+              'inviteCode=${Uri.encodeComponent(invite)}',
+            if (redirect != null && redirect.isNotEmpty)
+              'redirect=${Uri.encodeComponent(redirect)}',
+          ];
+          context.go(params.isEmpty
+              ? '/onboarding'
+              : '/onboarding?${params.join('&')}');
         } else {
           // Ensure uidIndex entry exists so myPhone()-based security rules work
           // for users who registered on the web app before the Flutter app existed.

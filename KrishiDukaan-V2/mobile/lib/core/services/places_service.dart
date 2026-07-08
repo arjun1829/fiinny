@@ -90,28 +90,46 @@ class PlacesService {
   }
 
   static PlaceDetails _parseResult(Map<String, dynamic> result) {
-    String? sublocality, city, state, pincode;
+    String? neighborhood, sublocality, locality, admin3, admin2, state, pincode;
     final components = result['address_components'] as List? ?? [];
+    
     for (final c in components) {
       final types = (c['types'] as List).cast<String>();
-      if (types.contains('sublocality_level_1') || types.contains('sublocality') || types.contains('neighborhood')) {
-        sublocality ??= c['long_name'] as String?;
-      }
-      if (types.contains('locality')) city = c['long_name'] as String?;
-      if (types.contains('administrative_area_level_1')) {
-        state = c['long_name'] as String?;
-      }
-      if (types.contains('postal_code')) pincode = c['long_name'] as String?;
+      final name = c['long_name'] as String?;
+      
+      if (types.contains('neighborhood')) neighborhood ??= name;
+      if (types.contains('sublocality_level_3')) sublocality ??= name;
+      if (types.contains('sublocality_level_2')) sublocality ??= name;
+      if (types.contains('sublocality_level_1')) sublocality ??= name;
+      if (types.contains('sublocality')) sublocality ??= name;
+      if (types.contains('locality')) locality ??= name;
+      if (types.contains('administrative_area_level_3')) admin3 ??= name;
+      if (types.contains('administrative_area_level_2')) admin2 ??= name;
+      if (types.contains('administrative_area_level_1')) state ??= name;
+      if (types.contains('postal_code')) pincode ??= name;
     }
+
+    String? bestSub = neighborhood ?? sublocality ?? admin3 ?? locality;
+    String? bestCity;
+    
+    if (locality != null && locality != bestSub) {
+      bestCity = locality;
+    } else if (admin2 != null && admin2 != bestSub) {
+      bestCity = admin2;
+    } else {
+      bestCity = state;
+    }
+
     final geo = result['geometry'] as Map<String, dynamic>?;
     final loc = geo?['location'] as Map<String, dynamic>?;
     final name = (result['name'] as String?)?.isNotEmpty == true
         ? result['name'] as String
         : result['formatted_address'] as String? ?? '';
+        
     return PlaceDetails(
       name: name,
-      sublocality: sublocality,
-      city: city,
+      sublocality: bestSub,
+      city: bestCity,
       state: state,
       pincode: pincode,
       formattedAddress: result['formatted_address'] as String?,

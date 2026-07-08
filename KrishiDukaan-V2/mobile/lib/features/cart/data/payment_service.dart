@@ -14,22 +14,32 @@ class PaymentService {
   ///   items[].qty        – quantity
   ///   userId             – Firebase Auth UID of the buyer
   ///   clientSubtotal     – rupee subtotal computed client-side
-  ///   clientDelivery     – delivery charge (0 for now)
+  ///   clientDelivery     – extra charges on top of the subtotal
   ///   clientGrandTotal   – clientSubtotal + clientDelivery
+  ///
+  /// IMPORTANT — amount contract: the server charges
+  /// `serverSubtotal + clientDelivery` and has no GST field, so GST must be
+  /// folded into `clientDelivery`. This mirrors the web client, which sends
+  /// `clientDelivery = grandTotal - subtotal` (delivery + GST combined).
+  /// Do NOT add a separate gst field here without also changing the server,
+  /// or the buyer would be double-charged.
   ///
   /// Returns the full Razorpay order object. Use `result['id']` as the
   /// Razorpay order_id (NOT `result['orderId']` – that field doesn't exist).
   Future<Map<String, dynamic>> createCartOrder({
     required List<CartItemModel> items,
     required String userId,
+    required double clientDelivery,
+    required double clientGst,
   }) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw Exception('Not authenticated');
 
     final clientSubtotal =
         items.fold<double>(0.0, (sum, i) => sum + i.price * i.quantity);
-    const clientDelivery = 0.0;
-    final clientGrandTotal = clientSubtotal + clientDelivery;
+    // Fold GST into the delivery figure — see the amount contract above.
+    final deliveryPlusGst = clientDelivery + clientGst;
+    final clientGrandTotal = clientSubtotal + deliveryPlusGst;
 
     final response = await http.post(
       Uri.parse('${AppConfig.apiBaseUrl}/api/payment/create-cart-order'),
@@ -51,7 +61,7 @@ class PaymentService {
         }).toList(),
         'userId': userId,
         'clientSubtotal': clientSubtotal,
-        'clientDelivery': clientDelivery,
+        'clientDelivery': deliveryPlusGst,
         'clientGrandTotal': clientGrandTotal,
         'note': 'Mobile Cart Order',
       }),

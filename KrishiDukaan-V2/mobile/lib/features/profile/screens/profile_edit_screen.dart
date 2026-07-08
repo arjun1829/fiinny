@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _cityCtrl = TextEditingController();
   final _stateCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
+  final _gstinCtrl = TextEditingController();
+  final _mapsUrlCtrl = TextEditingController();
 
   bool _saving = false;
   bool _prefilled = false;
@@ -50,7 +53,32 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     _cityCtrl.dispose();
     _stateCtrl.dispose();
     _pincodeCtrl.dispose();
+    _gstinCtrl.dispose();
+    _mapsUrlCtrl.dispose();
     super.dispose();
+  }
+
+  /// The canonical GSTIN + Google Maps link live on retailers/{phone} (what
+  /// the web dashboard edits), so when the users-doc mirrors are empty pull
+  /// them from there — otherwise values set on web would look blank here.
+  Future<void> _prefillFromRoleDoc(String role, String phone) async {
+    final col = role == 'manufacturer' ? 'manufacturers' : 'retailers';
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(col)
+          .doc(phone)
+          .get();
+      final d = snap.data();
+      if (!mounted || d == null) return;
+      final gstin = d['gstin'] as String?;
+      if (gstin != null && gstin.isNotEmpty && _gstinCtrl.text.isEmpty) {
+        _gstinCtrl.text = gstin;
+      }
+      final mapsUrl = d['googleMapsUrl'] as String?;
+      if (mapsUrl != null && mapsUrl.isNotEmpty && _mapsUrlCtrl.text.isEmpty) {
+        _mapsUrlCtrl.text = mapsUrl;
+      }
+    } catch (_) {}
   }
 
   String? _required(String? v) =>
@@ -75,6 +103,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         city: _cityCtrl.text.trim(),
         state: _stateCtrl.text.trim(),
         pincode: _pincodeCtrl.text.trim(),
+        gstin: _gstinCtrl.text.trim().toUpperCase(),
+        googleMapsUrl: _mapsUrlCtrl.text.trim(),
       );
 
       ref.invalidate(currentUserProvider);
@@ -129,6 +159,12 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           _cityCtrl.text = user.city ?? '';
           _stateCtrl.text = user.state ?? '';
           _pincodeCtrl.text = user.pincode ?? '';
+          _gstinCtrl.text = user.gstin ?? '';
+          _mapsUrlCtrl.text = user.googleMapsUrl ?? '';
+          if (user.isSeller &&
+              (_gstinCtrl.text.isEmpty || _mapsUrlCtrl.text.isEmpty)) {
+            _prefillFromRoleDoc(user.role, user.phone);
+          }
           _prefilled = true;
         }
 
@@ -206,6 +242,50 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(6),
                           ]),
+                      const SizedBox(height: 12),
+                      // Printed on invoices (web + mobile). 15-char GSTIN.
+                      _field(_gstinCtrl, 'GSTIN (optional)',
+                          Icons.receipt_long_outlined,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(15),
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'[a-zA-Z0-9]')),
+                            TextInputFormatter.withFunction(
+                              (oldValue, newValue) => newValue.copyWith(
+                                  text: newValue.text.toUpperCase()),
+                            ),
+                          ],
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.length == 15
+                                ? null
+                                : 'GSTIN must be 15 characters';
+                          }),
+                      const SizedBox(height: 12),
+                      // Shown to buyers in the Store Locator "Directions"
+                      // flow instead of raw coordinates — paste the "Share"
+                      // link of your Google Business / Maps listing.
+                      _field(_mapsUrlCtrl, 'Google Maps store link (optional)',
+                          Icons.map_outlined,
+                          keyboardType: TextInputType.url,
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.startsWith('http')
+                                ? null
+                                : 'Paste a full link starting with https://';
+                          }),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          'Open your shop on Google Maps → Share → Copy link, '
+                          'and paste it here. Buyers will see your Google '
+                          'listing with photos & reviews.',
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.onSurfaceVariant),
+                        ),
+                      ),
                     ] else ...[
                       const SizedBox(height: 24),
                       Text('Delivery Address (optional)',
