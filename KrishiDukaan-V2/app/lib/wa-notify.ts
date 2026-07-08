@@ -6,7 +6,9 @@ type WaTemplate =
   | "subscription_expiry"
   | "order_notification"
   | "retailer_onboarding"
-  | "product_assignment"
+  | "product_assignment_onboarded"
+  | "product_assignment_pending_signup"
+  | "manufacturer_network_summary"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;
@@ -30,8 +32,8 @@ interface QueueOptions {
 }
 
 /**
- * Queues a WhatsApp notification. The wa-service picks this up and sends it.
- * Never call WhatsApp Web directly from the app — always go through this queue.
+ * Queues a WhatsApp notification. The wa-cloud-service picks this up and sends
+ * it via the WhatsApp Cloud API. Never call the API directly from the app.
  */
 export async function queueWaNotification(
   phone: string,
@@ -40,56 +42,73 @@ export async function queueWaNotification(
 ): Promise<string> {
   const db = getAdminDb();
   const doc = await db.collection("waNotifications").add({
+    // Recipient
     phone: phone.trim(),
+
+    // Content — message is kept for audit/debug; templateComponents are
+    // resolved by wa-cloud-service from template + payload at send time.
     message,
     template: opts.template ?? "generic",
     payload: opts.payload ?? {},
+
+    // Tracing
     source: opts.source ?? { event: "manual", entityType: "unknown", entityId: "" },
+
+    // Lifecycle — full schema so wa-cloud-service and webhooks can update in-place
     status: "pending",
     type: opts.type ?? "general",
+    metaMessageId: null,
+
+    // Timestamps
     createdAt: FieldValue.serverTimestamp(),
     sentAt: null,
-    lastAttemptAt: null,
+    deliveredAt: null,
+    readAt: null,
+    failedAt: null,
+
+    // Retry
     retryCount: 0,
     maxRetries: opts.maxRetries ?? DEFAULT_MAX_RETRIES,
-    error: null,
+    lastError: null,
   });
   return doc.id;
 }
 
-// ── Pre-built message helpers ─────────────────────────────────────────────────
+// ── Pre-built helpers for common notification types ───────────────────────────
 
 export async function queueSubscriptionWelcome(
   phone: string,
-  name: string,
-  opts: { source?: WaSourceEvent } = {}
+  ownerName: string,
+  opts: { source?: WaSourceEvent; businessName?: string; shopName?: string } = {}
 ) {
-  const payload: WaPayload = { name };
   return queueWaNotification(
     phone,
-    `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://www.krishidukan.com`,
+    `तुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.`,
     {
       template: "subscription_welcome",
-      payload,
+      payload: { ownerName, businessName: opts.businessName ?? "", shopName: opts.shopName ?? "" },
       type: "subscription",
-      source: opts.source ?? { event: "subscription_created", entityType: "subscription", entityId: "" },
+      source: opts.source ?? {
+        event: "subscription_created",
+        entityType: "subscription",
+        entityId: "",
+      },
     }
   );
 }
 
 export async function queueSubscriptionExpiry(
   phone: string,
-  name: string,
-  expiryDate: string,
-  opts: { source?: WaSourceEvent; subscriptionId?: string } = {}
+  ownerName: string,
+  formattedExpiryDate: string,
+  opts: { source?: WaSourceEvent; subscriptionId?: string; businessName?: string; shopName?: string } = {}
 ) {
-  const payload: WaPayload = { name, expiryDate };
   return queueWaNotification(
     phone,
-    `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://www.krishidukan.com`,
+    `तुमची Krishi Dukan सदस्यता ${formattedExpiryDate} रोजी संपणार आहे.`,
     {
       template: "subscription_expiry",
-      payload,
+      payload: { ownerName, businessName: opts.businessName ?? "", shopName: opts.shopName ?? "", formattedExpiryDate },
       type: "subscription",
       source: opts.source ?? {
         event: "subscription_expiry",
@@ -107,13 +126,12 @@ export async function queueOrderNotification(
   total: number,
   opts: { source?: WaSourceEvent; orderId?: string } = {}
 ) {
-  const payload: WaPayload = { customerName, itemSummary, total };
   return queueWaNotification(
     phone,
-    `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customerName}\nप्रॉडक्ट: ${itemSummary}\nएकूण रक्कम: ₹${total}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+    `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customerName}\nप्रॉडक्ट: ${itemSummary}\nएकूण रक्कम: ₹${total}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com`,
     {
       template: "order_notification",
-      payload,
+      payload: { customerName, itemSummary, total },
       type: "order",
       source: opts.source ?? {
         event: "order_created",

@@ -20,9 +20,14 @@ async function main() {
   const schedule = POLL_MINUTES === 1 ? "* * * * *" : `*/${POLL_MINUTES} * * * *`;
   cron.schedule(schedule, async () => {
     try {
+      // getWhatsAppClient() returns immediately when the client is already
+      // ready, and reinitializes it (with saved LocalAuth session, no QR
+      // needed) when it has disconnected — giving the service automatic
+      // recovery without a manual restart.
+      await getWhatsAppClient();
       await processPendingNotifications(BATCH_SIZE);
     } catch (err) {
-      console.error("[Main] Unhandled error in poll cycle:", err);
+      console.error("[Main] Error in poll cycle:", err instanceof Error ? err.message : String(err));
     }
   });
 
