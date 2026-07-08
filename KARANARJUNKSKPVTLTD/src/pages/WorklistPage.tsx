@@ -20,7 +20,11 @@ import DynamicTable from '../components/DynamicTable';
 import PaymentRemindersPage from './PaymentRemindersPage';
 import OnlineOrdersPage from './OnlineOrdersPage';
 import DispatchBoardPage from './DispatchBoardPage';
-import PurchaseOrdersPage from './PurchaseOrdersPage';
+// TEMPORARILY DISABLED (2026-07-03): Worklist → Purchase Orders is incomplete/broken.
+// Hidden until rebuilt — do not delete. Re-enable by restoring this import and the
+// tab entry/render below. Unrelated to Supplier Ledger → Purchase Orders, which uses
+// its own PurchaseOrderModal component and is unaffected by this change.
+// import PurchaseOrdersPage from './PurchaseOrdersPage';
 import B2BInvoiceWorklistPage from './B2BInvoiceWorklistPage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,7 +57,8 @@ interface ReminderEntry {
     closestCreditDays: number | null;
 }
 
-type ModuleTab = 'partners' | 'invoices' | 'payment-reminders' | 'tracking-info' | 'online-orders' | 'purchase-orders';
+// 'purchase-orders' removed from the union — TEMPORARILY DISABLED (2026-07-03), see note above.
+type ModuleTab = 'partners' | 'invoices' | 'payment-reminders' | 'tracking-info' | 'online-orders' /* | 'purchase-orders' */;
 
 const MODULE_TABS: { id: ModuleTab; label: string; icon: React.ReactNode }[] = [
     { id: 'partners',          label: 'Partners',          icon: <Building2 size={16} /> },
@@ -61,7 +66,8 @@ const MODULE_TABS: { id: ModuleTab; label: string; icon: React.ReactNode }[] = [
     { id: 'payment-reminders', label: 'Payment Reminders', icon: <Bell size={16} /> },
     { id: 'tracking-info',     label: 'Tracking Info',     icon: <Truck size={16} /> },
     { id: 'online-orders',     label: 'Online Orders',     icon: <ShoppingCart size={16} /> },
-    { id: 'purchase-orders',     label: 'Purchase Orders',     icon: <ShoppingCart size={16} /> },
+    // TEMPORARILY DISABLED (2026-07-03): Purchase Orders tab hidden until rebuilt — do not delete.
+    // { id: 'purchase-orders',     label: 'Purchase Orders',     icon: <ShoppingCart size={16} /> },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -126,7 +132,8 @@ export default function WorklistPage() {
             {moduleTab === 'payment-reminders' && <PaymentRemindersPage />}
             {moduleTab === 'tracking-info'     && <DispatchBoardPage />}
             {moduleTab === 'online-orders'     && <OnlineOrdersPage />}
-            {moduleTab === 'purchase-orders'     && <PurchaseOrdersPage/>}
+            {/* TEMPORARILY DISABLED (2026-07-03): Purchase Orders tab content hidden until rebuilt — do not delete. */}
+            {/* {moduleTab === 'purchase-orders'     && <PurchaseOrdersPage/>} */}
         </div>
     );
 }

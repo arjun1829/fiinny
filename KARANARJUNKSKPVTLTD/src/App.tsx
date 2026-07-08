@@ -6,6 +6,7 @@ import LanguageSwitcher from './components/LanguageSwitcher';
 import OfflineBanner from './components/OfflineBanner';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
+import ModuleGate from './components/ModuleGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { AppScreen } from './contexts/AuthContext';
 import { SchemaProvider } from './contexts/SchemaContext';
@@ -52,7 +53,9 @@ const B2BInvoicePage         = lazy(() => import('./pages/B2BInvoicePage'));
 const GSTReportsPage         = lazy(() => import('./pages/GSTReportsPage'));
 const QuotationsPage         = lazy(() => import('./pages/QuotationsPage'));
 const PaymentRemindersPage   = lazy(() => import('./pages/PaymentRemindersPage'));
-const PurchaseOrdersPage     = lazy(() => import('./pages/PurchaseOrdersPage'));
+// TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken — hidden
+// until rebuilt. Do not delete. See matching route/nav comments below.
+// const PurchaseOrdersPage     = lazy(() => import('./pages/PurchaseOrdersPage'));
 const DeliveryChallansPage   = lazy(() => import('./pages/DeliveryChallansPage'));
 const FinancialReportsPage   = lazy(() => import('./pages/FinancialReportsPage'));
 const WarehousePage          = lazy(() => import('./pages/WarehousePage'));
@@ -67,9 +70,15 @@ const AIAdvisorPage          = lazy(() => import('./pages/AIAdvisorPage'));
 const DigitalReceiptPage     = lazy(() => import('./pages/DigitalReceiptPage'));
 const DigitalKhataPage       = lazy(() => import('./pages/DigitalKhataPage'));
 const ModuleMarketplacePage  = lazy(() => import('./pages/ModuleMarketplacePage'));
-const ReturnsPage            = lazy(() => import('./pages/ReturnsPage'));
+// TEMPORARILY DISABLED (2026-07-03)
+// Returns & Exchanges module is incomplete.
+// Hidden until the feature is redesigned and rebuilt.
+// const ReturnsPage            = lazy(() => import('./pages/ReturnsPage'));
 const LoyaltyPage            = lazy(() => import('./pages/LoyaltyPage'));
-const CustomerFeedbackPage   = lazy(() => import('./pages/CustomerFeedbackPage'));
+// TEMPORARILY DISABLED (2026-07-06)
+// Customer Feedback module is under redevelopment.
+// Keep this code for future reactivation.
+// const CustomerFeedbackPage   = lazy(() => import('./pages/CustomerFeedbackPage'));
 const CustomerFeedbackSubmitPage = lazy(() => import('./pages/CustomerFeedbackSubmitPage'));
 const VCheckoutPage          = lazy(() => import('./pages/VCheckoutPage'));
 const KrishiDukanPage        = lazy(() => import('./pages/KrishiDukanPage'));
@@ -141,7 +150,10 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
     { path: '/b2b-invoice', icon: <ReceiptText size={19} />, label: 'B2B GST Invoice', screenKey: 'worklist' },
     { path: '/quotations', icon: <ClipboardList size={19} />, label: 'Quotations', screenKey: 'worklist' },
     { path: '/payment-reminders', icon: <Bell size={19} />, label: 'Payment Reminders', screenKey: 'worklist' },
-    { path: '/purchase-orders', icon: <ShoppingCart size={19} />, label: 'Purchase Orders', screenKey: 'worklist' },
+    // TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken — hidden
+    // until rebuilt. Do not delete. Unrelated to Supplier Ledger → Purchase Orders (separate
+    // PurchaseOrderModal-based implementation), which is unaffected.
+    // { path: '/purchase-orders', icon: <ShoppingCart size={19} />, label: 'Purchase Orders', screenKey: 'worklist' },
     { path: '/supplier-ledger', icon: <Truck size={19} />, label: 'Supplier Ledger', screenKey: 'worklist' },
     { path: '/delivery-challans', icon: <Truck size={19} />, label: 'Delivery Challans', screenKey: 'worklist' },
     { path: '/gst-reports', icon: <FileText size={19} />, label: 'GST Reports', screenKey: 'analytics' },
@@ -153,9 +165,15 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
     { path: '/modules', icon: <Package size={19} />, label: '🧩 Module Marketplace', screenKey: 'analytics' },
     { path: '/payment-links', icon: <Link2 size={19} />, label: '💳 Payment Links', screenKey: 'worklist' },
     { path: '/ai-advisor', icon: <Bot size={19} />, label: '🤖 AI Advisor', screenKey: 'analytics' },
-    { path: '/returns', icon: <ReceiptText size={19} />, label: 'Returns & Exchanges', screenKey: 'pos' },
-    { path: '/loyalty', icon: <Star size={19} />, label: 'Loyalty & Memberships', screenKey: 'pos' },
-    { path: '/feedback', icon: <Users size={19} />, label: 'Customer Feedback', screenKey: 'pos' },
+    // TEMPORARILY DISABLED (2026-07-03)
+    // Returns & Exchanges module is incomplete.
+    // Hidden until the feature is redesigned and rebuilt.
+    // { path: '/returns', icon: <ReceiptText size={19} />, label: 'Returns & Exchanges', screenKey: 'pos' },
+    { path: '/loyalty', icon: <Star size={19} />, label: 'Loyalty & Memberships', screenKey: 'loyalty' },
+    // TEMPORARILY DISABLED (2026-07-06)
+    // Customer Feedback module is under redevelopment.
+    // Keep this code for future reactivation.
+    // { path: '/feedback', icon: <Users size={19} />, label: 'Customer Feedback', screenKey: 'pos' },
     { path: '/rates', icon: <Package size={19} />, label: t('common.inventory'), screenKey: 'inventory' },
     { path: '/order-history', icon: <ReceiptText size={19} />, label: 'Order History', screenKey: 'order_history' },
     { path: '/online-orders', icon: <ShoppingCart size={19} />, label: 'Online Orders', screenKey: 'online_orders' },
@@ -441,7 +459,10 @@ function AppRoutes() {
       <Route path="/b2b-invoice" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><B2BInvoicePage /></ProtectedRoute>} />
       <Route path="/quotations" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><QuotationsPage /></ProtectedRoute>} />
       <Route path="/payment-reminders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PaymentRemindersPage /></ProtectedRoute>} />
-      <Route path="/purchase-orders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PurchaseOrdersPage /></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken —
+          route hidden until rebuilt. Do not delete. Supplier Ledger → Purchase Orders is a
+          separate implementation (PurchaseOrderModal) and is unaffected. */}
+      {/* <Route path="/purchase-orders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PurchaseOrdersPage /></ProtectedRoute>} /> */}
       <Route path="/supplier-ledger" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerPage /></ProtectedRoute>} />
       <Route path="/supplier-ledger/:id" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerDetailPage /></ProtectedRoute>} />
       <Route path="/careoff-sync" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="accounts"><CareOffReconcilePage /></ProtectedRoute>} />
@@ -459,9 +480,15 @@ function AppRoutes() {
       <Route path="/modules" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><ModuleMarketplacePage /></ProtectedRoute>} />
 
       {/* POS add-on pages */}
-      <Route path="/returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><ReturnsPage /></ProtectedRoute>} />
-      <Route path="/loyalty" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><LoyaltyPage /></ProtectedRoute>} />
-      <Route path="/feedback" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><CustomerFeedbackPage /></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-03)
+          Returns & Exchanges module is incomplete.
+          Hidden until the feature is redesigned and rebuilt. */}
+      {/* <Route path="/returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><ReturnsPage /></ProtectedRoute>} /> */}
+      <Route path="/loyalty" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="loyalty"><ModuleGate moduleId="loyalty" moduleName="Loyalty & Memberships"><LoyaltyPage /></ModuleGate></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-06)
+          Customer Feedback module is under redevelopment.
+          Keep this code for future reactivation. */}
+      {/* <Route path="/feedback" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><CustomerFeedbackPage /></ProtectedRoute>} /> */}
 
       {/* Public pages */}
       <Route path="/feedback-submit" element={<CustomerFeedbackSubmitPage />} />

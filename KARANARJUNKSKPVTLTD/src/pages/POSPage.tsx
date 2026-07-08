@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+// 'Link' was only used by the Returns quick-access link, now disabled below (2026-07-03).
+// import { Link } from 'react-router-dom';
 import {
     Save, Loader2, Printer, Search, ShoppingCart, Plus, Minus, Trash2,
     CreditCard, Banknote, History, ExternalLink, Target, Pencil,
     Zap, CheckCircle2, ChevronRight, X, Phone, User, QrCode, Package,
-    RotateCcw, Star, Smartphone, Columns, PlusCircle,
+    // RotateCcw removed — was only used by the Returns quick-access link, now disabled below (2026-07-03).
+    Star, Smartphone, Columns, PlusCircle,
 } from 'lucide-react';
 import UpiQrCode from '../components/UpiQrCode';
 import ModuleGate from '../components/ModuleGate';
@@ -74,6 +76,25 @@ const defaultCustomer = (): CustomerState => ({
     address: '',
     pin: '',
 });
+
+// Loyalty is "active" only when the module is entitled AND the admin hasn't
+// explicitly disabled it. Config predates the enabled flag for some tenants —
+// absence of the field (undefined) must still mean "on", matching behavior
+// before this switch was wired in.
+function isLoyaltyActive(hasLoyaltyModule: boolean, loyaltyConfig: any): boolean {
+    return hasLoyaltyModule && loyaltyConfig?.enabled !== false;
+}
+
+// Tier multiplier lookup — mirrors LoyaltyPage.tsx's getTier() ordering
+// (highest minPoints first) so both pages agree on which tier a given point
+// balance belongs to.
+function getTierMultiplier(points: number, tiers: { name: string; minPoints: number; multiplier: number }[] | undefined): number {
+    if (!Array.isArray(tiers) || tiers.length === 0) return 1;
+    const sorted = [...tiers].sort((a, b) => (b.minPoints || 0) - (a.minPoints || 0));
+    const match = sorted.find(t => points >= (t.minPoints || 0));
+    const multiplier = match?.multiplier;
+    return typeof multiplier === 'number' && multiplier > 0 ? multiplier : 1;
+}
 
 export default function POSPage() {
     const { t } = useTranslation();
@@ -194,7 +215,17 @@ export default function POSPage() {
                 // Load loyalty config if module is enabled
                 if (hasModule('loyalty')) {
                     const loyaltySnap = await getDoc(getTenantDoc(db, tenantId, 'settings', 'loyaltyConfig'));
-                    if (loyaltySnap.exists()) setLoyaltyConfig(loyaltySnap.data());
+                    if (loyaltySnap.exists()) {
+                        const raw = loyaltySnap.data() as any;
+                        // Guard against a stray non-positive value already saved to Firestore —
+                        // never let it produce Infinity/NaN points or a runaway discount at checkout.
+                        setLoyaltyConfig({
+                            ...raw,
+                            pointsPerRupee: raw.pointsPerRupee > 0 ? raw.pointsPerRupee : 10,
+                            pointsValue: raw.pointsValue > 0 ? raw.pointsValue : 0.1,
+                            minRedeemPoints: raw.minRedeemPoints >= 0 ? raw.minRedeemPoints : 0,
+                        });
+                    }
                 }
             } catch (err) {
                 console.error(err);
@@ -239,7 +270,7 @@ export default function POSPage() {
 
     // Load customer loyalty when phone changes
     useEffect(() => {
-        if (!tenantId || !hasModule('loyalty') || customer.phone.length < 5) {
+        if (!tenantId || !isLoyaltyActive(hasModule('loyalty'), loyaltyConfig) || customer.phone.length < 5) {
             setCustomerLoyalty(null);
             setRedeemPoints(0);
             return;
@@ -247,7 +278,7 @@ export default function POSPage() {
         getDoc(getTenantDoc(db, tenantId, 'loyalty', customer.phone))
             .then(snap => { if (snap.exists()) setCustomerLoyalty(snap.data()); else setCustomerLoyalty(null); })
             .catch(() => {});
-    }, [customer.phone, tenantId, hasModule]);
+    }, [customer.phone, tenantId, hasModule, loyaltyConfig]);
 
     // ── Cart operations ─────────────────────────────────────────────────────
     const addToCart = (product: Product) => {
@@ -276,7 +307,11 @@ export default function POSPage() {
     };
 
     const cartSubtotal = cart.reduce((sum, item) => sum + item.cartTotal, 0);
-    const loyaltyDiscount = redeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
+    const loyaltyIsActive = isLoyaltyActive(hasModule('loyalty'), loyaltyConfig);
+    // If loyalty was switched off after points were already staged for redemption,
+    // the discount must not apply — no partial/stale redemption should reach checkout.
+    const effectiveRedeemPoints = loyaltyIsActive ? redeemPoints : 0;
+    const loyaltyDiscount = effectiveRedeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
     const grandTotal = Math.max(0, cartSubtotal - loyaltyDiscount);
 
     const handlePhoneLookup = async () => {
@@ -337,7 +372,7 @@ export default function POSPage() {
                 paymentSplits: options?.splits ?? [],
                 cashReceived: options?.cashReceived,
                 changeGiven: options?.cashReceived ? Math.max(0, options.cashReceived - grandTotal) : 0,
-                loyaltyPointsRedeemed: options?.loyaltyPointsRedeemed ?? redeemPoints,
+                loyaltyPointsRedeemed: options?.loyaltyPointsRedeemed ?? effectiveRedeemPoints,
                 amountPaid: paymentMethod === 'Khata' ? 0 : grandTotal,
                 status: 'delivered',
                 createdAt: serverTimestamp(),
@@ -379,23 +414,57 @@ export default function POSPage() {
                 }
             }
 
-            // Loyalty points accumulation
-            if (hasModule('loyalty') && customer.phone.length >= 5 && loyaltyConfig) {
-                const loyaltyRef = getTenantDoc(db, tenantId, 'loyalty', customer.phone);
-                const pointsPerRupee = loyaltyConfig.pointsPerRupee || 10;
-                const pointsEarned = Math.floor(grandTotal / pointsPerRupee);
-                const redeemed = options?.loyaltyPointsRedeemed ?? redeemPoints;
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(loyaltyRef);
-                    const cur = snap.exists() ? snap.data() : { points: 0, totalSpend: 0 };
-                    tx.set(loyaltyRef, {
-                        phone: customer.phone,
-                        customerName: customer.name,
-                        points: Math.max(0, (cur.points || 0) + pointsEarned - redeemed),
-                        totalSpend: (cur.totalSpend || 0) + grandTotal,
-                        lastActivity: serverTimestamp(),
-                    }, { merge: true });
-                });
+            // Loyalty points accumulation — disabled module/config, a missing
+            // document, or any error here must never block a sale that has
+            // already been committed above; the whole block is best-effort.
+            if (isLoyaltyActive(hasModule('loyalty'), loyaltyConfig) && customer.phone.length >= 5 && loyaltyConfig) {
+                try {
+                    const loyaltyRef = getTenantDoc(db, tenantId, 'loyalty', customer.phone);
+                    const pointsPerRupee = loyaltyConfig.pointsPerRupee || 10;
+                    const baseBillPoints = Math.max(0, Math.floor(grandTotal / pointsPerRupee));
+                    const minRedeem = Math.max(0, loyaltyConfig.minRedeemPoints || 0);
+                    // Never redeem more than the balance can cover, and never redeem
+                    // below the configured minimum — a stale client-side value or a
+                    // config change mid-session should not bypass either rule.
+                    const requestedRedeem = Math.max(0, options?.loyaltyPointsRedeemed ?? effectiveRedeemPoints);
+
+                    await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(loyaltyRef);
+                        const cur: any = snap.exists() ? snap.data() : {};
+                        const priorPoints = Math.max(0, cur.points || 0);
+
+                        const redeemed = (requestedRedeem > 0 && requestedRedeem < minRedeem)
+                            ? 0
+                            : Math.min(requestedRedeem, priorPoints);
+
+                        // Tier is determined from the balance the customer carried
+                        // INTO this sale (their standing tier), then its multiplier
+                        // scales the points this sale earns — matching LoyaltyPage's
+                        // own tier lookup so both pages agree on tier boundaries.
+                        const multiplier = getTierMultiplier(priorPoints, loyaltyConfig.tiers);
+                        const pointsEarned = Math.max(0, Math.floor(baseBillPoints * multiplier));
+
+                        // Canonical fields going forward, kept alongside the original
+                        // customerName/totalSpend fields so any older reader of this
+                        // document (if one exists outside this codebase) keeps working.
+                        tx.set(loyaltyRef, {
+                            phone: customer.phone,
+                            customerName: customer.name,
+                            name: customer.name || cur.name || null,
+                            points: Math.max(0, priorPoints + pointsEarned - redeemed),
+                            totalSpend: Math.max(0, (cur.totalSpend || 0) + grandTotal),
+                            totalPointsEarned: Math.max(0, (cur.totalPointsEarned || 0) + pointsEarned),
+                            totalPointsRedeemed: Math.max(0, (cur.totalPointsRedeemed || 0) + redeemed),
+                            lastActivity: serverTimestamp(),
+                            lastTransactionAt: serverTimestamp(),
+                            updatedAt: serverTimestamp(),
+                        }, { merge: true });
+                    });
+                } catch (loyaltyErr) {
+                    // The sale itself already succeeded (batch.commit() above) —
+                    // a loyalty failure must not surface as a checkout failure.
+                    console.error('Loyalty update failed (sale already completed):', loyaltyErr);
+                }
             }
 
             showToast(`Sale saved · ${billNumber} · ₹${Math.round(grandTotal).toLocaleString('en-IN')}`, 'success');
@@ -475,7 +544,7 @@ export default function POSPage() {
         <div style={{ background: 'var(--bg-color)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
             {/* Header */}
-            <header className="no-print" style={{ background: '#fff', borderBottom: '1px solid var(--surface-border)', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+            <header className="no-print" style={{ background: 'var(--surface-base)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: '1px solid var(--surface-border)', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ background: 'var(--primary)', color: 'white', padding: '0.5rem', borderRadius: '10px' }}><Zap size={22} /></div>
                     <h1 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0 }}>POS Billing</h1>
@@ -495,17 +564,20 @@ export default function POSPage() {
                 </div>
 
                 {/* Returns quick access */}
-                <ModuleGate moduleId="returns_exchanges" moduleName="Returns" paywallVariant="badge">
+                {/* TEMPORARILY DISABLED (2026-07-03)
+                    Returns & Exchanges module is incomplete.
+                    Hidden until the feature is redesigned and rebuilt. */}
+                {/* <ModuleGate moduleId="returns_exchanges" moduleName="Returns" paywallVariant="badge">
                     <Link to="/returns" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600, fontSize: '0.875rem' }}>
                         <RotateCcw size={16} /> Returns
                     </Link>
-                </ModuleGate>
+                </ModuleGate> */}
 
                 {/* V-Checkout session QR */}
                 <ModuleGate moduleId="vcheckout" moduleName="V-Checkout" paywallVariant="badge">
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <button onClick={handleCreateVCheckoutSession} title="Generate customer self-scan QR"
-                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
                             <Smartphone size={16} /> V-Checkout
                         </button>
                         {vcheckoutSessions.length > 0 && (
@@ -522,24 +594,25 @@ export default function POSPage() {
 
                 {/* Quick add a product to inventory without leaving billing */}
                 <button onClick={openAddProduct} title="Add a new product to inventory"
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
                     <PlusCircle size={16} /> New Product
                 </button>
             </header>
 
             {/* Multi-bill tabs bar */}
             <ModuleGate moduleId="multi_bill_tabs" moduleName="Multiple Bills" paywallVariant="badge">
-                <div className="no-print" style={{ background: 'white', borderBottom: '1px solid var(--surface-border)', padding: '0.5rem 1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center', overflowX: 'auto' }}>
+                <div className="no-print" style={{ background: 'var(--surface-base)', borderBottom: '1px solid var(--surface-border)', padding: '0.5rem 1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center', overflowX: 'auto' }}>
                     {billTabs.map(tab => (
                         <div key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                             <button
                                 onClick={() => setActiveTabId(tab.id)}
                                 style={{
                                     padding: '0.35rem 0.9rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem', border: '1px solid',
-                                    background: tab.id === activeTabId ? 'var(--primary)' : 'white',
+                                    background: tab.id === activeTabId ? 'var(--primary)' : 'var(--surface-raised)',
                                     color: tab.id === activeTabId ? 'white' : 'var(--text-secondary)',
                                     borderColor: tab.id === activeTabId ? 'var(--primary)' : 'var(--surface-border)',
                                     cursor: 'pointer',
+                                    transition: 'all var(--transition-fast)',
                                 }}>
                                 {tab.label} {tab.cart.length > 0 && <span style={{ opacity: 0.7 }}>({tab.cart.length})</span>}
                             </button>
@@ -566,9 +639,10 @@ export default function POSPage() {
                             <button key={cat} onClick={() => setSelectedCategory(cat)}
                                 style={{
                                     padding: '0.4rem 1.1rem', borderRadius: '20px', whiteSpace: 'nowrap', fontWeight: 600,
-                                    background: selectedCategory === cat ? 'var(--primary)' : 'white',
+                                    background: selectedCategory === cat ? 'var(--primary)' : 'var(--surface-base)',
                                     color: selectedCategory === cat ? 'white' : 'var(--text-secondary)',
                                     border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.875rem',
+                                    transition: 'all var(--transition-fast)',
                                 }}>
                                 {cat}
                             </button>
@@ -588,16 +662,16 @@ export default function POSPage() {
                             </button>
                         </div>
                     ) : (
-                        <div className="pos-grid">
+                        <div className="pos-grid themed-scroll">
                             {filteredProducts.map(product => (
                                 <div key={product.id} className="pos-card" onClick={() => addToCart(product)} style={{ position: 'relative' }}>
-                                    <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                                    <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)', color: 'white' }}>
                                         {product.quantity || 0} Box {(product.loosePieces || 0) > 0 ? `+ ${product.loosePieces} ${product.baseUnit}` : ''}
                                     </div>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); openEditProduct(product); }}
                                         title="Edit product details"
-                                        style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2, width: '28px', height: '28px', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'rgba(255,255,255,0.92)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
+                                        style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2, width: '28px', height: '28px', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--glass-shadow)', transition: 'all var(--transition-fast)' }}>
                                         <Pencil size={14} />
                                     </button>
                                     <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', borderRadius: '8px', marginBottom: '0.6rem', overflow: 'hidden' }}>
@@ -615,8 +689,8 @@ export default function POSPage() {
                 </main>
 
                 {/* Cart sidebar */}
-                <aside className="no-print" style={{ width: '420px', background: '#fff', borderLeft: '1px solid var(--surface-border)', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
+                <aside className="no-print" style={{ width: '420px', background: 'var(--surface-base)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderLeft: '1px solid var(--surface-border)', display: 'flex', flexDirection: 'column' }}>
+                    <div className="themed-scroll" style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}><ShoppingCart size={18} /> Bill Summary</h3>
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>#{nextBillNumber}</span>
@@ -624,34 +698,41 @@ export default function POSPage() {
 
                         {/* Customer entry */}
                         <div className="glass-panel" style={{ padding: '0.875rem', marginBottom: '1.25rem' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                                <Phone size={15} color="var(--text-tertiary)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingBottom: '0.6rem', marginBottom: '0.6rem', borderBottom: '1px solid var(--surface-border)' }}>
+                                <Phone size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
                                 <input
                                     type="tel"
                                     placeholder="Customer phone..."
-                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '0.9rem' }}
+                                    spellCheck={false}
+                                    autoCorrect="off"
+                                    className="pos-customer-input"
+                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '0.9rem', color: 'var(--text-primary)' }}
                                     value={customer.phone}
                                     onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
                                     onBlur={handlePhoneLookup}
                                 />
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <User size={15} color="var(--text-tertiary)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <User size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
                                 <input
                                     type="text"
                                     placeholder="Name: Walk-in Customer"
-                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontWeight: 600, fontSize: '0.9rem' }}
+                                    spellCheck={false}
+                                    className="pos-customer-input"
+                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}
                                     value={customer.name}
                                     onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
                                 />
                             </div>
                         </div>
 
-                        {/* Loyalty points display */}
-                        {hasModule('loyalty') && customerLoyalty && customerLoyalty.points > 0 && (
+                        {/* Loyalty points display — hidden entirely when the module is
+                            unentitled or the admin has switched Loyalty off, so a disabled
+                            config can't leave a now-inert redeem control on screen. */}
+                        {loyaltyIsActive && customerLoyalty && customerLoyalty.points > 0 && (
                             <div style={{ background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.2)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <Star size={16} color="#d97706" />
+                                    <Star size={16} color="var(--secondary-dark)" />
                                     <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{customerLoyalty.points} points available</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -660,9 +741,19 @@ export default function POSPage() {
                                         min={0}
                                         max={customerLoyalty.points}
                                         value={redeemPoints}
-                                        onChange={e => setRedeemPoints(Math.min(Number(e.target.value), customerLoyalty.points))}
-                                        style={{ width: '60px', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '0.2rem 0.4rem', fontSize: '0.85rem' }}
+                                        onChange={e => {
+                                            const raw = Math.min(Number(e.target.value), customerLoyalty.points);
+                                            const minRedeem = loyaltyConfig?.minRedeemPoints || 0;
+                                            // Allow 0 (no redemption) or any amount meeting the configured minimum.
+                                            setRedeemPoints(raw > 0 && raw < minRedeem ? 0 : raw);
+                                        }}
+                                        style={{ width: '60px', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '0.2rem 0.4rem', fontSize: '0.85rem', background: 'var(--surface-raised)', color: 'var(--text-primary)' }}
                                     />
+                                    {loyaltyConfig?.minRedeemPoints > 0 && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                                            (min {loyaltyConfig.minRedeemPoints})
+                                        </span>
+                                    )}
                                     <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>pts</span>
                                 </div>
                             </div>
@@ -672,8 +763,8 @@ export default function POSPage() {
                         <AnimatePresence>
                             {cart.map(item => (
                                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} key={item.id} className="pos-cart-item">
-                                    <div style={{ flex: 1 }}>
-                                        <h5 style={{ fontSize: '0.9rem', margin: 0 }}>{item.name}</h5>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <h5 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</h5>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>₹</span>
                                             <input
@@ -683,17 +774,19 @@ export default function POSPage() {
                                                     const newPrice = Number(e.target.value);
                                                     setCart(prev => prev.map(c => c.id === item.id ? { ...c, sellingPrice: newPrice, cartTotal: c.cartQuantity * newPrice } : c));
                                                 }}
-                                                style={{ width: '52px', border: 'none', background: 'transparent', fontSize: '0.78rem', fontWeight: 600, color: 'var(--primary)', padding: 0 }}
+                                                className="pos-price-input"
+                                                title="Click to edit price"
+                                                style={{ width: '52px', border: 'none', borderBottom: '1px dashed var(--surface-border)', background: 'transparent', fontSize: '0.78rem', fontWeight: 600, color: 'var(--primary)', padding: '0 0 1px' }}
                                             />
                                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>/ {item.unit || item.baseUnit}</span>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--bg-color)', borderRadius: '30px', padding: '0.2rem 0.6rem' }}>
-                                        <button onClick={() => updateQty(item.id, -1)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '0.2rem' }}><Minus size={13} /></button>
-                                        <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '0.9rem' }}>{item.cartQuantity}</span>
-                                        <button onClick={() => updateQty(item.id, 1)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '0.2rem' }}><Plus size={13} /></button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '30px', padding: '0.2rem 0.6rem', flexShrink: 0 }}>
+                                        <button onClick={() => updateQty(item.id, -1)} className="pos-qty-btn" aria-label="Decrease quantity"><Minus size={13} /></button>
+                                        <span style={{ fontWeight: 800, minWidth: '20px', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{item.cartQuantity}</span>
+                                        <button onClick={() => updateQty(item.id, 1)} className="pos-qty-btn" aria-label="Increase quantity"><Plus size={13} /></button>
                                     </div>
-                                    <div style={{ width: '72px', textAlign: 'right', fontWeight: 700, fontSize: '0.9rem' }}>₹{Math.round(item.cartTotal)}</div>
+                                    <div style={{ width: '72px', textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', flexShrink: 0 }}>₹{Math.round(item.cartTotal)}</div>
                                 </motion.div>
                             ))}
                         </AnimatePresence>
@@ -716,8 +809,8 @@ export default function POSPage() {
                                 </div>
                             )}
                             {loyaltyDiscount > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#16a34a', marginBottom: '0.25rem' }}>
-                                    <span>Loyalty Discount ({redeemPoints} pts)</span><span>-₹{loyaltyDiscount.toFixed(2)}</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--success)', marginBottom: '0.25rem' }}>
+                                    <span>Loyalty Discount ({effectiveRedeemPoints} pts)</span><span>-₹{loyaltyDiscount.toFixed(2)}</span>
                                 </div>
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800 }}>
@@ -765,9 +858,9 @@ export default function POSPage() {
 
             {/* ── V-Pay Dialog ──────────────────────────────────────────────────────── */}
             {showVPayDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVPayDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <h3 style={{ marginBottom: '1rem' }}>Scan to Pay</h3>
                         <UpiQrCode
@@ -794,13 +887,13 @@ export default function POSPage() {
 
             {/* ── Cash Tender Dialog ────────────────────────────────────────────────── */}
             {showCashTenderDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowCashTenderDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '380px', width: '100%' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '380px', width: '100%', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0 }}>Cash Tender</h3>
-                            <button onClick={() => setShowCashTenderDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowCashTenderDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
 
                         <div style={{ background: 'var(--surface-raised)', borderRadius: '12px', padding: '1rem', marginBottom: '1rem', textAlign: 'center' }}>
@@ -812,18 +905,18 @@ export default function POSPage() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
                             {DENOMINATIONS.map(d => (
                                 <button key={d} onClick={() => setCashTenderAmount(d)}
-                                    style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === d ? 'var(--primary)' : 'white', color: cashTenderAmount === d ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === d ? 'var(--primary)' : 'var(--surface-raised)', color: cashTenderAmount === d ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all var(--transition-fast)' }}>
                                     ₹{d}
                                 </button>
                             ))}
                             <button onClick={() => setCashTenderAmount(grandTotal)}
-                                style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === grandTotal ? 'var(--primary)' : 'white', color: cashTenderAmount === grandTotal ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+                                style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === grandTotal ? 'var(--primary)' : 'var(--surface-raised)', color: cashTenderAmount === grandTotal ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all var(--transition-fast)' }}>
                                 Exact
                             </button>
                         </div>
 
                         <div style={{ marginBottom: '1rem' }}>
-                            <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', display: 'block' }}>Cash Received</label>
+                            <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', display: 'block', color: 'var(--text-secondary)' }}>Cash Received</label>
                             <input
                                 type="number"
                                 value={cashTenderAmount || ''}
@@ -836,8 +929,8 @@ export default function POSPage() {
                         </div>
 
                         {cashTenderAmount > 0 && (
-                            <div style={{ background: cashTenderAmount >= grandTotal ? '#dcfce7' : '#fee2e2', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', textAlign: 'center' }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: cashTenderAmount >= grandTotal ? '#16a34a' : '#dc2626' }}>
+                            <div style={{ background: cashTenderAmount >= grandTotal ? 'hsla(142, 60%, 35%, 0.12)' : 'hsla(0, 84%, 55%, 0.12)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', textAlign: 'center' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: cashTenderAmount >= grandTotal ? 'var(--success)' : 'var(--danger)' }}>
                                     {cashTenderAmount >= grandTotal
                                         ? `Change: ₹${Math.round(cashTenderAmount - grandTotal)}`
                                         : `Short by ₹${Math.round(grandTotal - cashTenderAmount)}`}
@@ -858,13 +951,13 @@ export default function POSPage() {
 
             {/* ── Split Payment Dialog ──────────────────────────────────────────────── */}
             {showSplitDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowSplitDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '400px', width: '100%' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '400px', width: '100%', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0 }}>Split Payment</h3>
-                            <button onClick={() => setShowSplitDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowSplitDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
 
                         <div style={{ background: 'var(--surface-raised)', borderRadius: '12px', padding: '0.75rem 1rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -875,12 +968,12 @@ export default function POSPage() {
                         {splits.map((sp, i) => (
                             <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem', alignItems: 'center' }}>
                                 <select value={sp.method} onChange={e => setSplits(prev => prev.map((s, idx) => idx === i ? { ...s, method: e.target.value } : s))}
-                                    style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem' }}>
+                                    style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', background: 'var(--surface-raised)', color: 'var(--text-primary)' }}>
                                     {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <input type="number" value={sp.amount || ''} onChange={e => setSplits(prev => prev.map((s, idx) => idx === i ? { ...s, amount: Number(e.target.value) } : s))}
                                     placeholder="₹0"
-                                    style={{ width: '90px', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', fontWeight: 700 }} />
+                                    style={{ width: '90px', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', fontWeight: 700, background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
                                 {splits.length > 1 && (
                                     <button onClick={() => setSplits(prev => prev.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
                                         <Trash2 size={16} />
@@ -896,9 +989,9 @@ export default function POSPage() {
                             </button>
                         )}
 
-                        <div style={{ background: splitRemaining === 0 ? '#dcfce7' : splitRemaining < 0 ? '#fee2e2' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.6rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ background: splitRemaining === 0 ? 'hsla(142, 60%, 35%, 0.12)' : splitRemaining < 0 ? 'hsla(0, 84%, 55%, 0.12)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.6rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Remaining</span>
-                            <span style={{ fontWeight: 800, color: splitRemaining === 0 ? '#16a34a' : splitRemaining < 0 ? '#dc2626' : 'var(--text-primary)' }}>
+                            <span style={{ fontWeight: 800, color: splitRemaining === 0 ? 'var(--success)' : splitRemaining < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
                                 ₹{Math.round(Math.abs(splitRemaining))} {splitRemaining < 0 ? '(over)' : ''}
                             </span>
                         </div>
@@ -916,15 +1009,15 @@ export default function POSPage() {
 
             {/* ── V-Checkout Pending Sessions Panel ────────────────────────────────── */}
             {showVCheckoutPanel && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVCheckoutPanel(false)}>
-                    <div style={{ width: '380px', background: 'white', height: '100%', overflowY: 'auto', padding: '1.5rem' }}
+                    <div className="themed-scroll" style={{ width: '380px', background: 'var(--surface-base)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderLeft: '1px solid var(--surface-border)', height: '100%', overflowY: 'auto', padding: '1.5rem', animation: 'slideInRight 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0, display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                 <Smartphone size={20} /> Pending V-Checkouts
                             </h3>
-                            <button onClick={() => setShowVCheckoutPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowVCheckoutPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
                         {vcheckoutSessions.length === 0
                             ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem 0' }}>No pending sessions</p>
@@ -953,9 +1046,9 @@ export default function POSPage() {
 
             {/* ── V-Checkout QR Dialog ─────────────────────────────────────────────── */}
             {showVCheckoutQr && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVCheckoutQr(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <h3 style={{ marginBottom: '0.5rem' }}>Customer Self-Scan</h3>
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
@@ -1166,13 +1259,13 @@ function QuickProductModal({ tenantId, product, defaultName, products, onClose }
     };
 
     const labelStyle: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' };
-    const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', boxSizing: 'border-box' };
+    const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', boxSizing: 'border-box', background: 'var(--surface-raised)', color: 'var(--text-primary)' };
 
     return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+        <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
             onClick={onClose}>
-            <form onSubmit={handleSave} onClick={e => e.stopPropagation()}
-                style={{ background: 'white', borderRadius: '18px', padding: '1.5rem', maxWidth: '460px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <form onSubmit={handleSave} onClick={e => e.stopPropagation()} className="glass-panel themed-scroll"
+                style={{ padding: '1.5rem', maxWidth: '460px', width: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '18px', animation: 'scaleUp 0.22s ease-out' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                     <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {product ? <Pencil size={18} /> : <Plus size={18} />} {product ? 'Edit Product' : 'Add Product'}

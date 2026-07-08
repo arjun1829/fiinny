@@ -65,7 +65,7 @@ export default function DispatchBoardPage() {
                                     <span style={{ fontWeight: 700, color: col.color, fontSize: '0.9rem' }}>{col.label}</span>
                                     <span style={{ background: col.color, color: 'white', borderRadius: '20px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 700 }}>{colOrders.length}</span>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div className="themed-scroll" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: 'calc(6 * 158px)', overflowY: 'auto', paddingRight: '0.4rem' }}>
                                     {colOrders.length === 0 && (
                                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-tertiary)', border: '2px dashed var(--surface-border)', borderRadius: '10px', fontSize: '0.85rem' }}>
                                             No orders
