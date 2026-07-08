@@ -215,7 +215,9 @@ export default function SupplierLedgerDetailPage() {
         .map(d => ({ id: d.id, ...d.data() } as SupplierInvoice))
         .sort((a, b) => sortVal(b.createdAt) - sortVal(a.createdAt));
 
-      const derivedInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedPoInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedInvInvoiced = invList.reduce((s, inv) => s + (Number(inv.netAmount) || 0), 0);
+      const derivedInvoiced = derivedPoInvoiced + derivedInvInvoiced;
       const derivedPaid = pmtsList.reduce((s, p) => s + (Number(p.amount) || 0), 0);
       const derivedOutstanding = derivedInvoiced - derivedPaid;
 
@@ -278,7 +280,7 @@ export default function SupplierLedgerDetailPage() {
     try {
       await deleteDoc(getTenantDoc(db, tenantId, 'supplierInvoices', inv.id));
       setInvToDelete(null);
-      await load();
+      await load(true);
     } catch (e: any) { alert(e.message); }
     finally { setDeletingInv(false); }
   };
@@ -471,9 +473,10 @@ export default function SupplierLedgerDetailPage() {
         <button onClick={() => navigate('/supplier-ledger')} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <ArrowLeft size={15} /> Back
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0 }} /> {supplier.name}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'flex-start', gap: '0.5rem', lineHeight: 1.25 }}>
+            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0, marginTop: '0.15rem' }} />
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{supplier.name}</span>
           </h1>
         </div>
         <button className="btn btn-secondary" onClick={() => setEditMode(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>

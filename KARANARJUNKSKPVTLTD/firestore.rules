@@ -105,6 +105,18 @@ service cloud.firestore {
         allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
       }
 
+      // Loyalty configuration — canonical doc (settings/loyaltyConfig) plus the
+      // legacy doc (settings/loyalty) kept readable/writable during the transition
+      // so existing tenant config isn't stranded. Previously fell through to the
+      // permissive catch-all at the bottom of this file with no tenant/role check;
+      // this scopes it the same as every other tenant settings/business document.
+      match /settings/loyaltyConfig {
+        allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+      }
+      match /settings/loyalty {
+        allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+      }
+
       // Feedback — public create (no auth), tenant members read
       match /feedback/{feedbackId} {
         allow create: if true;
