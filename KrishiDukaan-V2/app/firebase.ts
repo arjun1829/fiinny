@@ -629,6 +629,12 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         averageRating,
         totalReviews,
         sellerDiscounts,
+        // Every underlying doc id (manufacturer canonical + retailer/admin copies)
+        // that merged into this one card. Lets consumers resolve a deep-link to a
+        // secondary id back to this merged product, and find reels linked to ANY
+        // of those ids — a reel is linked to whichever copy the seller owns, not
+        // necessarily the canonical `id`.
+        mergedProductIds: Array.from(new Set(idsByKey.get(key) ?? [p.id])),
       };
     });
   } catch (error) {

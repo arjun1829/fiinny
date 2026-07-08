@@ -35,6 +35,22 @@ export interface SeoReel {
   linkedProductId?: string;
   linkedProductName?: string;
   linkedProductImageUrl?: string;
+  /** Playback-time edits set in the mobile upload editor. */
+  filterId?: string;
+  overlayText?: string;
+  overlayPos?: string; // 'top' | 'center' | 'bottom'
+}
+
+/** Maps mobile filter ids (reel_filters.dart) to equivalent CSS filters. */
+export function reelCssFilter(filterId: string | undefined): string | undefined {
+  switch (filterId) {
+    case "warm":  return "sepia(0.25) saturate(1.2) hue-rotate(-10deg)";
+    case "cool":  return "saturate(1.1) hue-rotate(15deg) brightness(1.03)";
+    case "vivid": return "saturate(1.35) contrast(1.05)";
+    case "mono":  return "grayscale(1)";
+    case "sepia": return "sepia(0.9)";
+    default:      return undefined;
+  }
 }
 
 function str(v: unknown, fallback = ""): string {
@@ -61,6 +77,9 @@ function mapReel(id: string, data: Record<string, unknown>): SeoReel {
     linkedProductImageUrl: data.linkedProductImageUrl
       ? str(data.linkedProductImageUrl)
       : undefined,
+    filterId: data.filterId ? str(data.filterId) : undefined,
+    overlayText: data.overlayText ? str(data.overlayText) : undefined,
+    overlayPos: data.overlayPos ? str(data.overlayPos) : undefined,
   };
 }
 

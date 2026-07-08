@@ -7,6 +7,7 @@ import {
   buildReelSlug,
   extractReelIdFromSlug,
   linkedProductStorePath,
+  reelCssFilter,
 } from "../../lib/seo/reels-server";
 
 const SITE_URL =
@@ -138,16 +139,36 @@ export default async function ReelPage({ params }: PageProps) {
         </nav>
 
         <div className="grid gap-8 md:grid-cols-[minmax(0,380px)_1fr]">
-          {/* Video */}
-          <div className="overflow-hidden rounded-2xl bg-black">
+          {/* Video (with the seller's playback-time filter + text overlay) */}
+          <div className="relative overflow-hidden rounded-2xl bg-black">
             <video
               src={reel.videoUrl}
               poster={reel.thumbnailUrl}
               controls
               playsInline
               preload="metadata"
+              style={
+                reelCssFilter(reel.filterId)
+                  ? { filter: reelCssFilter(reel.filterId) }
+                  : undefined
+              }
               className="aspect-[9/16] w-full object-contain"
             />
+            {reel.overlayText ? (
+              <div
+                className={`pointer-events-none absolute inset-x-6 flex justify-center ${
+                  reel.overlayPos === "top"
+                    ? "top-10"
+                    : reel.overlayPos === "bottom"
+                      ? "bottom-20"
+                      : "top-1/2 -translate-y-1/2"
+                }`}
+              >
+                <p className="max-w-full rounded-xl bg-black/35 px-3 py-1.5 text-center text-lg font-extrabold leading-snug text-white drop-shadow-md">
+                  {reel.overlayText}
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {/* Details */}

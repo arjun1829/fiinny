@@ -4,6 +4,7 @@ import {
   getAllReels,
   buildReelSlug,
   linkedProductStorePath,
+  reelCssFilter,
 } from "../lib/seo/reels-server";
 import ReelsFeedClient, { type FeedReel } from "./ReelsFeedClient";
 
@@ -42,6 +43,9 @@ export default async function ReelsPage() {
     likesCount: r.likesCount,
     productPath: linkedProductStorePath(r),
     linkedProductName: r.linkedProductName,
+    cssFilter: reelCssFilter(r.filterId),
+    overlayText: r.overlayText,
+    overlayPos: r.overlayPos,
   }));
 
   // ── JSON-LD: ItemList of VideoObjects — this is what gets each reel's

@@ -24,6 +24,10 @@ export interface FeedReel {
   likesCount: number;
   productPath: string | null;
   linkedProductName?: string;
+  /** Playback-time edits set in the mobile upload editor. */
+  cssFilter?: string;
+  overlayText?: string;
+  overlayPos?: string; // 'top' | 'center' | 'bottom'
 }
 
 function formatCount(n: number): string {
@@ -79,8 +83,26 @@ function ReelCard({ reel }: { reel: FeedReel }) {
           playsInline
           preload="metadata"
           onClick={togglePlay}
+          style={reel.cssFilter ? { filter: reel.cssFilter } : undefined}
           className="h-full w-full object-cover cursor-pointer"
         />
+
+        {/* Seller's text overlay (set in the mobile upload editor) */}
+        {reel.overlayText ? (
+          <div
+            className={`pointer-events-none absolute inset-x-6 flex justify-center ${
+              reel.overlayPos === "top"
+                ? "top-16"
+                : reel.overlayPos === "bottom"
+                  ? "bottom-44"
+                  : "top-1/2 -translate-y-1/2"
+            }`}
+          >
+            <p className="max-w-full rounded-xl bg-black/35 px-3 py-1.5 text-center text-xl font-extrabold leading-snug text-white drop-shadow-md">
+              {reel.overlayText}
+            </p>
+          </div>
+        ) : null}
 
         {paused && (
           <button

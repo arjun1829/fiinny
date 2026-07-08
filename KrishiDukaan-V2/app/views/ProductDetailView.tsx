@@ -460,37 +460,56 @@ function reelSlug(title: string, id: string): string {
   return base ? `${base}-${id}` : id;
 }
 
-function ProductReelsSection({ productId }: { productId: string }) {
+function ProductReelsSection({ productIds }: { productIds: string[] }) {
   const [reels, setReels] = useState<ProductReelItem[]>([]);
 
+  // Stable dependency key so the effect only reruns when the id set changes.
+  const idsKey = productIds.join(",");
+
   useEffect(() => {
-    if (!productId) { setReels([]); return; }
+    const ids = idsKey ? idsKey.split(",") : [];
+    if (ids.length === 0) { setReels([]); return; }
     let cancelled = false;
     void (async () => {
       try {
-        const snap = await getDocs(
-          query(
-            collection(db, "reels"),
-            where("linkedProductId", "==", productId),
-            limit(50),
+        // A reel is linked to whichever product doc the seller owns — that can be
+        // the canonical id OR any retailer/admin copy id merged into this card, so
+        // we match against all of them. Firestore `in` allows ≤30 values, so chunk.
+        const chunks: string[][] = [];
+        for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+        const snaps = await Promise.all(
+          chunks.map((chunk) =>
+            getDocs(
+              query(
+                collection(db, "reels"),
+                where("linkedProductId", "in", chunk),
+                limit(50),
+              ),
+            ),
           ),
         );
         if (cancelled) return;
-        const items: ProductReelItem[] = snap.docs
-          .map((d) => {
+        const seen = new Set<string>();
+        const items: ProductReelItem[] = [];
+        for (const snap of snaps) {
+          for (const d of snap.docs) {
+            if (seen.has(d.id)) continue;
+            seen.add(d.id);
             const data = d.data() as Record<string, unknown>;
-            return {
+            const videoUrl = String(data.videoUrl ?? "");
+            if (!videoUrl) continue;
+            items.push({
               id: d.id,
-              videoUrl: String(data.videoUrl ?? ""),
+              videoUrl,
               thumbnailUrl: data.thumbnailUrl ? String(data.thumbnailUrl) : undefined,
               title: String(data.title ?? ""),
               shopName: String(data.shopName ?? ""),
               viewsCount: Number(data.viewsCount) || 0,
               createdAtMs:
                 (data.createdAt as { toMillis?: () => number })?.toMillis?.() ?? 0,
-            };
-          })
-          .filter((r) => r.videoUrl);
+            });
+          }
+        }
         // Most-viewed first, capped at 5 — same rule as mobile + SSR page.
         items.sort((a, b) => {
           const byViews = b.viewsCount - a.viewsCount;
@@ -503,7 +522,7 @@ function ProductReelsSection({ productId }: { productId: string }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [productId]);
+  }, [idsKey]);
 
   if (reels.length === 0) return null;
 
@@ -654,7 +673,15 @@ export default function ProductDetailView({
   // If not found — e.g. the user deep-linked to a secondary doc ID that was
   // deduplicated during the merge — fetch it directly from Firestore so we
   // still get the full doc with manufacturerId, manufacturerPhone, etc.
-  const inMemoryProduct = productId ? products.find(p => p.id === productId) : null;
+  // Match on the canonical id first, then on any merged copy id — a reel (or any
+  // deep link) may target a retailer/admin copy that was deduped away during the
+  // merge. Resolving it back to the merged card gives the full seller list, so
+  // there is only ever ONE product page (no "clone" with missing sellers).
+  const inMemoryProduct = productId
+    ? products.find(
+        (p) => p.id === productId || p.mergedProductIds?.includes(productId),
+      )
+    : null;
   const [fetchedProduct, setFetchedProduct] = useState<MarketplaceProduct | null>(null);
   const [productLoading, setProductLoading] = useState(false);
 
@@ -1904,7 +1931,13 @@ export default function ProductDetailView({
       })()}
 
       {/* Product Reels — seller videos linked to this product (mirrors mobile) */}
-      <ProductReelsSection productId={product.id} />
+      <ProductReelsSection
+        productIds={
+          product.mergedProductIds && product.mergedProductIds.length > 0
+            ? product.mergedProductIds
+            : [product.id]
+        }
+      />
 
       {/*
         Similar Products — same-category items from the products already loaded into the
