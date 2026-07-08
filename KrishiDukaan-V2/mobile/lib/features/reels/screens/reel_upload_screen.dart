@@ -623,11 +623,34 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                 const SizedBox(height: 20),
 
                 // ── Tag sellers (collaboration) ───────────────────────────
-                Text('Tag Sellers (Collaboration)',
-                    style: AppTextStyles.heading3),
+                Row(
+                  children: [
+                    Text('Tag Sellers (Collaboration)',
+                        style: AppTextStyles.heading3),
+                    if (_taggedShops.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_taggedShops.length}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  'Tagged sellers will show this reel on their shop profile.',
+                  'Add one or more sellers to collaborate — this reel appears '
+                  'on every tagged seller\'s profile too.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.onSurfaceVariant),
                 ),

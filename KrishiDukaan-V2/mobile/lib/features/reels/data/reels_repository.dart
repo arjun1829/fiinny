@@ -5,7 +5,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/reel_comment_model.dart';
 
-
 class ReelsRepository {
   final _db = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
@@ -21,18 +20,24 @@ class ReelsRepository {
     return snap.docs.map(ReelModel.fromFirestore).toList();
   }
 
-  /// Returns all reels for a shop: their own + any reels they were tagged in.
+  /// Returns all reels for a shop: their own + any reels they were tagged in
+  /// (collaborations).
+  ///
+  /// Both queries are deliberately equality/array-only with **no `orderBy`** —
+  /// combining `arrayContains` (or an equality filter) with `orderBy` on a
+  /// different field forces a composite Firestore index. That index was never
+  /// deployed, so the collaboration (`taggedShopIds`) query was silently
+  /// failing and tagged reels never showed on partners' profiles. We sort the
+  /// merged result in memory instead (a shop has at most a handful of reels).
   Future<List<ReelModel>> fetchSellerReels(String shopOwnerId) async {
     final ownQ = _db
         .collection('reels')
         .where('shopOwnerId', isEqualTo: shopOwnerId)
-        .orderBy('createdAt', descending: true)
         .get();
 
     final taggedQ = _db
         .collection('reels')
         .where('taggedShopIds', arrayContains: shopOwnerId)
-        .orderBy('createdAt', descending: true)
         .get();
 
     final snaps = await Future.wait([ownQ, taggedQ]);
@@ -86,7 +91,11 @@ class ReelsRepository {
   }
 
   Future<void> addComment(
-      String reelId, String userId, String userName, String text) async {
+    String reelId,
+    String userId,
+    String userName,
+    String text,
+  ) async {
     final batch = _db.batch();
     final commentRef = _db
         .collection('reels')
@@ -99,10 +108,9 @@ class ReelsRepository {
       'text': text,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    batch.update(
-      _db.collection('reels').doc(reelId),
-      {'commentsCount': FieldValue.increment(1)},
-    );
+    batch.update(_db.collection('reels').doc(reelId), {
+      'commentsCount': FieldValue.increment(1),
+    });
     await batch.commit();
   }
 
@@ -201,6 +209,89 @@ class ReelsRepository {
     } catch (_) {}
   }
 
+  /// Returns the caller's existing repost doc id for [sourceReel] (following it
+  /// back to the root original), or null if they have not reposted it. Lets the
+  /// UI render repost state and offer a one-tap undo. Index-free (two equality
+  /// filters only).
+  Future<String?> myRepostId({
+    required ReelModel sourceReel,
+    required String shopOwnerId,
+  }) async {
+    final rootOriginalId = sourceReel.originalReelId ?? sourceReel.id;
+    final existing = await _db
+        .collection('reels')
+        .where('shopOwnerId', isEqualTo: shopOwnerId)
+        .where('originalReelId', isEqualTo: rootOriginalId)
+        .limit(1)
+        .get();
+    return existing.docs.isEmpty ? null : existing.docs.first.id;
+  }
+
+  /// Removes a repost the caller made. Only the repost doc is deleted — the
+  /// shared video lives under the original's storage path, so we never touch
+  /// storage here (unlike [deleteReel]).
+  Future<void> undoRepost(String repostId) async {
+    await _db.collection('reels').doc(repostId).delete();
+  }
+
+  /// Reposts [sourceReel] onto the caller's profile and returns the new doc id.
+  Future<String> repostReel({
+    required ReelModel sourceReel,
+    required String shopOwnerId,
+    required String shopName,
+    String? shopProfilePic,
+  }) async {
+    final rootOriginalId = sourceReel.originalReelId ?? sourceReel.id;
+    final rootOriginalOwnerId =
+        sourceReel.originalShopOwnerId ?? sourceReel.shopOwnerId;
+    final rootOriginalOwnerName =
+        sourceReel.originalShopName ?? sourceReel.shopName;
+
+    if (shopOwnerId == sourceReel.shopOwnerId ||
+        shopOwnerId == rootOriginalOwnerId) {
+      throw StateError('You cannot repost your own reel.');
+    }
+
+    final existing = await _db
+        .collection('reels')
+        .where('shopOwnerId', isEqualTo: shopOwnerId)
+        .where('originalReelId', isEqualTo: rootOriginalId)
+        .limit(1)
+        .get();
+    if (existing.docs.isNotEmpty) {
+      throw StateError('You already reposted this reel.');
+    }
+
+    final ref = await _db.collection('reels').add({
+      'shopOwnerId': shopOwnerId,
+      'shopName': shopName,
+      'shopProfilePic': shopProfilePic,
+      'videoUrl': sourceReel.videoUrl,
+      'thumbnailUrl': sourceReel.thumbnailUrl,
+      'title': sourceReel.title,
+      'caption': sourceReel.caption,
+      'linkedProductId': sourceReel.linkedProductId,
+      'linkedProductName': sourceReel.linkedProductName,
+      'linkedProductImageUrl': sourceReel.linkedProductImageUrl,
+      'taggedShops': const [],
+      'taggedShopIds': const [],
+      if (sourceReel.filterId != null) 'filterId': sourceReel.filterId,
+      if (sourceReel.overlayText != null &&
+          sourceReel.overlayText!.isNotEmpty) ...{
+        'overlayText': sourceReel.overlayText,
+        'overlayPos': sourceReel.overlayPos ?? 'center',
+      },
+      'originalReelId': rootOriginalId,
+      'originalShopOwnerId': rootOriginalOwnerId,
+      'originalShopName': rootOriginalOwnerName,
+      'likesCount': 0,
+      'commentsCount': 0,
+      'viewsCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  }
+
   // ── Username ──────────────────────────────────────────────────────────────
 
   /// Returns true if [username] is available for [myPhone] to claim.
@@ -241,7 +332,8 @@ class ReelsRepository {
     final q = query.toLowerCase().trim();
     if (q.isEmpty) return [];
 
-    final end = q.substring(0, q.length - 1) +
+    final end =
+        q.substring(0, q.length - 1) +
         String.fromCharCode(q.codeUnitAt(q.length - 1) + 1);
 
     final byHandle = _db
@@ -297,8 +389,10 @@ class ReelsRepository {
     String? overlayPos,
     void Function(double progress)? onProgress,
   }) async {
-    assert(videoFile != null || videoBytes != null,
-        'Provide either videoFile (mobile) or videoBytes (web)');
+    assert(
+      videoFile != null || videoBytes != null,
+      'Provide either videoFile (mobile) or videoBytes (web)',
+    );
 
     final docRef = _db.collection('reels').doc();
 

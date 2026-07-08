@@ -73,8 +73,9 @@ class ShopProfileScreen extends ConsumerWidget {
                             children: [
                               Text(
                                 user?.businessName ?? user?.name ?? shopPhone,
-                                style: AppTextStyles.heading2
-                                    .copyWith(color: Colors.white),
+                                style: AppTextStyles.heading2.copyWith(
+                                  color: Colors.white,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -89,14 +90,18 @@ class ShopProfileScreen extends ConsumerWidget {
                               if ((user?.city ?? '').isNotEmpty)
                                 Row(
                                   children: [
-                                    const Icon(Icons.location_on,
-                                        size: 12, color: Colors.white70),
+                                    const Icon(
+                                      Icons.location_on,
+                                      size: 12,
+                                      color: Colors.white70,
+                                    ),
                                     const SizedBox(width: 3),
                                     Flexible(
                                       child: Text(
                                         [user?.city, user?.state]
-                                            .where((s) =>
-                                                s != null && s.isNotEmpty)
+                                            .where(
+                                              (s) => s != null && s.isNotEmpty,
+                                            )
                                             .join(', '),
                                         style: const TextStyle(
                                           color: Colors.white70,
@@ -131,8 +136,7 @@ class ShopProfileScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Container(
               color: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
               child: Column(
                 children: [
                   Row(
@@ -201,8 +205,11 @@ class ShopProfileScreen extends ConsumerWidget {
             ),
             error: (_, _) => const SliverToBoxAdapter(
               child: Center(
-                  child: Text('Could not load reels.',
-                      style: TextStyle(color: Colors.black45))),
+                child: Text(
+                  'Could not load reels.',
+                  style: TextStyle(color: Colors.black45),
+                ),
+              ),
             ),
             data: (reels) {
               if (reels.isEmpty) {
@@ -212,15 +219,19 @@ class ShopProfileScreen extends ConsumerWidget {
                     child: Center(
                       child: Column(
                         children: [
-                          const Icon(Icons.videocam_off_outlined,
-                              size: 48, color: Colors.black26),
+                          const Icon(
+                            Icons.videocam_off_outlined,
+                            size: 48,
+                            color: Colors.black26,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             isOwnShop
                                 ? 'You haven\'t posted any reels yet.'
                                 : 'No reels yet.',
-                            style: AppTextStyles.body
-                                .copyWith(color: Colors.black45),
+                            style: AppTextStyles.body.copyWith(
+                              color: Colors.black45,
+                            ),
                           ),
                           if (isOwnShop) ...[
                             const SizedBox(height: 12),
@@ -239,28 +250,24 @@ class ShopProfileScreen extends ConsumerWidget {
               return SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 sliver: SliverGrid(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final reel = reels[index];
-                      return _ReelGridCard(
-                        reel: reel,
-                        isOwner: isOwnShop &&
-                            reel.shopOwnerId == shopPhone,
-                        shopPhone: shopPhone,
-                        currentUserId: currentUser?.phone,
-                        currentUserName: currentUser?.businessName ??
-                            currentUser?.name ??
-                            '',
-                        allReels: reels,
-                        startIndex: index,
-                        onDeleted: () => ref.invalidate(sellerReelsProvider(shopPhone)),
-                        onEdited: () => ref.invalidate(sellerReelsProvider(shopPhone)),
-                      );
-                    },
-                    childCount: reels.length,
-                  ),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final reel = reels[index];
+                    return _ReelGridCard(
+                      reel: reel,
+                      isOwner: isOwnShop && reel.shopOwnerId == shopPhone,
+                      shopPhone: shopPhone,
+                      currentUserId: currentUser?.phone,
+                      currentUserName:
+                          currentUser?.businessName ?? currentUser?.name ?? '',
+                      allReels: reels,
+                      startIndex: index,
+                      onDeleted: () =>
+                          ref.invalidate(sellerReelsProvider(shopPhone)),
+                      onEdited: () =>
+                          ref.invalidate(sellerReelsProvider(shopPhone)),
+                    );
+                  }, childCount: reels.length),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
                     crossAxisSpacing: 4,
                     mainAxisSpacing: 4,
@@ -290,15 +297,17 @@ class ShopProfileScreen extends ConsumerWidget {
               ),
               error: (_, _) => const SizedBox.shrink(),
               data: (listings) {
-                final active =
-                    listings.where((l) => l.isActive).toList();
+                final active = listings.where((l) => l.isActive).toList();
                 if (active.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.all(24),
                     child: Center(
-                      child: Text('No products listed.',
-                          style: AppTextStyles.body
-                              .copyWith(color: Colors.black45)),
+                      child: Text(
+                        'No products listed.',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.black45,
+                        ),
+                      ),
                     ),
                   );
                 }
@@ -309,8 +318,7 @@ class ShopProfileScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     itemCount: active.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (_, i) =>
-                        _ProductTile(listing: active[i]),
+                    itemBuilder: (_, i) => _ProductTile(listing: active[i]),
                   ),
                 );
               },
@@ -341,12 +349,17 @@ class _StatColumn extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(valueAsync,
-            style: AppTextStyles.heading2.copyWith(color: AppColors.primary)),
+        Text(
+          valueAsync,
+          style: AppTextStyles.heading2.copyWith(color: AppColors.primary),
+        ),
         const SizedBox(height: 2),
-        Text(label,
-            style:
-                AppTextStyles.caption.copyWith(color: AppColors.onSurfaceVariant)),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }
@@ -357,8 +370,7 @@ class _StatColumn extends StatelessWidget {
 class _FollowButton extends ConsumerStatefulWidget {
   final String shopPhone;
   final String currentUserId;
-  const _FollowButton(
-      {required this.shopPhone, required this.currentUserId});
+  const _FollowButton({required this.shopPhone, required this.currentUserId});
 
   @override
   ConsumerState<_FollowButton> createState() => _FollowButtonState();
@@ -378,19 +390,28 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
     final v = await ref
         .read(reelsRepoProvider)
         .isFollowing(widget.currentUserId, widget.shopPhone);
-    if (mounted) setState(() { _isFollowing = v; _loading = false; });
+    if (mounted)
+      setState(() {
+        _isFollowing = v;
+        _loading = false;
+      });
   }
 
   Future<void> _toggle() async {
     final was = _isFollowing ?? false;
-    setState(() { _isFollowing = !was; });
+    setState(() {
+      _isFollowing = !was;
+    });
     try {
       await ref
           .read(reelsRepoProvider)
           .toggleFollow(widget.currentUserId, widget.shopPhone);
       ref.invalidate(followerCountProvider(widget.shopPhone));
     } catch (_) {
-      if (mounted) setState(() { _isFollowing = was; });
+      if (mounted)
+        setState(() {
+          _isFollowing = was;
+        });
     }
   }
 
@@ -398,9 +419,9 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const SizedBox(
-          height: 36,
-          child: Center(
-              child: CircularProgressIndicator(strokeWidth: 2)));
+        height: 36,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
     }
     final following = _isFollowing ?? false;
     return SizedBox(
@@ -414,7 +435,8 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
                 foregroundColor: AppColors.primary,
                 side: const BorderSide(color: AppColors.primary),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             )
           : FilledButton.icon(
@@ -424,7 +446,8 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
     );
@@ -486,8 +509,11 @@ class _ReelGridCard extends StatelessWidget {
           children: [
             // Play icon
             const Center(
-              child: Icon(Icons.play_circle_outline_rounded,
-                  color: Colors.white54, size: 36),
+              child: Icon(
+                Icons.play_circle_outline_rounded,
+                color: Colors.white54,
+                size: 36,
+              ),
             ),
             // Bottom info
             Positioned(
@@ -502,28 +528,43 @@ class _ReelGridCard extends StatelessWidget {
                     Text(
                       reel.caption,
                       style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                          shadows: [Shadow(color: Colors.black54, blurRadius: 4)]),
+                        color: Colors.white70,
+                        fontSize: 10,
+                        shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      const Icon(Icons.favorite_rounded,
-                          color: Colors.white60, size: 10),
+                      const Icon(
+                        Icons.favorite_rounded,
+                        color: Colors.white60,
+                        size: 10,
+                      ),
                       const SizedBox(width: 2),
-                      Text('${reel.likesCount}',
-                          style: const TextStyle(
-                              color: Colors.white60, fontSize: 10)),
+                      Text(
+                        '${reel.likesCount}',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10,
+                        ),
+                      ),
                       const SizedBox(width: 6),
-                      const Icon(Icons.play_arrow_rounded,
-                          color: Colors.white60, size: 10),
+                      const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white60,
+                        size: 10,
+                      ),
                       const SizedBox(width: 2),
-                      Text('${reel.viewsCount}',
-                          style: const TextStyle(
-                              color: Colors.white60, fontSize: 10)),
+                      Text(
+                        '${reel.viewsCount}',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -531,14 +572,15 @@ class _ReelGridCard extends StatelessWidget {
             ),
             // Collab badge — shown when reel was posted by another seller
             // who tagged this shop, or when this reel has tagged partners
-            if (reel.shopOwnerId != shopPhone ||
-                reel.taggedShopIds.isNotEmpty)
+            if (reel.shopOwnerId != shopPhone || reel.taggedShopIds.isNotEmpty)
               Positioned(
                 top: 4,
                 left: 4,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.deepPurple.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(6),
@@ -546,14 +588,20 @@ class _ReelGridCard extends StatelessWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.people_alt_rounded,
-                          color: Colors.white, size: 9),
+                      Icon(
+                        Icons.people_alt_rounded,
+                        color: Colors.white,
+                        size: 9,
+                      ),
                       SizedBox(width: 3),
-                      Text('collab',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600)),
+                      Text(
+                        'collab',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -583,11 +631,18 @@ class _ReelMenu extends ConsumerWidget {
   final VoidCallback onDeleted;
   final VoidCallback onEdited;
 
-  const _ReelMenu(
-      {required this.reel, required this.onDeleted, required this.onEdited});
+  const _ReelMenu({
+    required this.reel,
+    required this.onDeleted,
+    required this.onEdited,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A repost has no video of its own — offer "Remove Repost" instead of a
+    // "Delete" that would imply wiping the original's video. Reposts also
+    // aren't editable (title/product belong to the original).
+    final isRepost = reel.originalReelId != null;
     return GestureDetector(
       onTapDown: (details) async {
         final result = await showMenu<String>(
@@ -598,11 +653,15 @@ class _ReelMenu extends ConsumerWidget {
             details.globalPosition.dx,
             details.globalPosition.dy,
           ),
-          items: const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
+          items: [
+            if (!isRepost)
+              const PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(
               value: 'delete',
-              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              child: Text(
+                isRepost ? 'Remove Repost' : 'Delete',
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );
@@ -610,7 +669,7 @@ class _ReelMenu extends ConsumerWidget {
         if (result == 'edit') {
           _showEditSheet(context, ref);
         } else if (result == 'delete') {
-          _confirmDelete(context, ref);
+          _confirmDelete(context, ref, isRepost);
         }
       },
       child: Container(
@@ -630,21 +689,22 @@ class _ReelMenu extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => ProviderScope(
-        child: _EditReelSheet(
-          reel: reel,
-          onSaved: onEdited,
-        ),
+        child: _EditReelSheet(reel: reel, onSaved: onEdited),
       ),
     );
   }
 
-  void _confirmDelete(BuildContext context, WidgetRef ref) {
+  void _confirmDelete(BuildContext context, WidgetRef ref, bool isRepost) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete Reel?'),
-        content: const Text(
-            'This reel and its video will be permanently removed.'),
+        title: Text(isRepost ? 'Remove Repost?' : 'Delete Reel?'),
+        content: Text(
+          isRepost
+              ? 'This will remove the reel from your profile. The original '
+                    'post stays untouched.'
+              : 'This reel and its video will be permanently removed.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -655,18 +715,23 @@ class _ReelMenu extends ConsumerWidget {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await ref.read(reelsRepoProvider).deleteReel(reel.id);
+                final repo = ref.read(reelsRepoProvider);
+                if (isRepost) {
+                  await repo.undoRepost(reel.id);
+                } else {
+                  await repo.deleteReel(reel.id);
+                }
                 ref.invalidate(reelsFeedProvider);
                 onDeleted();
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Delete failed: $e')),
+                    SnackBar(content: Text('Remove failed: $e')),
                   );
                 }
               }
             },
-            child: const Text('Delete'),
+            child: Text(isRepost ? 'Remove' : 'Delete'),
           ),
         ],
       ),
@@ -707,30 +772,37 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
   }
 
   Future<void> _save() async {
-    setState(() { _saving = true; });
+    setState(() {
+      _saving = true;
+    });
     try {
-      await ref.read(reelsRepoProvider).updateReel(
+      await ref
+          .read(reelsRepoProvider)
+          .updateReel(
             widget.reel.id,
             title: _titleCtrl.text.trim(),
             caption: _captionCtrl.text.trim(),
-            linkedProductId: _selectedProduct?.catalogId ??
-                widget.reel.linkedProductId,
-            linkedProductName: _selectedProduct?.productName ??
-                widget.reel.linkedProductName,
-            linkedProductImageUrl: _selectedProduct?.imageUrl ??
-                widget.reel.linkedProductImageUrl,
+            linkedProductId:
+                _selectedProduct?.catalogId ?? widget.reel.linkedProductId,
+            linkedProductName:
+                _selectedProduct?.productName ?? widget.reel.linkedProductName,
+            linkedProductImageUrl:
+                _selectedProduct?.imageUrl ?? widget.reel.linkedProductImageUrl,
           );
       ref.invalidate(reelsFeedProvider);
       widget.onSaved();
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     } finally {
-      if (mounted) setState(() { _saving = false; });
+      if (mounted)
+        setState(() {
+          _saving = false;
+        });
     }
   }
 
@@ -777,7 +849,8 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
             decoration: InputDecoration(
               labelText: 'Title',
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: AppColors.background,
             ),
@@ -790,7 +863,8 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
             decoration: InputDecoration(
               labelText: 'Description',
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: AppColors.background,
             ),
@@ -799,8 +873,7 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
           Text('Linked Product', style: AppTextStyles.bodyMedium),
           const SizedBox(height: 6),
           listingsAsync.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(child: CircularProgressIndicator()),
             error: (_, _) => const SizedBox.shrink(),
             data: (listings) {
               final active = listings.where((l) => l.isActive).toList();
@@ -823,18 +896,26 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
                     items: [
                       DropdownMenuItem<ListingModel?>(
                         value: null,
-                        child: Text('None',
-                            style: AppTextStyles.body
-                                .copyWith(color: Colors.black45)),
+                        child: Text(
+                          'None',
+                          style: AppTextStyles.body.copyWith(
+                            color: Colors.black45,
+                          ),
+                        ),
                       ),
-                      ...active.map((l) => DropdownMenuItem<ListingModel?>(
-                            value: l,
-                            child: Text(l.productName ?? l.id,
-                                overflow: TextOverflow.ellipsis),
-                          )),
+                      ...active.map(
+                        (l) => DropdownMenuItem<ListingModel?>(
+                          value: l,
+                          child: Text(
+                            l.productName ?? l.id,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                     ],
-                    onChanged: (v) =>
-                        setState(() { _selectedProduct = v; }),
+                    onChanged: (v) => setState(() {
+                      _selectedProduct = v;
+                    }),
                   ),
                 ),
               );
@@ -849,14 +930,17 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
                 backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: _saving
                   ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Text('Save Changes'),
             ),
@@ -888,8 +972,9 @@ class _ProductTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(11)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(11),
+              ),
               child: listing.imageUrl != null
                   ? Image.network(
                       listing.imageUrl!,
@@ -907,16 +992,16 @@ class _ProductTile extends StatelessWidget {
                 children: [
                   Text(
                     listing.productName ?? 'Product',
-                    style: AppTextStyles.caption
-                        .copyWith(fontWeight: FontWeight.w600),
+                    style: AppTextStyles.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '₹${listing.effectivePrice.toStringAsFixed(0)}',
-                    style: AppTextStyles.price
-                        .copyWith(fontSize: 13),
+                    style: AppTextStyles.price.copyWith(fontSize: 13),
                   ),
                 ],
               ),
@@ -928,12 +1013,11 @@ class _ProductTile extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-        height: 100,
-        width: 130,
-        color: AppColors.primaryContainer.withValues(alpha: 0.3),
-        child: const Icon(Icons.image_outlined,
-            color: AppColors.primary, size: 32),
-      );
+    height: 100,
+    width: 130,
+    color: AppColors.primaryContainer.withValues(alpha: 0.3),
+    child: const Icon(Icons.image_outlined, color: AppColors.primary, size: 32),
+  );
 }
 
 // ── Seller reels feed (fullscreen, from grid tap) ─────────────────────────────
@@ -952,7 +1036,8 @@ class StandaloneReelsFeed extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<StandaloneReelsFeed> createState() => _StandaloneReelsFeedState();
+  ConsumerState<StandaloneReelsFeed> createState() =>
+      _StandaloneReelsFeedState();
 }
 
 class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
@@ -976,7 +1061,9 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    for (final c in _controllers.values) { c.dispose(); }
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
     _pageController.dispose();
     super.dispose();
   }
@@ -984,7 +1071,9 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
-      for (final c in _controllers.values) { c.pause(); }
+      for (final c in _controllers.values) {
+        c.pause();
+      }
     } else {
       final id = widget.reels[_currentPage].id;
       _controllers[id]?.play();
@@ -1011,12 +1100,10 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
     _controllers[widget.reels[index].id]?.play();
     _ensureController(index + 1);
     if (index > 0) _ensureController(index - 1);
-    final toDispose = _controllers.keys
-        .where((id) {
-          final i = widget.reels.indexWhere((r) => r.id == id);
-          return i != -1 && (i - index).abs() > 2;
-        })
-        .toList();
+    final toDispose = _controllers.keys.where((id) {
+      final i = widget.reels.indexWhere((r) => r.id == id);
+      return i != -1 && (i - index).abs() > 2;
+    }).toList();
     for (final id in toDispose) {
       _controllers[id]?.dispose();
       _controllers.remove(id);
@@ -1091,6 +1178,8 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
   late int _likesCount;
   late int _commentsCount;
   bool _showPause = false;
+  bool _reposting = false;
+  String? _repostId;
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
 
@@ -1100,18 +1189,29 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
     _likesCount = widget.reel.likesCount;
     _commentsCount = widget.reel.commentsCount;
     _likeAnim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300));
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
     _likeScale = TweenSequence([
       TweenSequenceItem(
-          tween: Tween<double>(begin: 1.0, end: 1.4)
-              .chain(CurveTween(curve: Curves.easeOut)),
-          weight: 50),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.4,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 50,
+      ),
       TweenSequenceItem(
-          tween: Tween<double>(begin: 1.4, end: 1.0)
-              .chain(CurveTween(curve: Curves.elasticIn)),
-          weight: 50),
+        tween: Tween<double>(
+          begin: 1.4,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.elasticIn)),
+        weight: 50,
+      ),
     ]).animate(_likeAnim);
-    if (widget.currentUserId != null) _loadLike();
+    if (widget.currentUserId != null) {
+      _loadLike();
+      if (widget.currentUserId != widget.reel.shopOwnerId) _loadRepostState();
+    }
   }
 
   @override
@@ -1124,24 +1224,45 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
     final v = await ref
         .read(reelsRepoProvider)
         .isLikedBy(widget.reel.id, widget.currentUserId!);
-    if (mounted) setState(() { _isLiked = v; });
+    if (mounted)
+      setState(() {
+        _isLiked = v;
+      });
+  }
+
+  Future<void> _loadRepostState() async {
+    final id = await ref
+        .read(reelsRepoProvider)
+        .myRepostId(
+          sourceReel: widget.reel,
+          shopOwnerId: widget.currentUserId!,
+        );
+    if (mounted) setState(() => _repostId = id);
   }
 
   Future<void> _toggleLike() async {
     if (widget.currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Login to like')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Login to like')));
       return;
     }
     final was = _isLiked ?? false;
-    setState(() { _isLiked = !was; _likesCount += was ? -1 : 1; });
+    setState(() {
+      _isLiked = !was;
+      _likesCount += was ? -1 : 1;
+    });
     if (!was) _likeAnim.forward(from: 0);
     try {
       await ref
           .read(reelsRepoProvider)
           .toggleLike(widget.reel.id, widget.currentUserId!);
     } catch (_) {
-      if (mounted) setState(() { _isLiked = was; _likesCount += was ? 1 : -1; });
+      if (mounted)
+        setState(() {
+          _isLiked = was;
+          _likesCount += was ? 1 : -1;
+        });
     }
   }
 
@@ -1158,15 +1279,82 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
       }
     });
     if (_showPause) {
-      Future.delayed(
-          const Duration(milliseconds: 1200),
-          () { if (mounted) setState(() { _showPause = false; }); });
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted)
+          setState(() {
+            _showPause = false;
+          });
+      });
+    }
+  }
+
+  /// One-tap repost / un-repost (see the feed screen for rationale).
+  Future<void> _toggleRepost() async {
+    final user = ref.read(currentUserProvider).value;
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Login to repost reels')));
+      return;
+    }
+    if (!user.canAccessDashboard) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'An active seller subscription is required to repost reels.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (_reposting) return;
+    setState(() {
+      _reposting = true;
+    });
+    final repo = ref.read(reelsRepoProvider);
+    final wasReposted = _repostId != null;
+    try {
+      if (wasReposted) {
+        await repo.undoRepost(_repostId!);
+        if (mounted) setState(() => _repostId = null);
+      } else {
+        final id = await repo.repostReel(
+          sourceReel: widget.reel,
+          shopOwnerId: user.phone,
+          shopName: user.businessName ?? user.name,
+          shopProfilePic: null,
+        );
+        if (mounted) setState(() => _repostId = id);
+      }
+      ref.invalidate(reelsFeedProvider);
+      ref.invalidate(sellerReelsProvider(user.phone));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasReposted
+                ? 'Removed from your AgriReels profile.'
+                : 'Reposted to your AgriReels profile.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'.replaceFirst('Bad state: ', ''))),
+      );
+    } finally {
+      if (mounted)
+        setState(() {
+          _reposting = false;
+        });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
+    final isOwnReel = widget.currentUserId == widget.reel.shopOwnerId;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1180,8 +1368,11 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                     builder: (_, value, _) {
                       if (!value.isInitialized) {
                         return const Center(
-                            child: CircularProgressIndicator(
-                                color: Colors.white38, strokeWidth: 2));
+                          child: CircularProgressIndicator(
+                            color: Colors.white38,
+                            strokeWidth: 2,
+                          ),
+                        );
                       }
                       return applyReelFilter(
                         widget.reel.filterId,
@@ -1200,7 +1391,10 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                   )
                 : const Center(
                     child: CircularProgressIndicator(
-                        color: Colors.white38, strokeWidth: 2)),
+                      color: Colors.white38,
+                      strokeWidth: 2,
+                    ),
+                  ),
           ),
         ),
         if (widget.reel.overlayText != null)
@@ -1213,14 +1407,21 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
-                  color: Colors.black45, shape: BoxShape.circle),
-              child: const Icon(Icons.pause_rounded,
-                  color: Colors.white, size: 48),
+                color: Colors.black45,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.pause_rounded,
+                color: Colors.white,
+                size: 48,
+              ),
             ),
           ),
         // Gradients
         Positioned(
-          bottom: 0, left: 0, right: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
           child: Container(
             height: 260,
             decoration: const BoxDecoration(
@@ -1255,9 +1456,13 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                           size: 30,
                         ),
                         const SizedBox(height: 4),
-                        Text('$_likesCount',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 12)),
+                        Text(
+                          '$_likesCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1267,22 +1472,71 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                   onTap: () => _openComments(context),
                   child: Column(
                     children: [
-                      const Icon(Icons.chat_bubble_outline_rounded,
-                          color: Colors.white, size: 30),
+                      const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white,
+                        size: 30,
+                      ),
                       const SizedBox(height: 4),
-                      Text('$_commentsCount',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 12)),
+                      Text(
+                        '$_commentsCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                if (!isOwnReel) ...[
+                  const SizedBox(height: 20),
+                  _reposting
+                      ? const SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: _toggleRepost,
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.repeat_rounded,
+                                color: _repostId != null
+                                    ? const Color(0xFF34C759)
+                                    : Colors.white,
+                                size: 30,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _repostId != null ? 'Reposted' : 'Repost',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ],
               ],
             ),
           ),
         ),
         // Bottom info
         Positioned(
-          left: 14, right: 80, bottom: 0,
+          left: 14,
+          right: 80,
+          bottom: 0,
           child: SafeArea(
             top: false,
             child: Padding(
@@ -1292,27 +1546,44 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   GestureDetector(
-                    onTap: () => context.push('/shop/${widget.reel.shopOwnerId}'),
+                    onTap: () =>
+                        context.push('/shop/${widget.reel.shopOwnerId}'),
                     child: Text(
                       '@${widget.reel.shopName}',
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
+                  if (widget.reel.originalShopName != null &&
+                      widget.reel.originalShopName!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Reposted from @${widget.reel.originalShopName}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   if (widget.reel.caption.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(widget.reel.caption,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 13),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      widget.reel.caption,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                   if (widget.reel.linkedProductId != null) ...[
                     const SizedBox(height: 10),
-                    _ProductBadge(reel: widget.reel,
-                        currentUserId: widget.currentUserId),
+                    _ProductBadge(
+                      reel: widget.reel,
+                      currentUserId: widget.currentUserId,
+                    ),
                   ],
                 ],
               ),
@@ -1334,7 +1605,10 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
           currentUserId: widget.currentUserId,
           currentUserName: widget.currentUserName,
           onAdded: () {
-            if (mounted) setState(() { _commentsCount++; });
+            if (mounted)
+              setState(() {
+                _commentsCount++;
+              });
           },
         ),
       ),
@@ -1354,14 +1628,16 @@ class _ProductBadge extends StatelessWidget {
         if (currentUserId == null) {
           // Carry the product as the post-login destination so the buyer
           // lands right back on it after signing in (or onboarding).
-          final dest =
-              Uri.encodeComponent('/product/${reel.linkedProductId}');
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Login to view and buy products'),
-            action: SnackBarAction(
+          final dest = Uri.encodeComponent('/product/${reel.linkedProductId}');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Login to view and buy products'),
+              action: SnackBarAction(
                 label: 'Login',
-                onPressed: () => context.push('/login?redirect=$dest')),
-          ));
+                onPressed: () => context.push('/login?redirect=$dest'),
+              ),
+            ),
+          );
           return;
         }
         context.push('/product/${reel.linkedProductId}');
@@ -1384,29 +1660,38 @@ class _ProductBadge extends StatelessWidget {
                   width: 28,
                   height: 28,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(Icons.shopping_bag_outlined,
-                          color: Colors.white, size: 18),
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.shopping_bag_outlined,
+                    color: Colors.white,
+                    size: 18,
+                  ),
                 ),
               )
             else
-              const Icon(Icons.shopping_bag_outlined,
-                  color: Colors.white, size: 18),
+              const Icon(
+                Icons.shopping_bag_outlined,
+                color: Colors.white,
+                size: 18,
+              ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 reel.linkedProductName ?? 'View Product',
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right_rounded,
-                color: Colors.white70, size: 16),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white70,
+              size: 16,
+            ),
           ],
         ),
       ),
@@ -1436,20 +1721,33 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
   bool _busy = false;
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _send() async {
     if (_ctrl.text.trim().isEmpty) return;
     if (widget.currentUserId == null) return;
-    setState(() { _busy = true; });
+    setState(() {
+      _busy = true;
+    });
     try {
-      await ref.read(reelsRepoProvider).addComment(
-          widget.reelId, widget.currentUserId!,
-          widget.currentUserName, _ctrl.text.trim());
+      await ref
+          .read(reelsRepoProvider)
+          .addComment(
+            widget.reelId,
+            widget.currentUserId!,
+            widget.currentUserName,
+            _ctrl.text.trim(),
+          );
       _ctrl.clear();
       widget.onAdded();
     } finally {
-      if (mounted) setState(() { _busy = false; });
+      if (mounted)
+        setState(() {
+          _busy = false;
+        });
     }
   }
 
@@ -1466,10 +1764,12 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
         children: [
           Container(
             margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2)),
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
           Text('Comments', style: AppTextStyles.heading3),
           const Divider(height: 12),
@@ -1479,8 +1779,11 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
               error: (_, _) => const Center(child: Text('Could not load.')),
               data: (comments) => comments.isEmpty
                   ? const Center(
-                      child: Text('No comments yet.',
-                          style: TextStyle(color: Colors.black45)))
+                      child: Text(
+                        'No comments yet.',
+                        style: TextStyle(color: Colors.black45),
+                      ),
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: comments.length,
@@ -1499,7 +1802,9 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
                                       ? c.userName[0].toUpperCase()
                                       : '?',
                                   style: const TextStyle(
-                                      color: AppColors.primary, fontSize: 12),
+                                    color: AppColors.primary,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1507,11 +1812,16 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(c.userName,
-                                        style: AppTextStyles.caption.copyWith(
-                                            fontWeight: FontWeight.w700)),
-                                    Text(c.text,
-                                        style: AppTextStyles.bodySmall),
+                                    Text(
+                                      c.userName,
+                                      style: AppTextStyles.caption.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      c.text,
+                                      style: AppTextStyles.bodySmall,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1524,7 +1834,9 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
           ),
           Padding(
             padding: EdgeInsets.only(
-              left: 16, right: 8, top: 8,
+              left: 16,
+              right: 8,
+              top: 8,
               bottom: MediaQuery.of(context).viewInsets.bottom + 12,
             ),
             child: Row(
@@ -1538,9 +1850,12 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
                           ? 'Login to comment...'
                           : 'Add a comment...',
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24)),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       isDense: true,
                     ),
                     onSubmitted: (_) => _send(),
@@ -1549,9 +1864,15 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
                 IconButton(
                   onPressed: _busy ? null : _send,
                   icon: _busy
-                      ? const SizedBox(width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.send_rounded, color: AppColors.primary),
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(
+                          Icons.send_rounded,
+                          color: AppColors.primary,
+                        ),
                 ),
               ],
             ),
