@@ -10,6 +10,7 @@ import { filterStoresByQuery, storeAddressToDisplayString, StoreWithDistance } f
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import { ReviewSection } from '../../components/shared/ReviewSection';
+import { usePlacesInput } from '../lib/usePlacesInput';
 
 interface StoreLocatorViewProps {
   onBack: () => void;
@@ -57,12 +58,24 @@ export default function StoreLocatorView({
   const [storeSearch, setStoreSearch] = useState('');
   const [mobileMapOverlay, setMobileMapOverlay] = useState(false);
   const [detailStore, setDetailStore] = useState<any | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const locationInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+  });
+
+  // ── Places autocomplete on the desktop location input ──────────────────────
+  // Reuses the existing usePlacesInput hook (same provider as the rest of the app).
+  // When the user selects a suggestion: update the parent location + coords,
+  // and pan the map to the chosen place.
+  usePlacesInput(locationInputRef, (place) => {
+    const coords = { lat: place.lat, lng: place.lng };
+    onLocationChange?.(place.address || place.name, coords);
+    if (map) { map.panTo(coords); map.setZoom(13); }
   });
 
   // stripMapRef keeps the strip/desktop map instance so controls work after the overlay unmounts
@@ -181,6 +194,24 @@ export default function StoreLocatorView({
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+  };
+
+  const handleShare = async () => {
+    const params = new URLSearchParams();
+    params.set('view', 'map');
+    params.set('lat', userCoords.lat.toFixed(6));
+    params.set('lng', userCoords.lng.toFixed(6));
+    if (location) params.set('loc', location);
+    const url = `${window.location.origin}/?${params.toString()}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Nearby stores — ${location}`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+      }
+    } catch { /* user cancelled */ }
   };
 
   if (stores.length === 0) {
@@ -326,6 +357,16 @@ export default function StoreLocatorView({
               <ICONS.MyPosition className="w-3 h-3" /> {location.split(',')[0]}
             </button>
           </HelperTooltip>
+          <button
+            type="button"
+            onClick={handleShare}
+            title={shareCopied ? 'Link copied!' : 'Share location'}
+            className="flex items-center gap-1 text-[10px] font-bold text-on-surface-variant bg-surface-container-low px-2 py-1 rounded-full shrink-0 border border-outline-variant/40"
+          >
+            {shareCopied
+              ? <ICONS.Check className="w-3 h-3 text-green-600" />
+              : <ICONS.Share className="w-3 h-3" />}
+          </button>
         </div>
         {globalSearch && (
           <div className="flex items-center gap-2 mb-2 px-1">
@@ -531,17 +572,41 @@ export default function StoreLocatorView({
             <h2 className="text-2xl font-bold text-on-surface">{t('nearbyStores')}</h2>
           </div>
 
-          {/* Location search (geocode on Enter) */}
-          <div className="flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 mb-2 md:mb-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-            <ICONS.Location className="w-4 h-4 text-outline mr-3 shrink-0" />
-            <input
-              type="text"
-              value={location}
-              onChange={handleLocationChange}
-              onKeyDown={handleLocationSubmit}
-              placeholder={t('enterLocation')}
-              className="bg-transparent border-none w-full focus:ring-0 text-sm text-on-surface font-semibold placeholder:font-normal"
-            />
+          {/* Location search — Places autocomplete + geocode-on-Enter fallback */}
+          <div className="flex items-center gap-2 mb-2 md:mb-3">
+            <div className="flex-1 flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+              <ICONS.Location className="w-4 h-4 text-outline mr-3 shrink-0" />
+              <input
+                ref={locationInputRef}
+                type="text"
+                value={location}
+                onChange={handleLocationChange}
+                onKeyDown={handleLocationSubmit}
+                placeholder={t('enterLocation')}
+                className="bg-transparent border-none w-full focus:ring-0 text-sm text-on-surface font-semibold placeholder:font-normal"
+              />
+            </div>
+            <HelperTooltip side="bottom" textKey="storeLocateMe">
+              <button
+                type="button"
+                onClick={handleLocateMe}
+                title="Use my current location"
+                className="flex items-center justify-center w-10 h-10 shrink-0 rounded-2xl border border-outline-variant text-on-surface-variant hover:text-primary hover:border-primary transition-colors"
+              >
+                <ICONS.MyPosition className="w-4 h-4" />
+              </button>
+            </HelperTooltip>
+            <button
+              type="button"
+              onClick={handleShare}
+              title={shareCopied ? 'Link copied!' : 'Share this location'}
+              className="flex items-center gap-1.5 shrink-0 px-3 h-10 rounded-2xl border border-outline-variant text-xs font-bold text-on-surface-variant hover:text-primary hover:border-primary transition-colors"
+            >
+              {shareCopied
+                ? <ICONS.Check className="w-4 h-4 text-green-600" />
+                : <ICONS.Share className="w-4 h-4" />}
+              <span className="hidden lg:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+            </button>
           </div>
 
           {/* Global search context chip */}

@@ -169,6 +169,21 @@
         { "fieldPath": "retryCount",  "order": "ASCENDING" },
         { "fieldPath": "createdAt",   "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "waNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "metaMessageId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "waIncomingMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "phone",       "order": "ASCENDING" },
+        { "fieldPath": "receivedAt",  "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

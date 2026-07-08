@@ -331,6 +331,16 @@ export function BulkRetailerUpload({
 
     setUploading(false);
     setDone(true);
+
+    const addedCount = workingRows.filter((r) => r.status === "done").length;
+    if (addedCount > 0) {
+      fetch("/api/wa/manufacturer-network-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manufacturerId, count: addedCount }),
+      }).catch(() => {});
+    }
+
     await onDone();
   };
 
@@ -370,6 +380,16 @@ export function BulkRetailerUpload({
 
     setAddExistingResults(results);
     setAddingExisting(false);
+
+    const addedCount = results.filter((r) => r.status === "done").length;
+    if (addedCount > 0) {
+      fetch("/api/wa/manufacturer-network-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manufacturerId, count: addedCount }),
+      }).catch(() => {});
+    }
+
     await onDone();
   };
 
