@@ -104,7 +104,7 @@ export default function App() {
   const [selectedManufacturerId, setSelectedManufacturerId] = useState<string | null>(null);
   const [mapFilterProductId, setMapFilterProductId] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState('Pune, Maharashtra');
-  const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 }); // Default Pune
+  const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 });
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [maxDistance, setMaxDistance] = useState(1000);
@@ -182,6 +182,9 @@ export default function App() {
       inviteCodeParam?: string | null,
       hubId?: string | null,
       manufacturerId?: string | null,
+      mapLat?: number | null,
+      mapLng?: number | null,
+      mapLoc?: string | null,
     ) => {
       const params = new URLSearchParams();
       if (view !== 'home') params.set('view', view);
@@ -194,6 +197,12 @@ export default function App() {
           ? signupInviteCode?.trim() || null
           : inviteCodeParam?.trim() || null;
       if (code) params.set("inviteCode", code);
+      // Preserve map location params so shared URLs survive navigation.
+      if (mapLat != null && mapLng != null && !isNaN(mapLat) && !isNaN(mapLng)) {
+        params.set('lat', mapLat.toFixed(6));
+        params.set('lng', mapLng.toFixed(6));
+        if (mapLoc) params.set('loc', mapLoc);
+      }
       const query = params.toString();
       return query ? `/?${query}` : '/';
     },
@@ -299,7 +308,22 @@ export default function App() {
 
       if (typeof window !== 'undefined') {
         const inviteForUrl = options?.clearInvite ? null : undefined;
-        const nextUrl = buildUrl(nextView, nextProductId, nextStoreId, inviteForUrl, nextHubId, nextManufacturerId);
+        // When navigating to the map view, carry any lat/lng/loc that are
+        // already in the URL so shared location params survive view changes.
+        let navLat: number | null = null;
+        let navLng: number | null = null;
+        let navLoc: string | null = null;
+        if (nextView === 'map') {
+          const cur = new URLSearchParams(window.location.search);
+          const parsedLat = parseFloat(cur.get('lat') ?? '');
+          const parsedLng = parseFloat(cur.get('lng') ?? '');
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            navLat = parsedLat;
+            navLng = parsedLng;
+            navLoc = cur.get('loc');
+          }
+        }
+        const nextUrl = buildUrl(nextView, nextProductId, nextStoreId, inviteForUrl, nextHubId, nextManufacturerId, navLat, navLng, navLoc);
         if (options?.replace) {
           window.history.replaceState(null, '', nextUrl);
         } else {
@@ -323,7 +347,19 @@ export default function App() {
     setSelectedStoreId(route.storeId);
     setSelectedHubId(route.hubId);
     setSelectedManufacturerId(route.manufacturerId);
-    window.history.replaceState(null, '', buildUrl(routeView, route.productId, route.storeId, route.inviteCode, route.hubId, route.manufacturerId));
+    // Read lat/lng/loc from the current URL so the replaceState below doesn't
+    // discard them. buildUrl previously knew nothing about these params and
+    // silently stripped them every time it ran.
+    const initParams = new URLSearchParams(window.location.search);
+    const initLat = parseFloat(initParams.get('lat') ?? '');
+    const initLng = parseFloat(initParams.get('lng') ?? '');
+    const initLoc = initParams.get('loc');
+    window.history.replaceState(null, '', buildUrl(
+      routeView, route.productId, route.storeId, route.inviteCode, route.hubId, route.manufacturerId,
+      !isNaN(initLat) ? initLat : null,
+      !isNaN(initLng) ? initLng : null,
+      initLoc,
+    ));
 
     const onPopState = () => {
       const next = readRouteFromUrl();
@@ -545,13 +581,34 @@ export default function App() {
 
     void loadData();
 
-    // Detect user location
+    // If the URL carries explicit coordinates (shared map link), apply them to
+    // coordinates only — NOT to locationQuery.  locationQuery drives the Navbar
+    // location display; changing it from a URL param would make the app look
+    // like the user's location changed, which is wrong.  The coordinates state
+    // alone is enough to center the map and compute nearby stores correctly.
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlLat = parseFloat(urlParams.get('lat') ?? '');
+    const urlLng = parseFloat(urlParams.get('lng') ?? '');
+    const hasUrlCoords = !isNaN(urlLat) && !isNaN(urlLng);
+    if (hasUrlCoords) {
+      setCoordinates({ lat: urlLat, lng: urlLng });
+      // Show the human-readable label from the URL (e.g. "Ahilyanagar, Maharashtra")
+      // or a neutral placeholder. This runs in a useEffect so there is no SSR
+      // mismatch — the server always renders the default "Pune, Maharashtra".
+      setLocationQuery(urlParams.get('loc') || 'Shared Location');
+    }
+
+    // Detect user location — GPS/cache.  Only update coordinates and the
+    // location label when the URL did not supply explicit coords, so a shared
+    // link always takes priority over the cached/GPS location.
     getUserLocation().then((result: GeoResult) => {
       setUserLocation(result.coords);
       setLocationLabel(result.label);
       setLocationSource(result.source);
-      setLocationQuery(result.label);
-      setCoordinates(result.coords);
+      if (!hasUrlCoords) {
+        setLocationQuery(result.label);
+        setCoordinates(result.coords);
+      }
     });
 
     return () => unsubscribe();

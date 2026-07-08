@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2, Plus, X, CheckCircle2, Loader2, AlertCircle,
+  Building2, Plus, Loader2,
   IndianRupee, Package, Truck, ChevronRight, Link2,
 } from 'lucide-react';
-import { addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
+import SupplierFormModal from '../components/SupplierFormModal';
 
 interface Supplier {
   id: string;
@@ -27,9 +28,6 @@ export default function SupplierLedgerPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
-  const [supplierForm, setSupplierForm] = useState({ name: '', address: '', email: '', phone: '' });
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadSuppliers = async () => {
     if (!tenantId) return;
@@ -45,25 +43,13 @@ export default function SupplierLedgerPage() {
 
   useEffect(() => { loadSuppliers(); }, [tenantId]);
 
-  const handleAddSupplier = async () => {
-    if (!tenantId || !supplierForm.name.trim()) return;
-    setSaving(true); setSaveError(null);
-    try {
-      const ref = await addDoc(getTenantCollection(db, tenantId, 'suppliers'), {
-        name: supplierForm.name.trim(),
-        address: supplierForm.address.trim(),
-        email: supplierForm.email.trim(),
-        phone: supplierForm.phone.trim(),
-        outstandingBalance: 0,
-        totalInvoiced: 0,
-        totalPaid: 0,
-        createdAt: serverTimestamp(),
-      });
-      setShowAddSupplier(false);
-      setSupplierForm({ name: '', address: '', email: '', phone: '' });
-      navigate(`/supplier-ledger/${ref.id}`);
-    } catch (e: any) { setSaveError(e.message); }
-    setSaving(false);
+  const handleCreated = (openId?: string) => {
+    setShowAddSupplier(false);
+    if (openId) {
+      navigate(`/supplier-ledger/${openId}`);
+    } else {
+      loadSuppliers();
+    }
   };
 
   const totalOutstanding = suppliers.reduce((s, sup) => s + (sup.outstandingBalance || 0), 0);
@@ -166,40 +152,13 @@ export default function SupplierLedgerPage() {
         )}
       </div>
 
-      {/* Add Supplier Modal */}
+      {/* Add Supplier Modal — mounted only when open so its form state resets each time */}
       {showAddSupplier && (
-        <div className="modal-overlay animate-fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 100 }}>
-          <div className="modal-content animate-slide-up glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '2rem', position: 'relative' }}>
-            <button onClick={() => setShowAddSupplier(false)} className="btn-icon" style={{ position: 'absolute', top: '1rem', right: '1rem' }}><X size={20} /></button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Plus size={18} className="primary-gradient-text" /> Add Supplier
-            </h2>
-            {saveError && (
-              <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem', display: 'flex', gap: '0.5rem' }}>
-                <AlertCircle size={16} /> {saveError}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {([
-                { key: 'name', label: 'Supplier Name *', placeholder: 'e.g. UNIMAX AGRI BIO-TECHNOLOGIES' },
-                { key: 'address', label: 'Address', placeholder: 'Village, Taluka, District' },
-                { key: 'phone', label: 'Phone', placeholder: '9876543210' },
-                { key: 'email', label: 'Email', placeholder: 'contact@supplier.com' },
-              ] as const).map(f => (
-                <div key={f.key}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{f.label}</label>
-                  <input className="input-field" placeholder={f.placeholder} value={supplierForm[f.key]} onChange={e => setSupplierForm(s => ({ ...s, [f.key]: e.target.value }))} style={{ width: '100%' }} />
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-              <button className="btn btn-secondary" onClick={() => setShowAddSupplier(false)} disabled={saving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleAddSupplier} disabled={saving || !supplierForm.name.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> Save & Open</>}
-              </button>
-            </div>
-          </div>
-        </div>
+        <SupplierFormModal
+          mode="create"
+          onClose={() => setShowAddSupplier(false)}
+          onCreated={handleCreated}
+        />
       )}
     </div>
   );

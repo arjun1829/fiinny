@@ -4,7 +4,7 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Pencil, CheckCircle2,
   X, Loader2, AlertCircle, IndianRupee, Package, ChevronDown, ChevronRight,
   MessageSquare, Plus, Truck, CreditCard, CalendarDays, Trash2, Search,
-  MessageCircle, Mic, Printer, CheckSquare, FileText, Square,
+  MessageCircle, Mic, Printer, CheckSquare, FileText, Square, Receipt,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -16,13 +16,13 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import SupplierFormModal, { type SupplierLike } from '../components/SupplierFormModal';
+import PurchaseOrderModal, { type POForEdit } from '../components/PurchaseOrderModal';
+import PaymentModal, { type PaymentForEdit } from '../components/PaymentModal';
 
-interface Supplier {
+interface Supplier extends SupplierLike {
   id: string;
   name: string;
-  address?: string;
-  email?: string;
-  phone?: string;
   outstandingBalance: number;
   totalInvoiced?: number;
   totalPaid?: number;
@@ -74,6 +74,20 @@ interface Task {
   createdAt?: Timestamp;
 }
 
+/** A saved Supplier Purchase Invoice (from the supplierInvoices collection). */
+interface SupplierInvoice {
+  id: string;
+  internalPurchaseId?: string;
+  supplierInvoiceNumber?: string;
+  supplierName?: string;
+  invoiceDate?: string;
+  netAmount?: number;
+  taxMode?: string;
+  status?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 function fmtDate(v?: Timestamp | string): string {
@@ -113,9 +127,6 @@ const poLines = (po: PO): POLine[] => {
   return [];
 };
 
-type FormLine = { description: string; quantity: string; unit: string; rate: string };
-const emptyLine = (): FormLine => ({ description: '', quantity: '', unit: '', rate: '' });
-
 const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const firstPhone = (p?: string) => (p ?? '').split(/[,/]/)[0].replace(/\D/g, '');
 
@@ -132,18 +143,20 @@ export default function SupplierLedgerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Supplier edit
+  // Supplier edit — handled by the shared SupplierFormModal in edit mode
   const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', address: '', email: '', phone: '' });
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
 
-  // Section toggles
-  const [posOpen, setPosOpen] = useState(true);
-  const [pmtsOpen, setPmtsOpen] = useState(true);
+  // Account Statement / Purchase Orders / Payments / Supplier Invoices — single tabbed view.
+  const [activeTab, setActiveTab] = useState<'account' | 'purchaseOrders' | 'payments' | 'invoices'>('purchaseOrders');
+
+  // Supplier Purchase Invoices (read-only list; created/edited via SupplierInvoicePage).
+  const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
+  const [invToDelete, setInvToDelete] = useState<SupplierInvoice | null>(null);
+  const [deletingInv, setDeletingInv] = useState(false);
+
+  // Section toggles (Comments / Tasks remain independent accordions)
   const [cmtsOpen, setCmtsOpen] = useState(true);
   const [tasksOpen, setTasksOpen] = useState(true);
-  const [stmtOpen, setStmtOpen] = useState(false);
 
   // Filters
   const [poSearch, setPoSearch] = useState('');
@@ -152,21 +165,13 @@ export default function SupplierLedgerDetailPage() {
   // Expanded PO rows
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // PO modal (add/edit)
-  const [poModalOpen, setPoModalOpen] = useState(false);
-  const [poEditingId, setPoEditingId] = useState<string | null>(null);
-  const [poForm, setPoForm] = useState<{ poNumber: string; poDate: string; status: string; notes: string; lines: FormLine[] }>(
-    { poNumber: '', poDate: today(), status: 'received', notes: '', lines: [emptyLine()] }
-  );
-  const [poSaving, setPoSaving] = useState(false);
-  const [poError, setPoError] = useState<string | null>(null);
+  // PO modal (add/edit) — handled by the shared PurchaseOrderModal.
+  // undefined = closed, null = add, PO = edit.
+  const [poEditing, setPoEditing] = useState<POForEdit | null | undefined>(undefined);
 
-  // Payment modal (add/edit)
-  const [pmtModalOpen, setPmtModalOpen] = useState(false);
-  const [pmtEditingId, setPmtEditingId] = useState<string | null>(null);
-  const [pmtForm, setPmtForm] = useState({ amount: '', mode: 'Bank Transfer', reference: '', notes: '', date: today() });
-  const [pmtSaving, setPmtSaving] = useState(false);
-  const [pmtError, setPmtError] = useState<string | null>(null);
+  // Payment modal (add/edit) — handled by the shared PaymentModal.
+  // undefined = closed, null = add, Payment = edit.
+  const [pmtEditing, setPmtEditing] = useState<PaymentForEdit | null | undefined>(undefined);
 
   // Comments + voice
   const [newComment, setNewComment] = useState('');
@@ -186,11 +191,12 @@ export default function SupplierLedgerDetailPage() {
       if (!supSnap.exists()) { setError('Supplier not found'); setLoading(false); return; }
       const sup = { id: supSnap.id, outstandingBalance: 0, ...supSnap.data() } as Supplier;
 
-      const [posSnap, pmtsSnap, cmtsSnap, tasksSnap] = await Promise.all([
+      const [posSnap, pmtsSnap, cmtsSnap, tasksSnap, invSnap] = await Promise.all([
         getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierName', '==', sup.name))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierPayments'), where('supplierName', '==', sup.name))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierComments'), where('supplierId', '==', id))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierTasks'), where('supplierId', '==', id))),
+        getDocs(query(getTenantCollection(db, tenantId, 'supplierInvoices'), where('supplierId', '==', id))),
       ]);
 
       const posList = posSnap.docs
@@ -205,8 +211,13 @@ export default function SupplierLedgerDetailPage() {
       const tasksList = tasksSnap.docs
         .map(d => ({ id: d.id, ...d.data() } as Task))
         .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0) || sortVal(b.createdAt) - sortVal(a.createdAt));
+      const invList = invSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as SupplierInvoice))
+        .sort((a, b) => sortVal(b.createdAt) - sortVal(a.createdAt));
 
-      const derivedInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedPoInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
+      const derivedInvInvoiced = invList.reduce((s, inv) => s + (Number(inv.netAmount) || 0), 0);
+      const derivedInvoiced = derivedPoInvoiced + derivedInvInvoiced;
       const derivedPaid = pmtsList.reduce((s, p) => s + (Number(p.amount) || 0), 0);
       const derivedOutstanding = derivedInvoiced - derivedPaid;
 
@@ -220,33 +231,16 @@ export default function SupplierLedgerDetailPage() {
       }
 
       setSupplier({ ...sup, totalInvoiced: derivedInvoiced, totalPaid: derivedPaid, outstandingBalance: derivedOutstanding });
-      setEditForm({ name: sup.name, address: sup.address ?? '', email: sup.email ?? '', phone: sup.phone ?? '' });
       setPOs(posList);
       setPayments(pmtsList);
       setComments(cmtsList);
       setTasks(tasksList);
+      setInvoices(invList);
     } catch (e: any) { setError(e.message); }
     setLoading(false);
   }, [tenantId, id]);
 
   useEffect(() => { load(); }, [load]);
-
-  // ── Supplier edit ──────────────────────────────────────────────────────────
-  const handleSaveEdit = async () => {
-    if (!tenantId || !id || !editForm.name.trim()) return;
-    setEditSaving(true); setEditError(null);
-    try {
-      await updateDoc(getTenantDoc(db, tenantId, 'suppliers', id), {
-        name: editForm.name.trim(),
-        address: editForm.address.trim(),
-        email: editForm.email.trim(),
-        phone: editForm.phone.trim(),
-      });
-      setSupplier(s => s ? { ...s, ...editForm } : s);
-      setEditMode(false);
-    } catch (e: any) { setEditError(e.message); }
-    setEditSaving(false);
-  };
 
   const handleWhatsApp = () => {
     const phone = firstPhone(supplier?.phone);
@@ -256,69 +250,9 @@ export default function SupplierLedgerDetailPage() {
   };
 
   // ── PO add/edit ────────────────────────────────────────────────────────────
-  const openAddPO = () => {
-    setPoEditingId(null);
-    setPoForm({ poNumber: '', poDate: today(), status: 'received', notes: '', lines: [emptyLine()] });
-    setPoError(null);
-    setPoModalOpen(true);
-  };
-
-  const openEditPO = (po: PO) => {
-    setPoEditingId(po.id);
-    const lines = poLines(po);
-    setPoForm({
-      poNumber: po.poNumber ?? '',
-      poDate: po.poDate ?? (typeof po.date === 'string' ? po.date : today()),
-      status: po.status ?? 'received',
-      notes: po.notes ?? '',
-      lines: lines.length
-        ? lines.map(l => ({ description: l.description, quantity: String(l.quantity ?? ''), unit: l.unit ?? '', rate: String(l.rate ?? '') }))
-        : [emptyLine()],
-    });
-    setPoError(null);
-    setPoModalOpen(true);
-  };
-
-  const poFormTotal = useMemo(
-    () => poForm.lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.rate) || 0), 0),
-    [poForm.lines]
-  );
-
-  const setLine = (i: number, key: keyof FormLine, val: string) =>
-    setPoForm(f => ({ ...f, lines: f.lines.map((l, idx) => idx === i ? { ...l, [key]: val } : l) }));
-  const addLine = () => setPoForm(f => ({ ...f, lines: [...f.lines, emptyLine()] }));
-  const removeLine = (i: number) => setPoForm(f => ({ ...f, lines: f.lines.length > 1 ? f.lines.filter((_, idx) => idx !== i) : f.lines }));
-
-  const handleSavePO = async () => {
-    if (!tenantId || !supplier) return;
-    if (!poForm.poNumber.trim()) { setPoError('Enter a PO / bill number'); return; }
-    const lines: POLine[] = poForm.lines
-      .filter(l => l.description.trim())
-      .map(l => {
-        const q = parseFloat(l.quantity) || 0;
-        const r = parseFloat(l.rate) || 0;
-        return { description: l.description.trim(), quantity: q, unit: l.unit.trim(), rate: r, amount: +(q * r).toFixed(2) };
-      });
-    const total = lines.reduce((s, l) => s + l.amount, 0);
-    setPoSaving(true); setPoError(null);
-    try {
-      if (poEditingId) {
-        await updateDoc(getTenantDoc(db, tenantId, 'purchaseOrders', poEditingId), {
-          poNumber: poForm.poNumber.trim(), poDate: poForm.poDate, status: poForm.status,
-          notes: poForm.notes.trim(), lines, totalAmount: total, taxableValue: total, updatedAt: serverTimestamp(),
-        });
-      } else {
-        await addDoc(getTenantCollection(db, tenantId, 'purchaseOrders'), {
-          supplierName: supplier.name, poNumber: poForm.poNumber.trim(), poDate: poForm.poDate, status: poForm.status,
-          notes: poForm.notes.trim(), lines, totalAmount: total, taxableValue: total,
-          createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
-        });
-      }
-      setPoModalOpen(false);
-      await load(true);
-    } catch (e: any) { setPoError(e.message); }
-    setPoSaving(false);
-  };
+  // Open/edit/save handled by the shared PurchaseOrderModal; recompute via load(true).
+  const openAddPO = () => setPoEditing(null);
+  const openEditPO = (po: PO) => setPoEditing(po as POForEdit);
 
   const handleDeletePO = async (po: PO) => {
     if (!tenantId) return;
@@ -328,55 +262,27 @@ export default function SupplierLedgerDetailPage() {
   };
 
   // ── Payment add/edit ───────────────────────────────────────────────────────
-  const openAddPayment = () => {
-    setPmtEditingId(null);
-    setPmtForm({ amount: '', mode: 'Bank Transfer', reference: '', notes: '', date: today() });
-    setPmtError(null);
-    setPmtModalOpen(true);
-  };
-
-  const openEditPayment = (pmt: Payment) => {
-    setPmtEditingId(pmt.id);
-    setPmtForm({
-      amount: String(pmt.amount ?? ''),
-      mode: pmtMode(pmt),
-      reference: pmtRef(pmt),
-      notes: pmt.notes ?? '',
-      date: typeof pmt.date === 'string' ? pmt.date : (pmt.date ? new Date(sortVal(pmt.date)).toISOString().slice(0, 10) : today()),
-    });
-    setPmtError(null);
-    setPmtModalOpen(true);
-  };
-
-  const handleSavePayment = async () => {
-    if (!tenantId || !id || !supplier) return;
-    const amt = parseFloat(pmtForm.amount);
-    if (isNaN(amt) || amt <= 0) { setPmtError('Enter a valid amount'); return; }
-    setPmtSaving(true); setPmtError(null);
-    try {
-      if (pmtEditingId) {
-        await updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', pmtEditingId), {
-          amount: amt, mode: pmtForm.mode, reference: pmtForm.reference.trim(),
-          notes: pmtForm.notes.trim(), date: pmtForm.date, updatedAt: serverTimestamp(),
-        });
-      } else {
-        await addDoc(getTenantCollection(db, tenantId, 'supplierPayments'), {
-          supplierId: id, supplierName: supplier.name, amount: amt, mode: pmtForm.mode,
-          reference: pmtForm.reference.trim(), notes: pmtForm.notes.trim(), date: pmtForm.date,
-          createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
-        });
-      }
-      setPmtModalOpen(false);
-      await load(true);
-    } catch (e: any) { setPmtError(e.message); }
-    setPmtSaving(false);
-  };
+  // Open/edit/save handled by the shared PaymentModal; recompute via load(true).
+  const openAddPayment = () => setPmtEditing(null);
+  const openEditPayment = (pmt: Payment) => setPmtEditing(pmt as PaymentForEdit);
 
   const handleDeletePayment = async (pmt: Payment) => {
     if (!tenantId) return;
     if (!window.confirm(`Delete payment of ${inr(pmt.amount)} (${fmtDate(pmt.date)})? This cannot be undone.`)) return;
     try { await deleteDoc(getTenantDoc(db, tenantId, 'supplierPayments', pmt.id)); await load(true); }
     catch (e: any) { alert(e.message); }
+  };
+
+  // ── Supplier Invoice delete (confirmation modal → deleteDoc → reload) ─────────
+  const handleDeleteInvoice = async (inv: SupplierInvoice) => {
+    if (!tenantId) return;
+    setDeletingInv(true);
+    try {
+      await deleteDoc(getTenantDoc(db, tenantId, 'supplierInvoices', inv.id));
+      setInvToDelete(null);
+      await load(true);
+    } catch (e: any) { alert(e.message); }
+    finally { setDeletingInv(false); }
   };
 
   // ── Comments + voice ─────────────────────────────────────────────────────────
@@ -567,12 +473,13 @@ export default function SupplierLedgerDetailPage() {
         <button onClick={() => navigate('/supplier-ledger')} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <ArrowLeft size={15} /> Back
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0 }} /> {supplier.name}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'flex-start', gap: '0.5rem', lineHeight: 1.25 }}>
+            <Truck size={20} style={{ color: 'var(--primary-light)', flexShrink: 0, marginTop: '0.15rem' }} />
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{supplier.name}</span>
           </h1>
         </div>
-        <button className="btn btn-secondary" onClick={() => { setEditMode(true); setEditError(null); }} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
+        <button className="btn btn-secondary" onClick={() => setEditMode(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <Pencil size={14} /> Edit
         </button>
         {firstPhone(supplier.phone) && (
@@ -587,6 +494,9 @@ export default function SupplierLedgerDetailPage() {
         )}
         <button className="btn btn-secondary" onClick={openAddPO} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <Package size={14} /> Add PO
+        </button>
+        <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
+          <FileText size={14} /> New Invoice
         </button>
         <button className="btn btn-primary" onClick={openAddPayment} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.9rem', fontSize: '0.85rem' }}>
           <IndianRupee size={14} /> Record Payment
@@ -696,21 +606,58 @@ export default function SupplierLedgerDetailPage() {
         </div>
       )}
 
+      {/* Tabbed selector for Account Statement / Purchase Orders / Payments */}
+      <div className="glass-panel" role="tablist" aria-label="Supplier records" style={{ borderRadius: '12px', padding: '0.35rem', display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {([
+          { key: 'account', label: 'Account Statement', icon: <FileText size={15} />, count: statementRows.length },
+          { key: 'purchaseOrders', label: 'Purchase Orders', icon: <Package size={15} />, count: pos.length },
+          { key: 'payments', label: 'Payments Made', icon: <CreditCard size={15} />, count: payments.length },
+          { key: 'invoices', label: 'Supplier Invoices', icon: <Receipt size={15} />, count: invoices.length },
+        ] as const).map((t, idx, arr) => {
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setActiveTab(t.key)}
+              onKeyDown={e => {
+                if (e.key === 'ArrowRight') { e.preventDefault(); setActiveTab(arr[(idx + 1) % arr.length].key); }
+                else if (e.key === 'ArrowLeft') { e.preventDefault(); setActiveTab(arr[(idx - 1 + arr.length) % arr.length].key); }
+              }}
+              style={{
+                flex: '1 1 auto', minWidth: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: '0.45rem', padding: '0.6rem 0.9rem', borderRadius: '9px', cursor: 'pointer',
+                border: 'none', fontSize: '0.88rem', fontWeight: 700, transition: 'background 0.15s, color 0.15s',
+                background: active ? 'var(--surface-raised)' : 'transparent',
+                color: active ? 'var(--primary-light)' : 'var(--text-tertiary)',
+                boxShadow: active ? 'inset 0 -2px 0 var(--primary-light)' : 'none',
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+            >
+              {t.icon} {t.label}
+              <span style={{ fontSize: '0.74rem', fontWeight: 600, opacity: 0.8 }}>({t.count})</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Account Statement (running balance) */}
-      {card(
+      {activeTab === 'account' && card(
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setStmtOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
               <span style={{ color: 'var(--primary-light)' }}><FileText size={16} /></span>
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Account Statement</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({statementRows.length} entries)</span>
-              <span style={{ color: 'var(--text-tertiary)' }}>{stmtOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-            </button>
+            </div>
             <button className="btn btn-secondary" onClick={printStatement} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
               <Printer size={13} /> Print
             </button>
           </div>
-          {stmtOpen && (
+          {(
             <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                 <thead>
@@ -743,15 +690,14 @@ export default function SupplierLedgerDetailPage() {
       )}
 
       {/* Purchase Orders */}
-      {card(
+      {activeTab === 'purchaseOrders' && card(
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setPosOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
               <span style={{ color: 'var(--primary-light)' }}><Package size={16} /></span>
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Purchase Orders</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({pos.length})</span>
-              <span style={{ color: 'var(--text-tertiary)' }}>{posOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-            </button>
+            </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
@@ -763,7 +709,7 @@ export default function SupplierLedgerDetailPage() {
             </div>
           </div>
 
-          {posOpen && (
+          {(
             <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {filteredPOs.length === 0 && (
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', padding: '0.75rem 0' }}>
@@ -843,15 +789,14 @@ export default function SupplierLedgerDetailPage() {
       )}
 
       {/* Payments */}
-      {card(
+      {activeTab === 'payments' && card(
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setPmtsOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
               <span style={{ color: 'var(--primary-light)' }}><CreditCard size={16} /></span>
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Payments Made</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({payments.length})</span>
-              <span style={{ color: 'var(--text-tertiary)' }}>{pmtsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-            </button>
+            </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
@@ -863,7 +808,7 @@ export default function SupplierLedgerDetailPage() {
             </div>
           </div>
 
-          {pmtsOpen && (
+          {(
             <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {filteredPmts.length === 0 && (
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', padding: '0.75rem 0' }}>
@@ -891,6 +836,56 @@ export default function SupplierLedgerDetailPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Supplier Purchase Invoices */}
+      {activeTab === 'invoices' && card(
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
+              <span style={{ color: 'var(--primary-light)' }}><Receipt size={16} /></span>
+              <span style={{ fontWeight: 700, fontSize: '1rem' }}>Supplier Invoices</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({invoices.length})</span>
+            </div>
+            <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
+              <Plus size={13} /> New Invoice
+            </button>
+          </div>
+
+          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {invoices.length === 0 && (
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', padding: '0.75rem 0' }}>
+                No supplier invoices yet. Click “New Invoice” to create one.
+              </div>
+            )}
+            {invoices.map(inv => (
+              <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)', gap: '1rem', flexWrap: 'wrap', borderLeft: '3px solid #8b5cf6' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <Receipt size={13} style={{ color: 'var(--primary-light)' }} />
+                    {inv.internalPurchaseId || inv.id.slice(0, 8)}
+                    {inv.supplierInvoiceNumber && <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>· Bill {inv.supplierInvoiceNumber}</span>}
+                    <span style={{ fontSize: '0.68rem', padding: '0.1rem 0.5rem', borderRadius: '999px', background: inv.taxMode === 'gst' ? '#8b5cf622' : 'var(--surface-border)', color: inv.taxMode === 'gst' ? '#8b5cf6' : 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      {inv.taxMode === 'gst' ? 'GST' : 'Bill of Supply'}
+                    </span>
+                    {inv.status && <span style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>· {inv.status}</span>}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.8rem', marginTop: '0.2rem', flexWrap: 'wrap' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><CalendarDays size={12} /> {inv.invoiceDate ? fmtDate(inv.invoiceDate) : '—'}</span>
+                    {inv.updatedAt && <span>Updated {fmtDate(inv.updatedAt)}</span>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--secondary)' }}>₹{Number(inv.netAmount || 0).toLocaleString('en-IN')}</div>
+                  <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}&invoiceId=${inv.id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.78rem' }}>
+                    <Pencil size={13} /> View / Edit
+                  </button>
+                  {iconBtn(<Trash2 size={14} />, () => setInvToDelete(inv), 'Delete invoice', '#ff4d4f')}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -997,159 +992,59 @@ export default function SupplierLedgerDetailPage() {
         </div>
       )}
 
-      {/* Edit Supplier Modal */}
-      {editMode && (
-        <div className="modal-overlay animate-fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 100 }}>
-          <div className="modal-content animate-slide-up glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '2rem', position: 'relative' }}>
-            <button onClick={() => setEditMode(false)} className="btn-icon" style={{ position: 'absolute', top: '1rem', right: '1rem' }}><X size={20} /></button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Pencil size={18} className="primary-gradient-text" /> Edit Supplier
-            </h2>
-            {editError && (
-              <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem', display: 'flex', gap: '0.5rem' }}>
-                <AlertCircle size={16} /> {editError}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {([
-                { key: 'name', label: 'Supplier Name *', placeholder: 'e.g. UNIMAX AGRI BIO-TECHNOLOGIES' },
-                { key: 'address', label: 'Address', placeholder: 'Village, Taluka, District' },
-                { key: 'phone', label: 'Phone', placeholder: '9876543210' },
-                { key: 'email', label: 'Email', placeholder: 'contact@supplier.com' },
-              ] as const).map(f => (
-                <div key={f.key}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{f.label}</label>
-                  <input className="input-field" placeholder={f.placeholder} value={editForm[f.key]} onChange={e => setEditForm(s => ({ ...s, [f.key]: e.target.value }))} style={{ width: '100%' }} />
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-              <button className="btn btn-secondary" onClick={() => setEditMode(false)} disabled={editSaving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSaveEdit} disabled={editSaving || !editForm.name.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {editSaving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> Save Changes</>}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Edit Supplier Modal — shared dual-mode form, mounted only when open */}
+      {editMode && supplier && (
+        <SupplierFormModal
+          mode="edit"
+          supplierId={supplier.id}
+          initial={supplier}
+          onClose={() => setEditMode(false)}
+          onSaved={() => { setEditMode(false); load(true); }}
+        />
       )}
 
-      {/* Add / Edit PO Modal */}
-      {poModalOpen && (
-        <div className="modal-overlay animate-fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 100 }}>
-          <div className="modal-content animate-slide-up glass-panel" style={{ width: '100%', maxWidth: '640px', padding: '2rem', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
-            <button onClick={() => setPoModalOpen(false)} className="btn-icon" style={{ position: 'absolute', top: '1rem', right: '1rem' }}><X size={20} /></button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Package size={18} className="primary-gradient-text" /> {poEditingId ? 'Edit Purchase Order' : 'Add Purchase Order'}
-            </h2>
-            {poError && (
-              <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem', display: 'flex', gap: '0.5rem' }}>
-                <AlertCircle size={16} /> {poError}
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>PO / Bill No. *</label>
-                <input className="input-field" placeholder="e.g. UAB/1620/25-26" value={poForm.poNumber} onChange={e => setPoForm(f => ({ ...f, poNumber: e.target.value }))} style={{ width: '100%' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Date *</label>
-                <input className="input-field" type="date" value={poForm.poDate} onChange={e => setPoForm(f => ({ ...f, poDate: e.target.value }))} style={{ width: '100%' }} />
-              </div>
-            </div>
-
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Products</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              {poForm.lines.map((l, i) => {
-                const amt = (parseFloat(l.quantity) || 0) * (parseFloat(l.rate) || 0);
-                return (
-                  <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                    <input className="input-field" placeholder="Product / description" value={l.description} onChange={e => setLine(i, 'description', e.target.value)} style={{ flex: 1, margin: 0, minWidth: 0 }} />
-                    <input className="input-field" type="number" placeholder="Qty" value={l.quantity} onChange={e => setLine(i, 'quantity', e.target.value)} style={{ width: '64px', margin: 0 }} />
-                    <input className="input-field" placeholder="Unit" value={l.unit} onChange={e => setLine(i, 'unit', e.target.value)} style={{ width: '60px', margin: 0 }} />
-                    <input className="input-field" type="number" placeholder="Rate" value={l.rate} onChange={e => setLine(i, 'rate', e.target.value)} style={{ width: '84px', margin: 0 }} />
-                    <span style={{ width: '90px', textAlign: 'right', fontSize: '0.82rem', fontWeight: 600, flexShrink: 0 }}>{inr(amt)}</span>
-                    <button onClick={() => removeLine(i)} className="btn-icon" title="Remove line" style={{ padding: '0.3rem', color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={14} /></button>
-                  </div>
-                );
-              })}
-            </div>
-            <button className="btn btn-secondary" onClick={addLine} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem', marginBottom: '1rem' }}>
-              <Plus size={13} /> Add line
-            </button>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Status</label>
-                <select className="input-field" value={poForm.status} onChange={e => setPoForm(f => ({ ...f, status: e.target.value }))} style={{ width: '100%' }}>
-                  {['received', 'pending', 'partial', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, textAlign: 'right' }}>PO Total</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ff9800', textAlign: 'right' }}>{inr(poFormTotal)}</div>
-              </div>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Notes</label>
-              <input className="input-field" placeholder="e.g. Care Off: …, Ref no., remarks" value={poForm.notes} onChange={e => setPoForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%' }} />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-              <button className="btn btn-secondary" onClick={() => setPoModalOpen(false)} disabled={poSaving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSavePO} disabled={poSaving || !poForm.poNumber.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {poSaving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> {poEditingId ? 'Save Changes' : 'Add PO'}</>}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Add / Edit PO Modal — shared PurchaseOrderModal, mounted only when open */}
+      {poEditing !== undefined && supplier && (
+        <PurchaseOrderModal
+          supplierName={supplier.name}
+          editing={poEditing}
+          onClose={() => setPoEditing(undefined)}
+          onSaved={() => { setPoEditing(undefined); load(true); }}
+        />
       )}
 
-      {/* Add / Edit Payment Modal */}
-      {pmtModalOpen && (
-        <div className="modal-overlay animate-fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 100 }}>
-          <div className="modal-content animate-slide-up glass-panel" style={{ width: '100%', maxWidth: '440px', padding: '2rem', position: 'relative' }}>
-            <button onClick={() => setPmtModalOpen(false)} className="btn-icon" style={{ position: 'absolute', top: '1rem', right: '1rem' }}><X size={20} /></button>
-            <h2 style={{ fontSize: '1.3rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <IndianRupee size={18} className="primary-gradient-text" /> {pmtEditingId ? 'Edit Payment' : 'Record Payment'}
+      {/* Add / Edit Payment Modal — shared PaymentModal, mounted only when open */}
+      {pmtEditing !== undefined && supplier && (
+        <PaymentModal
+          supplierId={supplier.id}
+          supplierName={supplier.name}
+          outstandingBalance={supplier.outstandingBalance}
+          editing={pmtEditing}
+          onClose={() => setPmtEditing(undefined)}
+          onSaved={() => { setPmtEditing(undefined); load(true); }}
+        />
+      )}
+
+      {/* Delete Supplier Invoice confirmation */}
+      {invToDelete && (
+        <div className="modal-overlay animate-fade-in" style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)' }}>
+          <div className="glass-panel animate-slide-up" style={{ width: '100%', maxWidth: '440px', padding: '1.75rem', position: 'relative', borderRadius: '16px' }}>
+            <button onClick={() => !deletingInv && setInvToDelete(null)} className="btn-icon" aria-label="Close" style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ff4d4f' }}>
+              <AlertCircle size={20} /> Delete Supplier Invoice?
             </h2>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', marginBottom: '1.5rem' }}>
-              To: <strong>{supplier.name}</strong> · Outstanding: <strong style={{ color: '#ff4d4f' }}>{inr(supplier.outstandingBalance)}</strong>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.7 }}>
+              <div>Invoice No: <strong style={{ color: 'var(--text-primary)' }}>{invToDelete.supplierInvoiceNumber || '—'}</strong></div>
+              <div>Internal Purchase ID: <strong style={{ color: 'var(--text-primary)' }}>{invToDelete.internalPurchaseId || '—'}</strong></div>
+              <div>Amount: <strong style={{ color: 'var(--secondary)' }}>₹{Number(invToDelete.netAmount || 0).toLocaleString('en-IN')}</strong></div>
             </div>
-            {pmtError && (
-              <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem', display: 'flex', gap: '0.5rem' }}>
-                <AlertCircle size={16} /> {pmtError}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Amount (₹) *</label>
-                  <input className="input-field" type="number" min="1" placeholder="0.00" value={pmtForm.amount} onChange={e => setPmtForm(f => ({ ...f, amount: e.target.value }))} style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Date *</label>
-                  <input className="input-field" type="date" value={pmtForm.date} onChange={e => setPmtForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%' }} />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Payment Mode</label>
-                <select className="input-field" value={pmtForm.mode} onChange={e => setPmtForm(f => ({ ...f, mode: e.target.value }))} style={{ width: '100%' }}>
-                  {['Bank Transfer', 'NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'Credit Note', 'Sales Return', 'Other'].map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Reference / UTR / Receipt</label>
-                <input className="input-field" placeholder="Transaction ID, cheque or receipt no." value={pmtForm.reference} onChange={e => setPmtForm(f => ({ ...f, reference: e.target.value }))} style={{ width: '100%' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Notes</label>
-                <textarea className="input-field" placeholder="Optional remarks" rows={2} value={pmtForm.notes} onChange={e => setPmtForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', resize: 'vertical' }} />
-              </div>
+            <div style={{ padding: '0.7rem 0.85rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '1.25rem' }}>
+              This will permanently delete this supplier invoice. This action cannot be undone.
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-              <button className="btn btn-secondary" onClick={() => setPmtModalOpen(false)} disabled={pmtSaving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSavePayment} disabled={pmtSaving || !pmtForm.amount} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {pmtSaving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> {pmtEditingId ? 'Save Changes' : 'Record Payment'}</>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button className="btn btn-secondary" onClick={() => setInvToDelete(null)} disabled={deletingInv}>Cancel</button>
+              <button className="btn" onClick={() => handleDeleteInvoice(invToDelete)} disabled={deletingInv} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ff4d4f', color: '#fff', border: 'none' }}>
+                {deletingInv ? <><Loader2 size={15} className="animate-spin" /> Deleting…</> : <><Trash2 size={15} /> Delete Invoice</>}
               </button>
             </div>
           </div>

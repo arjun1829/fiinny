@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { ICONS } from '../../app/constants';
 import { useI18n } from '../../app/i18n/I18nContext';
 
@@ -17,12 +18,13 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
     ? t('footerBecomeManufacturer')
     : t('footerBecomeRetailer');
 
-  const shopLinks = [
-    { label: t('catPesticides'), cat: 'pesticides' },
-    { label: t('catFertilizers'), cat: 'fertilizers' },
-    { label: t('catBioStimulants'), cat: 'fertilizers' },
-    { label: t('footerSprayersTools'), cat: 'tools' },
-    { label: t('catSeeds'), cat: 'seeds' },
+  const shopLinks: { label: string; cat: string; slug?: string }[] = [
+    { label: t('catSeeds'),        cat: 'seeds',        slug: 'seeds' },
+    { label: t('catFertilizers'),  cat: 'fertilizers',  slug: 'fertilizers' },
+    { label: t('catPesticides'),   cat: 'pesticides',   slug: 'pesticides' },
+    { label: t('catHerbicides'),   cat: 'herbicides',   slug: 'herbicides' },
+    { label: t('catBioStimulants'), cat: 'bio-stimulants', slug: 'bio-stimulants' },
+    { label: t('catSprayers'),     cat: 'sprayers',     slug: 'sprayers' },
     { label: t('footerViewAllProducts'), cat: 'all' },
   ];
   const companyLinks: { label: string; view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer' }[] = [
@@ -63,16 +65,28 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
               {t('footerShop')}
             </h4>
             <ul className="space-y-2 text-sm">
-              {shopLinks.map((c) => (
-                <li key={c.label}>
-                  <button
-                    onClick={() => onCategoryClick?.(c.cat)}
-                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-                  >
-                    {c.label}
-                  </button>
-                </li>
-              ))}
+              {shopLinks.map((c) =>
+                c.slug ? (
+                  <li key={c.label}>
+                    <Link
+                      href={`/category/${c.slug}`}
+                      onClick={(e) => { e.preventDefault(); onCategoryClick?.(c.cat); }}
+                      className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                    >
+                      {c.label}
+                    </Link>
+                  </li>
+                ) : (
+                  <li key={c.label}>
+                    <button
+                      onClick={() => onCategoryClick?.(c.cat)}
+                      className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                    >
+                      {c.label}
+                    </button>
+                  </li>
+                )
+              )}
             </ul>
           </div>
 

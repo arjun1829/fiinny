@@ -3,7 +3,7 @@ import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/fire
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { queueWaNotification, buildSignupInviteUrl } from "./wa-notify";
+import { queueWaNotification } from "./wa-notify";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -459,6 +459,41 @@ async function displayName(phone: string, fallback: string): Promise<string> {
   return fallback;
 }
 
+/**
+ * Resolves a manufacturer's display name by trying phone variants first, then
+ * UID-keyed docs. Handles both phone-OTP accounts (phone is the doc key) and
+ * legacy UID-keyed accounts.
+ */
+async function manufacturerDisplayName(phone: string, uid: string, fallback: string): Promise<string> {
+  if (phone) {
+    const name = await displayName(phone, "");
+    if (name) return name;
+  }
+  if (uid) {
+    for (const col of ["manufacturers", "users"]) {
+      try {
+        const snap = await db.collection(col).doc(uid).get();
+        if (!snap.exists) continue;
+        const d = snap.data() ?? {};
+        const name = String(d.businessName ?? d.shopName ?? d.name ?? d.ownerName ?? "").trim();
+        if (name) return name;
+      } catch { /* keep trying */ }
+    }
+    // Also try resolving phone via uidIndex, then look up by phone
+    try {
+      const idxSnap = await db.collection("uidIndex").doc(uid).get();
+      if (idxSnap.exists) {
+        const resolvedPhone = String(idxSnap.data()?.phone ?? "").trim();
+        if (resolvedPhone && resolvedPhone !== phone) {
+          const name = await displayName(resolvedPhone, "");
+          if (name) return name;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return fallback;
+}
+
 /** New order placed → notify the seller (store owner). */
 export const notifySellerOnOrder = onDocumentCreated(
   "orders/{orderId}",
@@ -491,7 +526,7 @@ export const notifySellerOnOrder = onDocumentCreated(
       logger.info("[notifySellerOnOrder] before queueWaNotification");
       await queueWaNotification(
         sellerPhone,
-        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com`,
         {
           template: "order_notification",
           type: "order",
@@ -692,9 +727,10 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       d.manufacturerPhone,
       d.manufacturerId
     );
+    const mfrId = String(d.manufacturerId ?? "").trim();
     const mfr = String(
       d.assignedByManufacturerName ?? d.manufacturerName ?? d.brand ?? ""
-    ).trim() || (await displayName(mfrPhone, "A manufacturer"));
+    ).trim() || (await manufacturerDisplayName(mfrPhone, mfrId, "A manufacturer"));
 
     await notify(
       retailerPhone,
@@ -706,15 +742,41 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
 
     logger.info("[notifyRetailerOnAssignment] resolved retailerPhone", { retailerPhone, productId: event.params.productId });
     if (retailerPhone) {
-      logger.info("[notifyRetailerOnAssignment] before queueWaNotification");
+      const manufacturerIdForQuery = String(d.manufacturerId ?? "").trim();
+      const retailerDocId = String(d.retailerDocId ?? "").trim();
+      const productId = event.params.productId;
+
+      let isOnboarded = true;
+      let inviteCode = "";
+      if (manufacturerIdForQuery && retailerDocId) {
+        try {
+          const inviteSnap = await db.collection("manufacturerRetailers")
+            .where("manufacturerId", "==", manufacturerIdForQuery)
+            .where("retailerDocId", "==", retailerDocId)
+            .limit(1)
+            .get();
+          if (!inviteSnap.empty) {
+            const inv = inviteSnap.docs[0].data() as Record<string, unknown>;
+            isOnboarded = String(inv.status ?? "").trim() === "active";
+            inviteCode = String(inv.inviteCode ?? "").trim();
+          }
+        } catch { /* non-critical — default to onboarded path */ }
+      }
+
+      const template = isOnboarded ? "product_assignment_onboarded" : "product_assignment_pending_signup";
+      const payload = isOnboarded
+        ? { manufacturerName: mfr, productName, productId }
+        : { manufacturerName: mfr, productName, productId, inviteCode };
+
+      logger.info("[notifyRetailerOnAssignment] before queueWaNotification", { template, isOnboarded });
       await queueWaNotification(
         retailerPhone,
-        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}\n\nप्रॉडक्टची माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://www.krishidukan.com`,
+        `📦 नवीन प्रॉडक्ट असाइन करण्यात आला आहे.\n\nप्रॉडक्ट: ${productName}\nकंपनी: ${mfr}`,
         {
-          template: "product_assignment",
+          template,
           type: "onboarding",
-          payload: { productName, manufacturerName: mfr },
-          source: { event: "product_assigned", entityType: "product", entityId: event.params.productId },
+          payload,
+          source: { event: "product_assigned", entityType: "product", entityId: productId },
         }
       );
       logger.info("[notifyRetailerOnAssignment] after queueWaNotification");
@@ -736,13 +798,10 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
       d.retailerDocId,
       d.retailerId
     );
-    const mfr = String(
-      d.manufacturerName ?? d.manufacturerBusinessName ?? ""
-    ).trim() ||
-      (await displayName(
-        String(d.manufacturerPhone ?? ""),
-        "A manufacturer"
-      ));
+    const mfrPhone = String(d.manufacturerPhone ?? "").trim();
+    const mfrId = String(d.manufacturerId ?? "").trim();
+    const mfr = String(d.manufacturerName ?? d.manufacturerBusinessName ?? "").trim() ||
+      await manufacturerDisplayName(mfrPhone, mfrId, "A manufacturer");
 
     await notify(
       retailerPhone,
@@ -755,18 +814,14 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
     logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
     if (retailerPhone) {
       const inviteCode = String(d.inviteCode ?? "").trim();
-      const signupLink = inviteCode ? buildSignupInviteUrl(inviteCode) : "";
-      const linkLine = signupLink
-        ? `\n\nनोंदणी पूर्ण करण्यासाठी खालील लिंकवर क्लिक करा:\n${signupLink}\n\nही लिंक फक्त तुमच्यासाठी आहे.`
-        : "";
       logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
       await queueWaNotification(
         retailerPhone,
-        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.${linkLine}\n\nअधिक माहितीसाठी:\nhttps://www.krishidukan.com`,
+        `🌱 Krishi Dukan परिवारात तुमचं मनःपूर्वक स्वागत आहे!\n\nतुम्हाला ${mfr} यांच्या Retailer Network मध्ये सहभागी करण्यात आलं आहे.`,
         {
           template: "retailer_onboarding",
           type: "onboarding",
-          payload: { manufacturerName: mfr, inviteCode, signupLink },
+          payload: { manufacturerName: mfr, inviteCode },
           source: { event: "retailer_network_add", entityType: "manufacturerRetailer", entityId: event.params.docId },
         }
       );
@@ -793,15 +848,15 @@ export const notifyOnSubscriptionCreated = onDocumentCreated(
     const ownerPhone = firstPhone(d.ownerPhone, d.ownerId);
     if (!ownerPhone) return;
 
-    const name = await displayName(ownerPhone, "");
+    const ownerName = await displayName(ownerPhone, "");
 
     await queueWaNotification(
       ownerPhone,
-      `🎉 अभिनंदन!\n\nतुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.\n\nआता तुम्ही तुमचं दुकान व्यवस्थापित करू शकता, प्रॉडक्ट्स जोडू शकता आणि ऑनलाइन ऑर्डर्स स्वीकारू शकता.\n\nतुमच्या व्यवसायासाठी शुभेच्छा!\nhttps://www.krishidukan.com`,
+      `तुमची Krishi Dukan सदस्यता यशस्वीरित्या सक्रिय झाली आहे.`,
       {
         template: "subscription_welcome",
         type: "subscription",
-        payload: { name: name || ownerPhone },
+        payload: { ownerName: ownerName || ownerPhone, businessName: "", shopName: "" },
         source: {
           event: "subscription_created",
           entityType: "subscription",
@@ -847,19 +902,19 @@ export const remindExpiringSubscriptions = onSchedule(
       if (!ownerPhone) continue;
 
       const expiryTs = d.expiryDate as admin.firestore.Timestamp | undefined;
-      const expiryDate = expiryTs
-        ? expiryTs.toDate().toLocaleDateString("mr-IN", { day: "numeric", month: "long", year: "numeric" })
-        : "लवकरच";
+      const formattedExpiryDate = expiryTs
+        ? expiryTs.toDate().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+        : "soon";
 
-      const name = await displayName(ownerPhone, "");
+      const ownerName = await displayName(ownerPhone, "");
 
       await queueWaNotification(
         ownerPhone,
-        `⏰ सदस्यता नूतनीकरणाची आठवण\n\nतुमची Krishi Dukan सदस्यता ${expiryDate} रोजी संपणार आहे.\n\nसेवा अखंड सुरू ठेवण्यासाठी कृपया वेळेत सदस्यता नूतनीकरण करा.\nhttps://www.krishidukan.com`,
+        `तुमची Krishi Dukan सदस्यता ${formattedExpiryDate} रोजी संपणार आहे.`,
         {
           template: "subscription_expiry",
           type: "subscription",
-          payload: { name: name || ownerPhone, expiryDate },
+          payload: { ownerName: ownerName || ownerPhone, businessName: "", shopName: "", formattedExpiryDate },
           source: {
             event: "subscription_expiry_reminder",
             entityType: "subscription",

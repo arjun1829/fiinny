@@ -1,21 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+// 'Link' was only used by the Returns quick-access link, now disabled below (2026-07-03).
+// import { Link } from 'react-router-dom';
 import {
     Save, Loader2, Printer, Search, ShoppingCart, Plus, Minus, Trash2,
-    CreditCard, Banknote, History, ExternalLink, Target, LayoutGrid, List,
+    CreditCard, Banknote, History, ExternalLink, Target, Pencil,
     Zap, CheckCircle2, ChevronRight, X, Phone, User, QrCode, Package,
-    RotateCcw, Star, Smartphone, Columns, PlusCircle,
+    // RotateCcw removed — was only used by the Returns quick-access link, now disabled below (2026-07-03).
+    Star, Smartphone, Columns, PlusCircle,
 } from 'lucide-react';
 import UpiQrCode from '../components/UpiQrCode';
 import ModuleGate from '../components/ModuleGate';
 import {
-    query, onSnapshot, addDoc,
+    query, onSnapshot, addDoc, doc, writeBatch,
     serverTimestamp, updateDoc,
     runTransaction, getDoc, getDocs, limit, orderBy, where, collection, increment,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { AGRI_CATEGORIES } from '../utils/constants';
 import { fetchInvoiceTemplate, fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -63,7 +67,6 @@ interface PaymentSplit {
     amount: number;
 }
 
-const CATEGORIES = ['All', 'Kirana', 'Beverages', 'Personal Care', 'Dairy', 'Snacks'];
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Card', 'Wallet', 'Khata'];
 const DENOMINATIONS = [10, 20, 50, 100, 200, 500, 2000];
 
@@ -74,18 +77,44 @@ const defaultCustomer = (): CustomerState => ({
     pin: '',
 });
 
+// Loyalty is "active" only when the module is entitled AND the admin hasn't
+// explicitly disabled it. Config predates the enabled flag for some tenants —
+// absence of the field (undefined) must still mean "on", matching behavior
+// before this switch was wired in.
+function isLoyaltyActive(hasLoyaltyModule: boolean, loyaltyConfig: any): boolean {
+    return hasLoyaltyModule && loyaltyConfig?.enabled !== false;
+}
+
+// Tier multiplier lookup — mirrors LoyaltyPage.tsx's getTier() ordering
+// (highest minPoints first) so both pages agree on which tier a given point
+// balance belongs to.
+function getTierMultiplier(points: number, tiers: { name: string; minPoints: number; multiplier: number }[] | undefined): number {
+    if (!Array.isArray(tiers) || tiers.length === 0) return 1;
+    const sorted = [...tiers].sort((a, b) => (b.minPoints || 0) - (a.minPoints || 0));
+    const match = sorted.find(t => points >= (t.minPoints || 0));
+    const multiplier = match?.multiplier;
+    return typeof multiplier === 'number' && multiplier > 0 ? multiplier : 1;
+}
+
 export default function POSPage() {
     const { t } = useTranslation();
     const { tenantId, hasModule } = useAuth();
+    const { showToast } = useToast();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
     // View States
-    const [isRetailMode, setIsRetailMode] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const searchRef = useRef<HTMLInputElement>(null);
+
+    // Quick add/edit product — manage inventory inline without leaving the POS
+    const [showProductModal, setShowProductModal] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    const openAddProduct = () => { setEditingProduct(null); setShowProductModal(true); };
+    const openEditProduct = (product: Product) => { setEditingProduct(product); setShowProductModal(true); };
 
     // ── Multi-bill tabs ─────────────────────────────────────────────────────
     const [billTabs, setBillTabs] = useState<BillTab[]>([{
@@ -186,7 +215,17 @@ export default function POSPage() {
                 // Load loyalty config if module is enabled
                 if (hasModule('loyalty')) {
                     const loyaltySnap = await getDoc(getTenantDoc(db, tenantId, 'settings', 'loyaltyConfig'));
-                    if (loyaltySnap.exists()) setLoyaltyConfig(loyaltySnap.data());
+                    if (loyaltySnap.exists()) {
+                        const raw = loyaltySnap.data() as any;
+                        // Guard against a stray non-positive value already saved to Firestore —
+                        // never let it produce Infinity/NaN points or a runaway discount at checkout.
+                        setLoyaltyConfig({
+                            ...raw,
+                            pointsPerRupee: raw.pointsPerRupee > 0 ? raw.pointsPerRupee : 10,
+                            pointsValue: raw.pointsValue > 0 ? raw.pointsValue : 0.1,
+                            minRedeemPoints: raw.minRedeemPoints >= 0 ? raw.minRedeemPoints : 0,
+                        });
+                    }
                 }
             } catch (err) {
                 console.error(err);
@@ -231,7 +270,7 @@ export default function POSPage() {
 
     // Load customer loyalty when phone changes
     useEffect(() => {
-        if (!tenantId || !hasModule('loyalty') || customer.phone.length < 5) {
+        if (!tenantId || !isLoyaltyActive(hasModule('loyalty'), loyaltyConfig) || customer.phone.length < 5) {
             setCustomerLoyalty(null);
             setRedeemPoints(0);
             return;
@@ -239,7 +278,7 @@ export default function POSPage() {
         getDoc(getTenantDoc(db, tenantId, 'loyalty', customer.phone))
             .then(snap => { if (snap.exists()) setCustomerLoyalty(snap.data()); else setCustomerLoyalty(null); })
             .catch(() => {});
-    }, [customer.phone, tenantId, hasModule]);
+    }, [customer.phone, tenantId, hasModule, loyaltyConfig]);
 
     // ── Cart operations ─────────────────────────────────────────────────────
     const addToCart = (product: Product) => {
@@ -268,7 +307,11 @@ export default function POSPage() {
     };
 
     const cartSubtotal = cart.reduce((sum, item) => sum + item.cartTotal, 0);
-    const loyaltyDiscount = redeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
+    const loyaltyIsActive = isLoyaltyActive(hasModule('loyalty'), loyaltyConfig);
+    // If loyalty was switched off after points were already staged for redemption,
+    // the discount must not apply — no partial/stale redemption should reach checkout.
+    const effectiveRedeemPoints = loyaltyIsActive ? redeemPoints : 0;
+    const loyaltyDiscount = effectiveRedeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
     const grandTotal = Math.max(0, cartSubtotal - loyaltyDiscount);
 
     const handlePhoneLookup = async () => {
@@ -329,65 +372,104 @@ export default function POSPage() {
                 paymentSplits: options?.splits ?? [],
                 cashReceived: options?.cashReceived,
                 changeGiven: options?.cashReceived ? Math.max(0, options.cashReceived - grandTotal) : 0,
-                loyaltyPointsRedeemed: options?.loyaltyPointsRedeemed ?? redeemPoints,
+                loyaltyPointsRedeemed: options?.loyaltyPointsRedeemed ?? effectiveRedeemPoints,
                 amountPaid: paymentMethod === 'Khata' ? 0 : grandTotal,
                 status: 'delivered',
                 createdAt: serverTimestamp(),
                 invoiceDate: new Date().toISOString().split('T')[0],
             };
 
-            await addDoc(getTenantCollection(db, tenantId, 'salesOrders'), orderData);
+            // Persist the bill and deduct stock atomically in one batch — a
+            // half-saved sale can never leave inventory inconsistent.
+            const batch = writeBatch(db);
+            const soRef = doc(getTenantCollection(db, tenantId, 'salesOrders'));
+            batch.set(soRef, orderData);
 
-            // Inventory deduction
             for (const item of cart) {
-                const productRef = getTenantDoc(db, tenantId, 'products', item.id);
-                const q = item.cartQuantity;
-                let newLoose = (item.loosePieces || 0) - q;
+                let newLoose = (item.loosePieces || 0) - item.cartQuantity;
                 let newBoxes = item.quantity || 0;
                 while (newLoose < 0 && newBoxes > 0) {
                     newBoxes -= 1;
                     newLoose += (item.boxCapacity || 1);
                 }
-                await updateDoc(productRef, {
-                    quantity: newBoxes >= 0 ? newBoxes : 0,
-                    loosePieces: newBoxes >= 0 ? newLoose : 0,
+                // Never write negative stock — you can't sell what isn't there.
+                batch.update(getTenantDoc(db, tenantId, 'products', item.id), {
+                    quantity: Math.max(0, newBoxes),
+                    loosePieces: Math.max(0, newLoose),
                     updatedAt: serverTimestamp(),
                 });
             }
+            await batch.commit();
 
-            // Register customer if new
+            // Remember the walk-in customer for future lookup. Tagged channel:'pos'
+            // so B2C counter customers don't pollute the B2B Partner Worklist.
             if (customer.phone.length >= 5) {
                 const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1));
                 const snap = await getDocs(q);
                 if (snap.empty) {
                     await addDoc(getTenantCollection(db, tenantId, 'retailers'), {
                         name: customer.name, number: customer.phone, atPost: customer.address,
-                        pin: customer.pin, status: 'active', createdAt: serverTimestamp(),
+                        pin: customer.pin, status: 'active', channel: 'pos', createdAt: serverTimestamp(),
                     });
                 }
             }
 
-            // Loyalty points accumulation
-            if (hasModule('loyalty') && customer.phone.length >= 5 && loyaltyConfig) {
-                const loyaltyRef = getTenantDoc(db, tenantId, 'loyalty', customer.phone);
-                const pointsPerRupee = loyaltyConfig.pointsPerRupee || 10;
-                const pointsEarned = Math.floor(grandTotal / pointsPerRupee);
-                const redeemed = options?.loyaltyPointsRedeemed ?? redeemPoints;
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(loyaltyRef);
-                    const cur = snap.exists() ? snap.data() : { points: 0, totalSpend: 0 };
-                    tx.set(loyaltyRef, {
-                        phone: customer.phone,
-                        customerName: customer.name,
-                        points: Math.max(0, (cur.points || 0) + pointsEarned - redeemed),
-                        totalSpend: (cur.totalSpend || 0) + grandTotal,
-                        lastActivity: serverTimestamp(),
-                    }, { merge: true });
-                });
+            // Loyalty points accumulation — disabled module/config, a missing
+            // document, or any error here must never block a sale that has
+            // already been committed above; the whole block is best-effort.
+            if (isLoyaltyActive(hasModule('loyalty'), loyaltyConfig) && customer.phone.length >= 5 && loyaltyConfig) {
+                try {
+                    const loyaltyRef = getTenantDoc(db, tenantId, 'loyalty', customer.phone);
+                    const pointsPerRupee = loyaltyConfig.pointsPerRupee || 10;
+                    const baseBillPoints = Math.max(0, Math.floor(grandTotal / pointsPerRupee));
+                    const minRedeem = Math.max(0, loyaltyConfig.minRedeemPoints || 0);
+                    // Never redeem more than the balance can cover, and never redeem
+                    // below the configured minimum — a stale client-side value or a
+                    // config change mid-session should not bypass either rule.
+                    const requestedRedeem = Math.max(0, options?.loyaltyPointsRedeemed ?? effectiveRedeemPoints);
+
+                    await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(loyaltyRef);
+                        const cur: any = snap.exists() ? snap.data() : {};
+                        const priorPoints = Math.max(0, cur.points || 0);
+
+                        const redeemed = (requestedRedeem > 0 && requestedRedeem < minRedeem)
+                            ? 0
+                            : Math.min(requestedRedeem, priorPoints);
+
+                        // Tier is determined from the balance the customer carried
+                        // INTO this sale (their standing tier), then its multiplier
+                        // scales the points this sale earns — matching LoyaltyPage's
+                        // own tier lookup so both pages agree on tier boundaries.
+                        const multiplier = getTierMultiplier(priorPoints, loyaltyConfig.tiers);
+                        const pointsEarned = Math.max(0, Math.floor(baseBillPoints * multiplier));
+
+                        // Canonical fields going forward, kept alongside the original
+                        // customerName/totalSpend fields so any older reader of this
+                        // document (if one exists outside this codebase) keeps working.
+                        tx.set(loyaltyRef, {
+                            phone: customer.phone,
+                            customerName: customer.name,
+                            name: customer.name || cur.name || null,
+                            points: Math.max(0, priorPoints + pointsEarned - redeemed),
+                            totalSpend: Math.max(0, (cur.totalSpend || 0) + grandTotal),
+                            totalPointsEarned: Math.max(0, (cur.totalPointsEarned || 0) + pointsEarned),
+                            totalPointsRedeemed: Math.max(0, (cur.totalPointsRedeemed || 0) + redeemed),
+                            lastActivity: serverTimestamp(),
+                            lastTransactionAt: serverTimestamp(),
+                            updatedAt: serverTimestamp(),
+                        }, { merge: true });
+                    });
+                } catch (loyaltyErr) {
+                    // The sale itself already succeeded (batch.commit() above) —
+                    // a loyalty failure must not surface as a checkout failure.
+                    console.error('Loyalty update failed (sale already completed):', loyaltyErr);
+                }
             }
 
+            showToast(`Sale saved · ${billNumber} · ₹${Math.round(grandTotal).toLocaleString('en-IN')}`, 'success');
+
             // Print and reset
-            setIsRetailMode(false);
             setTimeout(() => {
                 window.print();
                 // Reset the active tab
@@ -397,12 +479,12 @@ export default function POSPage() {
                         : t,
                 ));
                 setRedeemPoints(0);
-                setIsRetailMode(true);
                 setIsProcessing(false);
             }, 500);
 
         } catch (e) {
             console.error(e);
+            showToast('Could not complete the sale. Please try again.', 'error');
             setIsProcessing(false);
         }
     };
@@ -448,6 +530,10 @@ export default function POSPage() {
             (p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode === searchQuery);
     });
 
+    // Category tabs are data-driven: only show categories that actually exist in
+    // inventory (plus All), so there are never empty dead tabs.
+    const categories = ['All', ...Array.from(new Set(products.map(p => (p.type || '').trim()).filter(Boolean))).sort()];
+
     // Split payment helpers
     const splitTotal = splits.reduce((s, sp) => s + (Number(sp.amount) || 0), 0);
     const splitRemaining = grandTotal - splitTotal;
@@ -458,7 +544,7 @@ export default function POSPage() {
         <div style={{ background: 'var(--bg-color)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
             {/* Header */}
-            <header className="no-print" style={{ background: '#fff', borderBottom: '1px solid var(--surface-border)', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+            <header className="no-print" style={{ background: 'var(--surface-base)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: '1px solid var(--surface-border)', padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ background: 'var(--primary)', color: 'white', padding: '0.5rem', borderRadius: '10px' }}><Zap size={22} /></div>
                     <h1 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0 }}>POS Billing</h1>
@@ -478,17 +564,20 @@ export default function POSPage() {
                 </div>
 
                 {/* Returns quick access */}
-                <ModuleGate moduleId="returns_exchanges" moduleName="Returns" paywallVariant="badge">
+                {/* TEMPORARILY DISABLED (2026-07-03)
+                    Returns & Exchanges module is incomplete.
+                    Hidden until the feature is redesigned and rebuilt. */}
+                {/* <ModuleGate moduleId="returns_exchanges" moduleName="Returns" paywallVariant="badge">
                     <Link to="/returns" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600, fontSize: '0.875rem' }}>
                         <RotateCcw size={16} /> Returns
                     </Link>
-                </ModuleGate>
+                </ModuleGate> */}
 
                 {/* V-Checkout session QR */}
                 <ModuleGate moduleId="vcheckout" moduleName="V-Checkout" paywallVariant="badge">
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <button onClick={handleCreateVCheckoutSession} title="Generate customer self-scan QR"
-                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
                             <Smartphone size={16} /> V-Checkout
                         </button>
                         {vcheckoutSessions.length > 0 && (
@@ -503,29 +592,27 @@ export default function POSPage() {
                     </div>
                 </ModuleGate>
 
-                <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: '12px', padding: '0.2rem' }}>
-                    <button onClick={() => setIsRetailMode(true)} style={{ padding: '0.4rem 0.9rem', borderRadius: '10px', background: isRetailMode ? 'white' : 'transparent', color: isRetailMode ? 'var(--primary)' : 'var(--text-tertiary)', border: 'none', cursor: 'pointer', display: 'flex', gap: '0.4rem', alignItems: 'center', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <LayoutGrid size={16} /> Retail
-                    </button>
-                    <button onClick={() => setIsRetailMode(false)} style={{ padding: '0.4rem 0.9rem', borderRadius: '10px', background: !isRetailMode ? 'white' : 'transparent', color: !isRetailMode ? 'var(--primary)' : 'var(--text-tertiary)', border: 'none', cursor: 'pointer', display: 'flex', gap: '0.4rem', alignItems: 'center', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <List size={16} /> Form
-                    </button>
-                </div>
+                {/* Quick add a product to inventory without leaving billing */}
+                <button onClick={openAddProduct} title="Add a new product to inventory"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
+                    <PlusCircle size={16} /> New Product
+                </button>
             </header>
 
             {/* Multi-bill tabs bar */}
             <ModuleGate moduleId="multi_bill_tabs" moduleName="Multiple Bills" paywallVariant="badge">
-                <div className="no-print" style={{ background: 'white', borderBottom: '1px solid var(--surface-border)', padding: '0.5rem 1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center', overflowX: 'auto' }}>
+                <div className="no-print" style={{ background: 'var(--surface-base)', borderBottom: '1px solid var(--surface-border)', padding: '0.5rem 1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center', overflowX: 'auto' }}>
                     {billTabs.map(tab => (
                         <div key={tab.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                             <button
                                 onClick={() => setActiveTabId(tab.id)}
                                 style={{
                                     padding: '0.35rem 0.9rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem', border: '1px solid',
-                                    background: tab.id === activeTabId ? 'var(--primary)' : 'white',
+                                    background: tab.id === activeTabId ? 'var(--primary)' : 'var(--surface-raised)',
                                     color: tab.id === activeTabId ? 'white' : 'var(--text-secondary)',
                                     borderColor: tab.id === activeTabId ? 'var(--primary)' : 'var(--surface-border)',
                                     cursor: 'pointer',
+                                    transition: 'all var(--transition-fast)',
                                 }}>
                                 {tab.label} {tab.cart.length > 0 && <span style={{ opacity: 0.7 }}>({tab.cart.length})</span>}
                             </button>
@@ -547,50 +634,63 @@ export default function POSPage() {
             <div style={{ display: 'flex', flex: 1 }}>
                 {/* Main product area */}
                 <main className="no-print" style={{ flex: 1, padding: '1.25rem', height: 'calc(100vh - 80px)', overflowY: 'auto' }}>
-                    {isRetailMode ? (
-                        <>
-                            <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
-                                {CATEGORIES.map(cat => (
-                                    <button key={cat} onClick={() => setSelectedCategory(cat)}
-                                        style={{
-                                            padding: '0.4rem 1.1rem', borderRadius: '20px', whiteSpace: 'nowrap', fontWeight: 600,
-                                            background: selectedCategory === cat ? 'var(--primary)' : 'white',
-                                            color: selectedCategory === cat ? 'white' : 'var(--text-secondary)',
-                                            border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.875rem',
-                                        }}>
-                                        {cat}
-                                    </button>
-                                ))}
-                            </div>
+                    <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                        {categories.map(cat => (
+                            <button key={cat} onClick={() => setSelectedCategory(cat)}
+                                style={{
+                                    padding: '0.4rem 1.1rem', borderRadius: '20px', whiteSpace: 'nowrap', fontWeight: 600,
+                                    background: selectedCategory === cat ? 'var(--primary)' : 'var(--surface-base)',
+                                    color: selectedCategory === cat ? 'white' : 'var(--text-secondary)',
+                                    border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.875rem',
+                                    transition: 'all var(--transition-fast)',
+                                }}>
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
 
-                            <div className="pos-grid">
-                                {filteredProducts.map(product => (
-                                    <div key={product.id} className="pos-card" onClick={() => addToCart(product)}>
-                                        <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)' }}>
-                                            {product.quantity || 0} Box {(product.loosePieces || 0) > 0 ? `+ ${product.loosePieces} ${product.baseUnit}` : ''}
-                                        </div>
-                                        <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', borderRadius: '8px', marginBottom: '0.6rem', overflow: 'hidden' }}>
-                                            {product.imageUrl
-                                                ? <img src={product.imageUrl} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                : <Package size={30} color="var(--text-tertiary)" />
-                                            }
-                                        </div>
-                                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.2rem', height: '2.2rem', overflow: 'hidden', color: 'var(--text-primary)' }}>{product.name}</h4>
-                                        <p style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1rem', margin: 0 }}>₹{product.sellingPrice || product.maxRetailPrice}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
+                    {filteredProducts.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-tertiary)' }}>
+                            <Package size={48} style={{ margin: '0 auto 1rem', opacity: 0.2 }} />
+                            <p style={{ marginBottom: '1.25rem' }}>
+                                {searchQuery
+                                    ? <>No product matches "<strong>{searchQuery}</strong>".</>
+                                    : <>No products in inventory yet.</>}
+                            </p>
+                            <button onClick={openAddProduct} className="btn" style={{ background: 'var(--primary)', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Plus size={18} /> {searchQuery ? <>Add "{searchQuery}" to inventory</> : 'Add Product'}
+                            </button>
+                        </div>
                     ) : (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '2rem' }}>
-                            <p className="text-center text-slate-500 italic">Form-based entry view — use the Retail tab to scan and add products.</p>
+                        <div className="pos-grid themed-scroll">
+                            {filteredProducts.map(product => (
+                                <div key={product.id} className="pos-card" onClick={() => addToCart(product)} style={{ position: 'relative' }}>
+                                    <div className="stock" style={{ background: (product.quantity || 0) > 0 ? 'var(--primary)' : 'var(--danger)', color: 'white' }}>
+                                        {product.quantity || 0} Box {(product.loosePieces || 0) > 0 ? `+ ${product.loosePieces} ${product.baseUnit}` : ''}
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openEditProduct(product); }}
+                                        title="Edit product details"
+                                        style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2, width: '28px', height: '28px', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--glass-shadow)', transition: 'all var(--transition-fast)' }}>
+                                        <Pencil size={14} />
+                                    </button>
+                                    <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', borderRadius: '8px', marginBottom: '0.6rem', overflow: 'hidden' }}>
+                                        {product.imageUrl
+                                            ? <img src={product.imageUrl} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            : <Package size={30} color="var(--text-tertiary)" />
+                                        }
+                                    </div>
+                                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.2rem', height: '2.2rem', overflow: 'hidden', color: 'var(--text-primary)' }}>{product.name}</h4>
+                                    <p style={{ color: 'var(--primary)', fontWeight: 800, fontSize: '1rem', margin: 0 }}>₹{product.sellingPrice || product.maxRetailPrice}</p>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </main>
 
                 {/* Cart sidebar */}
-                <aside className="no-print" style={{ width: '420px', background: '#fff', borderLeft: '1px solid var(--surface-border)', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
+                <aside className="no-print" style={{ width: '420px', background: 'var(--surface-base)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderLeft: '1px solid var(--surface-border)', display: 'flex', flexDirection: 'column' }}>
+                    <div className="themed-scroll" style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}><ShoppingCart size={18} /> Bill Summary</h3>
                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>#{nextBillNumber}</span>
@@ -598,34 +698,41 @@ export default function POSPage() {
 
                         {/* Customer entry */}
                         <div className="glass-panel" style={{ padding: '0.875rem', marginBottom: '1.25rem' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                                <Phone size={15} color="var(--text-tertiary)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingBottom: '0.6rem', marginBottom: '0.6rem', borderBottom: '1px solid var(--surface-border)' }}>
+                                <Phone size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
                                 <input
                                     type="tel"
                                     placeholder="Customer phone..."
-                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '0.9rem' }}
+                                    spellCheck={false}
+                                    autoCorrect="off"
+                                    className="pos-customer-input"
+                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '0.9rem', color: 'var(--text-primary)' }}
                                     value={customer.phone}
                                     onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
                                     onBlur={handlePhoneLookup}
                                 />
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <User size={15} color="var(--text-tertiary)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <User size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
                                 <input
                                     type="text"
                                     placeholder="Name: Walk-in Customer"
-                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontWeight: 600, fontSize: '0.9rem' }}
+                                    spellCheck={false}
+                                    className="pos-customer-input"
+                                    style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}
                                     value={customer.name}
                                     onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
                                 />
                             </div>
                         </div>
 
-                        {/* Loyalty points display */}
-                        {hasModule('loyalty') && customerLoyalty && customerLoyalty.points > 0 && (
+                        {/* Loyalty points display — hidden entirely when the module is
+                            unentitled or the admin has switched Loyalty off, so a disabled
+                            config can't leave a now-inert redeem control on screen. */}
+                        {loyaltyIsActive && customerLoyalty && customerLoyalty.points > 0 && (
                             <div style={{ background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.2)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <Star size={16} color="#d97706" />
+                                    <Star size={16} color="var(--secondary-dark)" />
                                     <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{customerLoyalty.points} points available</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -634,9 +741,19 @@ export default function POSPage() {
                                         min={0}
                                         max={customerLoyalty.points}
                                         value={redeemPoints}
-                                        onChange={e => setRedeemPoints(Math.min(Number(e.target.value), customerLoyalty.points))}
-                                        style={{ width: '60px', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '0.2rem 0.4rem', fontSize: '0.85rem' }}
+                                        onChange={e => {
+                                            const raw = Math.min(Number(e.target.value), customerLoyalty.points);
+                                            const minRedeem = loyaltyConfig?.minRedeemPoints || 0;
+                                            // Allow 0 (no redemption) or any amount meeting the configured minimum.
+                                            setRedeemPoints(raw > 0 && raw < minRedeem ? 0 : raw);
+                                        }}
+                                        style={{ width: '60px', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '0.2rem 0.4rem', fontSize: '0.85rem', background: 'var(--surface-raised)', color: 'var(--text-primary)' }}
                                     />
+                                    {loyaltyConfig?.minRedeemPoints > 0 && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                                            (min {loyaltyConfig.minRedeemPoints})
+                                        </span>
+                                    )}
                                     <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>pts</span>
                                 </div>
                             </div>
@@ -646,8 +763,8 @@ export default function POSPage() {
                         <AnimatePresence>
                             {cart.map(item => (
                                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} key={item.id} className="pos-cart-item">
-                                    <div style={{ flex: 1 }}>
-                                        <h5 style={{ fontSize: '0.9rem', margin: 0 }}>{item.name}</h5>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <h5 style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</h5>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>₹</span>
                                             <input
@@ -657,17 +774,19 @@ export default function POSPage() {
                                                     const newPrice = Number(e.target.value);
                                                     setCart(prev => prev.map(c => c.id === item.id ? { ...c, sellingPrice: newPrice, cartTotal: c.cartQuantity * newPrice } : c));
                                                 }}
-                                                style={{ width: '52px', border: 'none', background: 'transparent', fontSize: '0.78rem', fontWeight: 600, color: 'var(--primary)', padding: 0 }}
+                                                className="pos-price-input"
+                                                title="Click to edit price"
+                                                style={{ width: '52px', border: 'none', borderBottom: '1px dashed var(--surface-border)', background: 'transparent', fontSize: '0.78rem', fontWeight: 600, color: 'var(--primary)', padding: '0 0 1px' }}
                                             />
                                             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>/ {item.unit || item.baseUnit}</span>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--bg-color)', borderRadius: '30px', padding: '0.2rem 0.6rem' }}>
-                                        <button onClick={() => updateQty(item.id, -1)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '0.2rem' }}><Minus size={13} /></button>
-                                        <span style={{ fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '0.9rem' }}>{item.cartQuantity}</span>
-                                        <button onClick={() => updateQty(item.id, 1)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '0.2rem' }}><Plus size={13} /></button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '30px', padding: '0.2rem 0.6rem', flexShrink: 0 }}>
+                                        <button onClick={() => updateQty(item.id, -1)} className="pos-qty-btn" aria-label="Decrease quantity"><Minus size={13} /></button>
+                                        <span style={{ fontWeight: 800, minWidth: '20px', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{item.cartQuantity}</span>
+                                        <button onClick={() => updateQty(item.id, 1)} className="pos-qty-btn" aria-label="Increase quantity"><Plus size={13} /></button>
                                     </div>
-                                    <div style={{ width: '72px', textAlign: 'right', fontWeight: 700, fontSize: '0.9rem' }}>₹{Math.round(item.cartTotal)}</div>
+                                    <div style={{ width: '72px', textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', flexShrink: 0 }}>₹{Math.round(item.cartTotal)}</div>
                                 </motion.div>
                             ))}
                         </AnimatePresence>
@@ -690,8 +809,8 @@ export default function POSPage() {
                                 </div>
                             )}
                             {loyaltyDiscount > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#16a34a', marginBottom: '0.25rem' }}>
-                                    <span>Loyalty Discount ({redeemPoints} pts)</span><span>-₹{loyaltyDiscount.toFixed(2)}</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--success)', marginBottom: '0.25rem' }}>
+                                    <span>Loyalty Discount ({effectiveRedeemPoints} pts)</span><span>-₹{loyaltyDiscount.toFixed(2)}</span>
                                 </div>
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 800 }}>
@@ -739,9 +858,9 @@ export default function POSPage() {
 
             {/* ── V-Pay Dialog ──────────────────────────────────────────────────────── */}
             {showVPayDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVPayDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <h3 style={{ marginBottom: '1rem' }}>Scan to Pay</h3>
                         <UpiQrCode
@@ -768,13 +887,13 @@ export default function POSPage() {
 
             {/* ── Cash Tender Dialog ────────────────────────────────────────────────── */}
             {showCashTenderDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowCashTenderDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '380px', width: '100%' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '380px', width: '100%', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0 }}>Cash Tender</h3>
-                            <button onClick={() => setShowCashTenderDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowCashTenderDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
 
                         <div style={{ background: 'var(--surface-raised)', borderRadius: '12px', padding: '1rem', marginBottom: '1rem', textAlign: 'center' }}>
@@ -786,18 +905,18 @@ export default function POSPage() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
                             {DENOMINATIONS.map(d => (
                                 <button key={d} onClick={() => setCashTenderAmount(d)}
-                                    style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === d ? 'var(--primary)' : 'white', color: cashTenderAmount === d ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+                                    style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === d ? 'var(--primary)' : 'var(--surface-raised)', color: cashTenderAmount === d ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all var(--transition-fast)' }}>
                                     ₹{d}
                                 </button>
                             ))}
                             <button onClick={() => setCashTenderAmount(grandTotal)}
-                                style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === grandTotal ? 'var(--primary)' : 'white', color: cashTenderAmount === grandTotal ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+                                style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: cashTenderAmount === grandTotal ? 'var(--primary)' : 'var(--surface-raised)', color: cashTenderAmount === grandTotal ? 'white' : 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all var(--transition-fast)' }}>
                                 Exact
                             </button>
                         </div>
 
                         <div style={{ marginBottom: '1rem' }}>
-                            <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', display: 'block' }}>Cash Received</label>
+                            <label style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.3rem', display: 'block', color: 'var(--text-secondary)' }}>Cash Received</label>
                             <input
                                 type="number"
                                 value={cashTenderAmount || ''}
@@ -810,8 +929,8 @@ export default function POSPage() {
                         </div>
 
                         {cashTenderAmount > 0 && (
-                            <div style={{ background: cashTenderAmount >= grandTotal ? '#dcfce7' : '#fee2e2', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', textAlign: 'center' }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: cashTenderAmount >= grandTotal ? '#16a34a' : '#dc2626' }}>
+                            <div style={{ background: cashTenderAmount >= grandTotal ? 'hsla(142, 60%, 35%, 0.12)' : 'hsla(0, 84%, 55%, 0.12)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1rem', textAlign: 'center' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: cashTenderAmount >= grandTotal ? 'var(--success)' : 'var(--danger)' }}>
                                     {cashTenderAmount >= grandTotal
                                         ? `Change: ₹${Math.round(cashTenderAmount - grandTotal)}`
                                         : `Short by ₹${Math.round(grandTotal - cashTenderAmount)}`}
@@ -832,13 +951,13 @@ export default function POSPage() {
 
             {/* ── Split Payment Dialog ──────────────────────────────────────────────── */}
             {showSplitDialog && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowSplitDialog(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '400px', width: '100%' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '400px', width: '100%', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0 }}>Split Payment</h3>
-                            <button onClick={() => setShowSplitDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowSplitDialog(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
 
                         <div style={{ background: 'var(--surface-raised)', borderRadius: '12px', padding: '0.75rem 1rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -849,12 +968,12 @@ export default function POSPage() {
                         {splits.map((sp, i) => (
                             <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem', alignItems: 'center' }}>
                                 <select value={sp.method} onChange={e => setSplits(prev => prev.map((s, idx) => idx === i ? { ...s, method: e.target.value } : s))}
-                                    style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem' }}>
+                                    style={{ flex: 1, padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', background: 'var(--surface-raised)', color: 'var(--text-primary)' }}>
                                     {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <input type="number" value={sp.amount || ''} onChange={e => setSplits(prev => prev.map((s, idx) => idx === i ? { ...s, amount: Number(e.target.value) } : s))}
                                     placeholder="₹0"
-                                    style={{ width: '90px', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', fontWeight: 700 }} />
+                                    style={{ width: '90px', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', fontWeight: 700, background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
                                 {splits.length > 1 && (
                                     <button onClick={() => setSplits(prev => prev.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
                                         <Trash2 size={16} />
@@ -870,9 +989,9 @@ export default function POSPage() {
                             </button>
                         )}
 
-                        <div style={{ background: splitRemaining === 0 ? '#dcfce7' : splitRemaining < 0 ? '#fee2e2' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.6rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ background: splitRemaining === 0 ? 'hsla(142, 60%, 35%, 0.12)' : splitRemaining < 0 ? 'hsla(0, 84%, 55%, 0.12)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.6rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Remaining</span>
-                            <span style={{ fontWeight: 800, color: splitRemaining === 0 ? '#16a34a' : splitRemaining < 0 ? '#dc2626' : 'var(--text-primary)' }}>
+                            <span style={{ fontWeight: 800, color: splitRemaining === 0 ? 'var(--success)' : splitRemaining < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
                                 ₹{Math.round(Math.abs(splitRemaining))} {splitRemaining < 0 ? '(over)' : ''}
                             </span>
                         </div>
@@ -890,15 +1009,15 @@ export default function POSPage() {
 
             {/* ── V-Checkout Pending Sessions Panel ────────────────────────────────── */}
             {showVCheckoutPanel && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVCheckoutPanel(false)}>
-                    <div style={{ width: '380px', background: 'white', height: '100%', overflowY: 'auto', padding: '1.5rem' }}
+                    <div className="themed-scroll" style={{ width: '380px', background: 'var(--surface-base)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderLeft: '1px solid var(--surface-border)', height: '100%', overflowY: 'auto', padding: '1.5rem', animation: 'slideInRight 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
                             <h3 style={{ margin: 0, display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                 <Smartphone size={20} /> Pending V-Checkouts
                             </h3>
-                            <button onClick={() => setShowVCheckoutPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                            <button onClick={() => setShowVCheckoutPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
                         </div>
                         {vcheckoutSessions.length === 0
                             ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem 0' }}>No pending sessions</p>
@@ -927,9 +1046,9 @@ export default function POSPage() {
 
             {/* ── V-Checkout QR Dialog ─────────────────────────────────────────────── */}
             {showVCheckoutQr && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
                     onClick={() => setShowVCheckoutQr(false)}>
-                    <div style={{ background: 'white', borderRadius: '20px', padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center' }}
+                    <div className="glass-panel" style={{ padding: '2rem', maxWidth: '340px', width: '100%', textAlign: 'center', borderRadius: '20px', animation: 'scaleUp 0.22s ease-out' }}
                         onClick={e => e.stopPropagation()}>
                         <h3 style={{ marginBottom: '0.5rem' }}>Customer Self-Scan</h3>
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
@@ -942,6 +1061,17 @@ export default function POSPage() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* ── Quick Add / Edit Product ─────────────────────────────────────────── */}
+            {showProductModal && tenantId && (
+                <QuickProductModal
+                    tenantId={tenantId}
+                    product={editingProduct}
+                    defaultName={editingProduct ? '' : searchQuery}
+                    products={products}
+                    onClose={() => { setShowProductModal(false); setEditingProduct(null); }}
+                />
             )}
 
             {/* Hidden print layout */}
@@ -1045,6 +1175,163 @@ function TraditionalPrintLayout({ cart, customer, branding, billNumber, subtotal
             <p style={{ textAlign: 'center', fontSize: '10px', marginTop: '30px', color: '#666' }}>
                 Computer Generated Invoice - No Signature Required
             </p>
+        </div>
+    );
+}
+
+// ── Quick Add / Edit Product ────────────────────────────────────────────────
+// A lightweight inventory form so the counter can add a missing product or fix a
+// price without leaving billing. Full pricing (box-level, PTR, image, etc.) stays
+// on the Inventory page; this writes the same `products` collection.
+interface QuickProductModalProps {
+    tenantId: string;
+    product: Product | null;
+    defaultName: string;
+    products: Product[];
+    onClose: () => void;
+}
+
+function QuickProductModal({ tenantId, product, defaultName, products, onClose }: QuickProductModalProps) {
+    const nextSku = () => {
+        let max = 0;
+        products.forEach(p => {
+            const m = /^KA-(\d+)$/i.exec(((p as any).productNumber || '').trim());
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return `KA-${String(max + 1).padStart(3, '0')}`;
+    };
+
+    const [form, setForm] = useState({
+        name: product?.name ?? defaultName ?? '',
+        type: product?.type || '',
+        sellingPrice: product?.sellingPrice || product?.maxRetailPrice || 0,
+        maxRetailPrice: product?.maxRetailPrice || 0,
+        purchasePrice: product?.purchasePrice || 0,
+        quantity: product?.quantity || 0,
+        loosePieces: product?.loosePieces || 0,
+        boxCapacity: product?.boxCapacity || 1,
+        baseUnit: (product?.baseUnit as string) || 'pcs',
+        gstPct: product?.gstPct ?? 5,
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (patch: Partial<typeof form>) => setForm(prev => ({ ...prev, ...patch }));
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!form.name.trim()) return;
+        setSaving(true);
+        try {
+            const margin = form.maxRetailPrice > 0
+                ? `${Math.round(((form.maxRetailPrice - form.purchasePrice) / form.maxRetailPrice) * 100)}%`
+                : 'N/A';
+            const data: any = {
+                name: form.name.trim(),
+                type: form.type,
+                sellingPrice: form.sellingPrice,
+                maxRetailPrice: form.maxRetailPrice || form.sellingPrice,
+                retailerPrice: product?.retailerPrice ?? form.sellingPrice,
+                purchasePrice: form.purchasePrice,
+                quantity: form.quantity,
+                loosePieces: form.loosePieces,
+                boxCapacity: form.boxCapacity || 1,
+                baseUnit: form.baseUnit,
+                gstPct: form.gstPct,
+                margin,
+                updatedAt: serverTimestamp(),
+            };
+            if (product) {
+                await updateDoc(getTenantDoc(db, tenantId, 'products', product.id), data);
+            } else {
+                await addDoc(getTenantCollection(db, tenantId, 'products'), {
+                    ...data,
+                    productNumber: nextSku(),
+                    category: 'B2B',
+                    createdAt: serverTimestamp(),
+                });
+            }
+            onClose();
+        } catch (err) {
+            console.error('Failed to save product', err);
+            alert('Could not save the product. Please try again.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const labelStyle: React.CSSProperties = { fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' };
+    const fieldStyle: React.CSSProperties = { width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.9rem', boxSizing: 'border-box', background: 'var(--surface-raised)', color: 'var(--text-primary)' };
+
+    return (
+        <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
+            onClick={onClose}>
+            <form onSubmit={handleSave} onClick={e => e.stopPropagation()} className="glass-panel themed-scroll"
+                style={{ padding: '1.5rem', maxWidth: '460px', width: '100%', maxHeight: '90vh', overflowY: 'auto', borderRadius: '18px', animation: 'scaleUp 0.22s ease-out' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {product ? <Pencil size={18} /> : <Plus size={18} />} {product ? 'Edit Product' : 'Add Product'}
+                    </h3>
+                    <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+                </div>
+
+                <div style={{ marginBottom: '0.9rem' }}>
+                    <label style={labelStyle}>Product Name *</label>
+                    <input required autoFocus value={form.name} onChange={e => set({ name: e.target.value })} placeholder="e.g. Power Plus 5000 ML" style={fieldStyle} />
+                </div>
+
+                <div style={{ marginBottom: '0.9rem' }}>
+                    <label style={labelStyle}>Category</label>
+                    <select value={form.type} onChange={e => set({ type: e.target.value })} style={fieldStyle}>
+                        <option value="">— Select category —</option>
+                        {AGRI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.9rem' }}>
+                    <div>
+                        <label style={labelStyle}>Selling Price (₹) *</label>
+                        <input required type="number" min="0" step="0.01" value={form.sellingPrice || ''} onChange={e => set({ sellingPrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>MRP (₹)</label>
+                        <input type="number" min="0" step="0.01" value={form.maxRetailPrice || ''} onChange={e => set({ maxRetailPrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Purchase Rate (₹)</label>
+                        <input type="number" min="0" step="0.01" value={form.purchasePrice || ''} onChange={e => set({ purchasePrice: Number(e.target.value) })} placeholder="0.00" style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>GST %</label>
+                        <input type="number" min="0" value={form.gstPct} onChange={e => set({ gstPct: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Stock (Boxes)</label>
+                        <input type="number" min="0" value={form.quantity} onChange={e => set({ quantity: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Loose Pieces</label>
+                        <input type="number" min="0" value={form.loosePieces} onChange={e => set({ loosePieces: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Pcs / Box</label>
+                        <input type="number" min="1" value={form.boxCapacity} onChange={e => set({ boxCapacity: Number(e.target.value) })} style={fieldStyle} />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Unit</label>
+                        <select value={form.baseUnit} onChange={e => set({ baseUnit: e.target.value })} style={fieldStyle}>
+                            <option value="pcs">Pieces (pcs)</option>
+                            <option value="ltr">Liters (ltr)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="g">Grams (g)</option>
+                            <option value="ml">Milliliters (ml)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit" disabled={saving} className="btn" style={{ background: 'var(--primary)', color: 'white', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.6 : 1 }}>
+                    {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                    {product ? 'Save Changes' : 'Add to Inventory'}
+                </button>
+            </form>
         </div>
     );
 }

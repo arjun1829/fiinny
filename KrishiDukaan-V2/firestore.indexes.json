@@ -202,6 +202,21 @@
         { "fieldPath": "viewsCount",      "order": "DESCENDING" },
         { "fieldPath": "createdAt",       "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "waNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "metaMessageId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "waIncomingMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "phone",       "order": "ASCENDING" },
+        { "fieldPath": "receivedAt",  "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

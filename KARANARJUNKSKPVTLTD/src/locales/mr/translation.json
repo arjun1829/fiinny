@@ -246,6 +246,7 @@
     "inventory": {
         "title": "रेट शीट",
         "description": "उत्पादने, किंमती आणि स्टॉक पातळी व्यवस्थापित करा.",
+        "search_placeholder": "नाव किंवा SKU ने शोधा…",
         "add_product": "उत्पादन जोडा",
         "edit_product": "उत्पादन संपादित करा",
         "add_new_product": "नवीन उत्पादन जोडा",
