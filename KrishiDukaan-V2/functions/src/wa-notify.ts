@@ -5,6 +5,7 @@ type WaTemplate =
   | "subscription_welcome"
   | "subscription_expiry"
   | "order_notification"
+  | "order_confirmation_customer"
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"

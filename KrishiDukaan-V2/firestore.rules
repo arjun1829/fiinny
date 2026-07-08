@@ -242,7 +242,12 @@ service cloud.firestore {
         || (isAuthed() && (
           resource.data.customerId == request.auth.uid ||
           resource.data.customerPhone == myPhone()
-        ) && request.resource.data.keys().hasOnly(['payment', 'updatedAt']));
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payment', 'updatedAt']))
+        // Allow customer to write invoice metadata after PDF upload
+        || (isAuthed() && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.customerPhone == myPhone()
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invoice']));
     }
 
     // ─── hubs ────────────────────────────────────────────────────────────────

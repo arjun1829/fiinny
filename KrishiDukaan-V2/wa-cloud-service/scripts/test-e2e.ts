@@ -108,15 +108,40 @@ async function testTemplateResolver(): Promise<void> {
     assert(p2.text === "Suresh Seeds", "manufacturer_network_summary: {{1}} falls back to shopName");
   }
 
-  // order_notification — 3 body params
+  // order_notification — 1 body param (shopName → businessName → "Retailer")
+  // Sent to the SELLER. Static Orders Dashboard URL button in the Meta template.
   {
-    const c = resolveTemplateComponents("order_notification", { customerName: "Anil", itemSummary: "Urea 50kg", total: 1200 });
+    // primary: shopName wins
+    const c = resolveTemplateComponents("order_notification", { shopName: "Anil Agro", businessName: "" });
     assert(c.length === 1, "order_notification: 1 component");
-    assert(c[0].parameters.length === 3, "order_notification: 3 parameters", `got ${c[0].parameters.length}`);
+    assert(c[0].parameters.length === 1, "order_notification: 1 parameter", `got ${c[0].parameters.length}`);
     const params = c[0].parameters as Array<{ type: string; text: string }>;
-    assert(params[0].text === "Anil", "order_notification: {{1}} = customerName");
-    assert(params[1].text === "Urea 50kg", "order_notification: {{2}} = itemSummary");
-    assert(params[2].text === "1200", "order_notification: {{3}} = total");
+    assert(params[0].text === "Anil Agro", "order_notification: {{1}} = shopName");
+
+    // fallback: businessName when shopName is absent
+    const c2 = resolveTemplateComponents("order_notification", { shopName: "", businessName: "Anil Enterprises" });
+    const p2 = c2[0].parameters[0] as { type: string; text: string };
+    assert(p2.text === "Anil Enterprises", "order_notification: {{1}} falls back to businessName");
+
+    // last-resort: "Retailer" when both are absent
+    const c3 = resolveTemplateComponents("order_notification", { shopName: "", businessName: "" });
+    const p3 = c3[0].parameters[0] as { type: string; text: string };
+    assert(p3.text === "Retailer", "order_notification: {{1}} falls back to 'Retailer'");
+  }
+
+  // order_confirmation_customer — 1 body param (customerName) + 1 button (orderId)
+  // Sent to the CUSTOMER after order placement. Button resolves to /invoice/{orderId}.
+  {
+    const c = resolveTemplateComponents("order_confirmation_customer", { customerName: "Priya Patil", orderId: "ORD12345678" });
+    assert(c.length === 2, "order_confirmation_customer: 2 components (body + button)", `got ${c.length}`);
+    assert(c[0].type === "body", "order_confirmation_customer: c[0] = body");
+    assert(c[0].parameters.length === 1, "order_confirmation_customer: body has 1 param", `got ${c[0].parameters.length}`);
+    const bodyParams = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(bodyParams[0].text === "Priya Patil", "order_confirmation_customer: body {{1}} = customerName");
+    assert(c[1].type === "button" && c[1].sub_type === "url" && c[1].index === 0, "order_confirmation_customer: c[1] = button url index=0");
+    const btnParam = c[1].parameters[0] as { type: string; text: string };
+    assert(btnParam.text === "ORD12345678", "order_confirmation_customer: button {{1}} = orderId (no full URL)");
+    assert(!btnParam.text.includes("https://"), "order_confirmation_customer: button param contains no URL");
   }
 
   // product_assignment_onboarded — 1 body (2 params) + 1 button
@@ -208,13 +233,14 @@ async function testTemplateSends(testPhone: string): Promise<void> {
   process.env.WA_DEBUG = "true";
 
   const templates: Array<{ name: string; payload: Record<string, string | number | boolean> }> = [
-    { name: "subscription_welcome",          payload: { ownerName: "Test User", businessName: "", shopName: "" } },
-    { name: "subscription_expiry",           payload: { ownerName: "Test User", businessName: "", shopName: "", formattedExpiryDate: "31 July 2026" } },
-    { name: "order_notification",            payload: { customerName: "Test Customer", itemSummary: "Urea 50kg", total: 1500 } },
-    { name: "manufacturer_network_summary",  payload: { ownerName: "Test Corp", businessName: "", shopName: "", retailerCount: "5" } },
-    { name: "product_assignment_onboarded",  payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
+    { name: "subscription_welcome",             payload: { ownerName: "Test User", businessName: "", shopName: "" } },
+    { name: "subscription_expiry",              payload: { ownerName: "Test User", businessName: "", shopName: "", formattedExpiryDate: "31 July 2026" } },
+    { name: "order_notification",               payload: { shopName: "Test Agro Store", businessName: "" } },
+    { name: "order_confirmation_customer",      payload: { customerName: "Test Customer", orderId: "TESTORDERID001" } },
+    { name: "manufacturer_network_summary",     payload: { ownerName: "Test Corp", businessName: "", shopName: "", retailerCount: "5" } },
+    { name: "product_assignment_onboarded",     payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
     { name: "product_assignment_pending_signup", payload: { manufacturerName: "Test Corp", productName: "Test Product", inviteCode: "TESTCODE", productId: "test_prod_id" } },
-    { name: "retailer_onboarding",           payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },
+    { name: "retailer_onboarding",              payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },
   ];
 
   for (const tmpl of templates) {
