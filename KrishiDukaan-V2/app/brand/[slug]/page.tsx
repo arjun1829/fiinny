@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
   collection,
   doc,
@@ -10,6 +11,7 @@ import {
   where,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../../lib/firebase-client-server";
+import { buildProductSlug } from "../../lib/seo/products-server";
 import BrandView from "../../views/BrandView";
 import type {
   ManufacturerBrandData,
@@ -20,6 +22,9 @@ import type {
 import { assembleBrandData } from "../../dashboard/_lib/brand-page-types";
 
 export const dynamic = "force-dynamic";
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -256,14 +261,24 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const name = String(d.businessName ?? d.ownerName ?? "Brand");
   const tagline = brandSnap.exists() ? String(brandSnap.data()?.tagline ?? "") : "";
 
+  const brandTitle = `${name} | KrishiDukan`;
+  const brandDescription =
+    tagline ||
+    `${name} — verified manufacturer on KrishiDukan. View products and find nearby stores.`;
   return {
-    title: `${name} | KrishiDukan`,
-    description:
-      tagline ||
-      `${name} — verified manufacturer on KrishiDukan. View products and find nearby stores.`,
+    title: brandTitle,
+    description: brandDescription,
+    alternates: { canonical: `${SITE_URL}/brand/${slug}` },
     openGraph: {
-      title: `${name} | KrishiDukan`,
+      title: brandTitle,
       description: tagline || `${name} — verified manufacturer on KrishiDukan.`,
+      images: [{ url: "/images/og-default.png", width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: brandTitle,
+      description: brandDescription,
+      images: ["/images/og-default.png"],
     },
   };
 }
@@ -280,6 +295,21 @@ export default async function BrandPage({ params }: PageProps) {
 
   return (
     <main>
+      {/* Server-rendered product links — crawlable by Google, hidden visually.
+          BrandView renders the interactive product grid for users. */}
+      {data.products.length > 0 && (
+        <nav aria-label="Brand products" className="sr-only">
+          <ul>
+            {data.products.map((p) => (
+              <li key={p.id}>
+                <Link href={`/products/${buildProductSlug(p.name, p.id)}`}>
+                  {p.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
       <BrandView
         brand={data.brand}
         products={data.products}

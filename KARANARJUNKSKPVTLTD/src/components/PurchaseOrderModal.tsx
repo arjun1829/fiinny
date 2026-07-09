@@ -291,8 +291,9 @@ export default function PurchaseOrderModal({ supplierName, editing, onClose, onS
             className="input-field"
             placeholder="PUR-2026-000001"
             value={form.internalPurchaseId}
-            onChange={e => setForm(f => ({ ...f, internalPurchaseId: e.target.value }))}
-            style={{ width: '100%', margin: 0 }}
+            readOnly
+            title="ERP-generated — not editable"
+            style={{ width: '100%', margin: 0, opacity: 0.75, cursor: 'default', background: 'var(--surface-raised)' }}
           />
           <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '0.3rem' }}>
             ERP-generated unique purchase reference. Independent of the supplier's invoice number.

@@ -119,19 +119,15 @@ const organizationLd = {
     "India's agri-marketplace for farmers. Buy seeds, fertilizers, pesticides, herbicides, bio-stimulants, sprayers and farming tools online from verified manufacturers and nearby retailers.",
 };
 
+// potentialAction / SearchAction omitted until a server-rendered /search route
+// exists. The previous urlTemplate pointed to /?view=market&search=… which is
+// a client-rendered SPA view — Google cannot execute it, so the SearchAction
+// was invalid. Re-add once /search returns real HTML.
 const websiteLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
   name: "KrishiDukan",
   url: SITE_URL,
-  potentialAction: {
-    "@type": "SearchAction",
-    target: {
-      "@type": "EntryPoint",
-      urlTemplate: `${SITE_URL}/?view=market&search={search_term_string}`,
-    },
-    "query-input": "required name=search_term_string",
-  },
 };
 
 export default function RootLayout({

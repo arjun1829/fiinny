@@ -42,6 +42,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       url: `${SITE_URL}/category/${meta.slug}`,
       images: [{ url: "/images/og-default.png", width: 1200, height: 630 }],
     },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description: meta.metaDescription,
+      images: ["/images/og-default.png"],
+    },
   };
 }
 
@@ -63,6 +69,20 @@ export default async function CategoryPage({ params }: PageProps) {
       { "@type": "ListItem", position: 2, name: meta.heading },
     ],
   };
+
+  // ── JSON-LD: FAQPage (only rendered when the category has FAQ data) ──
+  const faqLd =
+    meta.faqs && meta.faqs.length > 0
+      ? {
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: meta.faqs.map((faq) => ({
+            "@type": "Question",
+            name: faq.q,
+            acceptedAnswer: { "@type": "Answer", text: faq.a },
+          })),
+        }
+      : null;
 
   // ── JSON-LD: CollectionPage + ItemList ──
   const collectionLd = {
@@ -97,6 +117,12 @@ export default async function CategoryPage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionLd) }}
       />
+      {faqLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+        />
+      )}
 
       <div className="max-w-6xl mx-auto px-4 py-10">
         {/* Breadcrumb */}
@@ -116,9 +142,13 @@ export default async function CategoryPage({ params }: PageProps) {
         </h1>
 
         {/* Indexable intro copy */}
-        <p className="mt-4 max-w-3xl text-on-surface-variant leading-relaxed">
-          {meta.intro}
-        </p>
+        <div className="mt-4 max-w-3xl space-y-4">
+          {meta.intro.split("\n\n").map((paragraph, index) => (
+            <p key={index} className="text-on-surface-variant leading-relaxed">
+              {paragraph}
+            </p>
+          ))}
+        </div>
 
         {/* Product grid — real crawlable links */}
         {products.length > 0 ? (
@@ -155,9 +185,9 @@ export default async function CategoryPage({ params }: PageProps) {
           </section>
         ) : (
           <p className="mt-10 text-on-surface-variant">
-            New {meta.heading.toLowerCase()} are being added. Meanwhile, explore the{" "}
-            <Link href="/?view=market" className="text-primary font-semibold hover:underline">
-              full marketplace
+            New {meta.heading.toLowerCase()} are being added. Meanwhile, browse our{" "}
+            <Link href="/blog" className="text-primary font-semibold hover:underline">
+              farming guides and tips
             </Link>
             .
           </p>

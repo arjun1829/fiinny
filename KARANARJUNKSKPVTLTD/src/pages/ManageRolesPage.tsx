@@ -32,6 +32,7 @@ export default function ManageRolesPage() {
             { key: 'worklist', label: 'Worklist' },
             { key: 'dispatch', label: 'Dispatch Board' },
             { key: 'pos', label: 'POS Billing' },
+            { key: 'loyalty', label: 'Loyalty & Memberships' },
             { key: 'inventory', label: 'Inventory (Rates)' },
             { key: 'order_history', label: 'Order History' },
             { key: 'online_orders', label: 'Online Orders' },

@@ -36,8 +36,10 @@ function toDate(value: unknown): Date {
 }
 
 // ─── Static public entries ──────────────────────────────────────────────────
-// These map to the SPA's public query-based views, which are the real navigable
-// URLs today. Authenticated/cart views are intentionally excluded.
+// Only SSR routes that return real HTML content to crawlers are listed here.
+// The SPA's ?view=* query-param URLs (market, hub, map, about, help) are
+// intentionally excluded — they are client-rendered and deliver an empty page
+// to search engines, wasting crawl budget and degrading sitemap quality.
 function staticEntries(now: Date): MetadataRoute.Sitemap {
   return [
     { url: `${SITE_URL}/`, lastModified: now, changeFrequency: "daily", priority: 1.0 },
