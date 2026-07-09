@@ -32,10 +32,9 @@ export type DealerInput = {
   geo: { lat: number; lng: number } | null;
 };
 
-export async function fetchDealers(uid: string): Promise<Dealer[]> {
+export async function fetchDealers(): Promise<Dealer[]> {
   const q = query(
     collection(db, 'dealers'),
-    where('createdBy', '==', uid),
     where('active', '==', true),
   );
   const snap = await getDocs(q);

@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Waypoint = { lat: number; lng: number };
 
+type RouteResult = {
+  totalDistanceKm: number;
+  encodedPolyline?: string;
+  source: 'google-routes' | 'osrm';
+};
+
 /**
  * POST /api/directions
  * Body: { waypoints: { lat, lng }[] }
  *
- * Calls Google Directions API server-side (no CORS restriction).
- * Falls back to OSRM public routing if Google is unavailable or the API is not enabled.
- * Returns: { totalDistanceKm: number, source: 'google' | 'osrm' }
+ * Calls the Google Routes API server-side (no CORS restriction).
+ * Falls back to OSRM if Google is unavailable or the key is not set.
+ * Returns: { totalDistanceKm, encodedPolyline?, source }
  */
 export async function POST(req: NextRequest) {
   let waypoints: Waypoint[];
@@ -27,79 +33,104 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  // ── Try Google Directions API ──────────────────────────────────────────────
   const apiKey =
     process.env.GOOGLE_MAPS_SERVER_KEY?.trim() ||
     process.env.GOOGLE_MAPS_API_KEY?.trim() ||
     process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
 
+  // ── Try Google Routes API ─────────────────────────────────────────────────
   if (apiKey) {
     try {
-      const result = await googleDirections(waypoints, apiKey);
+      const result = await googleRoutes(waypoints, apiKey);
       if (result !== null) {
-        return NextResponse.json({ totalDistanceKm: result, source: 'google' });
+        return NextResponse.json({
+          totalDistanceKm: result.totalDistanceKm,
+          encodedPolyline:  result.encodedPolyline,
+          source: 'google-routes',
+        });
       }
     } catch {
       // fall through to OSRM
     }
   }
 
-  // ── Fallback: OSRM public routing server ──────────────────────────────────
-  // Free, no API key, good road coverage including India.
+  // ── Fallback: OSRM ────────────────────────────────────────────────────────
   try {
     const result = await osrmRoute(waypoints);
     if (result !== null) {
-      return NextResponse.json({ totalDistanceKm: result, source: 'osrm' });
+      return NextResponse.json({
+        totalDistanceKm:  result.totalDistanceKm,
+        encodedPolyline:  result.encodedPolyline,
+        source: 'osrm',
+      });
     }
   } catch {
     // fall through to error
   }
 
   return NextResponse.json(
-    { error: 'Could not calculate route distance. Both Google and OSRM failed.' },
+    { error: 'Could not calculate route distance. Both Google Routes and OSRM failed.' },
     { status: 502 },
   );
 }
 
-// ── Google Directions ────────────────────────────────────────────────────────
+// ── Google Routes API ────────────────────────────────────────────────────────
 
-async function googleDirections(waypoints: Waypoint[], apiKey: string): Promise<number | null> {
+async function googleRoutes(waypoints: Waypoint[], apiKey: string): Promise<RouteResult | null> {
   const origin      = waypoints[0];
   const destination = waypoints[waypoints.length - 1];
-  const intermediate = waypoints.slice(1, -1);
+  const intermediates = waypoints.slice(1, -1);
 
-  const params = new URLSearchParams({
-    origin:      `${origin.lat},${origin.lng}`,
-    destination: `${destination.lat},${destination.lng}`,
-    key:         apiKey,
-  });
-  if (intermediate.length > 0) {
-    params.set('waypoints', intermediate.map((p) => `via:${p.lat},${p.lng}`).join('|'));
-  }
-
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`,
-    { next: { revalidate: 0 } },
-  );
-  if (!res.ok) return null;
-
-  const body = (await res.json()) as {
-    status: string;
-    routes: { legs: { distance: { value: number } }[] }[];
+  const body = {
+    origin:      { location: { latLng: { latitude: origin.lat,      longitude: origin.lng      } } },
+    destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+    ...(intermediates.length > 0
+      ? { intermediates: intermediates.map(p => ({ location: { latLng: { latitude: p.lat, longitude: p.lng } } })) }
+      : {}),
+    travelMode:               'DRIVE',
+    routingPreference:        'TRAFFIC_UNAWARE',
+    computeAlternativeRoutes: false,
+    polylineEncoding:         'ENCODED_POLYLINE',
   };
 
-  if (body.status !== 'OK' || !body.routes.length) return null;
+  const res = await fetch(
+    'https://routes.googleapis.com/directions/v2:computeRoutes',
+    {
+      method:  'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'X-Goog-Api-Key':    apiKey,
+        'X-Goog-FieldMask':  'routes.distanceMeters,routes.polyline.encodedPolyline',
+      },
+      body: JSON.stringify(body),
+      next: { revalidate: 0 },
+    },
+  );
 
-  const totalMeters = body.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0);
-  return Math.round(totalMeters / 10) / 100;
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as {
+    routes?: {
+      distanceMeters?: number;
+      polyline?: { encodedPolyline?: string };
+    }[];
+  };
+
+  const route = data.routes?.[0];
+  if (!route || typeof route.distanceMeters !== 'number') return null;
+
+  return {
+    totalDistanceKm: Math.round(route.distanceMeters / 10) / 100,
+    encodedPolyline: route.polyline?.encodedPolyline,
+    source: 'google-routes',
+  };
 }
 
 // ── OSRM fallback ─────────────────────────────────────────────────────────────
 
-async function osrmRoute(waypoints: Waypoint[]): Promise<number | null> {
-  // OSRM expects coordinates as lng,lat (note: reversed from Google)
+async function osrmRoute(waypoints: Waypoint[]): Promise<RouteResult | null> {
   const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=polyline`;
 
   const res = await fetch(url, {
     headers: { 'User-Agent': 'krishidukan-app/1.0' },
@@ -107,13 +138,16 @@ async function osrmRoute(waypoints: Waypoint[]): Promise<number | null> {
   });
   if (!res.ok) return null;
 
-  const body = (await res.json()) as {
+  const data = (await res.json()) as {
     code: string;
-    routes: { distance: number }[];
+    routes: { distance: number; geometry?: string }[];
   };
 
-  if (body.code !== 'Ok' || !body.routes.length) return null;
+  if (data.code !== 'Ok' || !data.routes.length) return null;
 
-  const totalMeters = body.routes[0].distance;
-  return Math.round(totalMeters / 10) / 100;
+  return {
+    totalDistanceKm: Math.round(data.routes[0].distance / 10) / 100,
+    encodedPolyline: data.routes[0].geometry,
+    source: 'osrm',
+  };
 }

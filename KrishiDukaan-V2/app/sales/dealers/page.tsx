@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { ArrowLeft } from 'lucide-react';
 import { auth } from '../../firebase';
-import { getUserLocation } from '../../utils/geolocation';
 import {
   fetchDealers,
   createDealer,
@@ -15,14 +14,13 @@ import {
   type DealerInput,
 } from './dealers-service';
 import {
-  startVisit,
-  endVisit,
-  fetchActiveVisit,
+  markAsVisited,
   fetchLastVisitsByExec,
   fetchTodayVisits,
   type DealerVisit,
-  type VisitInput,
+  type MarkVisitInput,
 } from './dealer-visit-service';
+import { fetchTodaySession } from '../day-session-service';
 import DealerCard from '../../../components/sales/DealerCard';
 import DealerSearch from '../../../components/sales/DealerSearch';
 import DealerForm from '../../../components/sales/DealerForm';
@@ -38,11 +36,10 @@ export default function DealersPage() {
   const [user, setUser] = useState<User | null>(null);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [lastVisits, setLastVisits] = useState<Map<string, DealerVisit>>(new Map());
-  const [activeVisit, setActiveVisit] = useState<DealerVisit | null>(null);
   const [todayVisits, setTodayVisits] = useState<DealerVisit[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pageState, setPageState] = useState<PageState>('loading');
   const [loadError, setLoadError] = useState('');
-
   const [search, setSearch] = useState('');
 
   // Dealer form state
@@ -67,11 +64,11 @@ export default function DealersPage() {
     setPageState('loading');
     setLoadError('');
     try {
-      const [data, visitsMap, active, todayVis] = await Promise.all([
-        fetchDealers(uid),
+      const [data, visitsMap, todayVis, session] = await Promise.all([
+        fetchDealers(),
         fetchLastVisitsByExec(uid),
-        fetchActiveVisit(uid),
         fetchTodayVisits(uid),
+        fetchTodaySession(uid),
       ]);
       data.sort((a, b) => {
         const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
@@ -80,8 +77,8 @@ export default function DealersPage() {
       });
       setDealers(data);
       setLastVisits(visitsMap);
-      setActiveVisit(active);
       setTodayVisits(todayVis);
+      setActiveSessionId(session?.id ?? null);
       setPageState('ready');
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load dealers.');
@@ -91,13 +88,11 @@ export default function DealersPage() {
 
   /** Refresh only visit state (faster than full reload). */
   const refreshVisits = async (uid: string) => {
-    const [visitsMap, active, todayVis] = await Promise.all([
+    const [visitsMap, todayVis] = await Promise.all([
       fetchLastVisitsByExec(uid),
-      fetchActiveVisit(uid),
       fetchTodayVisits(uid),
     ]);
     setLastVisits(visitsMap);
-    setActiveVisit(active);
     setTodayVisits(todayVis);
   };
 
@@ -111,6 +106,14 @@ export default function DealersPage() {
       d.phone.includes(q)
     );
   });
+
+  // ── Today's visits by dealer (for DealerCard visited state) ───────────────
+  const todayVisitsByDealer = new Map<string, DealerVisit>();
+  for (const v of todayVisits) {
+    if (!todayVisitsByDealer.has(v.dealerId)) {
+      todayVisitsByDealer.set(v.dealerId, v);
+    }
+  }
 
   // ── Dealer CRUD ────────────────────────────────────────────────────────────
   const handleAddDealer = async (input: DealerInput) => {
@@ -135,29 +138,23 @@ export default function DealersPage() {
   const openEditDealer = (dealer: Dealer) => { setEditTarget(dealer); setDealerFormOpen(true); };
   const closeDealerForm = () => { setDealerFormOpen(false); setEditTarget(null); };
 
-  // ── Visit lifecycle ────────────────────────────────────────────────────────
+  // ── Mark as Visited ────────────────────────────────────────────────────────
   const handleOpenVisitForm = (dealer: Dealer) => {
     setVisitDealer(dealer);
     setVisitFormOpen(true);
   };
 
-  const handleStartVisit = async (input: VisitInput) => {
-    if (!user) return;
-    await startVisit(user.uid, input);
-    await refreshVisits(user.uid);
-  };
+  const closeVisitForm = () => { setVisitFormOpen(false); setVisitDealer(null); };
 
-  const handleEndVisit = async (visit: DealerVisit) => {
+  const handleMarkAsVisited = async (input: Omit<MarkVisitInput, 'daySessionId' | 'visitSequence'>) => {
     if (!user) return;
-    const result = await getUserLocation();
-    await endVisit(visit.id, visit.startedAt ?? visit.visitedAt, {
-      lat: result.coords.lat,
-      lng: result.coords.lng,
+    await markAsVisited(user.uid, {
+      ...input,
+      daySessionId:  activeSessionId ?? undefined,
+      visitSequence: todayVisits.length + 1,
     });
     await refreshVisits(user.uid);
   };
-
-  const closeVisitForm = () => { setVisitFormOpen(false); setVisitDealer(null); };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -176,7 +173,7 @@ export default function DealersPage() {
           <h1 className="text-base font-bold text-on-surface">Dealer Visit</h1>
           <p className="text-xs text-on-surface-variant">
             {pageState === 'ready'
-              ? `${dealers.length} dealer${dealers.length !== 1 ? 's' : ''}${activeVisit ? ' · 1 active visit' : ''}`
+              ? `${dealers.length} dealer${dealers.length !== 1 ? 's' : ''}`
               : 'Loading…'}
           </p>
         </div>
@@ -247,12 +244,12 @@ export default function DealersPage() {
                 <DealerCard
                   key={dealer.id}
                   dealer={dealer}
+                  currentUserId={user!.uid}
                   lastVisit={lastVisits.get(dealer.id) ?? null}
-                  activeVisit={activeVisit}
+                  todayVisit={todayVisitsByDealer.get(dealer.id) ?? null}
                   onEdit={openEditDealer}
                   onDeactivate={handleDeactivate}
-                  onStartVisit={handleOpenVisitForm}
-                  onEndVisit={handleEndVisit}
+                  onMarkAsVisited={() => handleOpenVisitForm(dealer)}
                 />
               ))}
             </div>
@@ -273,12 +270,12 @@ export default function DealersPage() {
         onSubmit={editTarget ? handleEditDealer : handleAddDealer}
       />
 
-      {/* Visit start form */}
+      {/* Visit form */}
       <VisitForm
         open={visitFormOpen}
         dealer={visitDealer}
         onClose={closeVisitForm}
-        onSubmit={handleStartVisit}
+        onSubmit={handleMarkAsVisited}
       />
 
       {/* FAB — opens Add Dealer */}

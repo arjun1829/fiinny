@@ -1,13 +1,10 @@
 import {
   collection,
-  doc,
   addDoc,
-  updateDoc,
   getDocs,
   query,
   where,
   orderBy,
-  limit,
   Timestamp,
   GeoPoint,
   serverTimestamp,
@@ -32,122 +29,94 @@ export type DealerVisit = {
   dealerId: string;
   dealerName: string;
   salesExecutiveId: string;
+  daySessionId?: string;
+  visitSequence?: number;
   purpose: string;
   purposeOther?: string;
   notes?: string;
-  // Location — geo kept for backward compat; arrivalGeo is the Phase 5 canonical field
   geo: { latitude: number; longitude: number } | null;
-  arrivalGeo?: { latitude: number; longitude: number } | null;
-  departureGeo?: { latitude: number; longitude: number } | null;
-  // Session lifecycle
-  status?: 'ACTIVE' | 'COMPLETED'; // undefined on Phase 4 docs → treat as COMPLETED
-  startedAt?: unknown;              // set on create (= visitedAt)
-  endedAt?: unknown;
-  visitDurationMinutes?: number;
-  // Legacy / compat
   visitedAt: unknown;
   createdAt: unknown;
   updatedAt: unknown;
 };
 
-export type VisitInput = {
+export type MarkVisitInput = {
   dealerId: string;
   dealerName: string;
   purpose: VisitPurpose;
   purposeOther?: string;
   notes?: string;
   geo: { lat: number; lng: number };
+  daySessionId?: string;
+  visitSequence?: number;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapVisitDoc(d: { id: string; data: () => Record<string, unknown> }): DealerVisit {
   const data = d.data();
-  const rawGeo      = data.geo as any;
-  const rawArrival  = data.arrivalGeo as any;
-  const rawDeparture = data.departureGeo as any;
+  const rawGeo = data.geo as any;
   return {
-    id: d.id,
-    dealerId:          String(data.dealerId ?? ''),
-    dealerName:        String(data.dealerName ?? ''),
-    salesExecutiveId:  String(data.salesExecutiveId ?? ''),
-    purpose:           String(data.purpose ?? ''),
-    purposeOther:      data.purposeOther  ? String(data.purposeOther)  : undefined,
-    notes:             data.notes         ? String(data.notes)         : undefined,
-    geo:               rawGeo      ? { latitude: rawGeo.latitude,      longitude: rawGeo.longitude      } : null,
-    arrivalGeo:        rawArrival  ? { latitude: rawArrival.latitude,  longitude: rawArrival.longitude  } : null,
-    departureGeo:      rawDeparture? { latitude: rawDeparture.latitude,longitude: rawDeparture.longitude} : null,
-    status:            (data.status as 'ACTIVE' | 'COMPLETED' | undefined) ?? undefined,
-    startedAt:         data.startedAt,
-    endedAt:           data.endedAt,
-    visitDurationMinutes: typeof data.visitDurationMinutes === 'number' ? data.visitDurationMinutes : undefined,
-    visitedAt:         data.visitedAt,
-    createdAt:         data.createdAt,
-    updatedAt:         data.updatedAt,
+    id:               d.id,
+    dealerId:         String(data.dealerId ?? ''),
+    dealerName:       String(data.dealerName ?? ''),
+    salesExecutiveId: String(data.salesExecutiveId ?? ''),
+    daySessionId:     data.daySessionId  ? String(data.daySessionId)  : undefined,
+    visitSequence:    typeof data.visitSequence === 'number' ? data.visitSequence : undefined,
+    purpose:          String(data.purpose ?? ''),
+    purposeOther:     data.purposeOther  ? String(data.purposeOther)  : undefined,
+    notes:            data.notes         ? String(data.notes)         : undefined,
+    geo:              rawGeo ? { latitude: rawGeo.latitude, longitude: rawGeo.longitude } : null,
+    visitedAt:        data.visitedAt,
+    createdAt:        data.createdAt,
+    updatedAt:        data.updatedAt,
   };
 }
 
 // ── Write operations ─────────────────────────────────────────────────────────
 
-/** Creates a new ACTIVE visit. Replaces the old logVisit. */
-export async function startVisit(uid: string, input: VisitInput): Promise<string> {
+/** Records a completed dealer visit as a single timestamped checkpoint. */
+export async function markAsVisited(uid: string, input: MarkVisitInput): Promise<string> {
   const now = serverTimestamp();
-  const geoPoint = new GeoPoint(input.geo.lat, input.geo.lng);
   const ref = await addDoc(collection(db, 'dealerVisits'), {
-    dealerId:          input.dealerId,
-    dealerName:        input.dealerName,
-    salesExecutiveId:  uid,
-    purpose:           input.purpose,
-    ...(input.purpose === 'Other' && input.purposeOther
-      ? { purposeOther: input.purposeOther.trim() }
-      : {}),
-    ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
-    geo:        geoPoint, // backward compat
-    arrivalGeo: geoPoint,
-    status:     'ACTIVE',
-    startedAt:  now,
-    visitedAt:  now, // backward compat for fetchLastVisitsByExec ordering
-    createdAt:  now,
-    updatedAt:  now,
+    dealerId:         input.dealerId,
+    dealerName:       input.dealerName,
+    salesExecutiveId: uid,
+    ...(input.daySessionId  != null ? { daySessionId:  input.daySessionId  } : {}),
+    ...(input.visitSequence != null ? { visitSequence: input.visitSequence } : {}),
+    purpose:   input.purpose,
+    ...(input.purpose === 'Other' && input.purposeOther ? { purposeOther: input.purposeOther } : {}),
+    ...(input.notes ? { notes: input.notes } : {}),
+    geo:       new GeoPoint(input.geo.lat, input.geo.lng),
+    visitedAt: now,
+    createdAt: now,
+    updatedAt: now,
   });
   return ref.id;
 }
 
-/** Completes an active visit, records departure and duration. */
-export async function endVisit(
-  visitId: string,
-  startedAt: unknown,
-  departureCoords: { lat: number; lng: number },
-): Promise<void> {
-  const startMs =
-    typeof (startedAt as any)?.toMillis === 'function'
-      ? (startedAt as any).toMillis() as number
-      : Date.now();
-  const visitDurationMinutes = Math.max(0, Math.round((Date.now() - startMs) / 60_000));
+// ── Sorting utility ───────────────────────────────────────────────────────────
 
-  await updateDoc(doc(db, 'dealerVisits', visitId), {
-    departureGeo:         new GeoPoint(departureCoords.lat, departureCoords.lng),
-    endedAt:              serverTimestamp(),
-    status:               'COMPLETED',
-    visitDurationMinutes,
-    updatedAt:            serverTimestamp(),
+/**
+ * Sorts visits into the canonical route order used by both the map and timeline.
+ * Primary:   visitSequence ASC (set when the visit was recorded)
+ * Fallback:  visitedAt ASC (for visits recorded before visitSequence was added)
+ * Mixed:     visits with a sequence come before those without
+ */
+export function sortVisits(visits: DealerVisit[]): DealerVisit[] {
+  return [...visits].sort((a, b) => {
+    if (a.visitSequence != null && b.visitSequence != null) {
+      return a.visitSequence - b.visitSequence;
+    }
+    if (a.visitSequence != null) return -1;
+    if (b.visitSequence != null) return  1;
+    const ta = (a.visitedAt as any)?.toMillis?.() ?? 0;
+    const tb = (b.visitedAt as any)?.toMillis?.() ?? 0;
+    return ta - tb;
   });
 }
 
 // ── Read operations ───────────────────────────────────────────────────────────
-
-/** Returns the current ACTIVE visit for this exec, or null if none. */
-export async function fetchActiveVisit(uid: string): Promise<DealerVisit | null> {
-  const q = query(
-    collection(db, 'dealerVisits'),
-    where('salesExecutiveId', '==', uid),
-    where('status', '==', 'ACTIVE'),
-    limit(1),
-  );
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return mapVisitDoc(snap.docs[0] as any);
-}
 
 /** Returns today's visits for the exec, newest first. */
 export async function fetchTodayVisits(uid: string): Promise<DealerVisit[]> {
@@ -165,9 +134,7 @@ export async function fetchTodayVisits(uid: string): Promise<DealerVisit[]> {
 }
 
 /**
- * Fetches all visits for a sales exec ordered newest-first.
- * Returns a Map<dealerId, DealerVisit> with the latest COMPLETED visit per dealer.
- * (Skips ACTIVE visits so the "last visit" strip shows the previous completed visit.)
+ * Returns Map<dealerId, DealerVisit> with the latest visit per dealer.
  * One query — no N+1 reads.
  */
 export async function fetchLastVisitsByExec(uid: string): Promise<Map<string, DealerVisit>> {
@@ -182,10 +149,38 @@ export async function fetchLastVisitsByExec(uid: string): Promise<Map<string, De
   for (const d of snap.docs) {
     const data = d.data();
     const dealerId = String(data.dealerId ?? '');
-    // Skip ACTIVE visits — show last completed visit in the strip
     if (!dealerId || lastByDealer.has(dealerId)) continue;
-    if (data.status === 'ACTIVE') continue;
     lastByDealer.set(dealerId, mapVisitDoc(d as any));
   }
   return lastByDealer;
+}
+
+/** All visits for a sales exec, newest-first. Used to compute per-date visit counts. */
+export async function fetchAllVisitsForExec(uid: string): Promise<DealerVisit[]> {
+  const q = query(
+    collection(db, 'dealerVisits'),
+    where('salesExecutiveId', '==', uid),
+    orderBy('visitedAt', 'desc'),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => mapVisitDoc(d as any));
+}
+
+/**
+ * Visits for a specific IST date (YYYY-MM-DD), ordered oldest-first for timeline display.
+ * Uses IST day boundaries to avoid UTC/IST midnight mismatches.
+ */
+export async function fetchVisitsForDate(uid: string, dateStr: string): Promise<DealerVisit[]> {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // Midnight IST = Date.UTC(y, m-1, d) - 5h30m
+  const startMs = Date.UTC(y, m - 1, d) - 5.5 * 3_600_000;
+  const q = query(
+    collection(db, 'dealerVisits'),
+    where('salesExecutiveId', '==', uid),
+    where('visitedAt', '>=', Timestamp.fromDate(new Date(startMs))),
+    where('visitedAt', '<',  Timestamp.fromDate(new Date(startMs + 86_400_000))),
+    orderBy('visitedAt', 'asc'),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => mapVisitDoc(d as any));
 }

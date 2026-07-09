@@ -3,9 +3,11 @@ import {
   doc,
   addDoc,
   updateDoc,
+  getDoc,
   getDocs,
   query,
   where,
+  orderBy,
   limit,
   GeoPoint,
   serverTimestamp,
@@ -23,7 +25,7 @@ export type DaySession = {
   endedAt?: unknown;
   totalWorkingMinutes?: number;
   totalDistanceKm?: number;
-  calculationError?: string;
+  encodedPolyline?: string;
   createdAt: unknown;
   updatedAt: unknown;
 };
@@ -52,24 +54,30 @@ function mapSession(d: { id: string; data: () => Record<string, unknown> }): Day
     startedAt:           data.startedAt,
     endedAt:             data.endedAt,
     totalWorkingMinutes: typeof data.totalWorkingMinutes === 'number' ? data.totalWorkingMinutes : undefined,
-    totalDistanceKm:     typeof data.totalDistanceKm    === 'number' ? data.totalDistanceKm    : undefined,
-    calculationError:    data.calculationError ? String(data.calculationError) : undefined,
+    totalDistanceKm:     typeof data.totalDistanceKm === 'number' ? data.totalDistanceKm : undefined,
+    encodedPolyline:     data.encodedPolyline ? String(data.encodedPolyline) : undefined,
     createdAt:           data.createdAt,
     updatedAt:           data.updatedAt,
   };
 }
 
-// ── Route distance (client-side, single Directions API call) ─────────────────
+// ── Route calculation (client-side, single Routes API call) ──────────────────
+
+export type RouteCalcResult = {
+  totalDistanceKm: number;
+  encodedPolyline?: string;
+};
 
 /**
- * Calculates road distance for an ordered list of waypoints (start → visits → end).
- * Calls /api/directions which proxies Google Directions server-side (no CORS),
+ * Calculates road distance + encoded polyline for an ordered list of waypoints.
+ * Waypoints must be: [startGeo, ...visitGeos (sorted), endGeo]
+ * Calls /api/directions which proxies the Google Routes API server-side,
  * with automatic fallback to OSRM if Google is unavailable.
  */
-export async function calculateRouteDistanceKm(
+export async function calculateRoute(
   waypoints: { lat: number; lng: number }[],
-): Promise<number> {
-  if (waypoints.length < 2) return 0;
+): Promise<RouteCalcResult> {
+  if (waypoints.length < 2) return { totalDistanceKm: 0 };
 
   const res = await fetch('/api/directions', {
     method: 'POST',
@@ -77,13 +85,20 @@ export async function calculateRouteDistanceKm(
     body: JSON.stringify({ waypoints }),
   });
 
-  const data = (await res.json()) as { totalDistanceKm?: number; error?: string };
+  const data = (await res.json()) as {
+    totalDistanceKm?: number;
+    encodedPolyline?: string;
+    error?: string;
+  };
 
   if (!res.ok || typeof data.totalDistanceKm !== 'number') {
     throw new Error(data.error ?? 'Distance calculation failed.');
   }
 
-  return data.totalDistanceKm;
+  return {
+    totalDistanceKm: data.totalDistanceKm,
+    encodedPolyline:  data.encodedPolyline,
+  };
 }
 
 // ── Write operations ─────────────────────────────────────────────────────────
@@ -107,13 +122,14 @@ export async function startDaySession(
 
 /**
  * Marks the session COMPLETED and writes all results in a single Firestore update.
- * Distance is passed in from the caller (calculated client-side before this call).
+ * routeResult is calculated client-side via calculateRoute() before this call.
+ * Pass null if the calculation failed — distance is simply omitted silently.
  */
 export async function endDaySession(
   sessionId: string,
   startedAt: unknown,
   geo: { lat: number; lng: number },
-  distanceResult: { totalDistanceKm: number } | { calculationError: string },
+  routeResult: RouteCalcResult | null,
 ): Promise<void> {
   const startMs =
     typeof (startedAt as any)?.toMillis === 'function'
@@ -126,9 +142,12 @@ export async function endDaySession(
     endedAt:             serverTimestamp(),
     status:              'COMPLETED',
     totalWorkingMinutes,
-    ...('totalDistanceKm' in distanceResult
-      ? { totalDistanceKm: distanceResult.totalDistanceKm }
-      : { calculationError: distanceResult.calculationError }),
+    ...(routeResult
+      ? {
+          totalDistanceKm: routeResult.totalDistanceKm,
+          ...(routeResult.encodedPolyline ? { encodedPolyline: routeResult.encodedPolyline } : {}),
+        }
+      : {}),
     updatedAt:           serverTimestamp(),
   });
 }
@@ -157,4 +176,21 @@ export async function fetchTodaySession(uid: string): Promise<DaySession | null>
   const snap = await getDocs(q);
   if (snap.empty) return null;
   return mapSession(snap.docs[0] as any);
+}
+
+export async function fetchSessionById(sessionId: string): Promise<DaySession | null> {
+  const snap = await getDoc(doc(db, 'daySessions', sessionId));
+  if (!snap.exists()) return null;
+  return mapSession(snap as any);
+}
+
+/** Returns all sessions for the exec ordered newest-first by date. */
+export async function fetchAllSessions(uid: string): Promise<DaySession[]> {
+  const q = query(
+    collection(db, 'daySessions'),
+    where('salesExecutiveId', '==', uid),
+    orderBy('date', 'desc'),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => mapSession(d as any));
 }

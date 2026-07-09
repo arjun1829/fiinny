@@ -8,10 +8,10 @@ import {
   startDaySession,
   endDaySession,
   fetchTodaySession,
-  calculateRouteDistanceKm,
+  calculateRoute,
   type DaySession,
 } from "./day-session-service";
-import { fetchTodayVisits } from "./dealers/dealer-visit-service";
+import { fetchTodayVisits, sortVisits } from "./dealers/dealer-visit-service";
 import DashboardHeader from "../../components/sales/DashboardHeader";
 import DaySummary from "../../components/sales/DaySummary";
 import FeatureCard from "../../components/sales/FeatureCard";
@@ -25,6 +25,7 @@ import {
   Settings,
   Sun,
   Loader2,
+  CalendarDays,
 } from "lucide-react";
 
 type SessionAction = 'idle' | 'starting' | 'locating' | 'calculating' | 'saving';
@@ -92,40 +93,29 @@ export default function SalesDashboardPage() {
       const geoResult = await getUserLocation();
       const endCoords = geoResult.coords;
 
-      // Step 2: build waypoints and calculate road distance
+      // Step 2: build waypoints in canonical order and calculate route
       setAction('calculating');
       const visits = await fetchTodayVisits(user.uid);
+      const sortedVisits = sortVisits(visits);
 
       const waypoints: { lat: number; lng: number }[] = [
         { lat: session.startGeo.latitude, lng: session.startGeo.longitude },
-        ...visits
-          .filter((v) => v.arrivalGeo ?? v.geo)
-          .sort((a, b) => {
-            const ta = (a.visitedAt as any)?.toMillis?.() ?? 0;
-            const tb = (b.visitedAt as any)?.toMillis?.() ?? 0;
-            return ta - tb;
-          })
-          .map((v) => {
-            const g = (v.arrivalGeo ?? v.geo)!;
-            return { lat: g.latitude, lng: g.longitude };
-          }),
+        ...sortedVisits
+          .filter((v) => v.geo)
+          .map((v) => ({ lat: v.geo!.latitude, lng: v.geo!.longitude })),
         { lat: endCoords.lat, lng: endCoords.lng },
       ];
 
-      let distanceResult: { totalDistanceKm: number } | { calculationError: string };
+      let routeResult = null;
       try {
-        const totalDistanceKm = await calculateRouteDistanceKm(waypoints);
-        distanceResult = { totalDistanceKm };
-      } catch (distErr: unknown) {
-        // Distance failure does NOT block ending the day — just record the error
-        distanceResult = {
-          calculationError: distErr instanceof Error ? distErr.message : 'Distance calculation failed.',
-        };
+        routeResult = await calculateRoute(waypoints);
+      } catch {
+        // Route failure does not block ending the day — distance is simply omitted
       }
 
-      // Step 3: write session as COMPLETED with distance result
+      // Step 3: write session as COMPLETED with route result
       setAction('saving');
-      await endDaySession(session.id, session.startedAt, endCoords, distanceResult);
+      await endDaySession(session.id, session.startedAt, endCoords, routeResult);
       await loadSession(user.uid);
 
     } catch (e: unknown) {
@@ -215,6 +205,13 @@ export default function SalesDashboardPage() {
               description="Log and manage dealer visits in your territory"
               href="/sales/dealers"
               accentColor="bg-primary"
+            />
+            <FeatureCard
+              icon={CalendarDays}
+              title="Daily Sessions"
+              description="View your daily visit history and route summaries"
+              href="/sales/day-sessions"
+              accentColor="bg-harvest"
             />
             <ComingSoonCard icon={Sprout}       title="Farmer Visit"      description="Track and record farmer outreach visits" />
             <ComingSoonCard icon={ReceiptText}   title="Expense Tracker"   description="Submit and monitor daily field expenses" />

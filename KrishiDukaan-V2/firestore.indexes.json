@@ -194,14 +194,6 @@
       ]
     },
     {
-      "collectionGroup": "dealerVisits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
-        { "fieldPath": "status",           "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "daySessions",
       "queryScope": "COLLECTION",
       "fields": [
@@ -215,6 +207,22 @@
       "fields": [
         { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
         { "fieldPath": "date",             "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "daySessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "date",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dealerVisits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "visitedAt",        "order": "ASCENDING" }
       ]
     },
     {
