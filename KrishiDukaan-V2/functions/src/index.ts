@@ -522,15 +522,17 @@ export const notifySellerOnOrder = onDocumentCreated(
 
     logger.info("[notifySellerOnOrder] resolved sellerPhone", { sellerPhone, orderId: event.params.orderId });
     if (sellerPhone) {
-      const totalStr = total != null ? `\nएकूण रक्कम: ₹${total}` : "";
       logger.info("[notifySellerOnOrder] before queueWaNotification");
+      const shopName = String(d.sellerName ?? "");
       await queueWaNotification(
         sellerPhone,
-        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customer}\nप्रॉडक्ट: ${itemSummary}${totalStr}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com`,
+        `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.`,
         {
           template: "order_notification",
           type: "order",
-          payload: { customerName: customer, itemSummary, total: total ?? 0 },
+          // order_notification body {{1}} = shopName → businessName → "Retailer"
+          // Static Orders Dashboard URL button — no button component needed.
+          payload: { shopName, businessName: "" },
           source: { event: "order_created", entityType: "order", entityId: event.params.orderId },
         }
       );
@@ -603,6 +605,24 @@ export const notifyCustomerOnOrderStatus = onDocumentWritten(
       orderId: event.params.orderId,
       status,
     });
+
+    // Send WhatsApp order confirmation when the order is first placed.
+    // order_confirmation_customer: body {{1}} = customerName, button {{1}} = orderId.
+    // Button resolves to: https://krishidukan.com/invoice/{orderId}
+    if (status === "placed" && customerPhone) {
+      const customerName = String(d.customerName ?? "");
+      const orderId = event.params.orderId;
+      await queueWaNotification(
+        customerPhone,
+        `✅ तुमची ऑर्डर यशस्वीरित्या दिली गेली आहे. ऑर्डर ID: ${orderId}`,
+        {
+          template: "order_confirmation_customer",
+          type: "order",
+          payload: { customerName, orderId },
+          source: { event: "order_placed", entityType: "order", entityId: orderId },
+        }
+      );
+    }
   }
 );
 
@@ -764,9 +784,8 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       }
 
       const template = isOnboarded ? "product_assignment_onboarded" : "product_assignment_pending_signup";
-      const payload = isOnboarded
-        ? { manufacturerName: mfr, productName, productId }
-        : { manufacturerName: mfr, productName, productId, inviteCode };
+      const payload: Record<string, string> = { manufacturerName: mfr, productName, productId };
+      if (!isOnboarded && inviteCode) payload.inviteCode = inviteCode;
 
       logger.info("[notifyRetailerOnAssignment] before queueWaNotification", { template, isOnboarded });
       await queueWaNotification(
@@ -868,19 +887,21 @@ export const notifyOnSubscriptionCreated = onDocumentCreated(
 );
 
 /**
- * Runs daily. Finds subscriptions expiring in exactly 7 days and sends a
- * WhatsApp reminder. Marks each reminded subscription with reminderSent7d=true
- * to prevent duplicate reminders.
+ * Runs daily. Finds subscriptions expiring within the next 1–3 days (i.e. ~2 days
+ * away) and sends a subscription_expiry WhatsApp reminder. Marks each subscription
+ * with reminderSent2d=true so subsequent daily runs do not re-send the message.
  */
 export const remindExpiringSubscriptions = onSchedule(
   { schedule: "every 24 hours", timeZone: "Asia/Kolkata" },
   async () => {
     const now = admin.firestore.Timestamp.now();
     const msPerDay = 24 * 60 * 60 * 1000;
-    const windowStart = admin.firestore.Timestamp.fromMillis(now.toMillis() + 6 * msPerDay);
-    const windowEnd   = admin.firestore.Timestamp.fromMillis(now.toMillis() + 8 * msPerDay);
+    // 48-hour window centred on 2 days out — catches the subscription regardless of
+    // the exact time of day the scheduler fires or the exact time stored in expiryDate.
+    const windowStart = admin.firestore.Timestamp.fromMillis(now.toMillis() + 1 * msPerDay);
+    const windowEnd   = admin.firestore.Timestamp.fromMillis(now.toMillis() + 3 * msPerDay);
 
-    // Query all active subs in the 7-day window; filter reminderSent7d in-memory
+    // Query active subs in the 2-day window; filter reminderSent2d in-memory
     // so we catch docs where the field doesn't exist yet (new subscriptions).
     const snap = await db
       .collection("subscriptions")
@@ -889,10 +910,10 @@ export const remindExpiringSubscriptions = onSchedule(
       .where("expiryDate", "<=", windowEnd)
       .get();
 
-    const toProcess = snap.docs.filter((doc) => doc.data().reminderSent7d !== true);
+    const toProcess = snap.docs.filter((doc) => doc.data().reminderSent2d !== true);
 
     if (toProcess.length === 0) {
-      console.log("[remindExpiringSubscriptions] No subscriptions expiring in 7 days");
+      console.log("[remindExpiringSubscriptions] No subscriptions expiring in ~2 days");
       return;
     }
 
@@ -924,7 +945,7 @@ export const remindExpiringSubscriptions = onSchedule(
       );
 
       await subDoc.ref.update({
-        reminderSent7d: true,
+        reminderSent2d: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }

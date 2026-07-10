@@ -5,6 +5,7 @@ type WaTemplate =
   | "subscription_welcome"
   | "subscription_expiry"
   | "order_notification"
+  | "order_confirmation_customer"
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
@@ -119,24 +120,50 @@ export async function queueSubscriptionExpiry(
   );
 }
 
+// Seller notification — sent to the retailer when a new order arrives.
+// order_notification body {{1}} = shopName → businessName → "Retailer"
+// Static Orders Dashboard URL button in the Meta template — no button component needed.
 export async function queueOrderNotification(
   phone: string,
-  customerName: string,
-  itemSummary: string,
-  total: number,
-  opts: { source?: WaSourceEvent; orderId?: string } = {}
+  shopName: string,
+  opts: { source?: WaSourceEvent; orderId?: string; businessName?: string } = {}
 ) {
   return queueWaNotification(
     phone,
-    `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.\n\nग्राहक: ${customerName}\nप्रॉडक्ट: ${itemSummary}\nएकूण रक्कम: ₹${total}\n\nऑर्डरची संपूर्ण माहिती पाहण्यासाठी Krishi Dukan अॅप किंवा वेबसाइटला भेट द्या.\nhttps://krishidukan.com`,
+    `🛒 नवीन ऑनलाइन ऑर्डर प्राप्त झाली आहे.`,
     {
       template: "order_notification",
-      payload: { customerName, itemSummary, total },
+      payload: { shopName, businessName: opts.businessName ?? "" },
       type: "order",
       source: opts.source ?? {
         event: "order_created",
         entityType: "order",
         entityId: opts.orderId ?? "",
+      },
+    }
+  );
+}
+
+// Customer confirmation — sent to the buyer immediately after order placement.
+// order_confirmation_customer body {{1}} = customerName, button {{1}} = orderId.
+// Meta template button base URL: https://krishidukan.com/invoice/
+export async function queueOrderConfirmationCustomer(
+  phone: string,
+  customerName: string,
+  orderId: string,
+  opts: { source?: WaSourceEvent } = {}
+) {
+  return queueWaNotification(
+    phone,
+    `✅ तुमची ऑर्डर यशस्वीरित्या दिली गेली आहे. ऑर्डर ID: ${orderId}`,
+    {
+      template: "order_confirmation_customer",
+      payload: { customerName, orderId },
+      type: "order",
+      source: opts.source ?? {
+        event: "order_placed",
+        entityType: "order",
+        entityId: orderId,
       },
     }
   );

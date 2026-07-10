@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchOrdersForCustomer } from "../firebase";
 import type { OrderDoc } from "../../types/order";
 import { useI18n } from "../i18n/I18nContext";
-import { generateInvoicePDF } from "../utils/invoice-generator";
+import { openInvoice } from "../utils/invoice-generator";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -154,7 +154,7 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
               {/* Download Invoice — available for all orders */}
               <button
                 type="button"
-                onClick={() => generateInvoicePDF(order)}
+                onClick={() => openInvoice(order)}
                 className="inline-flex items-center gap-1 text-[10px] font-bold text-primary border border-primary/30 px-2.5 py-1 rounded-lg hover:bg-primary/5 transition-colors"
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

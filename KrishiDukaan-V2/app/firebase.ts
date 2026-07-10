@@ -130,7 +130,8 @@ export type RetailerProfile = {
 };
 
 import { MarketplaceProduct } from '../types/product';
-import type { CartItem, OrderDoc, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
+import type { CartItem, OrderDoc, OrderItem, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
+import { generateAndStoreInvoice } from './utils/invoice-storage';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -1480,6 +1481,35 @@ export async function createOrdersFromCart(params: {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    // Generate PDF, upload to Storage, and write invoice metadata.
+    // Wrapped in try/catch — a failure here must never roll back the order.
+    try {
+      await generateAndStoreInvoice(orderRef.id, {
+        id: orderRef.id,
+        customerId,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerAddress: customerAddress.trim(),
+        sellerId,
+        sellerType,
+        ...(sellerName ? { sellerName } : {}),
+        ...(sellerGstNumber ? { sellerGstNumber } : {}),
+        items: normalizedItems as OrderItem[],
+        mrpSubtotal,
+        subtotal,
+        ...(totalGst > 0 ? { totalGst } : {}),
+        deliveryCharge,
+        grandTotal,
+        totalWeightKg,
+        invoiceNumber,
+        deliveryMode: "delivery",
+        status: "placed",
+        ...(payment ? { payment } : {}),
+      });
+    } catch (invoiceErr) {
+      console.error("[invoice] Failed to generate or store invoice", orderRef.id, invoiceErr);
+    }
 
     createdOrderIds.push(orderRef.id);
   }
