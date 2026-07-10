@@ -6,7 +6,7 @@ import { verifyCredentials } from "./cloudApi";
 
 const POLL_MINUTES = parseInt(process.env.POLL_INTERVAL_MINUTES ?? "1", 10);
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE ?? "10", 10);
-const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT ?? "3000", 10);
+const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT ?? "3001", 10);
 
 async function main() {
   console.log("[Main] Starting KrishiDukaan WA Cloud service");
