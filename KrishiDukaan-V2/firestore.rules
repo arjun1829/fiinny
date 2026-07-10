@@ -242,7 +242,12 @@ service cloud.firestore {
         || (isAuthed() && (
           resource.data.customerId == request.auth.uid ||
           resource.data.customerPhone == myPhone()
-        ) && request.resource.data.keys().hasOnly(['payment', 'updatedAt']));
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payment', 'updatedAt']))
+        // Allow customer to write invoice metadata after PDF upload
+        || (isAuthed() && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.customerPhone == myPhone()
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invoice']));
     }
 
     // ─── hubs ────────────────────────────────────────────────────────────────
@@ -667,6 +672,48 @@ service cloud.firestore {
     match /follows/{followId} {
       allow read: if true;
       allow write: if isAuthed();
+    }
+
+    // ─── daySessions ─────────────────────────────────────────────────────────
+    // One document per sales executive per working day.
+    // The exec owns their own sessions; the Cloud Function (admin SDK) writes
+    // totalDistanceKm + calculatedAt back — admin SDK bypasses client rules.
+    match /daySessions/{sessionId} {
+      allow read:   if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
+      allow create: if isAuthed()
+                       && request.resource.data.salesExecutiveId == request.auth.uid
+                       && request.resource.data.status == 'ACTIVE';
+      allow update: if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ─── dealers ─────────────────────────────────────────────────────────────
+    // Created by Sales Executives via /sales/dealers.
+    // Only authenticated users can read. A sales exec may only create docs that
+    // carry their own UID as createdBy, and may only update their own records.
+    // Soft-delete (active=false) goes through update. Hard-delete is admin-only.
+    match /dealers/{dealerId} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed()
+                       && request.resource.data.createdBy == request.auth.uid
+                       && request.resource.data.active    == true;
+      allow update: if isAuthed() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ─── dealerVisits ─────────────────────────────────────────────────────────
+    // One document per dealer visit logged by a sales executive.
+    // A sales exec can only create visits tagged with their own UID.
+    // Reads are restricted to authenticated users (no public exposure).
+    // Updates allowed only by the creating exec (e.g. notes correction).
+    // Hard-delete is admin-only.
+    match /dealerVisits/{visitId} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed()
+                       && request.resource.data.salesExecutiveId == request.auth.uid;
+      allow update: if isAuthed()
+                       && resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin();
     }
   }
   }

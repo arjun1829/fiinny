@@ -26,6 +26,7 @@ import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore'
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, updateOrderPayment, trackPageView, requestRoleUpgrade } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
+import { fetchInviteDetailsForSignup } from './lib/invite/fetch-invite-for-signup';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { MarketplaceProduct } from '../types/product';
@@ -152,8 +153,10 @@ export default function App() {
   const [signupInviteCode, setSignupInviteCode] = useState<string | null>(null);
   /** Result of auto-accepting an invite for an already-logged-in user. */
   const [inviteAccept, setInviteAccept] = useState<{
-    status: 'accepting' | 'success' | 'already_accepted' | 'error';
+    status: 'accepting' | 'success' | 'already_accepted' | 'error' | 'mismatch';
     message?: string;
+    manufacturerName?: string | null;
+    retailerShopName?: string | null;
   } | null>(null);
 
   const resolveViewForAccess = useCallback((view: View): View => {
@@ -423,14 +426,52 @@ export default function App() {
   }, [currentView, userRole, navigate, t]);
 
   // Auto-accept invite for already-logged-in users who click an invite link.
-  // Fires whenever both user and signupInviteCode become non-null.
+  // Fires exactly once per invite code: clears signupInviteCode immediately so no re-runs.
+  // Checks for account mismatch before attempting Firestore write.
   useEffect(() => {
     if (!user || !signupInviteCode) return;
     const code = signupInviteCode;
-    setSignupInviteCode(null); // clear immediately so effect doesn't re-run
+    setSignupInviteCode(null); // prevent re-run on re-render
     setInviteAccept({ status: 'accepting' });
-    acceptManufacturerInvite({ uid: user.uid, inviteCode: code })
-      .then((result) => {
+
+    const normalize10 = (p: string): string => {
+      const d = p.replace(/\D/g, '');
+      if (d.length === 10) return d;
+      if (d.length === 12 && d.startsWith('91')) return d.slice(2);
+      if (d.length === 13 && d.startsWith('91')) return d.slice(3);
+      return d;
+    };
+
+    void (async () => {
+      try {
+        // One parallel round-trip: invite details + logged-in user's phone
+        const [inviteDetails, idxSnap] = await Promise.all([
+          fetchInviteDetailsForSignup(code),
+          getDoc(doc(db, 'uidIndex', user.uid)),
+        ]);
+
+        const rawUserPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? '') : '';
+        const userPhone10 = normalize10(rawUserPhone);
+        const invitePhone10 = inviteDetails?.retailerPhone ? normalize10(inviteDetails.retailerPhone) : '';
+
+        // Detect phone mismatch before making any write — show Switch Account screen
+        if (
+          inviteDetails?.found &&
+          inviteDetails.claimable &&
+          invitePhone10 &&
+          userPhone10 &&
+          invitePhone10 !== userPhone10
+        ) {
+          setInviteAccept({
+            status: 'mismatch',
+            message: `This invite was sent to +91 ${invitePhone10}. You are signed in with +91 ${userPhone10}.`,
+            manufacturerName: inviteDetails.manufacturerName,
+            retailerShopName: inviteDetails.retailerShopName,
+          });
+          return;
+        }
+
+        const result = await acceptManufacturerInvite({ uid: user.uid, inviteCode: code });
         if (!result.ok) {
           const msg = (result as { ok: false; message: string }).message;
           const isAlreadyUsed = /already|active/i.test(msg);
@@ -443,11 +484,19 @@ export default function App() {
           setInviteAccept({ status: 'success' });
           setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
         }
-      })
-      .catch(() =>
-        setInviteAccept({ status: 'error', message: 'Could not accept invite. Please try again.' })
-      );
+      } catch {
+        setInviteAccept({ status: 'error', message: 'Could not accept invite. Please try again.' });
+      }
+    })();
   }, [user, signupInviteCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Redirect logged-in users away from signup when there is no invite to process.
+  // Must be a useEffect — never mutate state during render.
+  useEffect(() => {
+    if (currentView === 'signup' && user && !signupInviteCode && !inviteAccept) {
+      navigate('home', { replace: true });
+    }
+  }, [currentView, user, signupInviteCode, inviteAccept, navigate]);
 
   // --- Geolocation state ---
   const [userLocation, setUserLocation] = useState<LatLng>(DEFAULT_LOCATION);
@@ -1526,12 +1575,8 @@ export default function App() {
         if (!signupInviteCode && !user) {
           return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
         }
-        // Already-logged-in user with no invite — send them home
-        if (user && !signupInviteCode) {
-          navigate('home');
-          return null;
-        }
-        // Already-logged-in user arrived via an invite link — show accept result instead of signup form
+        // Already-logged-in user arrived via an invite link — show accept result instead of signup form.
+        // (Redirect for logged-in users with no invite is handled in the useEffect above.)
         if (user) {
           return (
             <div className="flex min-h-[80vh] items-center justify-center px-4 py-10">
@@ -1546,6 +1591,40 @@ export default function App() {
                     <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
                     <p className="font-semibold text-on-surface">Accepting your invite…</p>
                     <p className="text-sm text-on-surface-variant mt-1">Linking you to the manufacturer&apos;s network</p>
+                  </>
+                )}
+
+                {inviteAccept?.status === 'mismatch' && (
+                  <>
+                    <div className="h-16 w-16 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-4">
+                      <svg className="h-8 w-8 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    </div>
+                    {inviteAccept.retailerShopName && (
+                      <p className="text-base font-bold text-primary mb-1">Welcome, {inviteAccept.retailerShopName}!</p>
+                    )}
+                    <h2 className="text-xl font-bold text-on-surface mb-2">Wrong Account Signed In</h2>
+                    <p className="text-sm text-on-surface-variant mb-1">{inviteAccept.message}</p>
+                    {inviteAccept.manufacturerName && (
+                      <p className="text-xs text-on-surface-variant mb-6">
+                        Invited by <span className="font-semibold text-primary">{inviteAccept.manufacturerName}</span>
+                      </p>
+                    )}
+                    {!inviteAccept.manufacturerName && <div className="mb-6" />}
+                    <p className="text-xs text-on-surface-variant mb-6">Please sign out and sign in with the mobile number this invite was sent to.</p>
+                    <div className="flex flex-col gap-3">
+                      <button
+                        onClick={handleLogout}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-bold text-white hover:opacity-90 transition-opacity"
+                      >
+                        Sign Out &amp; Switch Account
+                      </button>
+                      <button
+                        onClick={() => navigate('home', { clearInvite: true })}
+                        className="text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
+                      >
+                        Back to home
+                      </button>
+                    </div>
                   </>
                 )}
 

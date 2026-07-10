@@ -32,7 +32,12 @@ export interface InvoiceSellerInfo {
   gstin?: string;
 }
 
-export function generateInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo): void {
+function resolveInvoiceNumber(order: OrderDoc): string {
+  return order.invoiceNumber ?? `INV-${order.id.slice(0, 8).toUpperCase()}`;
+}
+
+// ── Core builder — constructs the jsPDF document without saving or downloading ─
+function buildInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo): jsPDF {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const M = 15; // margin
@@ -57,7 +62,7 @@ export function generateInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo):
 
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
-  const invoiceNum = order.invoiceNumber ?? `INV-${order.id.slice(0, 8).toUpperCase()}`;
+  const invoiceNum = resolveInvoiceNumber(order);
   doc.text(invoiceNum, W - M, 20, { align: "right" });
 
   y = 35;
@@ -255,6 +260,42 @@ export function generateInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo):
   );
   doc.text("krishidukan.com", W - M, pageH - 4.5, { align: "right" });
 
-  // ── Save ─────────────────────────────────────────────────────────────────
-  doc.save(`${invoiceNum}.pdf`);
+  return doc;
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the invoice as a Blob.
+ * Used by the upload layer (Phase 2) to push the PDF to Firebase Storage.
+ */
+export function buildInvoiceBlob(order: OrderDoc, seller?: InvoiceSellerInfo): Blob {
+  return buildInvoicePDF(order, seller).output("blob");
+}
+
+/**
+ * Generates the invoice PDF and immediately triggers a browser download.
+ * Fallback path used for legacy orders that pre-date Storage upload.
+ */
+export function downloadInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo): void {
+  buildInvoicePDF(order, seller).save(`${resolveInvoiceNumber(order)}.pdf`);
+}
+
+/**
+ * Primary invoice action for every UI button.
+ *
+ * - invoice.storagePath present → open /invoice/{orderId}.
+ *   The route handler proxies PDF bytes from Storage; Firebase URLs are never
+ *   exposed to the client and the browser URL stays at krishidukan.com.
+ * - No stored invoice (pre-Phase 2 orders) → fall back to client-side jsPDF generation.
+ *
+ * This is the only function UI components should call.
+ * WhatsApp uses https://krishidukan.com/invoice/{orderId} directly.
+ */
+export function openInvoice(order: OrderDoc, seller?: InvoiceSellerInfo): void {
+  if (order.invoice?.storagePath) {
+    window.open(`/invoice/${order.id}`, "_blank", "noopener,noreferrer");
+  } else {
+    downloadInvoicePDF(order, seller);
+  }
 }

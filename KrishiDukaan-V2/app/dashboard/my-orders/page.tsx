@@ -19,7 +19,7 @@ import {
 import { fetchOrdersForCustomer } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
-import { generateInvoicePDF } from "../../utils/invoice-generator";
+import { openInvoice } from "../../utils/invoice-generator";
 
 // Visible progress steps (same as customer view)
 const STATUS_FLOW = ["placed", "out_for_delivery", "delivered"] as const;
@@ -384,7 +384,7 @@ export default function MyOrdersPage() {
                       <div className="flex justify-end pt-1">
                         <button
                           type="button"
-                          onClick={() => generateInvoicePDF(order)}
+                          onClick={() => openInvoice(order)}
                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border border-outline-variant/50 bg-white text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
                         >
                           <Download className="w-3.5 h-3.5" /> Download Invoice

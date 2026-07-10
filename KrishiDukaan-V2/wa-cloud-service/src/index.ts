@@ -2,6 +2,7 @@ import "dotenv/config";
 import cron from "node-cron";
 import { processPendingNotifications } from "./queue";
 import { startWebhookServer } from "./webhook/server";
+import { verifyCredentials } from "./cloudApi";
 
 const POLL_MINUTES = parseInt(process.env.POLL_INTERVAL_MINUTES ?? "1", 10);
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE ?? "10", 10);
@@ -10,6 +11,11 @@ const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT ?? "3000", 10);
 async function main() {
   console.log("[Main] Starting KrishiDukaan WA Cloud service");
   console.log(`[Main] Poll interval: ${POLL_MINUTES} min | Batch: ${BATCH_SIZE}`);
+
+  // Verify Graph API credentials before processing any messages.
+  // Logs masked token values and a Graph API check so authentication failures
+  // are diagnosed at startup rather than silently failing per-notification.
+  await verifyCredentials();
 
   // Start webhook server for Meta delivery receipts and incoming messages
   startWebhookServer(WEBHOOK_PORT);

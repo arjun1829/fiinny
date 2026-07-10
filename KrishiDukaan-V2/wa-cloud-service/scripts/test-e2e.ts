@@ -12,9 +12,13 @@
  *      pending → sending → sent with a real metaMessageId
  *   5. Webhook server — GET hub verification and POST event handling
  *   6. Duplicate-claim guard — same doc can't be processed twice concurrently
+ *   7. Webhook status lifecycle — Firestore updates for sent/delivered/read/failed,
+ *      idempotency of duplicate events, and no-downgrade ordering guarantee
+ *   8. HMAC signature verification (when WA_APP_SECRET is set)
  */
 
 import "dotenv/config";
+import * as crypto from "crypto";
 import * as http from "http";
 import * as admin from "firebase-admin";
 
@@ -108,15 +112,40 @@ async function testTemplateResolver(): Promise<void> {
     assert(p2.text === "Suresh Seeds", "manufacturer_network_summary: {{1}} falls back to shopName");
   }
 
-  // order_notification — 3 body params
+  // order_notification — 1 body param (shopName → businessName → "Retailer")
+  // Sent to the SELLER. Static Orders Dashboard URL button in the Meta template.
   {
-    const c = resolveTemplateComponents("order_notification", { customerName: "Anil", itemSummary: "Urea 50kg", total: 1200 });
+    // primary: shopName wins
+    const c = resolveTemplateComponents("order_notification", { shopName: "Anil Agro", businessName: "" });
     assert(c.length === 1, "order_notification: 1 component");
-    assert(c[0].parameters.length === 3, "order_notification: 3 parameters", `got ${c[0].parameters.length}`);
+    assert(c[0].parameters.length === 1, "order_notification: 1 parameter", `got ${c[0].parameters.length}`);
     const params = c[0].parameters as Array<{ type: string; text: string }>;
-    assert(params[0].text === "Anil", "order_notification: {{1}} = customerName");
-    assert(params[1].text === "Urea 50kg", "order_notification: {{2}} = itemSummary");
-    assert(params[2].text === "1200", "order_notification: {{3}} = total");
+    assert(params[0].text === "Anil Agro", "order_notification: {{1}} = shopName");
+
+    // fallback: businessName when shopName is absent
+    const c2 = resolveTemplateComponents("order_notification", { shopName: "", businessName: "Anil Enterprises" });
+    const p2 = c2[0].parameters[0] as { type: string; text: string };
+    assert(p2.text === "Anil Enterprises", "order_notification: {{1}} falls back to businessName");
+
+    // last-resort: "Retailer" when both are absent
+    const c3 = resolveTemplateComponents("order_notification", { shopName: "", businessName: "" });
+    const p3 = c3[0].parameters[0] as { type: string; text: string };
+    assert(p3.text === "Retailer", "order_notification: {{1}} falls back to 'Retailer'");
+  }
+
+  // order_confirmation_customer — 1 body param (customerName) + 1 button (orderId)
+  // Sent to the CUSTOMER after order placement. Button resolves to /invoice/{orderId}.
+  {
+    const c = resolveTemplateComponents("order_confirmation_customer", { customerName: "Priya Patil", orderId: "ORD12345678" });
+    assert(c.length === 2, "order_confirmation_customer: 2 components (body + button)", `got ${c.length}`);
+    assert(c[0].type === "body", "order_confirmation_customer: c[0] = body");
+    assert(c[0].parameters.length === 1, "order_confirmation_customer: body has 1 param", `got ${c[0].parameters.length}`);
+    const bodyParams = c[0].parameters as Array<{ type: string; text: string }>;
+    assert(bodyParams[0].text === "Priya Patil", "order_confirmation_customer: body {{1}} = customerName");
+    assert(c[1].type === "button" && c[1].sub_type === "url" && c[1].index === 0, "order_confirmation_customer: c[1] = button url index=0");
+    const btnParam = c[1].parameters[0] as { type: string; text: string };
+    assert(btnParam.text === "ORD12345678", "order_confirmation_customer: button {{1}} = orderId (no full URL)");
+    assert(!btnParam.text.includes("https://"), "order_confirmation_customer: button param contains no URL");
   }
 
   // product_assignment_onboarded — 1 body (2 params) + 1 button
@@ -208,13 +237,14 @@ async function testTemplateSends(testPhone: string): Promise<void> {
   process.env.WA_DEBUG = "true";
 
   const templates: Array<{ name: string; payload: Record<string, string | number | boolean> }> = [
-    { name: "subscription_welcome",          payload: { ownerName: "Test User", businessName: "", shopName: "" } },
-    { name: "subscription_expiry",           payload: { ownerName: "Test User", businessName: "", shopName: "", formattedExpiryDate: "31 July 2026" } },
-    { name: "order_notification",            payload: { customerName: "Test Customer", itemSummary: "Urea 50kg", total: 1500 } },
-    { name: "manufacturer_network_summary",  payload: { ownerName: "Test Corp", businessName: "", shopName: "", retailerCount: "5" } },
-    { name: "product_assignment_onboarded",  payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
+    { name: "subscription_welcome",             payload: { ownerName: "Test User", businessName: "", shopName: "" } },
+    { name: "subscription_expiry",              payload: { ownerName: "Test User", businessName: "", shopName: "", formattedExpiryDate: "31 July 2026" } },
+    { name: "order_notification",               payload: { shopName: "Test Agro Store", businessName: "" } },
+    { name: "order_confirmation_customer",      payload: { customerName: "Test Customer", orderId: "TESTORDERID001" } },
+    { name: "manufacturer_network_summary",     payload: { ownerName: "Test Corp", businessName: "", shopName: "", retailerCount: "5" } },
+    { name: "product_assignment_onboarded",     payload: { manufacturerName: "Test Corp", productName: "Test Product", productId: "test_prod_id" } },
     { name: "product_assignment_pending_signup", payload: { manufacturerName: "Test Corp", productName: "Test Product", inviteCode: "TESTCODE", productId: "test_prod_id" } },
-    { name: "retailer_onboarding",           payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },
+    { name: "retailer_onboarding",              payload: { manufacturerName: "Test Corp", inviteCode: "TESTCODE" } },
   ];
 
   for (const tmpl of templates) {
@@ -484,7 +514,7 @@ function testEnvVars(): void {
     "WA_WEBHOOK_VERIFY_TOKEN",
     "WEBHOOK_PORT",
   ];
-  const optional = ["WA_TEMPLATE_LANGUAGE", "POLL_INTERVAL_MINUTES", "BATCH_SIZE"];
+  const optional = ["WA_APP_SECRET", "WA_TEMPLATE_LANGUAGE", "POLL_INTERVAL_MINUTES", "BATCH_SIZE"];
 
   for (const v of required) {
     const val = process.env[v];
@@ -493,11 +523,285 @@ function testEnvVars(): void {
   for (const v of optional) {
     const val = process.env[v];
     if (val && val.length > 0) {
-      pass(`${v} is set (optional, using: ${val})`);
+      pass(`${v} is set (optional, using: ${v === "WA_APP_SECRET" ? "***" : val})`);
     } else {
-      pass(`${v} not set — default will be used`);
+      if (v === "WA_APP_SECRET") {
+        console.log(`  ⚠️   WA_APP_SECRET not set — HMAC verification disabled (section 8 will be skipped)`);
+      } else {
+        pass(`${v} not set — default will be used`);
+      }
     }
   }
+}
+
+// ─── 7. Webhook status lifecycle — Firestore updates ─────────────────────────
+
+async function testWebhookStatusLifecycle(): Promise<void> {
+  section("7. Webhook status lifecycle — Firestore updates");
+
+  const { createWebhookServer } = await import("../src/webhook/server");
+  const { getDb } = await import("../src/firebase");
+
+  const db = getDb();
+  const port = 13580; // separate from section 5's port
+  const app = createWebhookServer();
+  const server = app.listen(port);
+  await sleep(300);
+
+  function postWebhook(payload: unknown, secret?: string): Promise<{ status: number }> {
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify(payload);
+      const headers: Record<string, string | number> = {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data),
+      };
+      if (secret) {
+        headers["x-hub-signature-256"] = "sha256=" + crypto
+          .createHmac("sha256", secret)
+          .update(data)
+          .digest("hex");
+      }
+      const req = http.request(
+        { hostname: "localhost", port, path: "/webhook", method: "POST", headers },
+        (res) => {
+          res.resume(); // drain body
+          res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
+        }
+      );
+      req.on("error", reject);
+      req.write(data);
+      req.end();
+    });
+  }
+
+  function makeStatusPayload(wamid: string, eventStatus: string, errors?: unknown[]): unknown {
+    const entry: Record<string, unknown> = {
+      id: wamid,
+      status: eventStatus,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      recipient_id: "919876543210",
+    };
+    if (errors) entry.errors = errors;
+    return {
+      object: "whatsapp_business_account",
+      entry: [{
+        id: "WABA_ID",
+        changes: [{
+          field: "messages",
+          value: {
+            messaging_product: "whatsapp",
+            metadata: { display_phone_number: "919000000000", phone_number_id: "123" },
+            statuses: [entry],
+          },
+        }],
+      }],
+    };
+  }
+
+  // ── Create a test notification doc already in "sent" state ───────────────────
+  const testWamid = `wamid.e2e_lifecycle_${Date.now()}`;
+  const docRef = await db.collection("waNotifications").add({
+    phone: "919876543210",
+    type: "general",
+    template: "generic",
+    payload: {},
+    source: { event: "e2e_lifecycle_test", entityType: "test", entityId: "lifecycle-1" },
+    status: "sent",
+    metaMessageId: testWamid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    deliveredAt: null,
+    readAt: null,
+    failedAt: null,
+    retryCount: 1,
+    maxRetries: 3,
+    lastError: null,
+  });
+  console.log(`  → Created lifecycle test doc: ${docRef.id} metaId=${testWamid}`);
+
+  // ── Step 1: "delivered" → status should advance ───────────────────────────────
+  await postWebhook(makeStatusPayload(testWamid, "delivered"));
+  await sleep(800);
+  {
+    const d = (await docRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "delivered",  `Step 1: status advanced to "delivered" (got "${d.status}")`);
+    assert(d.deliveredAt !== null,    `Step 1: deliveredAt is set`);
+    assert(d.readAt === null,         `Step 1: readAt not yet set`);
+    assert(d.updatedAt !== undefined, `Step 1: updatedAt written`);
+  }
+
+  // ── Step 2: "read" → status should advance ────────────────────────────────────
+  await postWebhook(makeStatusPayload(testWamid, "read"));
+  await sleep(800);
+  {
+    const d = (await docRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "read",    `Step 2: status advanced to "read" (got "${d.status}")`);
+    assert(d.readAt !== null,      `Step 2: readAt is set`);
+    assert(d.deliveredAt !== null, `Step 2: deliveredAt preserved after read`);
+  }
+
+  // ── Step 3: Duplicate "delivered" → no-op, status stays "read" ───────────────
+  await postWebhook(makeStatusPayload(testWamid, "delivered"));
+  await sleep(800);
+  {
+    const d = (await docRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "read", `Step 3: duplicate "delivered" did not downgrade (still "read")`);
+  }
+
+  // ── Step 4: Late "sent" → no-op, status stays "read" ─────────────────────────
+  await postWebhook(makeStatusPayload(testWamid, "sent"));
+  await sleep(800);
+  {
+    const d = (await docRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "read", `Step 4: late "sent" did not downgrade (still "read")`);
+  }
+
+  // ── Step 5: Duplicate "read" → no-op ─────────────────────────────────────────
+  await postWebhook(makeStatusPayload(testWamid, "read"));
+  await sleep(800);
+  {
+    const d = (await docRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "read", `Step 5: duplicate "read" is idempotent`);
+  }
+
+  // ── Step 6: "failed" event on a separate doc ──────────────────────────────────
+  const failWamid = `wamid.e2e_failed_${Date.now()}`;
+  const failDocRef = await db.collection("waNotifications").add({
+    phone: "919876543210",
+    type: "general",
+    template: "generic",
+    payload: {},
+    source: { event: "e2e_fail_test", entityType: "test", entityId: "lifecycle-2" },
+    status: "sent",
+    metaMessageId: failWamid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    deliveredAt: null,
+    readAt: null,
+    failedAt: null,
+    retryCount: 1,
+    maxRetries: 3,
+    lastError: null,
+  });
+
+  const fakeError = [{ code: 131014, title: "Message Undeliverable", message: "Recipient unreachable" }];
+  await postWebhook(makeStatusPayload(failWamid, "failed", fakeError));
+  await sleep(800);
+  {
+    const d = (await failDocRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "failed",        `Step 6: status set to "failed" (got "${d.status}")`);
+    assert(d.failedAt !== null,          `Step 6: failedAt is set`);
+    assert(typeof d.lastError === "string" && (d.lastError as string).includes("131014"),
+      `Step 6: lastError contains error code (got "${d.lastError}")`);
+  }
+
+  // ── Step 7: Unknown wamid → warning logged, no crash ─────────────────────────
+  {
+    const r = await postWebhook(makeStatusPayload("wamid.does_not_exist_xyz", "delivered"));
+    assert(r.status === 200, `Step 7: unknown metaMessageId still returns HTTP 200`);
+  }
+
+  // ── Step 8: "sending" doc healed by "sent" webhook ───────────────────────────
+  const healWamid = `wamid.e2e_heal_${Date.now()}`;
+  const healDocRef = await db.collection("waNotifications").add({
+    phone: "919876543210",
+    type: "general",
+    template: "generic",
+    payload: {},
+    source: { event: "e2e_heal_test", entityType: "test", entityId: "lifecycle-3" },
+    status: "sending",       // simulates queue crash after API call
+    metaMessageId: healWamid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentAt: null,
+    deliveredAt: null,
+    readAt: null,
+    failedAt: null,
+    retryCount: 1,
+    maxRetries: 3,
+    lastError: null,
+  });
+
+  await postWebhook(makeStatusPayload(healWamid, "sent"));
+  await sleep(800);
+  {
+    const d = (await healDocRef.get()).data() as Record<string, unknown>;
+    assert(d.status === "sent",  `Step 8: "sending" doc healed → "sent" by webhook (got "${d.status}")`);
+    assert(d.sentAt !== null,    `Step 8: sentAt populated from webhook`);
+  }
+
+  server.close();
+  console.log(`\n  ✓ Lifecycle test complete — all Firestore transitions verified`);
+}
+
+// ─── 8. HMAC signature verification ──────────────────────────────────────────
+
+async function testHmacVerification(): Promise<void> {
+  section("8. HMAC signature verification");
+
+  const appSecret = process.env.WA_APP_SECRET;
+  if (!appSecret) {
+    console.log("  ⚠️   WA_APP_SECRET not set — skipping HMAC tests");
+    console.log("  To enable: add WA_APP_SECRET to .env (Meta Developer Console → App → Basic Settings → App Secret)");
+    pass("HMAC test skipped (WA_APP_SECRET not configured)");
+    return;
+  }
+
+  const { createWebhookServer } = await import("../src/webhook/server");
+  const port = 13581;
+  const app = createWebhookServer();
+  const server = app.listen(port);
+  await sleep(300);
+
+  function postWithHeaders(
+    payload: unknown,
+    customHeaders: Record<string, string>
+  ): Promise<{ status: number }> {
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify(payload);
+      const headers: Record<string, string | number> = {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data),
+        ...customHeaders,
+      };
+      const req = http.request(
+        { hostname: "localhost", port, path: "/webhook", method: "POST", headers },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
+        }
+      );
+      req.on("error", reject);
+      req.write(data);
+      req.end();
+    });
+  }
+
+  const payload = {
+    object: "whatsapp_business_account",
+    entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: {}, statuses: [] } }] }],
+  };
+  const data = JSON.stringify(payload);
+
+  // Correct signature → 200
+  const correctSig = "sha256=" + crypto.createHmac("sha256", appSecret).update(data).digest("hex");
+  {
+    const r = await postWithHeaders(payload, { "x-hub-signature-256": correctSig });
+    assert(r.status === 200, `HMAC: correct signature → HTTP 200 (got ${r.status})`);
+  }
+
+  // Wrong signature → 403
+  {
+    const r = await postWithHeaders(payload, { "x-hub-signature-256": "sha256=deadbeef" });
+    assert(r.status === 403, `HMAC: wrong signature → HTTP 403 (got ${r.status})`);
+  }
+
+  // Missing signature → 403
+  {
+    const r = await postWithHeaders(payload, {});
+    assert(r.status === 403, `HMAC: missing signature header → HTTP 403 (got ${r.status})`);
+  }
+
+  server.close();
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -527,6 +831,8 @@ async function main(): Promise<void> {
     await testTemplateSends(testPhone);
     await testQueueLifecycle(testPhone);
     await testWebhookServer();
+    await testWebhookStatusLifecycle();
+    await testHmacVerification();
   }
 
   // ── Summary ─────────────────────────────────────────────────────────────────
