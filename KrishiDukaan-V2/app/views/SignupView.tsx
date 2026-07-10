@@ -83,7 +83,7 @@ export default function SignupView({
           setInviteDetails({
             found: false, claimable: false, inviteCode: trimmedInvite,
             status: "", retailerEmail: "", retailerPhone: "", retailerId: "",
-            manufacturerId: "", manufacturerName: null,
+            retailerShopName: null, manufacturerId: "", manufacturerName: null,
           });
         }
       } finally {
@@ -277,42 +277,56 @@ export default function SignupView({
           <span className="font-black text-2xl text-primary">Krishi<span className="text-secondary">Dukan</span></span>
         </div>
 
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-6 flex items-center gap-2 font-bold text-primary transition-transform hover:translate-x-1"
-        >
-          <ICONS.ChevronRight className="h-4 w-4 rotate-180" /> {t("backToStore")}
-        </button>
+        {!trimmedInvite && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-6 flex items-center gap-2 font-bold text-primary transition-transform hover:translate-x-1"
+          >
+            <ICONS.ChevronRight className="h-4 w-4 rotate-180" /> {t("backToStore")}
+          </button>
+        )}
 
-        <h1 className="mb-2 text-3xl font-bold text-on-surface">{t("createAccountTitle")}</h1>
-        <p className="mb-6 font-medium text-on-surface-variant">{t("signupSubtitle")}</p>
-
-        {/* Invite banner */}
-        {trimmedInvite && (
-          <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm">
+        {/* Invite banner — replaces generic heading when a valid invite is present */}
+        {trimmedInvite ? (
+          <div className="mb-6">
             {inviteLoading ? (
-              <p className="font-medium text-on-surface-variant">Loading invite…</p>
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-on-surface-variant">Loading invite…</p>
+              </div>
             ) : inviteDetails?.claimable ? (
-              <>
-                <p className="font-bold text-primary">Manufacturer invite</p>
-                <p className="mt-2 text-on-surface">
-                  You are invited by <span className="font-semibold text-primary">{manufacturerLabel}</span> to join as a retailer.
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                <p className="text-xl font-black text-on-surface mb-1">Welcome to Krishi Dukan!</p>
+                {inviteDetails.retailerShopName && (
+                  <p className="text-lg font-bold text-primary mb-3">Welcome, {inviteDetails.retailerShopName}!</p>
+                )}
+                <p className="text-sm text-on-surface-variant">
+                  Your business has been invited by{' '}
+                  <span className="font-semibold text-primary">{manufacturerLabel}</span>
+                  {' '}to join Krishi Dukan. Complete your account setup to start managing your products and orders.
                 </p>
-                <p className="mt-2 text-xs text-on-surface-variant">Your account type must be <strong>retailer</strong> for this invite.</p>
-              </>
+              </div>
             ) : inviteDetails && !inviteDetails.found ? (
-              <p className="text-harvest">We could not find this invite link. You can still sign up; it will not be linked to a manufacturer.</p>
+              <div className="rounded-2xl border border-harvest/30 bg-harvest/5 p-4">
+                <p className="text-sm text-harvest">We could not find this invite link. You can still sign up; it will not be linked to a manufacturer.</p>
+              </div>
             ) : (
-              <p className="text-harvest">
-                {inviteDetails?.status === "revoked"
-                  ? "This invite is no longer valid (revoked)."
-                  : inviteDetails?.status === "active"
-                    ? "This invite link was already activated. If this is your shop, continue with the same mobile number or sign in to your retailer account."
-                    : "This invite cannot be used anymore."}
-              </p>
+              <div className="rounded-2xl border border-harvest/30 bg-harvest/5 p-4">
+                <p className="text-sm text-harvest">
+                  {inviteDetails?.status === "revoked"
+                    ? "This invite is no longer valid (revoked)."
+                    : inviteDetails?.status === "active"
+                      ? "This invite link was already activated. If this is your shop, continue with the same mobile number or sign in to your retailer account."
+                      : "This invite cannot be used anymore."}
+                </p>
+              </div>
             )}
           </div>
+        ) : (
+          <>
+            <h1 className="mb-2 text-3xl font-bold text-on-surface">{t("createAccountTitle")}</h1>
+            <p className="mb-6 font-medium text-on-surface-variant">{t("signupSubtitle")}</p>
+          </>
         )}
 
         {error && (
@@ -371,7 +385,7 @@ export default function SignupView({
               </div>
               {inviteDetails?.claimable && inviteDetails.retailerPhone ? (
                 <p className="ml-1 text-xs text-on-surface-variant">
-                  This number was pre-registered by the manufacturer and cannot be changed.
+                  Your mobile number was pre-registered by your manufacturer and cannot be changed.
                 </p>
               ) : phone.length > 0 && phone.length < 10 ? (
                 <p className="ml-1 text-xs text-red-600">Enter exactly 10 digits ({phone.length}/10)</p>

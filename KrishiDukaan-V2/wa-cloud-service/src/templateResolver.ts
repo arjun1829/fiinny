@@ -46,8 +46,21 @@ export function resolveTemplateComponents(
       return [body(name(), p("retailerCount"))];
 
     case "order_notification":
-      // {{1}} = customerName   {{2}} = itemSummary   {{3}} = total (₹ amount)
-      return [body(p("customerName"), p("itemSummary"), p("total"))];
+      // Sent to the SELLER when a new order arrives.
+      // {{1}} = shopName → businessName → "Retailer"
+      // Static Orders Dashboard URL button in the template — no button component needed.
+      return [body(p("shopName") || p("businessName") || "Retailer")];
+
+    case "order_confirmation_customer":
+      // Sent to the CUSTOMER immediately after order placement.
+      // Body:   {{1}} = customerName
+      // Button 0 (Dynamic URL): {{1}} = orderId
+      //   Meta template base URL: https://krishidukan.com/invoice/
+      //   Full resolved URL: https://krishidukan.com/invoice/{orderId}
+      return [
+        body(p("customerName")),
+        { type: "button", sub_type: "url", index: 0, parameters: [t(p("orderId"))] },
+      ];
 
     case "product_assignment_onboarded":
       // Body: {{1}} = manufacturerName   {{2}} = productName

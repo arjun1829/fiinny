@@ -75,6 +75,13 @@ export type PaymentInfo = {
   paidAt?: string; // ISO timestamp
 };
 
+export type InvoiceMetadata = {
+  invoiceNumber: string;
+  storagePath: string;
+  generatedAt: unknown; // Firestore Timestamp
+  version: number;
+};
+
 export type OrderDoc = {
   id: string;
   customerId: string;
@@ -101,6 +108,8 @@ export type OrderDoc = {
   sellerGstNumber?: string;
   /** Auto-generated invoice reference, e.g. INV-ORDID1234 */
   invoiceNumber?: string;
+  /** Invoice metadata written once after the PDF is uploaded to Firebase Storage */
+  invoice?: InvoiceMetadata;
   deliveryMode: "delivery";
   status: OrderStatus;
   statusHistory?: StatusHistoryEntry[];

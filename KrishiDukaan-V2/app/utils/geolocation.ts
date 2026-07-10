@@ -152,16 +152,30 @@ export async function reverseGeocodeToDisplay(
   return fallback;
 }
 
+export type GetUserLocationOptions = {
+  /**
+   * When true, the localStorage cache is not used as a fallback if GPS fails.
+   * GPS failure rejects the promise instead, so the caller can show an explicit error.
+   * Use this for visit recording where stale fallback coordinates would be misleading.
+   */
+  skipCache?: boolean;
+};
+
 /**
  * Request the user's location via the browser Geolocation API.
- * Falls back to cached → default if denied/unavailable.
+ * By default falls back to cached → default if denied/unavailable.
+ * Pass { skipCache: true } to reject instead of falling back to stale coordinates.
  */
-export function getUserLocation(): Promise<GeoResult> {
-  return new Promise((resolve) => {
-    const cached = getCachedLocation();
+export function getUserLocation(options?: GetUserLocationOptions): Promise<GeoResult> {
+  const skipCache = options?.skipCache ?? false;
+
+  return new Promise((resolve, reject) => {
+    const cached = skipCache ? null : getCachedLocation();
 
     if (!navigator.geolocation) {
-      resolve(cached || { coords: DEFAULT_LOCATION, label: DEFAULT_LOCATION_LABEL, source: 'default' });
+      if (cached) { resolve(cached); return; }
+      if (skipCache) { reject(new Error('Location is not supported by your browser.')); return; }
+      resolve({ coords: DEFAULT_LOCATION, label: DEFAULT_LOCATION_LABEL, source: 'default' });
       return;
     }
 
@@ -182,7 +196,12 @@ export function getUserLocation(): Promise<GeoResult> {
         })();
       },
       (_error) => {
-        resolve(cached || { coords: DEFAULT_LOCATION, label: DEFAULT_LOCATION_LABEL, source: 'default' });
+        if (cached) { resolve(cached); return; }
+        if (skipCache) {
+          reject(new Error('Unable to get your current location. Please allow location access and try again.'));
+          return;
+        }
+        resolve({ coords: DEFAULT_LOCATION, label: DEFAULT_LOCATION_LABEL, source: 'default' });
       },
       {
         enableHighAccuracy: true,

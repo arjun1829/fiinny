@@ -11,6 +11,7 @@ export type SignupInviteDetails = {
   retailerEmail: string;
   retailerPhone: string;
   retailerId: string;
+  retailerShopName: string | null;
   manufacturerId: string;
   manufacturerName: string | null;
 };
@@ -69,6 +70,7 @@ export async function fetchInviteDetailsForSignup(
       retailerEmail: "",
       retailerPhone: "",
       retailerId: "",
+      retailerShopName: null,
       manufacturerId: "",
       manufacturerName: null,
     };
@@ -83,6 +85,7 @@ export async function fetchInviteDetailsForSignup(
   const retailerEmail = String(data.retailerEmail ?? "");
   const retailerPhone = String(data.retailerPhone ?? "");
   const retailerId = String(data.retailerId ?? "");
+  const retailerShopName = String(data.shopName ?? "").trim() || null;
 
   const manufacturerName = manufacturerId
     ? await resolveManufacturerName(manufacturerId, manufacturerPhone)
@@ -96,6 +99,7 @@ export async function fetchInviteDetailsForSignup(
     retailerEmail,
     retailerPhone,
     retailerId,
+    retailerShopName,
     manufacturerId,
     manufacturerName,
   };

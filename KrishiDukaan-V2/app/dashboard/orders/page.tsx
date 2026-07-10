@@ -23,7 +23,7 @@ import { fetchIncomingOrdersForSeller, updateOrderStatus } from "../../firebase"
 import { PageHeader } from "../_components/page-header";
 import type { OrderDoc, OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
-import { generateInvoicePDF } from "../../utils/invoice-generator";
+import { openInvoice } from "../../utils/invoice-generator";
 
 // Visible progress flow — "accepted" is kept in the type for backward compat but removed from the UI
 const STATUS_FLOW: OrderStatus[] = ["placed", "out_for_delivery", "delivered"];
@@ -557,7 +557,7 @@ export default function OrdersPage() {
                           ))}
                           <button
                             type="button"
-                            onClick={() => generateInvoicePDF(order, sellerInfo ? {
+                            onClick={() => openInvoice(order, sellerInfo ? {
                               name: sellerInfo.name,
                               phone: sellerInfo.phone,
                               gstin: sellerInfo.gstin || undefined,
