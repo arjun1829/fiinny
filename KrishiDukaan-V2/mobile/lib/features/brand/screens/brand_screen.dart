@@ -9,6 +9,8 @@ import '../../../core/models/brand_model.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../marketplace/providers/marketplace_provider.dart';
+import '../../marketplace/widgets/review_sheet.dart';
 import '../data/brand_repository.dart';
 
 final _brandRepo = BrandRepository();
@@ -27,6 +29,55 @@ final _brandRetailersProvider =
       return _brandRepo.fetchBrandRetailers(phone);
 });
 
+Future<void> _launchExternal(String? urlString) async {
+  if (urlString == null || urlString.isEmpty) return;
+  var s = urlString.trim();
+  if (!s.startsWith('http://') && !s.startsWith('https://')) s = 'https://$s';
+  final uri = Uri.tryParse(s);
+  if (uri != null && await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+Future<void> _callNumber(String? phone) async {
+  if (phone == null || phone.isEmpty) return;
+  final uri = Uri(scheme: 'tel', path: phone);
+  if (await canLaunchUrl(uri)) await launchUrl(uri);
+}
+
+Future<void> _openDirections({double? lat, double? lng, String? query}) async {
+  Uri? uri;
+  if (lat != null && lng != null) {
+    uri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+  } else if (query != null && query.isNotEmpty) {
+    uri = Uri.parse(
+        'https://www.google.com/maps/search/${Uri.encodeComponent(query)}');
+  }
+  if (uri != null && await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+/// Extracts a YouTube video id from either a bare 11-char id (how the brand
+/// editor stores them, matching web) or any youtube.com / youtu.be URL.
+String? _youtubeId(String raw) {
+  final s = raw.trim();
+  if (RegExp(r'^[\w-]{11}$').hasMatch(s)) return s;
+  final uri = Uri.tryParse(s);
+  if (uri == null) return null;
+  if (uri.host.contains('youtu.be') && uri.pathSegments.isNotEmpty) {
+    return uri.pathSegments.first;
+  }
+  final v = uri.queryParameters['v'];
+  if (v != null && v.isNotEmpty) return v;
+  final segs = uri.pathSegments;
+  final embedIdx = segs.indexOf('embed');
+  if (embedIdx != -1 && embedIdx + 1 < segs.length) return segs[embedIdx + 1];
+  if (segs.length >= 2 && segs.first == 'shorts') return segs[1];
+  return null;
+}
+
 class BrandScreen extends ConsumerWidget {
   final String manufacturerPhone;
   const BrandScreen({super.key, required this.manufacturerPhone});
@@ -44,11 +95,17 @@ class BrandScreen extends ConsumerWidget {
           if (brand == null) return const ErrorView(message: 'Brand not found.');
 
           return DefaultTabController(
-            length: 3,
+            length: 4,
             child: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) {
                 return [
-                  _buildSliverAppBar(context, brand, ref),
+                  _BrandHero(brand: brand),
+                  SliverToBoxAdapter(
+                    child: _BrandStatsHeader(
+                      brand: brand,
+                      manufacturerPhone: manufacturerPhone,
+                    ),
+                  ),
                   SliverPersistentHeader(
                     pinned: true,
                     delegate: _SliverAppBarDelegate(
@@ -57,10 +114,14 @@ class BrandScreen extends ConsumerWidget {
                         unselectedLabelColor: AppColors.onSurfaceVariant,
                         indicatorColor: AppColors.primary,
                         indicatorWeight: 3,
+                        isScrollable: false,
+                        labelStyle: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700),
                         tabs: [
                           Tab(text: 'About'),
                           Tab(text: 'Products'),
                           Tab(text: 'Dealers'),
+                          Tab(text: 'Reviews'),
                         ],
                       ),
                     ),
@@ -71,7 +132,9 @@ class BrandScreen extends ConsumerWidget {
                 children: [
                   _AboutTab(brand: brand),
                   _ProductsTab(manufacturerPhone: manufacturerPhone),
-                  _RetailersTab(manufacturerPhone: manufacturerPhone),
+                  _RetailersTab(
+                      brand: brand, manufacturerPhone: manufacturerPhone),
+                  _ReviewsTab(brand: brand),
                 ],
               ),
             ),
@@ -80,100 +143,163 @@ class BrandScreen extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildSliverAppBar(BuildContext context, BrandModel brand, WidgetRef ref) {
+// ─── Hero: banner + verified badge + logo + name + tagline ───────────────────
+
+class _BrandHero extends StatelessWidget {
+  final BrandModel brand;
+  const _BrandHero({required this.brand});
+
+  @override
+  Widget build(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 280,
+      expandedHeight: 300,
       pinned: true,
-      backgroundColor: AppColors.primary,
+      backgroundColor: const Color(0xFF0A1F08),
       foregroundColor: Colors.white,
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (brand.coverImage != null)
-              CachedNetworkImage(
-                memCacheWidth: 1000,
-                imageUrl: brand.coverImage!,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => Container(color: AppColors.primary),
-              )
-            else
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.primary, AppColors.primaryLight],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+            // Web hero base: deep-green gradient; banner faded over it at 30%
+            // (web: opacity-30 mix-blend-overlay) so it never fights the text.
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF0A1F08),
+                    Color(0xFF1A3D14),
+                    Color(0xFF122B10),
+                  ],
                 ),
               ),
-            // Gradient overlay for text readability
+            ),
+            if (brand.banner != null)
+              Opacity(
+                opacity: 0.30,
+                child: CachedNetworkImage(
+                  memCacheWidth: 1200,
+                  imageUrl: brand.banner!,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+            // Bottom scrim to anchor the badge/name/tagline block.
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                  colors: [
+                    Colors.transparent,
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.55),
+                  ],
                 ),
               ),
             ),
             Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Premium Logo Display
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: brand.logo != null
-                          ? CachedNetworkImage(
-                              memCacheWidth: 1000,
-                              imageUrl: brand.logo!,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, _, _) => const Icon(Icons.business, size: 40, color: AppColors.primaryLight),
-                            )
-                          : const Icon(Icons.business, size: 40, color: AppColors.primaryLight),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          brand.businessName,
-                          style: AppTextStyles.heading2.copyWith(color: Colors.white, shadows: [const Shadow(color: Colors.black45, blurRadius: 4)]),
-                          maxLines: 2,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          color: Colors.amber, size: 16),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Verified Manufacturer on KrishiDukan',
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 4),
+                            ],
+                          ),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (brand.tagline != null && brand.tagline!.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            brand.tagline!,
-                            style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70, fontStyle: FontStyle.italic),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Logo card — rounded square + object-contain like web,
+                      // so wide/rectangular logos aren't cropped by a circle.
+                      Container(
+                        width: 76,
+                        height: 76,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: brand.logo != null
+                            ? CachedNetworkImage(
+                                memCacheWidth: 400,
+                                imageUrl: brand.logo!,
+                                fit: BoxFit.contain,
+                                errorWidget: (_, _, _) => const Icon(
+                                    Icons.business,
+                                    size: 36,
+                                    color: AppColors.primaryLight),
+                              )
+                            : const Icon(Icons.business,
+                                size: 36, color: AppColors.primaryLight),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              brand.businessName,
+                              style: AppTextStyles.heading2.copyWith(
+                                color: Colors.white,
+                                shadows: const [
+                                  Shadow(color: Colors.black45, blurRadius: 4),
+                                ],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (brand.tagline != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                brand.tagline!,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: Colors.white70,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -185,80 +311,300 @@ class BrandScreen extends ConsumerWidget {
   }
 }
 
+// ─── Stats header: rating · meta row · social proof · stats ─────────────────
+
+class _BrandStatsHeader extends ConsumerWidget {
+  final BrandModel brand;
+  final String manufacturerPhone;
+  const _BrandStatsHeader({required this.brand, required this.manufacturerPhone});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final productsAsync = ref.watch(_brandProductsProvider(manufacturerPhone));
+    final retailersAsync = ref.watch(_brandRetailersProvider(manufacturerPhone));
+    final reviewsAsync = ref.watch(storeReviewsProvider(brand.phone));
+
+    final reviews = reviewsAsync.value ?? const [];
+    final avgRating = reviews.isEmpty
+        ? 0.0
+        : reviews.fold<double>(0, (s, r) => s + r.rating) / reviews.length;
+
+    String stat(AsyncValue<List<dynamic>> a) =>
+        a.hasValue ? '${a.value!.length}' : '—';
+
+    // Continues the hero's deep-green gradient so hero + stats read as one
+    // branded block, exactly like the web brand hero.
+    return Container(
+      color: const Color(0xFF122B10),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Meta row: rating chip · location · Est. · website
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (reviews.isNotEmpty)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.20)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.star_rounded,
+                          size: 16, color: Colors.amber),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${avgRating.toStringAsFixed(1)} · ${reviews.length} review${reviews.length == 1 ? '' : 's'}',
+                        style: AppTextStyles.caption.copyWith(
+                            color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              if (brand.location != null && brand.location!.isNotEmpty)
+                _MetaChip(
+                  icon: Icons.location_on_outlined,
+                  label: brand.location!,
+                  onTap: () => _openDirections(
+                      lat: brand.lat, lng: brand.lng, query: brand.location),
+                ),
+              if (brand.establishedYear != null)
+                _MetaChip(
+                  icon: Icons.history,
+                  label: 'Est. ${brand.establishedYear}',
+                ),
+              if (brand.website != null)
+                _MetaChip(
+                  icon: Icons.language,
+                  label: 'Website',
+                  onTap: () => _launchExternal(brand.website),
+                ),
+            ],
+          ),
+
+          // Social proof (web: "🏆 Highly in Demand!" + amber subtitle)
+          if (brand.socialProof != null) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 24)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Highly in Demand!',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800)),
+                      Text(
+                        brand.socialProof!,
+                        style: AppTextStyles.caption.copyWith(
+                            color: const Color(0xFFFCD34D),
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // Stats row: Products | Dealers | Years (web hero stats)
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              border: Border.symmetric(
+                horizontal: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.15)),
+              ),
+            ),
+            child: Row(
+              children: [
+                _StatCell(value: stat(productsAsync), label: 'Products'),
+                _statDivider(),
+                _StatCell(value: stat(retailersAsync), label: 'Dealers'),
+                _statDivider(),
+                _StatCell(
+                  value: brand.yearsActive != null
+                      ? '${brand.yearsActive}+'
+                      : '—',
+                  label: 'Years',
+                ),
+              ],
+            ),
+          ),
+
+          // Certifications (web: leaf icon + white/70 text, inside the hero)
+          if (brand.certifications.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: brand.certifications
+                  .map((cert) => Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.eco,
+                              size: 14, color: Color(0xFF4ADE80)),
+                          const SizedBox(width: 5),
+                          Text(cert,
+                              style: AppTextStyles.caption.copyWith(
+                                  color:
+                                      Colors.white.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ))
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statDivider() => Container(
+      width: 1, height: 34, color: Colors.white.withValues(alpha: 0.15));
+}
+
+class _StatCell extends StatelessWidget {
+  final String value;
+  final String label;
+  const _StatCell({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value,
+              style: AppTextStyles.heading2.copyWith(
+                  color: Colors.white, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(label.toUpperCase(),
+              style: AppTextStyles.caption.copyWith(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                  fontSize: 10)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  const _MetaChip({required this.icon, required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: Colors.amber),
+        const SizedBox(width: 4),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 180),
+          child: Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontWeight: FontWeight.w600,
+              decoration: onTap != null ? TextDecoration.underline : null,
+              decorationColor: Colors.white38,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+    return onTap != null ? GestureDetector(onTap: onTap, child: content) : content;
+  }
+}
+
+// ─── About tab ───────────────────────────────────────────────────────────────
+
 class _AboutTab extends StatelessWidget {
   final BrandModel brand;
   const _AboutTab({required this.brand});
-
-  Future<void> _launchUrl(String? urlString) async {
-    if (urlString == null || urlString.isEmpty) return;
-    final uri = Uri.tryParse(urlString);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  Future<void> _callPhone(String? phone) async {
-    if (phone == null || phone.isEmpty) return;
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  Future<void> _sendEmail(String? email) async {
-    if (email == null || email.isEmpty) return;
-    final uri = Uri(scheme: 'mailto', path: email);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        // Contact & Quick Info Cards
-        Row(
+        // Quick actions: Call, Call 2, Email, Website, Directions
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
           children: [
-            if (brand.phone.isNotEmpty)
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.phone_outlined,
-                  label: 'Call',
-                  onTap: () => _callPhone(brand.phone),
-                ),
+            _QuickActionCard(
+              icon: Icons.phone_outlined,
+              label: 'Call',
+              onTap: () => _callNumber(brand.phone),
+            ),
+            if (brand.secondaryPhone.isNotEmpty)
+              _QuickActionCard(
+                icon: Icons.phone_forwarded_outlined,
+                label: 'Call 2',
+                onTap: () => _callNumber(brand.secondaryPhone),
               ),
-            if (brand.email != null && brand.email!.isNotEmpty) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.email_outlined,
-                  label: 'Email',
-                  onTap: () => _sendEmail(brand.email),
-                ),
+            if (brand.email != null)
+              _QuickActionCard(
+                icon: Icons.email_outlined,
+                label: 'Email',
+                onTap: () async {
+                  final uri = Uri(scheme: 'mailto', path: brand.email!);
+                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                },
               ),
-            ],
-            if (brand.website != null && brand.website!.isNotEmpty) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.language,
-                  label: 'Website',
-                  onTap: () => _launchUrl(brand.website),
-                ),
+            if (brand.website != null)
+              _QuickActionCard(
+                icon: Icons.language,
+                label: 'Website',
+                onTap: () => _launchExternal(brand.website),
               ),
-            ],
+            if (brand.hasGeo ||
+                (brand.location != null && brand.location!.isNotEmpty))
+              _QuickActionCard(
+                icon: Icons.directions_outlined,
+                label: 'Directions',
+                onTap: () => _openDirections(
+                    lat: brand.lat,
+                    lng: brand.lng,
+                    query: brand.fullAddress ?? brand.location),
+              ),
           ],
         ),
         const SizedBox(height: 24),
 
-        // Description
-        if (brand.description != null && brand.description!.isNotEmpty) ...[
+        // About
+        if (brand.about != null) ...[
           Text('About Us', style: AppTextStyles.heading3),
           const SizedBox(height: 8),
-          Text(brand.description!, style: AppTextStyles.body.copyWith(color: AppColors.onSurfaceVariant, height: 1.5)),
+          Text(brand.about!,
+              style: AppTextStyles.body
+                  .copyWith(color: AppColors.onSurfaceVariant, height: 1.5)),
           const SizedBox(height: 24),
         ],
 
-        // Address & Location Info
-        if ((brand.fullAddress != null && brand.fullAddress!.isNotEmpty) || (brand.location != null && brand.location!.isNotEmpty)) ...[
+        // Address
+        if ((brand.fullAddress != null && brand.fullAddress!.isNotEmpty) ||
+            (brand.location != null && brand.location!.isNotEmpty)) ...[
           _InfoTile(
             icon: Icons.location_on_rounded,
             title: 'Headquarters',
@@ -267,7 +613,7 @@ class _AboutTab extends StatelessWidget {
           const SizedBox(height: 16),
         ],
 
-        if (brand.establishedYear != null && brand.establishedYear!.isNotEmpty) ...[
+        if (brand.establishedYear != null) ...[
           _InfoTile(
             icon: Icons.history,
             title: 'Established',
@@ -276,62 +622,95 @@ class _AboutTab extends StatelessWidget {
           const SizedBox(height: 24),
         ],
 
-        // Achievements
-        if (brand.achievements != null && brand.achievements!.isNotEmpty) ...[
-          Text('Achievements', style: AppTextStyles.heading3),
+        // Videos rail (web: "See the Results" — YouTube embeds)
+        if (brand.videos.isNotEmpty) ...[
+          Text('See the Results', style: AppTextStyles.heading3),
+          const SizedBox(height: 4),
+          Text(
+            'Farmers share their experience with ${brand.businessName}',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.onSurfaceVariant),
+          ),
           const SizedBox(height: 12),
-          ...brand.achievements!.map((ach) => Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.military_tech, color: Colors.orange, size: 24),
-                const SizedBox(width: 12),
-                Expanded(child: Text(ach, style: AppTextStyles.bodyMedium)),
-              ],
-            ),
-          )),
-          const SizedBox(height: 24),
-        ],
-
-        // Featured Video
-        if (brand.videoLink != null && brand.videoLink!.isNotEmpty) ...[
-          Text('Featured Video', style: AppTextStyles.heading3),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () => _launchUrl(brand.videoLink),
-            child: Container(
-              height: 160,
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4))],
-              ),
-              child: const Center(
-                child: Icon(Icons.play_circle_fill, color: Colors.white, size: 64),
-              ),
+          SizedBox(
+            height: 210,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: brand.videos.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => _VideoCard(raw: brand.videos[i]),
             ),
           ),
           const SizedBox(height: 24),
         ],
 
-        // Social Links
-        if (brand.socialLinks != null && brand.socialLinks!.isNotEmpty) ...[
+        // Social links
+        if (brand.socialLinks != null) ...[
           Text('Follow Us', style: AppTextStyles.heading3),
           const SizedBox(height: 12),
           Wrap(
             spacing: 12,
             runSpacing: 12,
-            children: brand.socialLinks!.entries.map((e) => ActionChip(
-              avatar: const Icon(Icons.link, size: 16, color: Colors.white),
-              label: Text(e.key.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              backgroundColor: AppColors.primary,
-              onPressed: () => _launchUrl(e.value),
-            )).toList(),
+            children: brand.socialLinks!.entries
+                .map((e) => ActionChip(
+                      avatar: const Icon(Icons.link,
+                          size: 16, color: Colors.white),
+                      label: Text(e.key.toUpperCase(),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                      backgroundColor: AppColors.primary,
+                      onPressed: () => _launchExternal(e.value),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: 40),
         ],
+        const SizedBox(height: 24),
       ],
+    );
+  }
+}
+
+class _VideoCard extends StatelessWidget {
+  final String raw;
+  const _VideoCard({required this.raw});
+
+  @override
+  Widget build(BuildContext context) {
+    final id = _youtubeId(raw);
+    final thumbUrl =
+        id != null ? 'https://img.youtube.com/vi/$id/hqdefault.jpg' : null;
+    final watchUrl =
+        id != null ? 'https://www.youtube.com/watch?v=$id' : raw;
+
+    return GestureDetector(
+      onTap: () => _launchExternal(watchUrl),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          width: 130,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumbUrl != null)
+                CachedNetworkImage(
+                  imageUrl: thumbUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) =>
+                      Container(color: Colors.black87),
+                )
+              else
+                Container(color: Colors.black87),
+              Container(color: Colors.black.withValues(alpha: 0.25)),
+              const Center(
+                child: Icon(Icons.play_circle_fill,
+                    color: Colors.white, size: 44),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -341,7 +720,8 @@ class _InfoTile extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _InfoTile({required this.icon, required this.title, required this.subtitle});
+  const _InfoTile(
+      {required this.icon, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -350,7 +730,9 @@ class _InfoTile extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: AppColors.primaryLight.withValues(alpha: 0.2), shape: BoxShape.circle),
+          decoration: BoxDecoration(
+              color: AppColors.primaryLight.withValues(alpha: 0.2),
+              shape: BoxShape.circle),
           child: Icon(icon, color: AppColors.primary),
         ),
         const SizedBox(width: 16),
@@ -358,7 +740,10 @@ class _InfoTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold, color: AppColors.onSurfaceVariant)),
+              Text(title,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(subtitle, style: AppTextStyles.bodyMedium, softWrap: true),
             ],
@@ -374,7 +759,8 @@ class _QuickActionCard extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _QuickActionCard({required this.icon, required this.label, required this.onTap});
+  const _QuickActionCard(
+      {required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -382,24 +768,34 @@ class _QuickActionCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
+        width: 96,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.surfaceVariant),
-          boxShadow: [BoxShadow(color: AppColors.cardShadow, blurRadius: 4, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+                color: AppColors.cardShadow,
+                blurRadius: 4,
+                offset: const Offset(0, 2))
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primary, size: 28),
+            Icon(icon, color: AppColors.primary, size: 26),
             const SizedBox(height: 8),
-            Text(label, style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600)),
+            Text(label,
+                style: AppTextStyles.bodySmall
+                    .copyWith(fontWeight: FontWeight.w600)),
           ],
         ),
       ),
     );
   }
 }
+
+// ─── Products tab ────────────────────────────────────────────────────────────
 
 class _ProductsTab extends ConsumerWidget {
   final String manufacturerPhone;
@@ -414,7 +810,9 @@ class _ProductsTab extends ConsumerWidget {
       error: (_, _) => const ErrorView(message: 'Could not load products.'),
       data: (products) {
         if (products.isEmpty) {
-          return const Center(child: Text('No products available.', style: TextStyle(color: AppColors.onSurfaceVariant)));
+          return const Center(
+              child: Text('No products available.',
+                  style: TextStyle(color: AppColors.onSurfaceVariant)));
         }
         return GridView.builder(
           padding: const EdgeInsets.all(16),
@@ -435,31 +833,258 @@ class _ProductsTab extends ConsumerWidget {
   }
 }
 
-class _RetailersTab extends ConsumerWidget {
+// ─── Dealers tab ─────────────────────────────────────────────────────────────
+
+class _RetailersTab extends ConsumerStatefulWidget {
+  final BrandModel brand;
   final String manufacturerPhone;
-  const _RetailersTab({required this.manufacturerPhone});
+  const _RetailersTab(
+      {required this.brand, required this.manufacturerPhone});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncRetailers = ref.watch(_brandRetailersProvider(manufacturerPhone));
+  ConsumerState<_RetailersTab> createState() => _RetailersTabState();
+}
+
+class _RetailersTabState extends ConsumerState<_RetailersTab> {
+  // Web caps the dealer panel and hints "scroll to see all"; the mobile
+  // equivalent is a short initial list with an explicit expander, so a big
+  // network (60+ dealers) doesn't read as one endless scroll.
+  static const _initialCount = 8;
+  bool _showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncRetailers =
+        ref.watch(_brandRetailersProvider(widget.manufacturerPhone));
 
     return asyncRetailers.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) => const ErrorView(message: 'Could not load dealers.'),
       data: (retailers) {
         if (retailers.isEmpty) {
-          return const Center(child: Text('No dealers found.', style: TextStyle(color: AppColors.onSurfaceVariant)));
+          return const Center(
+              child: Text('No dealers found.',
+                  style: TextStyle(color: AppColors.onSurfaceVariant)));
         }
-        return ListView.separated(
+
+        final visible = _showAll
+            ? retailers
+            : retailers.take(_initialCount).toList();
+        final hiddenCount = retailers.length - visible.length;
+
+        return ListView(
           padding: const EdgeInsets.all(16),
-          itemCount: retailers.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (_, i) => _RetailerCard(retailer: retailers[i]),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Where to Find Us — ${retailers.length} dealer${retailers.length == 1 ? '' : 's'}',
+                style: AppTextStyles.heading3,
+              ),
+            ),
+            for (final r in visible) ...[
+              _RetailerCard(retailer: r),
+              const SizedBox(height: 12),
+            ],
+            if (hiddenCount > 0)
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => setState(() => _showAll = true),
+                icon: const Icon(Icons.expand_more_rounded),
+                label: Text('Show all ${retailers.length} dealers'),
+              )
+            else if (_showAll && retailers.length > _initialCount)
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.onSurfaceVariant,
+                  side: const BorderSide(color: AppColors.surfaceVariant),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => setState(() => _showAll = false),
+                icon: const Icon(Icons.expand_less_rounded),
+                label: const Text('Show less'),
+              ),
+            const SizedBox(height: 24),
+          ],
         );
       },
     );
   }
 }
+
+// ─── Reviews tab (synced with web ReviewSection — storeReviews collection) ───
+
+class _ReviewsTab extends ConsumerWidget {
+  final BrandModel brand;
+  const _ReviewsTab({required this.brand});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reviewsAsync = ref.watch(storeReviewsProvider(brand.phone));
+    final userReviewAsync = ref.watch(userStoreReviewProvider(brand.phone));
+    final userReview = userReviewAsync.value;
+
+    return reviewsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) => const ErrorView(message: 'Could not load reviews.'),
+      data: (reviews) {
+        final avg = reviews.isEmpty
+            ? 0.0
+            : reviews.fold<double>(0, (s, r) => s + r.rating) /
+                reviews.length;
+
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            // Summary + write button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      avg.toStringAsFixed(1),
+                      style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: List.generate(
+                            5,
+                            (i) => Icon(
+                              i < avg.round()
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              size: 16,
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${reviews.length} Review${reviews.length == 1 ? '' : 's'}',
+                          style: AppTextStyles.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => showReviewBottomSheet(
+                    context: context,
+                    ref: ref,
+                    storePhone: brand.phone,
+                    existingReview: userReview,
+                  ),
+                  icon: Icon(
+                      userReview != null ? Icons.edit : Icons.rate_review,
+                      size: 16),
+                  label: Text(userReview != null ? 'Edit Review' : 'Write Review'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            if (reviews.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: Column(
+                  children: [
+                    const Icon(Icons.star_border_outlined,
+                        size: 48, color: AppColors.primaryLight),
+                    const SizedBox(height: 8),
+                    Text('No reviews yet — be the first!',
+                        style: AppTextStyles.body
+                            .copyWith(color: AppColors.onSurfaceVariant)),
+                  ],
+                ),
+              )
+            else
+              ...reviews.map((r) => Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: AppColors.surfaceVariant
+                              .withValues(alpha: 0.6)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                r.reviewerName,
+                                style: AppTextStyles.bodyMedium
+                                    .copyWith(fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Row(
+                              children: List.generate(
+                                5,
+                                (i) => Icon(
+                                  i < r.rating.round()
+                                      ? Icons.star
+                                      : Icons.star_border,
+                                  size: 14,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (r.createdAt != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${r.createdAt!.day}/${r.createdAt!.month}/${r.createdAt!.year}',
+                            style: AppTextStyles.caption
+                                .copyWith(color: AppColors.onSurfaceVariant),
+                          ),
+                        ],
+                        if (r.reviewText != null &&
+                            r.reviewText!.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(r.reviewText!, style: AppTextStyles.bodySmall),
+                        ],
+                      ],
+                    ),
+                  )),
+            const SizedBox(height: 24),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ─── Shared bits ─────────────────────────────────────────────────────────────
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
@@ -471,7 +1096,8 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: Colors.white,
       child: _tabBar,
@@ -497,14 +1123,20 @@ class _BrandProductCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: AppColors.cardShadow, blurRadius: 6, offset: const Offset(0, 3))],
+          boxShadow: [
+            BoxShadow(
+                color: AppColors.cardShadow,
+                blurRadius: 6,
+                offset: const Offset(0, 3))
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
                 child: SizedBox(
                   width: double.infinity,
                   height: double.infinity,
@@ -526,14 +1158,16 @@ class _BrandProductCard extends StatelessWidget {
                 children: [
                   Text(
                     product.name,
-                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(fontWeight: FontWeight.bold),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
                   Text(
                     CurrencyUtils.format(product.price),
-                    style: AppTextStyles.price.copyWith(color: AppColors.primary),
+                    style:
+                        AppTextStyles.price.copyWith(color: AppColors.primary),
                   ),
                 ],
               ),
@@ -545,19 +1179,15 @@ class _BrandProductCard extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-    color: AppColors.surfaceVariant,
-    child: const Center(child: Icon(Icons.grass, size: 36, color: AppColors.primaryLight)),
-  );
+        color: AppColors.surfaceVariant,
+        child: const Center(
+            child: Icon(Icons.grass, size: 36, color: AppColors.primaryLight)),
+      );
 }
 
 class _RetailerCard extends StatelessWidget {
   final BrandRetailerModel retailer;
   const _RetailerCard({required this.retailer});
-
-  Future<void> _call() async {
-    final uri = Uri(scheme: 'tel', path: retailer.phone);
-    if (await canLaunchUrl(uri)) launchUrl(uri);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -565,11 +1195,17 @@ class _RetailerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceVariant.withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: AppColors.cardShadow, blurRadius: 4, offset: const Offset(0, 2))],
+        border: Border.all(
+            color: AppColors.surfaceVariant.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.cardShadow,
+              blurRadius: 4,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Row(
           children: [
             ClipRRect(
@@ -577,21 +1213,21 @@ class _RetailerCard extends StatelessWidget {
               child: retailer.logo != null
                   ? CachedNetworkImage(
                       imageUrl: retailer.logo!,
-                      width: 56,
-                      height: 56,
+                      width: 52,
+                      height: 52,
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => _avatar(),
                     )
                   : _avatar(),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     retailer.displayName,
-                    style: AppTextStyles.heading3.copyWith(fontSize: 16),
+                    style: AppTextStyles.heading3.copyWith(fontSize: 15),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -599,12 +1235,14 @@ class _RetailerCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(Icons.location_on, size: 14, color: Colors.redAccent),
+                        const Icon(Icons.location_on,
+                            size: 14, color: Colors.redAccent),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             retailer.locationLabel,
-                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.onSurfaceVariant),
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -615,18 +1253,25 @@ class _RetailerCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: _call,
-                icon: const Icon(Icons.phone),
+            const SizedBox(width: 4),
+            if (retailer.hasLocation ||
+                retailer.locationLabel.isNotEmpty)
+              IconButton(
+                onPressed: () => _openDirections(
+                  lat: retailer.lat,
+                  lng: retailer.lng,
+                  query:
+                      '${retailer.displayName} ${retailer.locationLabel}',
+                ),
+                icon: const Icon(Icons.directions_outlined),
                 color: AppColors.primary,
-                tooltip: 'Call Dealer',
+                tooltip: 'Directions',
               ),
+            IconButton(
+              onPressed: () => _callNumber(retailer.phone),
+              icon: const Icon(Icons.phone),
+              color: AppColors.primary,
+              tooltip: 'Call Dealer',
             ),
           ],
         ),
@@ -635,12 +1280,14 @@ class _RetailerCard extends StatelessWidget {
   }
 
   Widget _avatar() => Container(
-        width: 56,
-        height: 56,
+        width: 52,
+        height: 52,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [AppColors.primaryLight, AppColors.primary]),
+          gradient: const LinearGradient(
+              colors: [AppColors.primaryLight, AppColors.primary]),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Center(child: Icon(Icons.storefront, size: 28, color: Colors.white)),
+        child: const Center(
+            child: Icon(Icons.storefront, size: 26, color: Colors.white)),
       );
 }

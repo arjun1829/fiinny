@@ -48,20 +48,33 @@ class BrandRepository {
             : manufacturerPhone;
     if (uid.isEmpty) return [];
 
+    // Three parallel queries, mirroring the web brand page (app/brand/[slug]).
+    // The ownerId+ownerType query is essential: canonical manufacturer products
+    // often carry ONLY ownerId (source 'manufacturer_inventory'), while the
+    // manufacturerId field is stamped onto every retailer-assigned COPY — so
+    // querying manufacturerId alone returns copies that we then filter out,
+    // leaving the page empty (seen live with UNIMAX AGRI BIO-TECHNOLOGIES).
+    // limit(100) keeps copy-heavy result sets from starving canonical docs.
     final byUid = _db
         .collection('products')
         .where('manufacturerId', isEqualTo: uid)
         .where('isActive', isEqualTo: true)
-        .limit(30)
+        .limit(100)
+        .get();
+    final byOwner = _db
+        .collection('products')
+        .where('ownerId', isEqualTo: uid)
+        .where('ownerType', isEqualTo: 'manufacturer')
+        .limit(100)
         .get();
     final byPhone = _db
         .collection('products')
         .where('manufacturerPhone', isEqualTo: manufacturerPhone)
         .where('isActive', isEqualTo: true)
-        .limit(30)
+        .limit(100)
         .get();
 
-    final results = await Future.wait([byUid, byPhone]);
+    final results = await Future.wait([byOwner, byUid, byPhone]);
     final copySources = {'retailer_inventory_copy', 'manufacturer_assigned', 'admin_assigned'};
     final seen = <String>{};
     final products = <CatalogModel>[];
@@ -69,7 +82,8 @@ class BrandRepository {
       for (final doc in snap.docs) {
         if (seen.add(doc.id)) {
           final p = CatalogModel.fromFirestore(doc);
-          if (!copySources.contains(p.source)) products.add(p);
+          final isActive = (doc.data()['isActive'] as bool?) ?? true;
+          if (isActive && !copySources.contains(p.source)) products.add(p);
         }
       }
     }
