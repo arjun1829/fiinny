@@ -39,6 +39,7 @@ import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from '
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
+import AppPromoModal from '../components/shared/AppPromoModal';
 import { StatusToast } from './components/shared/status-toast';
 import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
@@ -1732,6 +1733,9 @@ export default function App() {
       {currentView === 'home' && !loading && !errorMsg ? (
         <GuidedTour steps={tourSteps} />
       ) : null}
+
+      {/* "Get the app" popup — first-time visitors only, skippable, home view only */}
+      {currentView === 'home' && !loading && !errorMsg ? <AppPromoModal /> : null}
 
       <StatusToast
         message={toastMsg}
