@@ -215,6 +215,10 @@ export default function SupplierLedgerDetailPage() {
         .map(d => ({ id: d.id, ...d.data() } as SupplierInvoice))
         .sort((a, b) => sortVal(b.createdAt) - sortVal(a.createdAt));
 
+      // Same formula as utils/supplierLedgerSync.ts's syncSupplierTotals — kept
+      // inline here (rather than calling that helper) because this page already
+      // has posList/pmtsList/invList in memory for its own tables, so reusing
+      // the helper would mean re-fetching all three collections a second time.
       const derivedPoInvoiced = posList.reduce((s, p) => s + poAmount(p), 0);
       const derivedInvInvoiced = invList.reduce((s, inv) => s + (Number(inv.netAmount) || 0), 0);
       const derivedInvoiced = derivedPoInvoiced + derivedInvInvoiced;
