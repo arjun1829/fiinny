@@ -1,4 +1,4 @@
-import { getAdminDb } from "@/app/lib/firebase-admin";
+import { getAdminDb } from "./firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 type WaTemplate =
