@@ -100,6 +100,7 @@ class StoreRepository {
         lat: (lat != null && lat != 0.0) ? lat : null,
         lng: (lng != null && lng != 0.0) ? lng : null,
         role: role,
+        googleMapsUrl: _mapsUrl(d),
         score: 10 + (lat != null && lat != 0.0 ? 1 : 0),
       ));
     }
@@ -130,6 +131,7 @@ class StoreRepository {
           lat: geoPoint?.latitude ?? _num(geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d['lat']),
           lng: geoPoint?.longitude ?? _num(geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d['lng']),
           role: 'retailer',
+          googleMapsUrl: _mapsUrl(d),
           score: 5,
         ));
       } catch (_) {}
@@ -172,6 +174,7 @@ class StoreRepository {
           lat: geoPoint?.latitude ?? _num(geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d['lat']),
           lng: geoPoint?.longitude ?? _num(geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d['lng']),
           role: 'manufacturer',
+          googleMapsUrl: _mapsUrl(d),
           score: 5,
         ));
       } catch (_) {}
@@ -201,6 +204,7 @@ class StoreRepository {
           pincode: d['pincode']?.toString(),
           lat: geoPoint?.latitude ?? _num(geo?['latitude'] ?? loc?['latitude'] ?? loc?['lat'] ?? d['lat']),
           lng: geoPoint?.longitude ?? _num(geo?['longitude'] ?? loc?['longitude'] ?? loc?['lng'] ?? d['lng']),
+          googleMapsUrl: _mapsUrl(d),
           score: 3,
         ));
       } catch (_) {}
@@ -230,6 +234,7 @@ class StoreRepository {
         state: ts.state,
         pincode: ts.pincode,
         role: ts.role,
+        googleMapsUrl: ts.googleMapsUrl,
         averageRating: (agg != null && agg.count > 0) ? agg.sum / agg.count : null,
         totalReviews: (agg != null && agg.count > 0) ? agg.count : null,
       );
@@ -238,6 +243,15 @@ class StoreRepository {
 
   bool _isPhoneId(String id) =>
       RegExp(r'^\+?\d{10,13}$').hasMatch(id);
+
+  /// Seller's Google Maps / Business listing URL under any of the key names
+  /// the web + mobile profile editors have used.
+  String? _mapsUrl(Map<String, dynamic> d) {
+    final raw = (d['googleMapsUrl'] ?? d['googleBusinessUrl'] ?? d['mapsLink'])
+        ?.toString()
+        .trim();
+    return (raw != null && raw.startsWith('http')) ? raw : null;
+  }
 
   double? _num(dynamic v) {
     if (v == null) return null;
@@ -270,6 +284,7 @@ class _TempStore {
   final double? lat;
   final double? lng;
   final String role;
+  final String? googleMapsUrl;
   final int score;
 
   const _TempStore({
@@ -286,6 +301,7 @@ class _TempStore {
     this.lat,
     this.lng,
     this.role = '',
+    this.googleMapsUrl,
     required this.score,
   });
 }

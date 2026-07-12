@@ -13,6 +13,8 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
 import '../providers/reels_provider.dart';
+import '../widgets/reel_filters.dart';
+import 'reel_edit_screen.dart';
 
 class ReelUploadScreen extends ConsumerStatefulWidget {
   const ReelUploadScreen({super.key});
@@ -38,6 +40,10 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
   double _compressProgress = 0;
   double _uploadProgress = 0;
   Subscription? _compressSubscription;
+
+  // Edits from ReelEditScreen (trim/filter/text). Null until the seller
+  // opens the editor; cleared when a different video is picked.
+  ReelEditResult? _edit;
 
   @override
   void dispose() {
@@ -118,7 +124,29 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     setState(() {
       _pickedFile = picked;
       _previewController = controller;
+      _edit = null; // edits belong to the previous video
     });
+  }
+
+  Future<void> _openEditor() async {
+    if (_pickedFile == null || kIsWeb) return;
+    _previewController?.pause();
+    final result = await Navigator.of(context, rootNavigator: true)
+        .push<ReelEditResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ReelEditScreen(
+          videoPath: _pickedFile!.path,
+          initial: _edit,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() => _edit = result);
+      // Preview from the trim start so what you see is what gets posted.
+      await _previewController?.seekTo(result.trimStart);
+    }
+    _previewController?.play();
   }
 
   Future<void> _upload() async {
@@ -144,11 +172,27 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
           if (mounted) setState(() { _compressProgress = progress / 100; });
         });
 
+        // Trim (from the editor) is burned into the file here — video_compress
+        // transcodes natively between startTime/duration, no ffmpeg needed.
+        int? trimStartSec;
+        int? trimDurationSec;
+        final edit = _edit;
+        final totalDuration = _previewController?.value.duration;
+        if (edit != null &&
+            totalDuration != null &&
+            edit.trimsVideo(totalDuration)) {
+          trimStartSec = edit.trimStart.inSeconds;
+          trimDurationSec =
+              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, 90);
+        }
+
         final info = await VideoCompress.compressVideo(
           _pickedFile!.path,
           quality: VideoQuality.MediumQuality,
           deleteOrigin: false,
           includeAudio: true,
+          startTime: trimStartSec ?? 0,
+          duration: trimDurationSec,
         );
 
         _compressSubscription?.unsubscribe();
@@ -184,6 +228,9 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             linkedProductName: _selectedProduct?.productName,
             linkedProductImageUrl: _selectedProduct?.imageUrl,
             taggedShops: List.from(_taggedShops),
+            filterId: _edit?.filterId,
+            overlayText: _edit?.overlayText,
+            overlayPos: _edit?.overlayPos,
             onProgress: (p) {
               if (mounted) setState(() { _uploadProgress = p; });
             },
@@ -281,9 +328,66 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                                 child: AspectRatio(
                                   aspectRatio: _previewController!
                                       .value.aspectRatio,
-                                  child: VideoPlayer(_previewController!),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      applyReelFilter(
+                                        _edit?.filterId,
+                                        VideoPlayer(_previewController!),
+                                      ),
+                                      if (_edit != null)
+                                        ReelTextOverlay(
+                                          text: _edit!.overlayText,
+                                          pos: _edit!.overlayPos,
+                                          compact: true,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
+                              // Edit (trim / filter / text) — mobile only
+                              if (!kIsWeb)
+                                Positioned(
+                                  top: 12,
+                                  left: 12,
+                                  child: GestureDetector(
+                                    onTap: _processing ? null : _openEditor,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _edit == null
+                                                ? Icons.tune_rounded
+                                                : Icons.check_circle_rounded,
+                                            color: _edit == null
+                                                ? Colors.white
+                                                : AppColors.secondary,
+                                            size: 16,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            _edit == null
+                                                ? 'Edit'
+                                                : 'Edited',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               Positioned(
                                 bottom: 12,
                                 right: 12,
@@ -519,11 +623,34 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                 const SizedBox(height: 20),
 
                 // ── Tag sellers (collaboration) ───────────────────────────
-                Text('Tag Sellers (Collaboration)',
-                    style: AppTextStyles.heading3),
+                Row(
+                  children: [
+                    Text('Tag Sellers (Collaboration)',
+                        style: AppTextStyles.heading3),
+                    if (_taggedShops.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_taggedShops.length}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  'Tagged sellers will show this reel on their shop profile.',
+                  'Add one or more sellers to collaborate — this reel appears '
+                  'on every tagged seller\'s profile too.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.onSurfaceVariant),
                 ),

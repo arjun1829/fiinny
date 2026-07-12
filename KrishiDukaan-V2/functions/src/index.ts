@@ -626,6 +626,103 @@ export const notifyCustomerOnOrderStatus = onDocumentWritten(
   }
 );
 
+// ─── AgriReels Notifications ─────────────────────────────────────────────────
+
+/**
+ * Someone liked a reel → notify the reel owner.
+ * Doc ID = {reelId}_{userId}. We need to look up the reel to get shopOwnerId.
+ */
+export const notifyReelOwnerOnLike = onDocumentCreated(
+  "reel_likes/{likeId}",
+  async (event) => {
+    const d = event.data?.data() as Record<string, unknown> | undefined;
+    if (!d) return;
+
+    const reelId = String(d.reelId ?? "");
+    const likerId = String(d.userId ?? "");
+    if (!reelId || !likerId) return;
+
+    const reelSnap = await db.collection("reels").doc(reelId).get();
+    if (!reelSnap.exists) return;
+
+    const reel = reelSnap.data() as Record<string, unknown>;
+    const ownerPhone = String(reel.shopOwnerId ?? "");
+    if (!ownerPhone || ownerPhone === likerId) return; // don't notify self-like
+
+    const shopName = String(reel.shopName ?? "your reel");
+    const likerName = await displayName(likerId, "Someone");
+
+    await notify(
+      ownerPhone,
+      "reel_like",
+      "New like on your reel ❤️",
+      `${likerName} liked your reel "${shopName}"`,
+      { reelId }
+    );
+  }
+);
+
+/**
+ * Someone commented on a reel → notify the reel owner.
+ */
+export const notifyReelOwnerOnComment = onDocumentCreated(
+  "reels/{reelId}/reel_comments/{commentId}",
+  async (event) => {
+    const d = event.data?.data() as Record<string, unknown> | undefined;
+    if (!d) return;
+
+    const reelId = event.params.reelId;
+    const commenterPhone = String(d.userId ?? "");
+    const commenterName = String(d.userName ?? "Someone");
+    const commentText = String(d.text ?? "");
+
+    const reelSnap = await db.collection("reels").doc(reelId).get();
+    if (!reelSnap.exists) return;
+
+    const reel = reelSnap.data() as Record<string, unknown>;
+    const ownerPhone = String(reel.shopOwnerId ?? "");
+    if (!ownerPhone || ownerPhone === commenterPhone) return; // don't notify self-comment
+
+    const preview = commentText.length > 50
+      ? commentText.substring(0, 50) + "…"
+      : commentText;
+
+    await notify(
+      ownerPhone,
+      "reel_comment",
+      `${commenterName} commented on your reel 💬`,
+      preview || "Tap to view",
+      { reelId }
+    );
+  }
+);
+
+/**
+ * Someone followed a shop → notify the shop owner.
+ * Doc ID = {followerId}_{shopId}.
+ */
+export const notifyShopOwnerOnFollow = onDocumentCreated(
+  "follows/{followId}",
+  async (event) => {
+    const d = event.data?.data() as Record<string, unknown> | undefined;
+    if (!d) return;
+
+    const shopPhone = String(d.followedShopId ?? "");
+    const followerPhone = String(d.followerId ?? "");
+    if (!shopPhone || !followerPhone) return;
+
+    const followerName = await displayName(followerPhone, "Someone");
+
+    await notify(
+      shopPhone,
+      "reel_follow",
+      "New follower 🎉",
+      `${followerName} started following your shop`,
+      { followerPhone }
+    );
+  }
+);
+
 /** Manufacturer/admin assigned a product to a retailer → notify the retailer. */
 export const notifyRetailerOnAssignment = onDocumentCreated(
   "products/{productId}",

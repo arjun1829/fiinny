@@ -92,6 +92,8 @@ class AuthRepository {
     String? city,
     String? state,
     String? pincode,
+    String? gstin,
+    String? googleMapsUrl,
   }) async {
     final isSeller = role == 'retailer' || role == 'manufacturer';
 
@@ -105,12 +107,16 @@ class AuthRepository {
       'city': ?city,
       'state': ?state,
       'pincode': ?pincode,
+      if (isSeller && gstin != null) 'gstin': gstin,
+      if (isSeller && googleMapsUrl != null) 'googleMapsUrl': googleMapsUrl,
       'profileCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     // 2. Sellers: mirror the business profile to their role collection so the
     //    store/brand page and availability storeName resolve correctly.
+    //    `gstin` here is the canonical copy — the web dashboard profile and
+    //    invoice generator both read retailers/{phone}.gstin.
     if (isSeller) {
       final col = role == 'manufacturer' ? 'manufacturers' : 'retailers';
       await _db.collection(col).doc(phone).set({
@@ -125,6 +131,9 @@ class AuthRepository {
         'city': ?city,
         'state': ?state,
         'pincode': ?pincode,
+        'gstin': ?gstin,
+        // Buyer-facing "open in Google Maps" prefers this over coordinates.
+        'googleMapsUrl': ?googleMapsUrl,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }

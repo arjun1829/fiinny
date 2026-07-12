@@ -1340,7 +1340,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
-            onRegisterClick={() => navigate('signup')}
+            onRegisterClick={() => navigate('login')}
           />
         );
       case 'market':
@@ -1566,7 +1566,7 @@ export default function App() {
           </div>
         );
       case 'login':
-        return <LoginView onBack={() => navigate('home')} onNavigateToSignup={() => navigate('signup')} onSuccess={handleAuthSuccess} />;
+        return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
       case 'signup':
         // Already-logged-in user arrived via an invite link — show accept result instead of signup form.
         // (Redirect for logged-in users with no invite is handled in the useEffect above.)
@@ -1710,7 +1710,7 @@ export default function App() {
               navigate('market');
             }}
             onAddToCart={addToCart}
-            onRegisterClick={() => navigate('signup')}
+            onRegisterClick={() => navigate('login')}
           />
         );
     }

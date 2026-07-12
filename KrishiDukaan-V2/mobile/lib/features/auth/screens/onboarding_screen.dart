@@ -12,7 +12,11 @@ import '../../manufacturer/data/manufacturer_repository.dart';
 class OnboardingScreen extends ConsumerStatefulWidget {
   final String? inviteCode;
 
-  const OnboardingScreen({super.key, this.inviteCode});
+  /// Where to continue after the profile is created (e.g. '/checkout' when
+  /// the user was mid-purchase and got sent through login → onboarding).
+  final String? redirect;
+
+  const OnboardingScreen({super.key, this.inviteCode, this.redirect});
 
   @override
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -101,10 +105,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       }
 
       if (!mounted) return;
-      // Business accounts need a subscription before the dashboard unlocks —
-      // take them straight to the plans page (they complete their shop profile
-      // after paying). Consumers go straight to completing their profile.
-      if (_role == 'retailer' || _role == 'manufacturer') {
+      // A pending destination (cart/checkout the user was on before login)
+      // always wins — don't interrupt a purchase with profile-edit or the
+      // seller subscription pitch. The /dashboard guard still enforces the
+      // paywall whenever they try to sell.
+      final redirect = widget.redirect;
+      if (redirect != null && redirect.isNotEmpty) {
+        context.go(redirect);
+      } else if (_role == 'retailer' || _role == 'manufacturer') {
+        // Business accounts need a subscription before the dashboard unlocks —
+        // take them straight to the plans page (they complete their shop
+        // profile after paying). Consumers go to completing their profile.
         context.go('/subscription?reason=new_account');
       } else {
         context.go('/profile/edit?reason=new_account');

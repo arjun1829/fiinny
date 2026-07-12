@@ -20,6 +20,15 @@ class ReelModel {
   final List<Map<String, dynamic>> taggedShops;
   final List<String> taggedShopIds;
 
+  /// Playback-time edits (see reel_filters.dart): a look filter id and an
+  /// optional text overlay. Rendered by every player, not burned into pixels.
+  final String? filterId;
+  final String? overlayText;
+  final String? overlayPos; // 'top' | 'center' | 'bottom'
+  final String? originalReelId;
+  final String? originalShopOwnerId;
+  final String? originalShopName;
+
   const ReelModel({
     required this.id,
     required this.shopOwnerId,
@@ -38,6 +47,12 @@ class ReelModel {
     required this.createdAt,
     this.taggedShops = const [],
     this.taggedShopIds = const [],
+    this.filterId,
+    this.overlayText,
+    this.overlayPos,
+    this.originalReelId,
+    this.originalShopOwnerId,
+    this.originalShopName,
   });
 
   factory ReelModel.fromFirestore(DocumentSnapshot doc) {
@@ -58,14 +73,22 @@ class ReelModel {
       commentsCount: (data['commentsCount'] as num?)?.toInt() ?? 0,
       viewsCount: (data['viewsCount'] as num?)?.toInt() ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      taggedShops: (data['taggedShops'] as List<dynamic>?)
+      taggedShops:
+          (data['taggedShops'] as List<dynamic>?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           const [],
-      taggedShopIds: (data['taggedShopIds'] as List<dynamic>?)
+      taggedShopIds:
+          (data['taggedShopIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      filterId: data['filterId'] as String?,
+      overlayText: data['overlayText'] as String?,
+      overlayPos: data['overlayPos'] as String?,
+      originalReelId: data['originalReelId'] as String?,
+      originalShopOwnerId: data['originalShopOwnerId'] as String?,
+      originalShopName: data['originalShopName'] as String?,
     );
   }
 
@@ -80,25 +103,29 @@ class ReelModel {
     int? viewsCount,
     List<Map<String, dynamic>>? taggedShops,
     List<String>? taggedShopIds,
-  }) =>
-      ReelModel(
-        id: id,
-        shopOwnerId: shopOwnerId,
-        shopName: shopName,
-        shopProfilePic: shopProfilePic,
-        videoUrl: videoUrl,
-        thumbnailUrl: thumbnailUrl,
-        title: title ?? this.title,
-        caption: caption ?? this.caption,
-        linkedProductId: linkedProductId ?? this.linkedProductId,
-        linkedProductName: linkedProductName ?? this.linkedProductName,
-        linkedProductImageUrl:
-            linkedProductImageUrl ?? this.linkedProductImageUrl,
-        likesCount: likesCount ?? this.likesCount,
-        commentsCount: commentsCount ?? this.commentsCount,
-        viewsCount: viewsCount ?? this.viewsCount,
-        createdAt: createdAt,
-        taggedShops: taggedShops ?? this.taggedShops,
-        taggedShopIds: taggedShopIds ?? this.taggedShopIds,
-      );
+  }) => ReelModel(
+    id: id,
+    shopOwnerId: shopOwnerId,
+    shopName: shopName,
+    shopProfilePic: shopProfilePic,
+    videoUrl: videoUrl,
+    thumbnailUrl: thumbnailUrl,
+    title: title ?? this.title,
+    caption: caption ?? this.caption,
+    linkedProductId: linkedProductId ?? this.linkedProductId,
+    linkedProductName: linkedProductName ?? this.linkedProductName,
+    linkedProductImageUrl: linkedProductImageUrl ?? this.linkedProductImageUrl,
+    likesCount: likesCount ?? this.likesCount,
+    commentsCount: commentsCount ?? this.commentsCount,
+    viewsCount: viewsCount ?? this.viewsCount,
+    createdAt: createdAt,
+    taggedShops: taggedShops ?? this.taggedShops,
+    taggedShopIds: taggedShopIds ?? this.taggedShopIds,
+    filterId: filterId,
+    overlayText: overlayText,
+    overlayPos: overlayPos,
+    originalReelId: originalReelId,
+    originalShopOwnerId: originalShopOwnerId,
+    originalShopName: originalShopName,
+  );
 }

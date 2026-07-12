@@ -8,8 +8,9 @@ import '../../features/reels/providers/reels_provider.dart';
 
 /// Tracks which bottom-nav tab is currently visible.
 /// ReelsFeedScreen listens to this to pause video when leaving the reels tab.
-final activeShellIndexProvider =
-    NotifierProvider<_ActiveTabNotifier, int>(_ActiveTabNotifier.new);
+final activeShellIndexProvider = NotifierProvider<_ActiveTabNotifier, int>(
+  _ActiveTabNotifier.new,
+);
 
 class _ActiveTabNotifier extends Notifier<int> {
   @override
@@ -113,45 +114,56 @@ class AppShell extends ConsumerWidget {
       );
     }
 
-    return Scaffold(
-      body: navigationShell,
-      floatingActionButton: fab,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: AppColors.divider.withValues(alpha: 0.7)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 18,
-                offset: Offset(0, 8),
+    // System back from a non-Home tab returns to Home instead of closing the
+    // app (Android hardware/gesture back lands here when the shell is on top).
+    return PopScope(
+      canPop: currentIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) navigationShell.goBranch(0);
+      },
+      child: Scaffold(
+        body: navigationShell,
+        floatingActionButton: fab,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: AppColors.divider.withValues(alpha: 0.7),
               ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            child: Row(
-              children: List.generate(_destinations.length, (index) {
-                return Expanded(
-                  child: _ShellNavItem(
-                    destination: _destinations[index],
-                    isSelected: navigationShell.currentIndex == index,
-                    onTap: () {
-                      ref
-                          .read(activeShellIndexProvider.notifier)
-                          .setIndex(index);
-                      navigationShell.goBranch(
-                        index,
-                        initialLocation: index == navigationShell.currentIndex,
-                      );
-                    },
-                  ),
-                );
-              }),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                children: List.generate(_destinations.length, (index) {
+                  return Expanded(
+                    child: _ShellNavItem(
+                      destination: _destinations[index],
+                      isSelected: navigationShell.currentIndex == index,
+                      onTap: () {
+                        ref
+                            .read(activeShellIndexProvider.notifier)
+                            .setIndex(index);
+                        navigationShell.goBranch(
+                          index,
+                          initialLocation:
+                              index == navigationShell.currentIndex,
+                        );
+                      },
+                    ),
+                  );
+                }),
+              ),
             ),
           ),
         ),
@@ -185,8 +197,9 @@ class _ShellNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor =
-        isSelected ? AppColors.primary : AppColors.onSurfaceVariant;
+    final iconColor = isSelected
+        ? AppColors.primary
+        : AppColors.onSurfaceVariant;
 
     return InkWell(
       onTap: onTap,
