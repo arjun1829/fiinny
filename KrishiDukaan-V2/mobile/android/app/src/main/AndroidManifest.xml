@@ -40,6 +40,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Google Maps SDK — same key as GOOGLE_MAPS_API_KEY / AppConfig.googleMapsApiKey,
+             restricted to this app's package + SHA-1 in Google Cloud Console. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778"/>
+
         <!-- FCM default notification icon and color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

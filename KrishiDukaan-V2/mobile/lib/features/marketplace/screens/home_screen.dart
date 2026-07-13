@@ -669,35 +669,44 @@ class _PromoCarouselState extends State<_PromoCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 150,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: _promos.length,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder: (_, i) => _PromoCard(promo: _promos[i]),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_promos.length, (i) {
-            final active = i == _page;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 18 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: active ? AppColors.primary : AppColors.divider,
-                borderRadius: BorderRadius.circular(3),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Responsive hero height instead of a flat 150px — that read as
+        // uniformly thin on wider/taller phones (notably iPhones, where the
+        // fixed height looked especially cramped next to the rest of the
+        // page). Scales with the available width, clamped to a sane range.
+        final cardHeight = (constraints.maxWidth * 0.55).clamp(190.0, 230.0);
+        return Column(
+          children: [
+            SizedBox(
+              height: cardHeight,
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: _promos.length,
+                onPageChanged: (i) => setState(() => _page = i),
+                itemBuilder: (_, i) => _PromoCard(promo: _promos[i]),
               ),
-            );
-          }),
-        ),
-      ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_promos.length, (i) {
+                final active = i == _page;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 18 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: active ? AppColors.primary : AppColors.divider,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                );
+              }),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -743,26 +752,25 @@ class _PromoCard extends StatelessWidget {
                 // any photo (strongest on the left where the text sits).
                 _tintGradient(),
                 Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
                         promo.title,
-                        style: AppTextStyles.heading2.copyWith(
+                        style: AppTextStyles.heading1.copyWith(
                           color: Colors.white,
                           height: 1.15,
-                          fontSize: 20,
+                          fontSize: 24,
                           shadows: const [
                             Shadow(color: Colors.black45, blurRadius: 6),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Text(
                         promo.subtitle,
-                        style: AppTextStyles.bodySmall.copyWith(
+                        style: AppTextStyles.bodyMedium.copyWith(
                           color: Colors.white.withValues(alpha: 0.95),
                           shadows: const [
                             Shadow(color: Colors.black38, blurRadius: 5),
@@ -771,29 +779,31 @@ class _PromoCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 12),
+                      // Pushes the CTA to the bottom so the extra hero height
+                      // reads as deliberate whitespace, not empty padding.
+                      const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                          horizontal: 14,
+                          vertical: 9,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(22),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               promo.cta,
-                              style: AppTextStyles.caption.copyWith(
+                              style: AppTextStyles.bodyMedium.copyWith(
                                 color: AppColors.onSurface,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             const Icon(Icons.arrow_forward,
-                                size: 14, color: AppColors.onSurface),
+                                size: 16, color: AppColors.onSurface),
                           ],
                         ),
                       ),

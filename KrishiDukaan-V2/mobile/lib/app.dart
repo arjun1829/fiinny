@@ -49,6 +49,13 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
       ],
       theme: ThemeData(
         useMaterial3: true,
+        // Bundled Roboto (see pubspec.yaml) for every Text/TextStyle that
+        // doesn't set its own fontFamily — without this, iOS silently
+        // substitutes San Francisco for unstyled text while AppTextStyles'
+        // explicit 'Roboto' now resolves correctly, so screens mixing both
+        // (most of them) would still show two different typefaces side by
+        // side with mismatched line-heights.
+        fontFamily: 'Roboto',
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.primary,
           primary: AppColors.primary,

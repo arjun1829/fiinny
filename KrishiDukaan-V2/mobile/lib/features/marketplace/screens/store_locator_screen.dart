@@ -1,8 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart' as ll;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
@@ -58,7 +57,12 @@ class StoreLocatorScreen extends ConsumerStatefulWidget {
 }
 
 class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
-  final _mapController = MapController();
+  // Two separate controllers: the map strip and the expanded overlay are
+  // distinct GoogleMap widget instances (google_maps_flutter hands back a
+  // fresh controller per widget via onMapCreated — unlike flutter_map's single
+  // shared MapController), so each needs its own camera handle.
+  GoogleMapController? _stripMapController;
+  GoogleMapController? _overlayMapController;
   final _searchCtrl = TextEditingController();
   final _listScrollCtrl = ScrollController();
   final _cardKeys = <String, GlobalKey>{};
@@ -73,6 +77,8 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _listScrollCtrl.dispose();
+    _stripMapController?.dispose();
+    _overlayMapController?.dispose();
     super.dispose();
   }
 
@@ -87,11 +93,19 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
     }).toList();
   }
 
+  Future<void> _animateTo(
+      GoogleMapController? controller, double lat, double lng, double zoom) async {
+    if (controller == null) return;
+    await controller.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(lat, lng), zoom),
+    );
+  }
+
   void _selectStore(StoreModel store, {bool panMap = true}) {
     setState(() => _selectedStoreId = store.id);
 
     if (panMap && store.hasLocation) {
-      _mapController.move(ll.LatLng(store.lat!, store.lng!), 15);
+      _animateTo(_stripMapController, store.lat!, store.lng!, 15);
     }
 
     // Scroll the list to the selected card
@@ -108,14 +122,11 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
   }
 
   void _openMapExpanded(StoreModel store) {
+    // The overlay's initial camera position is set from the focused store, so
+    // it opens already centered — its onMapCreated callback anims it too, in
+    // case the initial camera was cut short by a fast mount.
     _selectStore(store, panMap: false);
     setState(() => _mapExpanded = true);
-    // Pan after overlay is mounted
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (store.hasLocation) {
-        _mapController.move(ll.LatLng(store.lat!, store.lng!), 15);
-      }
-    });
   }
 
   @override
@@ -350,14 +361,29 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
               // ── Expanded map overlay ─────────────────────────────────
               if (_mapExpanded)
                 _MapOverlay(
-                  mapController: _mapController,
+                  onMapCreated: (c) {
+                    _overlayMapController = c;
+                    final focused = hasSelected ? selected : null;
+                    if (focused != null && focused.hasLocation) {
+                      _animateTo(c, focused.lat!, focused.lng!, 15);
+                    }
+                  },
                   stores: allStores,
                   userLat: userLat,
                   userLng: userLng,
                   selectedStoreId: _selectedStoreId,
                   focusedStore: hasSelected ? selected : null,
-                  onMarkerTap: (s) => setState(() => _selectedStoreId = s.id),
-                  onClose: () => setState(() => _mapExpanded = false),
+                  onMarkerTap: (s) {
+                    setState(() => _selectedStoreId = s.id);
+                    if (s.hasLocation) {
+                      _animateTo(_overlayMapController, s.lat!, s.lng!, 15);
+                    }
+                  },
+                  onClose: () {
+                    _overlayMapController?.dispose();
+                    _overlayMapController = null;
+                    setState(() => _mapExpanded = false);
+                  },
                   onNavigate: (s) => _navigate(
                     s,
                     allStores: allStores,
@@ -381,84 +407,40 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
   }) {
     return Stack(
       children: [
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: ll.LatLng(userLat, userLng),
-            initialZoom: 12,
+        GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: LatLng(userLat, userLng),
+            zoom: 12,
           ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.karanarjuntechnologies.krishidukan',
-            ),
-            MarkerLayer(
-              markers: [
-                // User location marker (only show if not using default)
-                if (!locationLoading)
-                  Marker(
-                    point: ll.LatLng(userLat, userLng),
-                    width: 36,
-                    height: 36,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.info,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.my_location,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                // Store markers
-                ...stores.where((s) => s.hasLocation).map((s) {
-                  final isSelected = s.id == _selectedStoreId;
-                  return Marker(
-                    point: ll.LatLng(s.lat!, s.lng!),
-                    width: isSelected ? 40 : 28,
-                    height: isSelected ? 40 : 28,
-                    alignment: Alignment.topCenter,
-                    child: GestureDetector(
-                      onTap: () => _selectStore(s, panMap: false),
-                      child: Icon(
-                        Icons.location_on,
-                        color: isSelected ? AppColors.primary : Colors.red,
-                        size: isSelected ? 40 : 28,
-                        shadows: const [
-                          Shadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ],
+          onMapCreated: (c) => _stripMapController = c,
+          style: _mapStyleJson,
+          zoomControlsEnabled: false,
+          myLocationButtonEnabled: false,
+          mapToolbarEnabled: false,
+          compassEnabled: false,
+          rotateGesturesEnabled: false,
+          tiltGesturesEnabled: false,
+          markers: _buildStoreMarkers(
+            stores: stores,
+            userLat: userLat,
+            userLng: userLng,
+            locationLoading: locationLoading,
+            selectedStoreId: _selectedStoreId,
+            onStoreTap: (s) => _selectStore(s, panMap: false),
+          ),
         ),
+        // top-right, not bottom-right — Google's mandatory map attribution
+        // ("Map data © Google · Terms" on web, the Google logo on native)
+        // always renders in the bottom corners and can't be hidden (Maps
+        // Platform ToS), so a bottom-right FAB sits directly on top of it.
         Positioned(
-          bottom: 12,
+          top: 12,
           right: 12,
           child: FloatingActionButton.small(
             heroTag: 'recenter_map',
             backgroundColor: Colors.white,
             foregroundColor: AppColors.primary,
-            onPressed: () {
-              _mapController.move(ll.LatLng(userLat, userLng), 14);
-            },
+            onPressed: () => _animateTo(_stripMapController, userLat, userLng, 14),
             child: const Icon(Icons.my_location),
           ),
         ),
@@ -495,7 +477,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
 // ── Expanded map overlay ──────────────────────────────────────────────────────
 
 class _MapOverlay extends StatelessWidget {
-  final MapController mapController;
+  final void Function(GoogleMapController) onMapCreated;
   final List<StoreModel> stores;
   final double userLat;
   final double userLng;
@@ -506,7 +488,7 @@ class _MapOverlay extends StatelessWidget {
   final void Function(StoreModel) onNavigate;
 
   const _MapOverlay({
-    required this.mapController,
+    required this.onMapCreated,
     required this.stores,
     required this.userLat,
     required this.userLng,
@@ -526,67 +508,30 @@ class _MapOverlay extends StatelessWidget {
           children: [
             // Map fills most of the screen
             Expanded(
-              child: FlutterMap(
-                mapController: mapController,
-                options: MapOptions(
-                  initialCenter: focusedStore?.hasLocation == true
-                      ? ll.LatLng(focusedStore!.lat!, focusedStore!.lng!)
-                      : ll.LatLng(userLat, userLng),
-                  initialZoom: focusedStore?.hasLocation == true ? 15 : 12,
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: focusedStore?.hasLocation == true
+                      ? LatLng(focusedStore!.lat!, focusedStore!.lng!)
+                      : LatLng(userLat, userLng),
+                  zoom: focusedStore?.hasLocation == true ? 15 : 12,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName:
-                        'com.karanarjuntechnologies.krishidukan',
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: ll.LatLng(userLat, userLng),
-                        width: 36,
-                        height: 36,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.info,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: const Icon(
-                            Icons.my_location,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                      ...stores.where((s) => s.hasLocation).map((s) {
-                        final isSelected = s.id == selectedStoreId;
-                        return Marker(
-                          point: ll.LatLng(s.lat!, s.lng!),
-                          width: isSelected ? 48 : 36,
-                          height: isSelected ? 48 : 36,
-                          alignment: Alignment.topCenter,
-                          child: GestureDetector(
-                            onTap: () => onMarkerTap(s),
-                            child: Icon(
-                              Icons.location_on,
-                              color: isSelected ? AppColors.primary : Colors.red,
-                              size: isSelected ? 48 : 36,
-                              shadows: const [
-                                Shadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ],
+                onMapCreated: onMapCreated,
+                style: _mapStyleJson,
+                zoomControlsEnabled: false,
+                myLocationButtonEnabled: false,
+                mapToolbarEnabled: false,
+                compassEnabled: false,
+                rotateGesturesEnabled: false,
+                tiltGesturesEnabled: false,
+                markers: _buildStoreMarkers(
+                  stores: stores,
+                  userLat: userLat,
+                  userLng: userLng,
+                  locationLoading: false,
+                  selectedStoreId: selectedStoreId,
+                  onStoreTap: onMarkerTap,
+                  emphasizeSelected: true,
+                ),
               ),
             ),
 
@@ -1082,3 +1027,65 @@ class _StoreCard extends StatelessWidget {
     );
   }
 }
+
+// ── Marker + style helpers (shared by the strip map and the expanded overlay) ─
+
+/// Builds the marker set for a Google Map instance: a blue "you are here" pin
+/// plus one pin per store with a location. Selected stores render green and
+/// (on the full-screen overlay, [emphasizeSelected]) with a higher zIndex so
+/// they sit above their neighbours instead of being occluded.
+Set<Marker> _buildStoreMarkers({
+  required List<StoreModel> stores,
+  required double userLat,
+  required double userLng,
+  required bool locationLoading,
+  required String? selectedStoreId,
+  required void Function(StoreModel) onStoreTap,
+  bool emphasizeSelected = false,
+}) {
+  final markers = <Marker>{};
+
+  if (!locationLoading) {
+    markers.add(
+      Marker(
+        markerId: const MarkerId('__user_location__'),
+        position: LatLng(userLat, userLng),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        anchor: const Offset(0.5, 0.5),
+        zIndexInt: 0,
+        consumeTapEvents: true,
+      ),
+    );
+  }
+
+  for (final s in stores.where((s) => s.hasLocation)) {
+    final isSelected = s.id == selectedStoreId;
+    markers.add(
+      Marker(
+        markerId: MarkerId(s.id),
+        position: LatLng(s.lat!, s.lng!),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          isSelected ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed,
+        ),
+        zIndexInt: isSelected && emphasizeSelected ? 2 : 1,
+        infoWindow: InfoWindow(title: s.name),
+        onTap: () => onStoreTap(s),
+      ),
+    );
+  }
+
+  return markers;
+}
+
+/// Minimal Google Maps JSON style: hides POI labels (restaurants, ATMs, etc.)
+/// so store pins stay the visual focus — mirrors the web StoreLocatorView's
+/// mapOptions.styles (`featureType: 'poi', elementType: 'labels', visibility: 'off'`).
+const String _mapStyleJson = '''
+[
+  {
+    "featureType": "poi",
+    "elementType": "labels",
+    "stylers": [{ "visibility": "off" }]
+  }
+]
+''';
