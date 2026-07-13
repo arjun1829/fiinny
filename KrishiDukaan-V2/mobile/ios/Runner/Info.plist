@@ -26,6 +26,45 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>KrishiDukan uses your location to show nearby agri stores, calculate delivery availability, and give directions to dealers.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>KrishiDukan uses the camera to record AgriReels videos and capture product photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>KrishiDukan uses the microphone when you record AgriReels videos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>KrishiDukan needs photo library access so you can pick product images and videos for AgriReels.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>KrishiDukan saves images you download to your photo library.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>mailto</string>
+		<string>https</string>
+		<string>http</string>
+		<string>whatsapp</string>
+		<string>comgooglemaps</string>
+		<string>youtube</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Firebase Auth phone sign-in reCAPTCHA callback: the app's
+				     encoded App ID (GOOGLE_APP_ID with ':' replaced by '-').
+				     All three iOS app ids registered in the Firebase project
+				     are listed so a build carrying any of the configs never
+				     hits the PhoneAuthProvider "register custom URL scheme"
+				     fatal. Canonical app (bundle …krishidukaanApp): 883857…. -->
+				<string>app-1-650303885415-ios-883857d3efb69c8b2b84c2</string>
+				<string>app-1-650303885415-ios-4ba023025354cd4b2b84c2</string>
+				<string>app-1-650303885415-ios-c0db03e9833fbd7e2b84c2</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

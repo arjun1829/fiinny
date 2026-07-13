@@ -111,7 +111,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (isLoggedIn && isAuthPath) {
-        final currentUser = ref.read(currentUserProvider).value;
+        final currentUserAsync = ref.read(currentUserProvider);
+        // Right after OTP verification the auth state flips to logged-in while
+        // the users/{phone} doc is still streaming in. Guessing here briefly
+        // flashed the onboarding (role picker) screen at every RETURNING user
+        // before re-redirecting home. Hold position until the profile resolves;
+        // the refresh notifier listens to currentUserProvider and re-runs this
+        // redirect the moment it does.
+        if (currentUserAsync.isLoading) return null;
+        final currentUser = currentUserAsync.value;
         // Keep the post-login destination (?redirect=/checkout etc.) alive
         // across every hop of the auth flow: login → OTP → onboarding → there.
         final pendingRedirect = state.uri.queryParameters['redirect'];

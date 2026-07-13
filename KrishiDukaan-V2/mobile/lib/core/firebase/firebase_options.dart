@@ -12,7 +12,10 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return _isUat ? _androidUat : _androidProd;
       case TargetPlatform.iOS:
-        throw UnsupportedError('iOS is not configured yet.');
+        if (_isUat) {
+          throw UnsupportedError('iOS UAT flavor is not configured yet.');
+        }
+        return _iosProd;
       default:
         return _isUat ? _webUat : _webProd;
     }
@@ -25,6 +28,15 @@ class DefaultFirebaseOptions {
     messagingSenderId: '650303885415',
     projectId: 'krishidukan-e8315',
     storageBucket: 'krishidukan-e8315.firebasestorage.app',
+  );
+
+  static const FirebaseOptions _iosProd = FirebaseOptions(
+    apiKey: 'AIzaSyCBXeLPoQA-ajsdsxgvjXD_kRpVtrRDyic',
+    appId: '1:650303885415:ios:883857d3efb69c8b2b84c2',
+    messagingSenderId: '650303885415',
+    projectId: 'krishidukan-e8315',
+    storageBucket: 'krishidukan-e8315.firebasestorage.app',
+    iosBundleId: 'com.karanarjuntechnologies.krishidukaanApp',
   );
 
   static const FirebaseOptions _webProd = FirebaseOptions(
