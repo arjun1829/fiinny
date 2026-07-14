@@ -18,6 +18,24 @@ import '../../brand/data/brand_repository.dart';
 
 // ── Marketplace state ──────────────────────────────────────────────────────
 
+/// Identifies one seller (retailer or manufacturer) whose storefront the
+/// marketplace is currently scoped to. Carries every id form the schema uses
+/// (phone / store doc id / auth uid) so products match no matter which field
+/// generation they were written with.
+class SellerFilter {
+  final String? phone;
+  final String? storeId;
+  final String? uid;
+  final String name;
+
+  const SellerFilter({this.phone, this.storeId, this.uid, required this.name});
+
+  bool get isEmpty =>
+      (phone == null || phone!.isEmpty) &&
+      (storeId == null || storeId!.isEmpty) &&
+      (uid == null || uid!.isEmpty);
+}
+
 class MarketplaceState {
   final List<CatalogModel> products;
   final bool isLoading;
@@ -25,6 +43,7 @@ class MarketplaceState {
   final bool hasMore;
   final String? category;
   final String searchQuery;
+  final SellerFilter? seller;
   final String? error;
   final DocumentSnapshot? lastDoc;
 
@@ -35,6 +54,7 @@ class MarketplaceState {
     this.hasMore = true,
     this.category,
     this.searchQuery = '',
+    this.seller,
     this.error,
     this.lastDoc,
   });
@@ -46,6 +66,7 @@ class MarketplaceState {
     bool? hasMore,
     String? Function()? category,
     String? searchQuery,
+    SellerFilter? Function()? seller,
     String? Function()? error,
     DocumentSnapshot? Function()? lastDoc,
   }) => MarketplaceState(
@@ -55,6 +76,7 @@ class MarketplaceState {
     hasMore: hasMore ?? this.hasMore,
     category: category != null ? category() : this.category,
     searchQuery: searchQuery ?? this.searchQuery,
+    seller: seller != null ? seller() : this.seller,
     error: error != null ? error() : this.error,
     lastDoc: lastDoc != null ? lastDoc() : this.lastDoc,
   );
@@ -92,6 +114,15 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
         category: state.category,
         searchQuery: state.searchQuery,
       );
+
+      // Store-scoped browsing ("View store products" from the Stores tab):
+      // keep only products this seller shows. The merged catalog already
+      // accumulates every seller's availability entries, so matching against
+      // them plus the owner fields yields the seller's full assortment.
+      final seller = state.seller;
+      if (seller != null && !seller.isEmpty) {
+        _all = _all.where((p) => _soldBySeller(p, seller)).toList();
+      }
 
       final stores = await _ref.read(storesListProvider.future).catchError((_) {
         return <StoreModel>[];
@@ -141,9 +172,71 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
     loadProducts(refresh: true);
   }
 
+  /// Scopes the marketplace to one seller's storefront (or clears the scope
+  /// when [seller] is null). Category chips and search keep working WITHIN
+  /// the scoped store — only the explicit "view all" action removes it.
+  void setSeller(SellerFilter? seller) {
+    final current = state.seller;
+    final same = (seller == null && current == null) ||
+        (seller != null &&
+            current != null &&
+            seller.phone == current.phone &&
+            seller.storeId == current.storeId &&
+            seller.uid == current.uid);
+    if (same) return;
+    state = state.copyWith(
+      seller: () => seller,
+      category: () => null,
+      searchQuery: '',
+    );
+    loadProducts(refresh: true);
+  }
+
+  void clearSeller() => setSeller(null);
+
+  /// Clears category + search. Deliberately KEEPS the seller scope: inside a
+  /// store, "All" means "all of this store's products", and leaving the store
+  /// is its own explicit action (the ✕ on the store banner).
   void reset() {
     state = state.copyWith(category: () => null, searchQuery: '');
     loadProducts(refresh: true);
+  }
+
+  // ── Seller matching ────────────────────────────────────────────────────
+
+  /// Last-10-digits phone normalisation so +91 98…, 98… and 91 98… all match.
+  static String _normPhone(String p) {
+    final digits = p.replaceAll(RegExp(r'\D'), '');
+    return digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
+  }
+
+  static bool _soldBySeller(CatalogModel p, SellerFilter seller) {
+    // Seller's identity keys: raw ids + normalised phone forms.
+    final rawKeys = <String>{
+      if (seller.phone != null && seller.phone!.isNotEmpty) seller.phone!,
+      if (seller.storeId != null && seller.storeId!.isNotEmpty)
+        seller.storeId!,
+      if (seller.uid != null && seller.uid!.isNotEmpty) seller.uid!,
+    };
+    final phoneKeys = rawKeys.map(_normPhone).where((k) => k.length == 10).toSet();
+
+    bool matches(String? candidate) {
+      if (candidate == null || candidate.isEmpty) return false;
+      if (rawKeys.contains(candidate)) return true;
+      final norm = _normPhone(candidate);
+      return norm.length == 10 && phoneKeys.contains(norm);
+    }
+
+    // Any availability entry (assigned/copied sellers)…
+    for (final av in p.availability ?? const <AvailabilityEntry>[]) {
+      if (matches(av.storeId) || matches(av.storePhone)) return true;
+    }
+    // …or the product's own owner fields (canonical docs).
+    return matches(p.retailerPhone) ||
+        matches(p.retailerId) ||
+        matches(p.createdByPhone) ||
+        matches(p.manufacturerPhone) ||
+        matches(p.manufacturerId);
   }
 }
 

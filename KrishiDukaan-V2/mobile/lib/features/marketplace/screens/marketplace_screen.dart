@@ -13,6 +13,7 @@ import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
+import '../../../core/widgets/shimmer_product_card.dart';
 import '../providers/marketplace_provider.dart';
 
 const _categories = [
@@ -33,10 +34,21 @@ class MarketplaceScreen extends ConsumerStatefulWidget {
   /// the keyboard pops up immediately instead of needing a second tap here.
   final String? searchFocusToken;
 
+  /// Store-scoped browsing (from the Stores tab's "View Store Products"):
+  /// when any of these is set, the grid shows only that seller's assortment.
+  final String? sellerPhone;
+  final String? sellerStoreId;
+  final String? sellerUid;
+  final String? sellerName;
+
   const MarketplaceScreen({
     super.key,
     this.initialCategory,
     this.searchFocusToken,
+    this.sellerPhone,
+    this.sellerStoreId,
+    this.sellerUid,
+    this.sellerName,
   });
 
   @override
@@ -55,6 +67,32 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   List<Map<String, dynamic>> _suggestionStores = [];
   List<Map<String, dynamic>> _suggestionShops = [];
 
+  /// Builds a [SellerFilter] from the route params, or null when unscoped.
+  SellerFilter? get _routeSeller {
+    final phone = widget.sellerPhone;
+    final storeId = widget.sellerStoreId;
+    final uid = widget.sellerUid;
+    if ((phone == null || phone.isEmpty) &&
+        (storeId == null || storeId.isEmpty) &&
+        (uid == null || uid.isEmpty)) {
+      return null;
+    }
+    return SellerFilter(
+      phone: phone,
+      storeId: storeId,
+      uid: uid,
+      name: widget.sellerName ?? 'this store',
+    );
+  }
+
+  void _applyRouteSeller() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(marketplaceProvider.notifier).setSeller(_routeSeller);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +104,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             .setCategory(widget.initialCategory);
       }
     });
+    if (_routeSeller != null) _applyRouteSeller();
     _maybeFocusSearch();
   }
 
@@ -78,6 +117,13 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             .read(marketplaceProvider.notifier)
             .setCategory(widget.initialCategory);
       });
+    }
+    // Navigating to /marketplace with different (or no) seller params re-scopes
+    // (or un-scopes) the grid — e.g. Home's "See all" always shows everything.
+    if (widget.sellerPhone != oldWidget.sellerPhone ||
+        widget.sellerStoreId != oldWidget.sellerStoreId ||
+        widget.sellerUid != oldWidget.sellerUid) {
+      _applyRouteSeller();
     }
     _maybeFocusSearch();
   }
@@ -239,8 +285,8 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: const [
                             BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 8,
+                              color: Color(0x14000000),
+                              blurRadius: 10,
                               offset: Offset(0, 3),
                             ),
                           ],
@@ -289,9 +335,26 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                                 : null,
                             filled: true,
                             fillColor: Colors.white,
+                            // Hairline outline keeps the white field visible
+                            // on the white top-bar backdrop.
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
+                              borderSide: const BorderSide(
+                                color: AppColors.topBarBorder,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: AppColors.topBarBorder,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: AppColors.primary,
+                                width: 1.5,
+                              ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 0,
@@ -312,6 +375,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.topBarBorder),
                             boxShadow: const [
                               BoxShadow(color: Colors.black12, blurRadius: 8),
                             ],
@@ -368,6 +432,14 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             ),
           ),
 
+          // Store-scope banner — shown while browsing one seller's storefront
+          if (state.seller != null)
+            _SellerBanner(
+              name: state.seller!.name,
+              onClear: () =>
+                  ref.read(marketplaceProvider.notifier).clearSeller(),
+            ),
+
           // Category filter chips
           SizedBox(
             height: 48,
@@ -410,7 +482,9 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     );
 
     if (state.isLoading && state.products.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      // Skeleton grid instead of a lone spinner — the page keeps its shape
+      // while loading, which reads as fast even when the network isn't.
+      return const ShimmerProductGrid(itemCount: 9);
     }
 
     if (state.error != null && products.isEmpty) {
@@ -422,9 +496,26 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     }
 
     if (products.isEmpty) {
+      final seller = state.seller;
+      if (seller != null && state.category == null && state.searchQuery.isEmpty) {
+        // The scoped store genuinely has nothing listed — offer the way out,
+        // since clearing category/search can't help here.
+        return EmptyState(
+          title: 'No products from ${seller.name}',
+          subtitle: 'This store hasn\'t listed any products yet',
+          icon: Icons.storefront_outlined,
+          actionLabel: 'Browse all products',
+          onAction: () {
+            _searchController.clear();
+            ref.read(marketplaceProvider.notifier).clearSeller();
+          },
+        );
+      }
       return EmptyState(
         title: 'No products found',
-        subtitle: 'Try a different category or search term',
+        subtitle: seller != null
+            ? 'Try a different category or search within ${seller.name}'
+            : 'Try a different category or search term',
         icon: Icons.search_off,
         actionLabel: 'Clear filters',
         onAction: () {
@@ -443,16 +534,10 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
-      itemCount: products.length + (state.isLoadingMore ? 2 : 0),
+      itemCount: products.length + (state.isLoadingMore ? 3 : 0),
       itemBuilder: (context, index) {
         if (index >= products.length) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
+          return const ShimmerProductCard();
         }
         final product = products[index];
         return ProductCard(
@@ -460,6 +545,82 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
           onTap: () => context.push('/product/${product.id}'),
         );
       },
+    );
+  }
+}
+
+/// Banner shown while the grid is scoped to one seller's storefront: makes
+/// the scope impossible to miss and carries the single exit action.
+class _SellerBanner extends StatelessWidget {
+  final String name;
+  final VoidCallback onClear;
+
+  const _SellerBanner({required this.name, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.storefront, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.onSurface),
+                children: [
+                  const TextSpan(text: 'Products from '),
+                  TextSpan(
+                    text: name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onClear,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View all',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Icon(Icons.close, size: 13, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -477,16 +638,40 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Custom animated pill instead of the stock Material FilterChip: solid
+    // brand fill + white text when active, quiet outline otherwise — matches
+    // the web marketplace's category pills and reads instantly at a glance.
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label, style: AppTextStyles.bodySmall),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        selectedColor: AppColors.primaryContainer,
-        checkmarkColor: AppColors.primary,
-        side: BorderSide(
-          color: selected ? AppColors.primary : AppColors.divider,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? AppColors.primary : AppColors.divider,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: selected ? Colors.white : AppColors.onSurface,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
         ),
       ),
     );

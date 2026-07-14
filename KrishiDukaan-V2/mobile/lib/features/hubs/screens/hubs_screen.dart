@@ -80,10 +80,9 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
                 snap: true,
                 elevation: 0,
                 backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                flexibleSpace: Container(
-                  decoration: BoxDecoration(gradient: topBarGradient()),
-                ),
+                foregroundColor: AppColors.onSurface,
+                systemOverlayStyle: topBarOverlayStyle,
+                flexibleSpace: const TopBarBackdrop(),
                 titleSpacing: 16,
                 title: Row(
                   children: [
@@ -92,8 +91,9 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
                     Text(
                       'Crop Hubs',
                       style: AppTextStyles.heading2.copyWith(
-                        color: Colors.white,
+                        color: AppColors.onSurface,
                         fontSize: 18,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ],

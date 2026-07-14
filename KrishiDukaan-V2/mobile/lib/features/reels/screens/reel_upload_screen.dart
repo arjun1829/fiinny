@@ -276,14 +276,14 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: topBarGradient()),
-        ),
+        foregroundColor: AppColors.onSurface,
+        systemOverlayStyle: topBarOverlayStyle,
+        flexibleSpace: const TopBarBackdrop(),
         titleSpacing: 16,
         title: Text(
           'New Reel',
-          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+          style: AppTextStyles.heading2.copyWith(
+              color: AppColors.onSurface, fontWeight: FontWeight.w800),
         ),
         actions: [
           if (_pickedFile != null && !_processing)

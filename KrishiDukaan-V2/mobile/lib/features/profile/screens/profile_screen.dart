@@ -26,10 +26,9 @@ class ProfileScreen extends ConsumerWidget {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: topBarGradient()),
-        ),
+        foregroundColor: AppColors.onSurface,
+        systemOverlayStyle: topBarOverlayStyle,
+        flexibleSpace: const TopBarBackdrop(),
         titleSpacing: 16,
         title: Row(
           children: [
@@ -37,8 +36,10 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(width: 10),
             Text(
               isHindi ? 'प्रोफ़ाइल' : 'Profile',
-              style: AppTextStyles.heading2
-                  .copyWith(color: Colors.white, fontSize: 18),
+              style: AppTextStyles.heading2.copyWith(
+                  color: AppColors.onSurface,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800),
             ),
           ],
         ),

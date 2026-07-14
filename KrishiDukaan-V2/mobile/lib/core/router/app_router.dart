@@ -367,10 +367,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             GoRoute(
                 path: '/marketplace',
                 builder: (context, state) {
-                  final category = state.uri.queryParameters['category'];
+                  final q = state.uri.queryParameters;
                   return MarketplaceScreen(
-                    initialCategory: category,
-                    searchFocusToken: state.uri.queryParameters['focus'],
+                    initialCategory: q['category'],
+                    searchFocusToken: q['focus'],
+                    // Store-scoped browsing (from "View Store Products").
+                    sellerPhone: q['seller'],
+                    sellerStoreId: q['sellerId'],
+                    sellerUid: q['sellerUid'],
+                    sellerName: q['sellerName'],
                   );
                 }),
           ]),

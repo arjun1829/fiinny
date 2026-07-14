@@ -44,7 +44,14 @@ class AppColors {
   static const shimmerHighlight = Color(0xFFF5F5F5);
   static const cardShadow = Color(0x1A000000);
 
-  // Top-bar specific palette (kept separate from primary brand green).
-  static const topBarStart = Color(0xFF1F2A7C);
-  static const topBarEnd = Color(0xFF3C4DB7);
+  // Top-bar palette — frosted white with a whisper of brand green. The bar
+  // stays visually separate from white page content via the hairline
+  // [topBarBorder] underline + the scrolled-under shadow, not via color.
+  static const topBarStart = Color(0xFFFFFFFF);
+  static const topBarEnd = Color(0xFFF3F7F3);
+  static const topBarBorder = Color(0xFFE6EAE6);
+  // Soft gray container behind interactive top-bar elements (action buttons,
+  // location pill, bell) so controls read as tappable on the white bar.
+  static const topBarControl = Color(0x0F1C1B1F); // ~6% ink
+  static const topBarControlBorder = Color(0x141C1B1F); // ~8% ink
 }

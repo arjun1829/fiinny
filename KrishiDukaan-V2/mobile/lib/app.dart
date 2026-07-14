@@ -119,6 +119,24 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           ),
           color: Colors.white,
         ),
+        // Floating rounded snackbars app-wide — every confirmation/error toast
+        // (add to cart, review posted, OTP errors…) picks this up for free.
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF2A2A2A),
+          contentTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+            fontFamily: 'Roboto',
+          ),
+          actionTextColor: AppColors.secondary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          elevation: 4,
+        ),
       ),
       routerConfig: router,
     );

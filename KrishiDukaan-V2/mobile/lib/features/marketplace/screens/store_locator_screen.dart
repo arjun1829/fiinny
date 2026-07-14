@@ -145,10 +145,9 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
         titleSpacing: 16,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: topBarGradient()),
-        ),
+        foregroundColor: AppColors.onSurface,
+        systemOverlayStyle: topBarOverlayStyle,
+        flexibleSpace: const TopBarBackdrop(),
         title: Row(
           children: [
             const AppBrandIcon(size: 30),
@@ -156,8 +155,9 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
             Text(
               'Store Locator',
               style: AppTextStyles.heading2.copyWith(
-                color: Colors.white,
+                color: AppColors.onSurface,
                 fontSize: 18,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],

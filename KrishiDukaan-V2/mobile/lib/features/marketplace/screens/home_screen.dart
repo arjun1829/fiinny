@@ -10,6 +10,8 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/product_card.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/shimmer_product_card.dart';
 import '../../notifications/notifications.dart';
 import '../providers/marketplace_provider.dart';
 
@@ -21,6 +23,15 @@ class HomeScreen extends ConsumerWidget {
   /// is already alive in the shell's IndexedStack.
   void _openSearch(BuildContext context) {
     context.go('/marketplace?focus=${DateTime.now().millisecondsSinceEpoch}');
+  }
+
+  /// Time-of-day greeting makes the first line feel personal instead of a
+  /// static template — small touch, disproportionate warmth.
+  static (String, String) _greetingFor(DateTime now) {
+    final h = now.hour;
+    if (h < 12) return ('Good morning', '🌱');
+    if (h < 17) return ('Good afternoon', '☀️');
+    return ('Good evening', '🌾');
   }
 
   @override
@@ -45,7 +56,8 @@ class HomeScreen extends ConsumerWidget {
             backgroundColor: Colors.transparent,
             clipBehavior: Clip.antiAlias,
             flexibleSpace: const TopBarBackdrop(),
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.onSurface,
+            systemOverlayStyle: topBarOverlayStyle,
             title: const TopBarTitle(title: 'KrishiDukan'),
             actions: [
               TopBarAction(
@@ -69,20 +81,29 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   // Greeting
                   userAsync.when(
-                    data: (user) => Text(
-                      user != null
-                          ? 'Hello, ${user.name.split(' ').first}! 👋'
-                          : 'Welcome to KrishiDukan',
-                      style: AppTextStyles.heading2,
-                    ),
+                    data: (user) {
+                      final (greeting, emoji) = _greetingFor(DateTime.now());
+                      return Text(
+                        user != null
+                            ? '$greeting, ${user.name.split(' ').first} $emoji'
+                            : 'Welcome to KrishiDukan 🌱',
+                        style: AppTextStyles.heading2.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      );
+                    },
                     loading: () => const SizedBox(
                       height: 24,
                       width: 180,
                       child: LinearProgressIndicator(),
                     ),
                     error: (_, _) => Text(
-                      'Welcome to KrishiDukan',
-                      style: AppTextStyles.heading2,
+                      'Welcome to KrishiDukan 🌱',
+                      style: AppTextStyles.heading2.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -99,15 +120,11 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 24),
 
                   // Trending Near You
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Trending Near You', style: AppTextStyles.heading3),
-                      TextButton(
-                        onPressed: () => context.go('/marketplace'),
-                        child: const Text('See all'),
-                      ),
-                    ],
+                  SectionHeader(
+                    title: 'Trending Near You',
+                    icon: Icons.trending_up_rounded,
+                    actionLabel: 'See all',
+                    onAction: () => context.go('/marketplace'),
                   ),
                   const SizedBox(height: 12),
                   Consumer(
@@ -128,23 +145,15 @@ class HomeScreen extends ConsumerWidget {
                           itemCount: products.length > 3 ? 3 : products.length,
                           itemBuilder: (_, i) => ProductCard(
                             product: products[i],
-                            onTap: () => context.push('/product/${products[i].id}'),
+                            onTap: () =>
+                                context.push('/product/${products[i].id}'),
                           ),
                         );
                       }
                       if (trending.isLoading) {
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                childAspectRatio: 0.54,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
+                        return const ShimmerProductGrid(
                           itemCount: 3,
-                          itemBuilder: (_, _) => _PlaceholderProductCard(),
+                          padding: EdgeInsets.zero,
                         );
                       }
                       return const SizedBox.shrink();
@@ -153,7 +162,10 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 28),
 
                   // Category cards grid
-                  Text('Shop by Category', style: AppTextStyles.heading3),
+                  const SectionHeader(
+                    title: 'Shop by Category',
+                    icon: Icons.grid_view_rounded,
+                  ),
                   const SizedBox(height: 12),
                   GridView.builder(
                     shrinkWrap: true,
@@ -204,15 +216,12 @@ class HomeScreen extends ConsumerWidget {
                   const _TopDealsRail(),
 
                   // Featured products (real Firestore data)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Featured Products', style: AppTextStyles.heading3),
-                      TextButton(
-                        onPressed: () => context.go('/marketplace'),
-                        child: const Text('See all'),
-                      ),
-                    ],
+                  SectionHeader(
+                    title: 'Featured Products',
+                    icon: Icons.auto_awesome_rounded,
+                    iconColor: AppColors.secondary,
+                    actionLabel: 'See all',
+                    onAction: () => context.go('/marketplace'),
                   ),
                   const SizedBox(height: 12),
                   Consumer(
@@ -233,23 +242,15 @@ class HomeScreen extends ConsumerWidget {
                           itemCount: products.length > 3 ? 3 : products.length,
                           itemBuilder: (_, i) => ProductCard(
                             product: products[i],
-                            onTap: () => context.push('/product/${products[i].id}'),
+                            onTap: () =>
+                                context.push('/product/${products[i].id}'),
                           ),
                         );
                       }
                       if (featured.isLoading) {
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                childAspectRatio: 0.54,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
+                        return const ShimmerProductGrid(
                           itemCount: 3,
-                          itemBuilder: (_, _) => _PlaceholderProductCard(),
+                          padding: EdgeInsets.zero,
                         );
                       }
                       return const SizedBox.shrink();
@@ -353,79 +354,96 @@ const _categories = [
   ),
 ];
 
-class _CategoryCard extends StatelessWidget {
+class _CategoryCard extends StatefulWidget {
   final _CategoryItem category;
   final VoidCallback onTap;
 
   const _CategoryCard({required this.category, required this.onTap});
 
   @override
+  State<_CategoryCard> createState() => _CategoryCardState();
+}
+
+class _CategoryCardState extends State<_CategoryCard> {
+  bool _pressed = false;
+
+  _CategoryItem get category => widget.category;
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [category.startColor, category.endColor],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.93 : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [category.startColor, category.endColor],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: CachedNetworkImage(
-                  imageUrl: resolveImageUrl(category.imgUrl),
-                  fit: BoxFit.contain,
-                  memCacheWidth: 200,
-                  errorWidget: (context, url, error) => const Icon(
-                    Icons.image_not_supported_outlined,
-                    size: 20,
-                    color: Colors.grey,
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: CachedNetworkImage(
+                    imageUrl: resolveImageUrl(category.imgUrl),
+                    fit: BoxFit.contain,
+                    memCacheWidth: 200,
+                    errorWidget: (context, url, error) => const Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 20,
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              category.label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.caption.copyWith(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: AppColors.onSurface,
-                height: 1.1,
+              const SizedBox(height: 8),
+              Text(
+                category.label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSurface,
+                  height: 1.1,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -520,71 +538,6 @@ class _BecomeRetailerBanner extends StatelessWidget {
           OutlinedButton(
             onPressed: () => context.go('/become-retailer'),
             child: const Text('Start'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlaceholderProductCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 16,
-            spreadRadius: 4,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 120,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(12),
-              ),
-            ),
-            child: const Center(
-              child: Icon(Icons.grass, size: 48, color: AppColors.primaryLight),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 14,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: AppColors.shimmerBase,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  height: 12,
-                  width: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.shimmerBase,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('Loading...', style: AppTextStyles.price),
-              ],
-            ),
           ),
         ],
       ),
@@ -912,25 +865,12 @@ class _TopDealsRail extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.local_fire_department,
-                      color: AppColors.secondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text('Top Deals', style: AppTextStyles.heading3),
-                  ],
-                ),
-                TextButton(
-                  onPressed: () => context.go('/marketplace'),
-                  child: const Text('See all'),
-                ),
-              ],
+            SectionHeader(
+              title: 'Top Deals',
+              icon: Icons.local_fire_department,
+              iconColor: AppColors.secondary,
+              actionLabel: 'See all',
+              onAction: () => context.go('/marketplace'),
             ),
             const SizedBox(height: 4),
             SizedBox(
