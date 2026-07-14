@@ -125,48 +125,70 @@ class AppShell extends ConsumerWidget {
         body: navigationShell,
         floatingActionButton: fab,
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        bottomNavigationBar: SafeArea(
-          minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: AppColors.divider.withValues(alpha: 0.7),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: Row(
-                children: List.generate(_destinations.length, (index) {
-                  return Expanded(
-                    child: _ShellNavItem(
-                      destination: _destinations[index],
-                      isSelected: navigationShell.currentIndex == index,
-                      onTap: () {
-                        ref
-                            .read(activeShellIndexProvider.notifier)
-                            .setIndex(index);
-                        navigationShell.goBranch(
-                          index,
-                          initialLocation:
-                              index == navigationShell.currentIndex,
-                        );
-                      },
+        bottomNavigationBar: isReelsTab
+            ? null
+            : Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFFFFFFF), Color(0xFFF5F8FF)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x16000000),
+                      blurRadius: 16,
+                      offset: Offset(0, -4),
                     ),
-                  );
-                }),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        height: 2,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0x1A3C4DB7),
+                              Color(0x803C4DB7),
+                              Color(0x1A3C4DB7),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
+                        child: Row(
+                          children: List.generate(_destinations.length, (
+                            index,
+                          ) {
+                            return Expanded(
+                              child: _ShellNavItem(
+                                destination: _destinations[index],
+                                isSelected:
+                                    navigationShell.currentIndex == index,
+                                onTap: () {
+                                  ref
+                                      .read(activeShellIndexProvider.notifier)
+                                      .setIndex(index);
+                                  navigationShell.goBranch(
+                                    index,
+                                    initialLocation:
+                                        index == navigationShell.currentIndex,
+                                  );
+                                },
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -203,27 +225,49 @@ class _ShellNavItem extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primaryContainer.withValues(alpha: 0.34)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(22),
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: [
+                    AppColors.primaryContainer.withValues(alpha: 0.54),
+                    Colors.white.withValues(alpha: 0.95),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                )
+              : null,
+          color: isSelected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          border: isSelected
+              ? Border.all(color: AppColors.primary.withValues(alpha: 0.22))
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              width: isSelected ? 26 : 0,
+              height: 3,
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               width: 34,
               height: 34,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.white.withValues(alpha: 0.9)
+                    ? AppColors.primary.withValues(alpha: 0.14)
                     : Colors.transparent,
                 shape: BoxShape.circle,
               ),

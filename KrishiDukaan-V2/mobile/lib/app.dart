@@ -64,7 +64,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           error: AppColors.error,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.topBarStart,
           foregroundColor: Colors.white,
           elevation: 0,
           // Soft shadow that only appears once content scrolls beneath the bar,
@@ -106,9 +106,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,

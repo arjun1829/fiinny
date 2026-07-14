@@ -7,12 +7,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/store_model.dart';
+import '../../../core/providers/location_provider.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
 import '../providers/marketplace_provider.dart';
-
 
 const _categories = [
   'Pesticides',
@@ -60,7 +61,9 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.initialCategory != null) {
-        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+        ref
+            .read(marketplaceProvider.notifier)
+            .setCategory(widget.initialCategory);
       }
     });
     _maybeFocusSearch();
@@ -71,7 +74,9 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.initialCategory != oldWidget.initialCategory) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(marketplaceProvider.notifier).setCategory(widget.initialCategory);
+        ref
+            .read(marketplaceProvider.notifier)
+            .setCategory(widget.initialCategory);
       });
     }
     _maybeFocusSearch();
@@ -126,13 +131,11 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       // Stores: filter from pre-loaded stores list in memory
       final allStores = ref.read(storesListProvider).value ?? [];
       final queryLower = query.toLowerCase();
-      final stores = allStores
-          .where((s) {
-            final nameMatch = s.name.toLowerCase().contains(queryLower);
-            final phoneMatch = s.phone?.contains(queryLower) ?? false;
-            return nameMatch || phoneMatch;
-          })
-          .toList();
+      final stores = allStores.where((s) {
+        final nameMatch = s.name.toLowerCase().contains(queryLower);
+        final phoneMatch = s.phone?.contains(queryLower) ?? false;
+        return nameMatch || phoneMatch;
+      }).toList();
 
       // Sort to prioritize name start matches
       stores.sort((a, b) {
@@ -147,17 +150,18 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
 
       final storeSuggestions = stores
           .take(8)
-          .map((s) => {
-                'id': s.id,
-                'name': s.name,
-                'phone': s.phone,
-                'lat': s.lat,
-                'lng': s.lng,
-              })
+          .map(
+            (s) => {
+              'id': s.id,
+              'name': s.name,
+              'phone': s.phone,
+              'lat': s.lat,
+              'lng': s.lng,
+            },
+          )
           .toList();
 
-      final results = await Future.wait([prodsF]);
-      final prods = results[0] as List<CatalogModel>;
+      final prods = await prodsF;
 
       if (mounted) {
         setState(() {
@@ -213,131 +217,153 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         children: [
           // Search bar — lives in the same gradient block as the top bar but
           // with breathing room and rounded bottom corners so it never touches.
-          Container(
-            decoration: BoxDecoration(
-              gradient: topBarGradient(),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(20),
-              ),
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(20),
             ),
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            child: Column(
+            child: Stack(
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                  controller: _searchController,
-                  focusNode: _searchFocus,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (q) {
-                    _debounce?.cancel();
-                    _debounce = Timer(const Duration(milliseconds: 400), () {
-                      ref.read(marketplaceProvider.notifier).search(q);
-                      _fetchSuggestions(q);
-                    });
-                  },
-                  style: AppTextStyles.body,
-                  decoration: InputDecoration(
-                    hintText: 'Search products...',
-                    hintStyle: AppTextStyles.body.copyWith(
-                      color: AppColors.onSurfaceVariant,
+                const Positioned.fill(
+                  child: TopBarBackdrop(
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(20),
                     ),
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: AppColors.primary,
-                    ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              _searchController.clear();
-                              ref.read(marketplaceProvider.notifier).reset();
-                              setState(() {
-                                _suggestionProducts = [];
-                                _suggestionStores = [];
-                                _suggestionShops = [];
-                              });
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 0,
-                      horizontal: 16,
-                    ),
-                  ),
                   ),
                 ),
-
-                // Suggestions dropdown
-                if ((_suggestionShops.isNotEmpty ||
-                        _suggestionProducts.isNotEmpty ||
-                        _suggestionStores.isNotEmpty) &&
-                    _searchController.text.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black12, blurRadius: 8),
-                      ],
-                    ),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        // Product suggestions
-                        if (_suggestionProducts.isNotEmpty)
-                          ..._suggestionProducts.map(
-                            (p) => ListTile(
-                              leading: p.imageUrl.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: CachedNetworkImage(
-                                        imageUrl: p.imageUrl,
-                                        width: 48,
-                                        height: 48,
-                                        fit: BoxFit.contain,
-                                        memCacheWidth: 150,
-                                      ),
-                                    )
-                                  : const Icon(Icons.agriculture),
-                              title: Text(p.name),
-                              subtitle: const Text('Product'),
-                              onTap: () => context.push('/product/${p.id}'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  child: Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 8,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocus,
+                          textInputAction: TextInputAction.search,
+                          onChanged: (q) {
+                            _debounce?.cancel();
+                            _debounce = Timer(
+                              const Duration(milliseconds: 400),
+                              () {
+                                ref
+                                    .read(marketplaceProvider.notifier)
+                                    .search(q);
+                                _fetchSuggestions(q);
+                              },
+                            );
+                          },
+                          style: AppTextStyles.body,
+                          decoration: InputDecoration(
+                            hintText: 'Search products...',
+                            hintStyle: AppTextStyles.body.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: AppColors.primary,
+                            ),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      ref
+                                          .read(marketplaceProvider.notifier)
+                                          .reset();
+                                      setState(() {
+                                        _suggestionProducts = [];
+                                        _suggestionStores = [];
+                                        _suggestionShops = [];
+                                      });
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 0,
+                              horizontal: 16,
                             ),
                           ),
+                        ),
+                      ),
 
-                        // Store suggestions
-                        if (_suggestionStores.isNotEmpty)
-                          const Divider(height: 1),
-                        if (_suggestionStores.isNotEmpty)
-                          ..._suggestionStores.map(
-                            (s) => ListTile(
-                              leading: const Icon(Icons.store),
-                              title: Text(s['name'] ?? s['phone'] ?? 'Store'),
-                              subtitle: const Text('Nearby Store'),
-                              onTap: () => _openStoreLocation(s),
-                            ),
+                      // Suggestions dropdown
+                      if ((_suggestionShops.isNotEmpty ||
+                              _suggestionProducts.isNotEmpty ||
+                              _suggestionStores.isNotEmpty) &&
+                          _searchController.text.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black12, blurRadius: 8),
+                            ],
                           ),
-                      ],
-                    ),
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              // Product suggestions
+                              if (_suggestionProducts.isNotEmpty)
+                                ..._suggestionProducts.map(
+                                  (p) => ListTile(
+                                    leading: p.imageUrl.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            child: CachedNetworkImage(
+                                              imageUrl: p.imageUrl,
+                                              width: 48,
+                                              height: 48,
+                                              fit: BoxFit.contain,
+                                              memCacheWidth: 150,
+                                            ),
+                                          )
+                                        : const Icon(Icons.agriculture),
+                                    title: Text(p.name),
+                                    subtitle: const Text('Product'),
+                                    onTap: () =>
+                                        context.push('/product/${p.id}'),
+                                  ),
+                                ),
+
+                              // Store suggestions
+                              if (_suggestionStores.isNotEmpty)
+                                const Divider(height: 1),
+                              if (_suggestionStores.isNotEmpty)
+                                ..._suggestionStores.map(
+                                  (s) => ListTile(
+                                    leading: const Icon(Icons.store),
+                                    title: Text(
+                                      s['name'] ?? s['phone'] ?? 'Store',
+                                    ),
+                                    subtitle: const Text('Nearby Store'),
+                                    onTap: () => _openStoreLocation(s),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -357,7 +383,8 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
                 ..._categories.map(
                   (cat) => _CategoryChip(
                     label: cat,
-                    selected: state.category?.toLowerCase() == cat.toLowerCase(),
+                    selected:
+                        state.category?.toLowerCase() == cat.toLowerCase(),
                     onTap: () =>
                         ref.read(marketplaceProvider.notifier).setCategory(cat),
                   ),
@@ -374,11 +401,19 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
   }
 
   Widget _buildGrid(MarketplaceState state) {
+    final stores = ref.watch(storesListProvider).value ?? const <StoreModel>[];
+    final userLocation = ref.watch(locationProvider).value;
+    final products = enrichProductsWithNearestStoreDistance(
+      products: state.products,
+      stores: stores,
+      userLocation: userLocation,
+    );
+
     if (state.isLoading && state.products.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (state.error != null && state.products.isEmpty) {
+    if (state.error != null && products.isEmpty) {
       return ErrorView(
         message: state.error!,
         onRetry: () =>
@@ -386,7 +421,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       );
     }
 
-    if (state.products.isEmpty) {
+    if (products.isEmpty) {
       return EmptyState(
         title: 'No products found',
         subtitle: 'Try a different category or search term',
@@ -403,14 +438,14 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       controller: _scrollController,
       padding: const EdgeInsets.all(12),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.72,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+        crossAxisCount: 3,
+        childAspectRatio: 0.54,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
       ),
-      itemCount: state.products.length + (state.isLoadingMore ? 2 : 0),
+      itemCount: products.length + (state.isLoadingMore ? 2 : 0),
       itemBuilder: (context, index) {
-        if (index >= state.products.length) {
+        if (index >= products.length) {
           return Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -419,7 +454,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
             child: const Center(child: CircularProgressIndicator()),
           );
         }
-        final product = state.products[index];
+        final product = products[index];
         return ProductCard(
           product: product,
           onTap: () => context.push('/product/${product.id}'),

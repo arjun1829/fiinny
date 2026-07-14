@@ -48,23 +48,23 @@ class MarketplaceState {
     String? searchQuery,
     String? Function()? error,
     DocumentSnapshot? Function()? lastDoc,
-  }) =>
-      MarketplaceState(
-        products: products ?? this.products,
-        isLoading: isLoading ?? this.isLoading,
-        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        category: category != null ? category() : this.category,
-        searchQuery: searchQuery ?? this.searchQuery,
-        error: error != null ? error() : this.error,
-        lastDoc: lastDoc != null ? lastDoc() : this.lastDoc,
-      );
+  }) => MarketplaceState(
+    products: products ?? this.products,
+    isLoading: isLoading ?? this.isLoading,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    category: category != null ? category() : this.category,
+    searchQuery: searchQuery ?? this.searchQuery,
+    error: error != null ? error() : this.error,
+    lastDoc: lastDoc != null ? lastDoc() : this.lastDoc,
+  );
 }
 
 // ── Notifier ───────────────────────────────────────────────────────────────
 
 class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   final CatalogRepository _repo;
+  final Ref _ref;
 
   static const _pageSize = AppConfig.firestorePageSize;
 
@@ -73,7 +73,7 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   /// user scrolls instead of stopping after the first page.
   List<CatalogModel> _all = [];
 
-  MarketplaceNotifier(this._repo) : super(const MarketplaceState()) {
+  MarketplaceNotifier(this._repo, this._ref) : super(const MarketplaceState()) {
     loadProducts();
   }
 
@@ -91,6 +91,16 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
       _all = await _repo.fetchFiltered(
         category: state.category,
         searchQuery: state.searchQuery,
+      );
+
+      final stores = await _ref.read(storesListProvider.future).catchError((_) {
+        return <StoreModel>[];
+      });
+      final userLocation = _ref.read(locationProvider).value;
+      _all = enrichProductsWithNearestStoreDistance(
+        products: _all,
+        stores: stores,
+        userLocation: userLocation,
       );
 
       final firstPage = _all.take(_pageSize).toList();
@@ -116,18 +126,12 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
       return;
     }
     final next = _all.take(current + _pageSize).toList();
-    state = state.copyWith(
-      products: next,
-      hasMore: next.length < _all.length,
-    );
+    state = state.copyWith(products: next, hasMore: next.length < _all.length);
   }
 
   void setCategory(String? category) {
     if (state.category == category) return;
-    state = state.copyWith(
-      category: () => category,
-      searchQuery: '',
-    );
+    state = state.copyWith(category: () => category, searchQuery: '');
     loadProducts(refresh: true);
   }
 
@@ -138,10 +142,7 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   }
 
   void reset() {
-    state = state.copyWith(
-      category: () => null,
-      searchQuery: '',
-    );
+    state = state.copyWith(category: () => null, searchQuery: '');
     loadProducts(refresh: true);
   }
 }
@@ -154,17 +155,131 @@ final storeRepositoryProvider = Provider((_) => StoreRepository());
 
 final marketplaceProvider =
     StateNotifierProvider<MarketplaceNotifier, MarketplaceState>((ref) {
-  return MarketplaceNotifier(ref.read(catalogRepositoryProvider));
+      return MarketplaceNotifier(ref.read(catalogRepositoryProvider), ref);
+    });
+
+List<CatalogModel> enrichProductsWithNearestStoreDistance({
+  required List<CatalogModel> products,
+  required List<StoreModel> stores,
+  required LatLng? userLocation,
+}) {
+  if (products.isEmpty || stores.isEmpty) {
+    return products;
+  }
+
+  final effectiveLocation =
+      userLocation ?? const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
+
+  String normPhone(String p) {
+    final digits = p.replaceAll(RegExp(r'\D'), '');
+    if (digits.length >= 10) return digits.substring(digits.length - 10);
+    return digits;
+  }
+
+  final storeById = <String, StoreModel>{};
+  final storeByUid = <String, StoreModel>{};
+  final storeByPhone = <String, StoreModel>{};
+  final storeByName = <String, StoreModel>{};
+
+  for (final s in stores) {
+    storeById[s.id] = s;
+    if (s.userId != null && s.userId!.isNotEmpty) storeByUid[s.userId!] = s;
+    final phone = s.phone;
+    if (phone != null && phone.isNotEmpty) {
+      final normalized = normPhone(phone);
+      storeByPhone[normalized] = s;
+    }
+    final normalizedName = s.name.trim().toLowerCase();
+    if (normalizedName.isNotEmpty) storeByName[normalizedName] = s;
+  }
+
+  StoreModel? resolveStore({
+    String? storeId,
+    String? storePhone,
+    String? storeName,
+  }) {
+    if (storePhone != null && storePhone.isNotEmpty) {
+      final normalized = normPhone(storePhone);
+      final byPhone = storeByPhone[normalized];
+      if (byPhone != null) return byPhone;
+    }
+    if (storeId != null && storeId.isNotEmpty) {
+      final normalizedId = normPhone(storeId);
+      final byId =
+          storeById[storeId] ??
+          storeByUid[storeId] ??
+          storeByPhone[normalizedId];
+      if (byId != null) return byId;
+    }
+    if (storeName != null && storeName.trim().isNotEmpty) {
+      return storeByName[storeName.trim().toLowerCase()];
+    }
+    return null;
+  }
+
+  double? nearestDistanceFor(CatalogModel product) {
+    double? nearest;
+
+    void consider(StoreModel? store) {
+      if (store == null || !store.hasLocation) return;
+      final distance = GeoUtils.distanceKm(
+        effectiveLocation.lat,
+        effectiveLocation.lng,
+        store.lat!,
+        store.lng!,
+      );
+      if (nearest == null || distance < nearest!) {
+        nearest = distance;
+      }
+    }
+
+    for (final av in product.availability ?? const <AvailabilityEntry>[]) {
+      consider(
+        resolveStore(
+          storeId: av.storeId,
+          storePhone: av.storePhone,
+          storeName: av.storeName,
+        ),
+      );
+    }
+
+    // Fallback to product owner store when needed.
+    consider(
+      resolveStore(
+        storeId: product.retailerId ?? '',
+        storePhone: product.retailerPhone ?? product.createdByPhone,
+        storeName: product.store,
+      ),
+    );
+
+    return nearest;
+  }
+
+  return products
+      .map((p) => p.copyWith(nearestStoreDistanceKm: nearestDistanceFor(p)))
+      .toList(growable: false);
+}
+
+final allMergedProductsProvider = FutureProvider<List<CatalogModel>>((
+  ref,
+) async {
+  final products = await ref
+      .read(catalogRepositoryProvider)
+      .fetchAllMergedProducts();
+  final stores = await ref.watch(storesListProvider.future).catchError((_) {
+    return <StoreModel>[];
+  });
+  final userLocation = ref.watch(locationProvider).value;
+  return enrichProductsWithNearestStoreDistance(
+    products: products,
+    stores: stores,
+    userLocation: userLocation,
+  );
 });
 
-/// All merged catalog products, fetched once. Home-page rails (featured + top
-/// deals) derive from this so the screen makes a single Firestore round-trip
-/// instead of one per section.
-final allMergedProductsProvider = FutureProvider<List<CatalogModel>>((ref) {
-  return ref.read(catalogRepositoryProvider).fetchAllMergedProducts();
-});
-
-final featuredProductsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+final featuredProductsProvider = FutureProvider<List<CatalogModel>>((
+  ref,
+) async {
   final all = await ref.watch(allMergedProductsProvider.future);
   return all.take(6).toList();
 });
@@ -179,13 +294,17 @@ final topDealsProvider = FutureProvider<List<CatalogModel>>((ref) async {
 });
 
 /// "Trending Near You" — exactly as it works on the web (taking the top products)
-final trendingProductsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+final trendingProductsProvider = FutureProvider<List<CatalogModel>>((
+  ref,
+) async {
   final all = await ref.watch(allMergedProductsProvider.future);
   return all.take(10).toList();
 });
 
-final catalogDetailProvider =
-    FutureProvider.family<CatalogModel?, String>((ref, catalogId) {
+final catalogDetailProvider = FutureProvider.family<CatalogModel?, String>((
+  ref,
+  catalogId,
+) {
   return ref.read(catalogRepositoryProvider).fetchById(catalogId);
 });
 
@@ -201,14 +320,14 @@ final storesByDistanceProvider = FutureProvider<List<StoreModel>>((ref) async {
 
   for (final s in stores) {
     if (user != null && s.hasLocation) {
-      s.distanceKm =
-          GeoUtils.distanceKm(user.lat, user.lng, s.lat!, s.lng!);
+      s.distanceKm = GeoUtils.distanceKm(user.lat, user.lng, s.lat!, s.lng!);
     } else {
       s.distanceKm = null;
     }
   }
 
-  final sorted = [...stores]..sort((a, b) {
+  final sorted = [...stores]
+    ..sort((a, b) {
       final da = a.distanceKm;
       final db = b.distanceKm;
       if (da == null && db == null) return 0;
@@ -219,8 +338,10 @@ final storesByDistanceProvider = FutureProvider<List<StoreModel>>((ref) async {
   return sorted;
 });
 
-final listingsForCatalogProvider =
-    FutureProvider.family<List<ListingModel>, String>((ref, catalogId) async {
+final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, String>((
+  ref,
+  catalogId,
+) async {
   final location = ref.watch(locationProvider).value;
   final product = await ref.watch(catalogDetailProvider(catalogId).future);
   if (product == null) return [];
@@ -236,7 +357,8 @@ final listingsForCatalogProvider =
   // Build lookup maps for fast enrichment
   final storeByPhone = <String, StoreModel>{};
   final storeById = <String, StoreModel>{};
-  final storeByUid = <String, StoreModel>{}; // Firebase UID → store (legacy storeId)
+  final storeByUid =
+      <String, StoreModel>{}; // Firebase UID → store (legacy storeId)
   for (final s in storesList) {
     storeById[s.id] = s;
     final uid = s.userId;
@@ -273,7 +395,8 @@ final listingsForCatalogProvider =
   }
 
   final listings = <ListingModel>[];
-  final seenKeys = <String>{}; // deduplicate by normalised phone, fallback to storeId
+  final seenKeys =
+      <String>{}; // deduplicate by normalised phone, fallback to storeId
 
   void addListing({
     required String storeId,
@@ -291,33 +414,40 @@ final listingsForCatalogProvider =
     final lat = store?.lat;
     final lng = store?.lng;
     double? distanceKm;
-    if (location != null && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+    if (location != null &&
+        lat != null &&
+        lng != null &&
+        lat != 0.0 &&
+        lng != 0.0) {
       distanceKm = GeoUtils.distanceKm(location.lat, location.lng, lat, lng);
     }
 
     // Name resolution: store name → av.storeName → store owner name → phone.
     // Each step skips empty strings so a blank profile field can't shadow a good
     // fallback (this is what left some stores nameless before).
-    final resolvedName = (store?.name.isNotEmpty == true ? store!.name : null) ??
+    final resolvedName =
+        (store?.name.isNotEmpty == true ? store!.name : null) ??
         (name.isNotEmpty ? name : null) ??
         (store?.ownerName?.isNotEmpty == true ? store!.ownerName! : null) ??
         phone;
 
-    listings.add(ListingModel(
-      id: storeId.isNotEmpty ? storeId : phone,
-      catalogId: product.id,
-      sellerPhone: phone,
-      sellerName: resolvedName,
-      sellerType: 'retailer',
-      sellerAddress: store?.address,
-      sellerLat: lat,
-      sellerLng: lng,
-      price: price,
-      stockQuantity: stockQty,
-      isOnline: isOnline,
-      variants: variants,
-      distanceKm: distanceKm,
-    ));
+    listings.add(
+      ListingModel(
+        id: storeId.isNotEmpty ? storeId : phone,
+        catalogId: product.id,
+        sellerPhone: phone,
+        sellerName: resolvedName,
+        sellerType: 'retailer',
+        sellerAddress: store?.address,
+        sellerLat: lat,
+        sellerLng: lng,
+        price: price,
+        stockQuantity: stockQty,
+        isOnline: isOnline,
+        variants: variants,
+        distanceKm: distanceKm,
+      ),
+    );
   }
 
   // 1. Iterate availability array — this is the source of truth for all assigned sellers
@@ -330,7 +460,9 @@ final listingsForCatalogProvider =
 
       // Fix price: 0.0 means not set → fall back to product MRP
       final price = av.sellingPrice > 0 ? av.sellingPrice : product.price;
-      final stockQty = (av.stockLevel?.toLowerCase() == 'out of stock') ? 0 : 99;
+      final stockQty = (av.stockLevel?.toLowerCase() == 'out of stock')
+          ? 0
+          : 99;
 
       addListing(
         storeId: storeId,
@@ -358,7 +490,9 @@ final listingsForCatalogProvider =
       ownerPhone.isNotEmpty ? ownerPhone : null,
     );
     final isOnline = product.sellMode != 'offline_store_only';
-    final ownerStockQty = (product.stock?.toLowerCase() == 'out of stock') ? 0 : 99;
+    final ownerStockQty = (product.stock?.toLowerCase() == 'out of stock')
+        ? 0
+        : 99;
     addListing(
       storeId: ownerId,
       phone: ownerPhone,
@@ -383,26 +517,33 @@ final listingsForCatalogProvider =
 
 final _reviewRepo = ReviewRepository();
 
-final productReviewsProvider =
-    FutureProvider.family<List<ReviewModel>, String>((ref, catalogId) {
-  return _reviewRepo.fetchProductReviews(catalogId);
-});
+final productReviewsProvider = FutureProvider.family<List<ReviewModel>, String>(
+  (ref, catalogId) {
+    return _reviewRepo.fetchProductReviews(catalogId);
+  },
+);
 
-final storeReviewsProvider =
-    FutureProvider.family<List<ReviewModel>, String>((ref, storePhone) {
+final storeReviewsProvider = FutureProvider.family<List<ReviewModel>, String>((
+  ref,
+  storePhone,
+) {
   return _reviewRepo.fetchStoreReviews(storePhone);
 });
 
-final userProductReviewProvider =
-    FutureProvider.family<ReviewModel?, String>((ref, catalogId) {
+final userProductReviewProvider = FutureProvider.family<ReviewModel?, String>((
+  ref,
+  catalogId,
+) {
   final userAsync = ref.watch(currentUserProvider);
   final phone = userAsync.value?.phone ?? '';
   if (phone.isEmpty) return Future.value(null);
   return _reviewRepo.getUserProductReview(catalogId, phone);
 });
 
-final userStoreReviewProvider =
-    FutureProvider.family<ReviewModel?, String>((ref, storePhone) {
+final userStoreReviewProvider = FutureProvider.family<ReviewModel?, String>((
+  ref,
+  storePhone,
+) {
   final userAsync = ref.watch(currentUserProvider);
   final phone = userAsync.value?.phone ?? '';
   if (phone.isEmpty) return Future.value(null);
@@ -411,8 +552,10 @@ final userStoreReviewProvider =
 
 final brandRepositoryProvider = Provider((_) => BrandRepository());
 
-final brandByUidProvider =
-    FutureProvider.family<BrandModel?, String>((ref, uid) {
+final brandByUidProvider = FutureProvider.family<BrandModel?, String>((
+  ref,
+  uid,
+) {
   return ref.read(brandRepositoryProvider).fetchBrandByUid(uid);
 });
 
@@ -421,22 +564,25 @@ final brandByUidProvider =
 /// try it first and only fall back to the UID `where`-query (which misses when
 /// `manufacturerId` is actually a phone, or when auth UIDs differ, e.g. UAT).
 final productBrandProvider =
-    FutureProvider.family<BrandModel?, ({String? uid, String? phone})>(
-        (ref, ids) async {
-  final repo = ref.read(brandRepositoryProvider);
-  final phone = ids.phone;
-  if (phone != null && phone.isNotEmpty) {
-    final byPhone = await repo.fetchBrandByPhone(phone);
-    if (byPhone != null) return byPhone;
-  }
-  final uid = ids.uid;
-  if (uid != null && uid.isNotEmpty) {
-    return repo.fetchBrandByUid(uid);
-  }
-  return null;
-});
+    FutureProvider.family<BrandModel?, ({String? uid, String? phone})>((
+      ref,
+      ids,
+    ) async {
+      final repo = ref.read(brandRepositoryProvider);
+      final phone = ids.phone;
+      if (phone != null && phone.isNotEmpty) {
+        final byPhone = await repo.fetchBrandByPhone(phone);
+        if (byPhone != null) return byPhone;
+      }
+      final uid = ids.uid;
+      if (uid != null && uid.isNotEmpty) {
+        return repo.fetchBrandByUid(uid);
+      }
+      return null;
+    });
 
-final brandProductsProvider =
-    FutureProvider.family<List<CatalogModel>, String>((ref, phone) {
-  return ref.read(brandRepositoryProvider).fetchBrandProducts(phone);
-});
+final brandProductsProvider = FutureProvider.family<List<CatalogModel>, String>(
+  (ref, phone) {
+    return ref.read(brandRepositoryProvider).fetchBrandProducts(phone);
+  },
+);

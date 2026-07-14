@@ -12,13 +12,72 @@ import 'package:geolocator/geolocator.dart';
 /// each paint it separately, and a left→right run keeps the colors identical
 /// at the seam between them.
 LinearGradient topBarGradient() => LinearGradient(
-      colors: [
-        AppColors.primary,
-        Color.lerp(AppColors.primary, AppColors.primaryLight, 0.35)!,
-      ],
-      begin: Alignment.centerLeft,
-      end: Alignment.centerRight,
+  colors: const [Color(0xFF16235F), AppColors.topBarStart, AppColors.topBarEnd],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
+class TopBarBackdrop extends StatelessWidget {
+  final BorderRadiusGeometry? borderRadius;
+  const TopBarBackdrop({super.key, this.borderRadius});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: topBarGradient(),
+        borderRadius: borderRadius,
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            top: -26,
+            left: -20,
+            child: _GlowOrb(
+              size: 120,
+              color: Colors.white.withValues(alpha: 0.09),
+            ),
+          ),
+          Positioned(
+            right: -28,
+            bottom: -40,
+            child: _GlowOrb(
+              size: 150,
+              color: const Color(0xFF8FB1FF).withValues(alpha: 0.22),
+            ),
+          ),
+          Positioned(
+            right: 56,
+            top: 12,
+            child: _GlowOrb(
+              size: 66,
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _GlowOrb({required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
 
 /// Brand + title row with a tappable location pill underneath.
 /// Used as the `title` of both AppBar and SliverAppBar.
@@ -42,8 +101,10 @@ class TopBarTitle extends ConsumerWidget {
             Flexible(
               child: Text(
                 title,
-                style: AppTextStyles.heading2
-                    .copyWith(color: Colors.white, fontSize: 18),
+                style: AppTextStyles.heading2.copyWith(
+                  color: Colors.white,
+                  fontSize: 18,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -84,8 +145,11 @@ class _LocationPill extends ConsumerWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.location_on,
-                  size: 11, color: AppColors.secondary),
+              const Icon(
+                Icons.location_on,
+                size: 11,
+                color: AppColors.secondary,
+              ),
               const SizedBox(width: 3),
               Flexible(
                 child: locationAsync.when(
@@ -104,10 +168,15 @@ class _LocationPill extends ConsumerWidget {
                     style: TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                   error: (err, _) {
-                    final isDenied = err.toString().contains('permission_denied');
+                    final isDenied = err.toString().contains(
+                      'permission_denied',
+                    );
                     return Text(
                       isDenied ? 'Turn on location' : 'Tap to retry location',
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.white70,
+                      ),
                     );
                   },
                 ),
@@ -140,16 +209,19 @@ class TopBarAction extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
-        color: Colors.white.withValues(alpha: 0.16),
-        shape: const CircleBorder(),
+        color: Colors.white.withValues(alpha: 0.18),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+        ),
         child: InkWell(
-          customBorder: const CircleBorder(),
+          borderRadius: BorderRadius.circular(14),
           onTap: onPressed,
           child: Tooltip(
             message: tooltip ?? '',
             child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(icon, color: Colors.white, size: 20),
+              padding: const EdgeInsets.all(9),
+              child: Icon(icon, color: Colors.white, size: 19),
             ),
           ),
         ),
@@ -178,10 +250,15 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarHeight: height,
       titleSpacing: 16,
       elevation: 0,
+      scrolledUnderElevation: 4,
+      shadowColor: const Color(0x22000000),
+      surfaceTintColor: Colors.transparent,
       backgroundColor: Colors.transparent,
-      flexibleSpace: Container(
-        decoration: BoxDecoration(gradient: topBarGradient()),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
       ),
+      clipBehavior: Clip.antiAlias,
+      flexibleSpace: const TopBarBackdrop(),
       foregroundColor: Colors.white,
       title: TopBarTitle(title: title),
       actions: actions,

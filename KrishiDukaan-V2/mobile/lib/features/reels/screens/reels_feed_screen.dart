@@ -232,6 +232,32 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                       ),
                       child: Row(
                         children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Back to Home',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(0);
+                              context.go('/');
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.storefront_rounded,
+                              color: Colors.white70,
+                            ),
+                            tooltip: 'Go to Marketplace',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(1);
+                              context.go('/marketplace');
+                            },
+                          ),
                           Text(
                             'AgriReels',
                             style: AppTextStyles.heading2.copyWith(
@@ -954,8 +980,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                       const SizedBox(width: 8),
                       Flexible(
                         child: GestureDetector(
-                          onTap: () => context
-                              .push('/shop/${widget.reel.shopOwnerId}'),
+                          onTap: () =>
+                              context.push('/shop/${widget.reel.shopOwnerId}'),
                           child: Text(
                             '@${widget.reel.shopName}',
                             maxLines: 1,

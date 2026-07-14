@@ -4,9 +4,11 @@ class AppColors {
   AppColors._();
 
   // Primary — deep agri green (darkened for a richer, premium look)
-  static const primary = Color(0xFF14532D);          // deep forest green
-  static const primaryDark = Color(0xFF0B3D20);      // darker tone for gradients
-  static const primaryLight = Color(0xFF2E7D32);     // former primary, now the lighter accent
+  static const primary = Color(0xFF14532D); // deep forest green
+  static const primaryDark = Color(0xFF0B3D20); // darker tone for gradients
+  static const primaryLight = Color(
+    0xFF2E7D32,
+  ); // former primary, now the lighter accent
   static const primaryContainer = Color(0xFFA5D6A7);
   static const onPrimary = Color(0xFFFFFFFF);
   static const onPrimaryContainer = Color(0xFF0A3D0E);
@@ -41,4 +43,8 @@ class AppColors {
   static const shimmerBase = Color(0xFFE0E0E0);
   static const shimmerHighlight = Color(0xFFF5F5F5);
   static const cardShadow = Color(0x1A000000);
+
+  // Top-bar specific palette (kept separate from primary brand green).
+  static const topBarStart = Color(0xFF1F2A7C);
+  static const topBarEnd = Color(0xFF3C4DB7);
 }
