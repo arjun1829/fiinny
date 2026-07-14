@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square } from 'lucide-react';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil } from 'lucide-react';
 import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where } from 'firebase/firestore';
@@ -78,6 +78,16 @@ interface Note {
     createdAt: any;
 }
 
+/** A recorded payment / credit against this retailer (optionally tied to an invoice). */
+interface Payment {
+    id: string;
+    amount: number;
+    notes?: string;
+    orderId?: string;
+    orderNumber?: string;
+    createdAt?: any;
+}
+
 export default function WorklistDetailsPage() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -88,11 +98,12 @@ export default function WorklistDetailsPage() {
     const [retailer, setRetailer] = useState<Retailer | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders'>('orders');
+    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders' | 'payments'>('orders');
     const [tasks, setTasks] = useState<Task[]>([]);
     const [notes, setNoteData] = useState<Note[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [salesOrders, setSalesOrders] = useState<any[]>([]);
+    const [payments, setPayments] = useState<Payment[]>([]);
 
 
     // Financial Modal States
@@ -116,6 +127,20 @@ export default function WorklistDetailsPage() {
     const [showOutstandingModal, setShowOutstandingModal] = useState(false);
     const [quickPaidRemark, setQuickPaidRemark] = useState('');
 
+    // Per-invoice payment (supports partial) — records an amount against a
+    // specific sales order, updates its paid/outstanding, and logs a ledger entry.
+    const [payOrder, setPayOrder] = useState<any | null>(null);
+    const [payOrderAmount, setPayOrderAmount] = useState<number>(0);
+    const [payOrderNote, setPayOrderNote] = useState('');
+    const [isSavingOrderPayment, setIsSavingOrderPayment] = useState(false);
+
+    // Edit an existing payment/credit entry
+    const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+    const [editPayAmount, setEditPayAmount] = useState<number>(0);
+    const [editPayNote, setEditPayNote] = useState('');
+    const [editPayDate, setEditPayDate] = useState(''); // yyyy-mm-dd
+    const [savingEditPayment, setSavingEditPayment] = useState(false);
+
     // Form States
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newNoteContent, setNewNoteContent] = useState('');
@@ -134,22 +159,22 @@ export default function WorklistDetailsPage() {
         if (!id || !tenantId) return;
         const tid = tenantId!; // For easier use in listeners
 
-        // Fetch Retailer Data
-        const fetchRetailer = async () => {
-            try {
-                const docRef = getTenantDoc(db, tid, 'retailers', id);
-                const docSnap = await getDoc(docRef);
+        // Retailer data — real-time listener so the financial cards & Partner
+        // Analytics reflect writes (e.g. Record Payment) the instant they land,
+        // instead of relying on manual re-fetches that can read stale data.
+        const unsubRetailer = onSnapshot(
+            getTenantDoc(db, tid, 'retailers', id),
+            (docSnap) => {
                 if (docSnap.exists()) {
                     setRetailer({ id: docSnap.id, ...docSnap.data() } as Retailer);
                 }
-            } catch (error) {
+                setLoading(false);
+            },
+            (error) => {
                 console.error("Error fetching retailer: ", error);
-            } finally {
                 setLoading(false);
             }
-        };
-
-        fetchRetailer();
+        );
 
         // Fetch Products
         const unsubProducts = onSnapshot(
@@ -171,6 +196,17 @@ export default function WorklistDetailsPage() {
             notesQuery,
             (snap) => { setNoteData(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Note))); },
             (err) => console.error('Notes listener error:', err)
+        );
+
+        // Payments / credits ledger (sorted client-side to avoid an index requirement)
+        const unsubPayments = onSnapshot(
+            getTenantCollection(db, tenantId!, 'retailers', id, 'payments'),
+            (snap) => {
+                const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment));
+                docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+                setPayments(docs);
+            },
+            (err) => console.error('Payments listener error:', err)
         );
 
         // orderBy removed — composite index not available; sort client-side instead
@@ -204,8 +240,10 @@ export default function WorklistDetailsPage() {
         );
 
         return () => {
+            unsubRetailer();
             unsubTasks();
             unsubNotes();
+            unsubPayments();
             unsubOrders();
             unsubSalesOrders();
             unsubProducts();
@@ -518,9 +556,132 @@ export default function WorklistDetailsPage() {
             alert(t('worklist_details.payment_success'));
         } catch (error) {
             console.error("Error recording payment:", error);
-            alert(t('worklist_details.update_error'));
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
         } finally {
             setIsRecordingPayment(false);
+        }
+    };
+
+    // ─── Record a payment against a single sales order (partial or full) ───
+    // Applies the amount to that order's amountPaid, recomputes its paymentStatus
+    // (Paid when fully settled, else Partial), logs a ledger entry under the
+    // retailer's payments subcollection, and rolls the amount up to retailer totals.
+    const handleAddOrderPayment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!id || !tenantId || !payOrder) return;
+
+        const grandTotal = Number(payOrder.grandTotal ?? payOrder.netAmount ?? payOrder.totalAmount ?? 0);
+        const alreadyPaid = Number(payOrder.amountPaid ?? 0);
+        const remaining = Math.max(0, grandTotal - alreadyPaid);
+        // Never over-apply beyond what's outstanding on this invoice.
+        const applied = Math.min(Number(payOrderAmount) || 0, remaining);
+        if (applied <= 0) return;
+
+        setIsSavingOrderPayment(true);
+        try {
+            const newPaid = alreadyPaid + applied;
+            const newStatus = newPaid >= grandTotal ? 'Paid' : 'Partial';
+            const orderLabel = payOrder.orderNumber || payOrder.invoiceNumber || payOrder.id.slice(-6);
+
+            // 1. Update the sales order's paid amount + status
+            await updateDoc(getTenantDoc(db, tenantId, 'salesOrders', payOrder.id), {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+            });
+
+            // 2. Log a ledger entry (the "credit entry") tied to this invoice
+            await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
+                amount: applied,
+                orderId: payOrder.id,
+                orderNumber: orderLabel,
+                notes: payOrderNote,
+                createdAt: serverTimestamp(),
+            });
+
+            // 3. Roll up to retailer totals (cards refresh via the retailer listener)
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+                totalPaid: (Number(retailer?.totalPaid) || 0) + applied,
+                outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - applied),
+            });
+
+            setPayOrder(null);
+            setPayOrderAmount(0);
+            setPayOrderNote('');
+            alert(`₹${applied.toLocaleString()} recorded against ${orderLabel}` + (newStatus === 'Paid' ? ' — fully paid.' : ' — partially paid.'));
+        } catch (error) {
+            console.error("Error recording invoice payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        } finally {
+            setIsSavingOrderPayment(false);
+        }
+    };
+
+    // Apply a change of `delta` in paid-amount to the retailer totals and, if the
+    // payment was tied to an invoice, to that invoice's amountPaid + status.
+    // delta > 0 means more was paid; delta < 0 means a payment shrank / was removed.
+    const applyPaymentDelta = async (delta: number, orderId?: string) => {
+        if (!id || !tenantId || delta === 0) return;
+
+        await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+            totalPaid: Math.max(0, (Number(retailer?.totalPaid) || 0) + delta),
+            outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - delta),
+        });
+
+        if (orderId) {
+            const so = salesOrders.find((o: any) => o.id === orderId);
+            if (so) {
+                const grandTotal = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                const newPaid = Math.min(grandTotal, Math.max(0, (Number(so.amountPaid) || 0) + delta));
+                const newStatus = newPaid <= 0 ? 'Pending' : (newPaid >= grandTotal ? 'Paid' : 'Partial');
+                await updateDoc(getTenantDoc(db, tenantId, 'salesOrders', orderId), {
+                    amountPaid: newPaid,
+                    paymentStatus: newStatus,
+                });
+            }
+        }
+    };
+
+    const handleDeletePayment = async (p: Payment) => {
+        if (!id || !tenantId) return;
+        if (!window.confirm(`Delete this payment of ₹${Number(p.amount || 0).toLocaleString()}? Totals will be adjusted.`)) return;
+        try {
+            // Reverse its effect (delta = -amount), then remove the ledger entry.
+            await applyPaymentDelta(-(Number(p.amount) || 0), p.orderId);
+            await deleteDoc(getTenantDoc(db, tenantId, 'retailers', id, 'payments', p.id));
+        } catch (error) {
+            console.error("Error deleting payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        }
+    };
+
+    const openEditPayment = (p: Payment) => {
+        setEditingPayment(p);
+        setEditPayAmount(Number(p.amount) || 0);
+        setEditPayNote(p.notes || '');
+        const d = p.createdAt?.toDate ? p.createdAt.toDate() : null;
+        setEditPayDate(d ? d.toISOString().slice(0, 10) : '');
+    };
+
+    const handleUpdatePayment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!id || !tenantId || !editingPayment) return;
+        const newAmount = Number(editPayAmount) || 0;
+        if (newAmount <= 0) return;
+        setSavingEditPayment(true);
+        try {
+            const delta = newAmount - (Number(editingPayment.amount) || 0);
+            if (delta !== 0) await applyPaymentDelta(delta, editingPayment.orderId);
+
+            const update: Record<string, any> = { amount: newAmount, notes: editPayNote };
+            if (editPayDate) update.createdAt = new Date(editPayDate);
+
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id, 'payments', editingPayment.id), update);
+            setEditingPayment(null);
+        } catch (error) {
+            console.error("Error updating payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        } finally {
+            setSavingEditPayment(false);
         }
     };
 
@@ -725,6 +886,7 @@ export default function WorklistDetailsPage() {
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--surface-border)', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
                 {[
                     { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: salesOrders.length },
+                    { id: 'payments', label: 'Payments', icon: Wallet, count: payments.length },
                     { id: 'overview', label: 'Overview', icon: User },
                     { id: 'tasks', label: t('worklist_details.tasks'), icon: CheckSquare, count: tasks.length },
                     { id: 'notes', label: t('worklist_details.notes'), icon: FileText, count: notes.length }
@@ -904,6 +1066,59 @@ export default function WorklistDetailsPage() {
                     </div>
                 )}
 
+                {activeTab === 'payments' && (
+                    <div className="animate-fade-in">
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+                            <div>
+                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Payments &amp; Credits ({payments.length})</h3>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                                    Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
+                                </span>
+                            </div>
+                            <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+                                <PlusCircle size={16} /> Add Credit / Payment
+                            </button>
+                        </div>
+
+                        {payments.length === 0 ? (
+                            <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <Wallet size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
+                                <p style={{ margin: 0 }}>No payments recorded yet.</p>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use “Add Credit / Payment”, or “Add Payment” on any invoice.</p>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {payments.map(p => {
+                                    const d = p.createdAt?.toDate ? p.createdAt.toDate() : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000) : null);
+                                    return (
+                                        <div key={p.id} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
+                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: '#10b981', whiteSpace: 'nowrap' }}>₹{Number(p.amount || 0).toLocaleString()}</div>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        {p.orderNumber && <span style={{ background: '#8b5cf622', color: '#8b5cf6', padding: '0.1rem 0.5rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>Invoice {p.orderNumber}</span>}
+                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{d ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
+                                                    </div>
+                                                    {p.notes && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.notes}</div>}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                                                <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}>
+                                                    <Pencil size={13} /> Edit
+                                                </button>
+                                                <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
+                                                    <Trash2 size={13} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {activeTab === 'orders' && (
                     <div className="animate-fade-in">
                         {/* Action toolbar */}
@@ -998,7 +1213,13 @@ export default function WorklistDetailsPage() {
                                 const statusColor: Record<string, string> = { confirmed: '#10b981', draft: '#f59e0b', dispatched: '#38bdf8', cancelled: '#ef4444' };
                                 const color = statusColor[so.status?.toLowerCase()] || '#94a3b8';
                                 const date = so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
-                                const outstanding = Math.max(0, (Number(so.grandTotal) || 0) - (Number(so.amountPaid) || 0));
+                                // Use the same total-field fallback as everything else (GST invoices
+                                // store the total in netAmount/totalAmount, not grandTotal) so outstanding
+                                // can't wrongly compute to 0 and show a false "Fully Paid".
+                                const invoiceTotal = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                                const amountPaid = Number(so.amountPaid) || 0;
+                                const outstanding = Math.max(0, invoiceTotal - amountPaid);
+                                const fullyPaid = invoiceTotal > 0 && outstanding === 0 && amountPaid > 0;
                                 const isSelected = selectedSoIds.has(so.id);
                                 return (
                                     <div key={so.id} className="glass-panel" style={{ padding: '1.25rem', borderLeft: `4px solid ${isSelected ? 'var(--primary-light)' : color}`, transition: 'box-shadow 0.15s', outline: isSelected ? '2px solid var(--primary-light)' : 'none', outlineOffset: '-2px' }}
@@ -1032,11 +1253,14 @@ export default function WorklistDetailsPage() {
                                             </div>
                                             {/* Right: amounts */}
                                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--secondary)' }}>₹{Number(so.grandTotal || so.netAmount || so.totalAmount || 0).toLocaleString()}</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--secondary)' }}>₹{invoiceTotal.toLocaleString()}</div>
+                                                {amountPaid > 0 && outstanding > 0 && (
+                                                    <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Paid: ₹{amountPaid.toLocaleString()}</div>
+                                                )}
                                                 {outstanding > 0 && (
                                                     <div style={{ fontSize: '0.78rem', color: '#ef4444', fontWeight: 600 }}>Outstanding: ₹{outstanding.toLocaleString()}</div>
                                                 )}
-                                                {outstanding === 0 && (so.amountPaid > 0) && (
+                                                {fullyPaid && (
                                                     <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>✅ Fully Paid</div>
                                                 )}
                                             </div>
@@ -1095,6 +1319,14 @@ export default function WorklistDetailsPage() {
                                         </div>
                                         {/* Action buttons */}
                                         <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--surface-border)', flexWrap: 'wrap' }}>
+                                            {outstanding > 0 && (
+                                                <button className="btn btn-primary"
+                                                    onClick={() => { setPayOrder(so); setPayOrderAmount(outstanding); setPayOrderNote(''); }}
+                                                    title="Record a payment (partial or full) against this invoice"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <PlusCircle size={14} /> Add Payment
+                                                </button>
+                                            )}
                                             <button className="btn btn-secondary"
                                                 onClick={() => so.invoiceType === 'B2B_GST'
                                                     ? navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)
@@ -1188,6 +1420,83 @@ export default function WorklistDetailsPage() {
                                         {isRecordingPayment ? <Loader2 className="animate-spin" size={18} /> : t('worklist_details.confirm_payment')}
                                     </button>
                                 </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Per-Invoice Add Payment Modal (partial supported) */}
+                {payOrder && (() => {
+                    const grandTotal = Number(payOrder.grandTotal ?? payOrder.netAmount ?? payOrder.totalAmount ?? 0);
+                    const alreadyPaid = Number(payOrder.amountPaid ?? 0);
+                    const remaining = Math.max(0, grandTotal - alreadyPaid);
+                    const orderLabel = payOrder.orderNumber || payOrder.invoiceNumber || payOrder.id.slice(-6);
+                    const amt = Number(payOrderAmount) || 0;
+                    const over = amt > remaining;
+                    return (
+                        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
+                                <button onClick={() => !isSavingOrderPayment && setPayOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <PlusCircle size={22} color="var(--primary-light)" /> Add Payment
+                                </h2>
+                                <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {orderLabel}</p>
+
+                                {/* Order money summary */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                                </div>
+
+                                <form onSubmit={handleAddOrderPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div>
+                                        <label className="input-label">Payment Amount (₹)</label>
+                                        <input required type="number" min={1} max={remaining} step="0.01" className="input-field" value={payOrderAmount || ''} onChange={e => setPayOrderAmount(Number(e.target.value))} autoFocus />
+                                        <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                            <button type="button" onClick={() => setPayOrderAmount(Math.round(remaining / 2))} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Half</button>
+                                            <button type="button" onClick={() => setPayOrderAmount(remaining)} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Full (₹{remaining.toLocaleString()})</button>
+                                        </div>
+                                        {over && <div style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '0.4rem' }}>Only ₹{remaining.toLocaleString()} is outstanding — the extra will be ignored.</div>}
+                                    </div>
+                                    <div>
+                                        <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
+                                        <input type="text" className="input-field" value={payOrderNote} onChange={e => setPayOrderNote(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
+                                    </div>
+                                    <button type="submit" className="btn btn-primary" disabled={isSavingOrderPayment || amt <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                        {isSavingOrderPayment ? <Loader2 className="animate-spin" size={18} /> : `Record ₹${Math.min(amt, remaining).toLocaleString()}`}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Edit Payment Modal */}
+                {editingPayment && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
+                            <button onClick={() => !savingEditPayment && setEditingPayment(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+                            <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                <Pencil size={20} color="var(--primary-light)" /> Edit Payment
+                            </h2>
+                            {editingPayment.orderNumber && <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {editingPayment.orderNumber} — totals adjust automatically</p>}
+                            <form onSubmit={handleUpdatePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div>
+                                    <label className="input-label">Amount (₹)</label>
+                                    <input required type="number" min={1} step="0.01" className="input-field" value={editPayAmount || ''} onChange={e => setEditPayAmount(Number(e.target.value))} autoFocus />
+                                </div>
+                                <div>
+                                    <label className="input-label">Date</label>
+                                    <input type="date" className="input-field" value={editPayDate} onChange={e => setEditPayDate(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
+                                    <input type="text" className="input-field" value={editPayNote} onChange={e => setEditPayNote(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
+                                </div>
+                                <button type="submit" className="btn btn-primary" disabled={savingEditPayment || editPayAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                    {savingEditPayment ? <Loader2 className="animate-spin" size={18} /> : 'Save Changes'}
+                                </button>
                             </form>
                         </div>
                     </div>

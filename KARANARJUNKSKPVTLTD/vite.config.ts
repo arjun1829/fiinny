@@ -11,22 +11,21 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      devOptions: { enabled: true },
+      // No service worker in dev — it precaches the bundle (stale code) and
+      // intercepts Firestore. The PWA is only active in production builds.
+      devOptions: { enabled: false },
       workbox: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
         // Cache the app shell (HTML, JS, CSS) — stale-while-revalidate
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         runtimeCaching: [
-          // Firebase / Firestore API — Network First with offline fallback
+          // Firestore API — NEVER cache/intercept. A service-worker cache in
+          // front of Firestore corrupts the SDK's real-time Listen channel and
+          // serves stale reads: writes "succeed" (success popup) but the UI keeps
+          // showing old data. Firestore handles its own offline persistence.
           {
             urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'firestore-cache',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
+            handler: 'NetworkOnly',
           },
           // Firebase Storage — Cache First (images and files)
           {
@@ -55,9 +54,10 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: { cacheName: 'razorpay-cache', networkTimeoutSeconds: 8 },
           },
-          // App navigation — Stale While Revalidate
+          // App navigation — Stale While Revalidate. Same-origin ONLY, so it can
+          // never intercept cross-origin Google/Firebase APIs (Firestore, Auth).
           {
-            urlPattern: /^https:\/\/[^/]+\/(?!api).*/i,
+            urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) => sameOrigin && !url.pathname.startsWith('/api'),
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'app-shell-cache', expiration: { maxEntries: 30, maxAgeSeconds: 24 * 60 * 60 } },
           },
