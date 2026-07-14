@@ -33,6 +33,8 @@ interface B2BRow {
     gstPct: string;
     midOff: string;
     per: string;
+    boxes: string;
+    boxQty: string;
     quantity: string;
     rate: string;
     grossAmount: number;
@@ -49,6 +51,8 @@ const EMPTY_ROW = (): B2BRow => ({
     gstPct: '5',
     midOff: 'Nos',
     per: 'Nos',
+    boxes: '',
+    boxQty: '',
     quantity: '',
     rate: '',
     grossAmount: 0,
@@ -173,11 +177,13 @@ export default function B2BInvoicePage() {
 
     // ─── Load existing order by orderId query param ───
     const prefilledOrderId = searchParams.get('orderId') || '';
+    const [existingOrder, setExistingOrder] = useState<any>(null);
     useEffect(() => {
         if (!prefilledOrderId || !tenantId) return;
         getDoc(getTenantDoc(db, tenantId, 'salesOrders', prefilledOrderId)).then(snap => {
             if (!snap.exists()) return;
             const d = snap.data();
+            setExistingOrder({ id: snap.id, ...d });
             // Restore header fields
             setHeader(prev => ({
                 ...prev,
@@ -206,6 +212,8 @@ export default function B2BInvoicePage() {
                     gstPct: String(li.gstPct ?? '5'),
                     midOff: li.midOff || 'Nos',
                     per: li.per || 'Nos',
+                    boxes: li.boxes !== undefined && li.boxes !== null && li.boxes !== 0 ? String(li.boxes) : '',
+                    boxQty: li.boxQty !== undefined && li.boxQty !== null && li.boxQty !== 0 ? String(li.boxQty) : '',
                     quantity: String(li.quantity ?? ''),
                     rate: String(li.rate ?? ''),
                     grossAmount: li.grossAmount || 0,
@@ -294,6 +302,10 @@ export default function B2BInvoicePage() {
 
     const fmt = (n: number) => n.toFixed(2);
 
+    // Single source of truth for the displayed/printed invoice number: while editing,
+    // it is always the persisted orderNumber, never the freshly generated counter value.
+    const displayInvoiceNo = existingOrder ? (existingOrder.orderNumber || nextInvoiceNo) : nextInvoiceNo;
+
     // ─── Generate invoice number ───
     const generateInvoiceNumber = async (): Promise<string> => {
         if (!tenantId) return `B2B-${Date.now()}`;
@@ -352,27 +364,32 @@ ${styles}
     // Prints the current invoice as-shown using the on-screen preview number.
     const handlePrintOnly = () => {
         if (activeRows.length === 0) { alert('Please add at least one item.'); return; }
-        printInvoiceDOM(header.invoiceNo || nextInvoiceNo);
+        printInvoiceDOM(displayInvoiceNo);
     };
 
     // ─── Save ───
+    const isEditing = !!prefilledOrderId && !!existingOrder;
+
     const handleSave = async (isPrint = false) => {
         if (!tenantId) return;
         if (activeRows.length === 0) { alert('Please add at least one item.'); return; }
         setIsProcessing(true);
         try {
-            const invNo = await generateInvoiceNumber();
+            // Editing keeps the original invoice number; only a brand-new invoice consumes the counter.
+            const invNo = isEditing ? existingOrder.orderNumber : await generateInvoiceNumber();
             const lineItems = activeRows.map(r => ({
                 itemDescription: r.itemDescription,
                 batchNo: r.batchNo,
                 expDate: r.expDate,
                 gstPct: parseFloat(r.gstPct) || 0,
                 per: r.per,
+                boxes: parseFloat(r.boxes) || 0,
+                boxQty: parseFloat(r.boxQty) || 0,
                 quantity: parseFloat(r.quantity) || 0,
                 rate: parseFloat(r.rate) || 0,
                 grossAmount: r.grossAmount,
             }));
-            await addDoc(getTenantCollection(db, tenantId, 'salesOrders'), {
+            const orderPayload = {
                 orderNumber: invNo,
                 invoiceType: 'B2B_GST',
                 retailerId: header.retailerId,
@@ -397,10 +414,41 @@ ${styles}
                 invoiceDate: header.invoiceDate,
                 status: header.modeOfPayment === 'Cash' ? 'paid' : 'pending',
                 paymentStatus: header.modeOfPayment === 'Cash' ? 'Paid' : 'Pending',
-                createdAt: serverTimestamp(),
-            });
+            };
 
-            // If a retailer was selected, update their financials
+            if (isEditing) {
+                await updateDoc(getTenantDoc(db, tenantId, 'salesOrders', prefilledOrderId), {
+                    ...orderPayload,
+                    updatedAt: serverTimestamp(),
+                });
+            } else {
+                await addDoc(getTenantCollection(db, tenantId, 'salesOrders'), {
+                    ...orderPayload,
+                    createdAt: serverTimestamp(),
+                });
+            }
+
+            // If editing and the order previously belonged to a different retailer
+            // (or had no retailer), reverse its contribution there first.
+            const prevRetailerId = isEditing ? (existingOrder.retailerId || '') : '';
+            if (isEditing && prevRetailerId && prevRetailerId !== header.retailerId) {
+                const prevRetailerRef = getTenantDoc(db, tenantId, 'retailers', prevRetailerId);
+                const prevRetailerSnap = await getDoc(prevRetailerRef);
+                if (prevRetailerSnap.exists()) {
+                    const rData = prevRetailerSnap.data();
+                    const wasPaid = existingOrder.modeOfPayment === 'Cash';
+                    const prevNetAmount = Number(existingOrder.netAmount || existingOrder.grandTotal || 0);
+                    await updateDoc(prevRetailerRef, {
+                        totalSales: Math.max(0, Number(rData.totalSales || 0) - prevNetAmount),
+                        outstandingAmount: Math.max(0, Number(rData.outstandingAmount || 0) - (wasPaid ? 0 : prevNetAmount)),
+                        totalPaid: Math.max(0, Number(rData.totalPaid || 0) - (wasPaid ? prevNetAmount : 0)),
+                    });
+                }
+            }
+
+            // Apply this invoice's contribution to the (current) retailer's financials.
+            // On edit against the SAME retailer, reverse the order's previous contribution
+            // before applying the new one so totals reflect the delta, not a double-count.
             if (header.retailerId) {
                 const retailerRef = getTenantDoc(db, tenantId, 'retailers', header.retailerId);
                 const retailerSnap = await getDoc(retailerRef);
@@ -408,16 +456,25 @@ ${styles}
                     const rData = retailerSnap.data();
                     const currentSales = Number(rData.totalSales || 0);
                     const currentOutstanding = Number(rData.outstandingAmount || 0);
+                    const currentTotalPaid = Number(rData.totalPaid || 0);
+
+                    const sameRetailer = isEditing && prevRetailerId === header.retailerId;
+                    const wasPaid = sameRetailer && existingOrder.modeOfPayment === 'Cash';
+                    const prevNetAmount = sameRetailer ? Number(existingOrder.netAmount || existingOrder.grandTotal || 0) : 0;
+
+                    const salesAfterReversal = currentSales - prevNetAmount;
+                    const outstandingAfterReversal = currentOutstanding - (wasPaid ? 0 : prevNetAmount);
+                    const totalPaidAfterReversal = currentTotalPaid - (wasPaid ? prevNetAmount : 0);
 
                     const isPaid = header.modeOfPayment === 'Cash';
-                    const newSales = currentSales + netAmount;
-                    const newOutstanding = currentOutstanding + (isPaid ? 0 : netAmount);
-                    const newTotalPaid = Number(rData.totalPaid || 0) + (isPaid ? netAmount : 0);
+                    const newSales = salesAfterReversal + netAmount;
+                    const newOutstanding = outstandingAfterReversal + (isPaid ? 0 : netAmount);
+                    const newTotalPaid = totalPaidAfterReversal + (isPaid ? netAmount : 0);
 
                     await updateDoc(retailerRef, {
-                        totalSales: newSales,
+                        totalSales: Math.max(0, newSales),
                         outstandingAmount: Math.max(0, newOutstanding),
-                        totalPaid: newTotalPaid,
+                        totalPaid: Math.max(0, newTotalPaid),
                         lastOrderedAt: serverTimestamp()
                     });
                 }
@@ -425,7 +482,11 @@ ${styles}
 
             if (!isPrint) {
                 alert(`Invoice ${invNo} saved!`);
-                resetForm();
+                if (isEditing) {
+                    navigate(header.retailerId ? `/worklist/${header.retailerId}` : '/worklist');
+                } else {
+                    resetForm();
+                }
             } else {
                 setIsProcessing(false);
                 // Snapshot DOM -> new window to fix iOS Safari blank print
@@ -433,7 +494,11 @@ ${styles}
                 setTimeout(() => {
                     printInvoiceDOM(invNo);
                     // Safe to reset now — new window has a static clone
-                    resetForm();
+                    if (isEditing) {
+                        navigate(header.retailerId ? `/worklist/${header.retailerId}` : '/worklist');
+                    } else {
+                        resetForm();
+                    }
                 }, 200);
                 return;
             }
@@ -631,7 +696,7 @@ ${styles}
                     <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', alignItems: 'center' }}>
                             <span className="b2b-label">Invoice No :</span>
-                            <span style={{ fontWeight: 700 }}>{nextInvoiceNo}</span>
+                            <span style={{ fontWeight: 700 }}>{displayInvoiceNo}</span>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', alignItems: 'center' }}>
                             <span className="b2b-label">Invoice Date :</span>
@@ -667,16 +732,18 @@ ${styles}
                     <table className="b2b-table">
                         <thead>
                             <tr>
-                                <th style={{ width: '34px' }}>S.No</th>
-                                <th style={{ minWidth: '160px' }}>Item Descriptions</th>
-                                <th style={{ width: '90px' }}>BATCH NO.</th>
-                                <th style={{ width: '90px' }}>Exp. Date</th>
-                                <th style={{ width: '52px' }}>GST %</th>
-                                <th style={{ width: '60px' }}>Mid Off</th>
-                                <th style={{ width: '50px' }}>Per</th>
-                                <th style={{ width: '60px' }}>Qty</th>
-                                <th style={{ width: '70px' }}>RATE</th>
-                                <th style={{ width: '90px' }}>Gross Amount</th>
+                                <th style={{ width: '30px' }}>S.No</th>
+                                <th style={{ minWidth: '140px' }}>Item Descriptions</th>
+                                <th style={{ width: '78px' }}>BATCH NO.</th>
+                                <th style={{ width: '78px' }}>Exp. Date</th>
+                                <th style={{ width: '46px' }}>GST %</th>
+                                <th style={{ width: '54px' }}>Mid Off</th>
+                                <th style={{ width: '44px' }}>Per</th>
+                                <th style={{ width: '46px' }}>Boxes</th>
+                                <th style={{ width: '52px' }}>Box Qty</th>
+                                <th style={{ width: '54px' }}>Qty</th>
+                                <th style={{ width: '62px' }}>RATE</th>
+                                <th style={{ width: '82px' }}>Gross Amount</th>
                                 <th className="no-print" style={{ width: '32px' }}></th>
                             </tr>
                         </thead>
@@ -723,6 +790,8 @@ ${styles}
                                         <td style={{ textAlign: 'center' }}><input type="number" className="b2b-input" style={{ textAlign: 'center' }} value={row.gstPct} onChange={e => handleRowChange(idx, 'gstPct', e.target.value)} /><span className="print-val">{row.gstPct}</span></td>
                                         <td style={{ textAlign: 'center' }}><input className="b2b-input" style={{ textAlign: 'center' }} value={row.midOff} onChange={e => handleRowChange(idx, 'midOff', e.target.value)} /><span className="print-val">{row.midOff}</span></td>
                                         <td style={{ textAlign: 'center' }}><input className="b2b-input" style={{ textAlign: 'center' }} value={row.per} onChange={e => handleRowChange(idx, 'per', e.target.value)} /><span className="print-val">{row.per}</span></td>
+                                        <td style={{ textAlign: 'center' }}><input type="number" min="0" className="b2b-input" style={{ textAlign: 'center' }} value={row.boxes} onChange={e => handleRowChange(idx, 'boxes', e.target.value)} /><span className="print-val">{row.boxes}</span></td>
+                                        <td style={{ textAlign: 'center' }}><input type="number" min="0" className="b2b-input" style={{ textAlign: 'center' }} value={row.boxQty} onChange={e => handleRowChange(idx, 'boxQty', e.target.value)} /><span className="print-val">{row.boxQty}</span></td>
                                         <td style={{ textAlign: 'center', fontWeight: 600 }}><input type="number" min="0" className="b2b-input" style={{ textAlign: 'center', fontWeight: 600 }} placeholder="0" value={row.quantity} onChange={e => handleRowChange(idx, 'quantity', e.target.value)} /><span className="print-val">{row.quantity}</span></td>
                                         <td style={{ textAlign: 'center' }}><input type="number" className="b2b-input" style={{ textAlign: 'center' }} value={row.rate} onChange={e => handleRowChange(idx, 'rate', e.target.value)} /><span className="print-val">{row.rate}</span></td>
                                         <td style={{ textAlign: 'center', fontWeight: row.grossAmount ? 600 : 400 }}>{row.grossAmount ? fmt(row.grossAmount) : ''}</td>
@@ -735,7 +804,7 @@ ${styles}
                                 ))}
                             {/* TOTAL row */}
                             <tr style={{ fontWeight: 700, background: '#f9f9f9' }}>
-                                <td colSpan={9} style={{ textAlign: 'right', paddingRight: '8px' }}>TOTAL</td>
+                                <td colSpan={11} style={{ textAlign: 'right', paddingRight: '8px' }}>TOTAL</td>
                                 <td style={{ textAlign: 'center' }}>{fmt(totalGross)}</td>
                                 <td className="no-print"></td>
                             </tr>
@@ -862,7 +931,7 @@ ${styles}
                                     upiId={branding.upiId}
                                     payeeName={sellerName}
                                     amount={netAmount}
-                                    transactionNote={nextInvoiceNo}
+                                    transactionNote={displayInvoiceNo}
                                     size={90}
                                 />
                             </div>
