@@ -5,6 +5,8 @@ import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { queueWaNotification } from "./wa-notify";
 
+export { sendWaNotification, retryWaNotifications, webhookReceiver } from "./wa-dispatch";
+
 admin.initializeApp();
 const db = admin.firestore();
 
