@@ -18,10 +18,13 @@ const WEBHOOK_REGION = "us-central1";
 
 // Declare secrets — Firebase resolves these from Secret Manager at deploy time
 // and injects them as process.env.<NAME> in each function's execution context.
-const WA_ACCESS_TOKEN        = defineSecret("WA_ACCESS_TOKEN");
-const WA_PHONE_NUMBER_ID     = defineSecret("WA_PHONE_NUMBER_ID");
-const WA_APP_SECRET          = defineSecret("WA_APP_SECRET");
+const WA_ACCESS_TOKEN         = defineSecret("WA_ACCESS_TOKEN");
+const WA_PHONE_NUMBER_ID      = defineSecret("WA_PHONE_NUMBER_ID");
+const WA_APP_SECRET           = defineSecret("WA_APP_SECRET");
 const WA_WEBHOOK_VERIFY_TOKEN = defineSecret("WA_WEBHOOK_VERIFY_TOKEN");
+
+// WA_TEMPLATE_LANGUAGE is set in functions/.env (not a secret).
+// queue.ts reads it via process.env.WA_TEMPLATE_LANGUAGE at runtime.
 
 
 /**

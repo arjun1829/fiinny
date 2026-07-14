@@ -23,7 +23,7 @@
 
 import "dotenv/config";
 import * as admin from "firebase-admin";
-import { getDb } from "../src/firebase";
+import { getDb } from "../src/wa/firebase";
 
 const MANUFACTURER_ID = process.env.MANUFACTURER_ID ?? "";
 const DRY_RUN        = process.env.DRY_RUN === "true";

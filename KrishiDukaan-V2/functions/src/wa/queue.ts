@@ -6,9 +6,7 @@ import type { WaNotification } from "./types";
 
 const COLLECTION = "waNotifications";
 
-// Language code for all templates. Change to "mr" when Marathi templates are
-// approved under that locale in Meta Business Manager.
-const TEMPLATE_LANGUAGE = process.env.WA_TEMPLATE_LANGUAGE ?? "en";
+const TEMPLATE_LANGUAGE = "mr";
 
 /**
  * Atomically claims a pending doc by setting status to "sending".

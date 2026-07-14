@@ -33,7 +33,7 @@ interface QueueOptions {
 }
 
 /**
- * Queues a WhatsApp notification. The wa-cloud-service picks this up and sends
+ * Queues a WhatsApp notification. The sendWaNotification Firebase Function picks this up and sends
  * it via the WhatsApp Cloud API. Never call the API directly from the app.
  */
 export async function queueWaNotification(
@@ -47,7 +47,7 @@ export async function queueWaNotification(
     phone: phone.trim(),
 
     // Content — message is kept for audit/debug; templateComponents are
-    // resolved by wa-cloud-service from template + payload at send time.
+    // resolved by the Firebase Function from template + payload at send time.
     message,
     template: opts.template ?? "generic",
     payload: opts.payload ?? {},

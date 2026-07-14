@@ -94,6 +94,13 @@ export type MarketplaceProduct = {
   dosage?: string;
   bestForCrops?: string[];
 
+  /**
+   * Set to true on a retailer product copy to opt out of manufacturer price
+   * syncs. When true, syncPriceToRetailers() will leave this copy's price
+   * unchanged, allowing the retailer to maintain their own pricing.
+   */
+  hasCustomPrice?: boolean;
+
   /** Discount — mirrored from inventory on discount save */
   effectiveDiscountPct?: number; // this product/seller's active discount (0 if none)
   maxDiscountPct?: number;       // max across all sellers of this product (on original doc only)
