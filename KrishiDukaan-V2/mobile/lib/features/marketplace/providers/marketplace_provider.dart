@@ -260,45 +260,62 @@ List<CatalogModel> enrichProductsWithNearestStoreDistance({
       .toList(growable: false);
 }
 
-final allMergedProductsProvider = FutureProvider<List<CatalogModel>>((
-  ref,
-) async {
-  final products = await ref
-      .read(catalogRepositoryProvider)
-      .fetchAllMergedProducts();
-  final stores = await ref.watch(storesListProvider.future).catchError((_) {
-    return <StoreModel>[];
-  });
+final rawAllProductsProvider = FutureProvider<List<CatalogModel>>((ref) async {
+  return ref.read(catalogRepositoryProvider).fetchAllMergedProducts();
+});
+
+final allMergedProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
+  final productsAsync = ref.watch(rawAllProductsProvider);
+  final storesAsync = ref.watch(storesListProvider);
   final userLocation = ref.watch(locationProvider).value;
-  return enrichProductsWithNearestStoreDistance(
-    products: products,
-    stores: stores,
-    userLocation: userLocation,
+
+  return productsAsync.when(
+    data: (products) {
+      final stores = storesAsync.value ?? [];
+      final enriched = enrichProductsWithNearestStoreDistance(
+        products: products,
+        stores: stores,
+        userLocation: userLocation,
+      );
+      return AsyncValue.data(enriched);
+    },
+    error: (err, stack) => AsyncValue.error(err, stack),
+    loading: () => const AsyncValue.loading(),
   );
 });
 
-final featuredProductsProvider = FutureProvider<List<CatalogModel>>((
-  ref,
-) async {
-  final all = await ref.watch(allMergedProductsProvider.future);
-  return all.take(6).toList();
+final featuredProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
+  final allAsync = ref.watch(allMergedProductsProvider);
+  return allAsync.when(
+    data: (all) => AsyncValue.data(all.take(6).toList()),
+    error: (err, stack) => AsyncValue.error(err, stack),
+    loading: () => const AsyncValue.loading(),
+  );
 });
 
 /// Products with the biggest seller discounts, highest first — powers the
 /// "Top Deals" rail on the home page.
-final topDealsProvider = FutureProvider<List<CatalogModel>>((ref) async {
-  final all = await ref.watch(allMergedProductsProvider.future);
-  final deals = all.where((p) => p.maxDiscountPct > 0).toList()
-    ..sort((a, b) => b.maxDiscountPct.compareTo(a.maxDiscountPct));
-  return deals.take(10).toList();
+final topDealsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
+  final allAsync = ref.watch(allMergedProductsProvider);
+  return allAsync.when(
+    data: (all) {
+      final deals = all.where((p) => p.maxDiscountPct > 0).toList()
+        ..sort((a, b) => b.maxDiscountPct.compareTo(a.maxDiscountPct));
+      return AsyncValue.data(deals.take(10).toList());
+    },
+    error: (err, stack) => AsyncValue.error(err, stack),
+    loading: () => const AsyncValue.loading(),
+  );
 });
 
 /// "Trending Near You" — exactly as it works on the web (taking the top products)
-final trendingProductsProvider = FutureProvider<List<CatalogModel>>((
-  ref,
-) async {
-  final all = await ref.watch(allMergedProductsProvider.future);
-  return all.take(10).toList();
+final trendingProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
+  final allAsync = ref.watch(allMergedProductsProvider);
+  return allAsync.when(
+    data: (all) => AsyncValue.data(all.take(10).toList()),
+    error: (err, stack) => AsyncValue.error(err, stack),
+    loading: () => const AsyncValue.loading(),
+  );
 });
 
 final catalogDetailProvider = FutureProvider.family<CatalogModel?, String>((

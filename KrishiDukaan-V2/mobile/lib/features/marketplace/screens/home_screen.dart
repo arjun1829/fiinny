@@ -113,8 +113,27 @@ class HomeScreen extends ConsumerWidget {
                   Consumer(
                     builder: (context, ref, _) {
                       final trending = ref.watch(trendingProductsProvider);
-                      return trending.when(
-                        loading: () => GridView.builder(
+                      final products = trending.value;
+                      if (products != null && products.isNotEmpty) {
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                childAspectRatio: 0.54,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: products.length > 3 ? 3 : products.length,
+                          itemBuilder: (_, i) => ProductCard(
+                            product: products[i],
+                            onTap: () => context.push('/product/${products[i].id}'),
+                          ),
+                        );
+                      }
+                      if (trending.isLoading) {
+                        return GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
@@ -126,31 +145,9 @@ class HomeScreen extends ConsumerWidget {
                               ),
                           itemCount: 3,
                           itemBuilder: (_, _) => _PlaceholderProductCard(),
-                        ),
-                        error: (_, _) => const SizedBox.shrink(),
-                        data: (products) => products.isEmpty
-                            ? const SizedBox.shrink()
-                            : GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      childAspectRatio: 0.54,
-                                      crossAxisSpacing: 12,
-                                      mainAxisSpacing: 12,
-                                    ),
-                                itemCount: products.length > 3
-                                    ? 3
-                                    : products.length,
-                                itemBuilder: (_, i) => ProductCard(
-                                  product: products[i],
-                                  onTap: () => context.push(
-                                    '/product/${products[i].id}',
-                                  ),
-                                ),
-                              ),
-                      );
+                        );
+                      }
+                      return const SizedBox.shrink();
                     },
                   ),
                   const SizedBox(height: 28),
@@ -221,8 +218,27 @@ class HomeScreen extends ConsumerWidget {
                   Consumer(
                     builder: (context, ref, _) {
                       final featured = ref.watch(featuredProductsProvider);
-                      return featured.when(
-                        loading: () => GridView.builder(
+                      final products = featured.value;
+                      if (products != null && products.isNotEmpty) {
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                childAspectRatio: 0.54,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: products.length > 3 ? 3 : products.length,
+                          itemBuilder: (_, i) => ProductCard(
+                            product: products[i],
+                            onTap: () => context.push('/product/${products[i].id}'),
+                          ),
+                        );
+                      }
+                      if (featured.isLoading) {
+                        return GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
@@ -234,31 +250,9 @@ class HomeScreen extends ConsumerWidget {
                               ),
                           itemCount: 3,
                           itemBuilder: (_, _) => _PlaceholderProductCard(),
-                        ),
-                        error: (_, _) => const SizedBox.shrink(),
-                        data: (products) => products.isEmpty
-                            ? const SizedBox.shrink()
-                            : GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      childAspectRatio: 0.54,
-                                      crossAxisSpacing: 12,
-                                      mainAxisSpacing: 12,
-                                    ),
-                                itemCount: products.length > 3
-                                    ? 3
-                                    : products.length,
-                                itemBuilder: (_, i) => ProductCard(
-                                  product: products[i],
-                                  onTap: () => context.push(
-                                    '/product/${products[i].id}',
-                                  ),
-                                ),
-                              ),
-                      );
+                        );
+                      }
+                      return const SizedBox.shrink();
                     },
                   ),
                   const SizedBox(height: 28),
