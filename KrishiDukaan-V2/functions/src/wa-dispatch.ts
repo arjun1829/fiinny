@@ -20,11 +20,9 @@ const WEBHOOK_REGION = "us-central1";
 // and injects them as process.env.<NAME> in each function's execution context.
 const WA_ACCESS_TOKEN         = defineSecret("WA_ACCESS_TOKEN");
 const WA_PHONE_NUMBER_ID      = defineSecret("WA_PHONE_NUMBER_ID");
+const WA_WABA_ID              = defineSecret("WA_WABA_ID");
 const WA_APP_SECRET           = defineSecret("WA_APP_SECRET");
 const WA_WEBHOOK_VERIFY_TOKEN = defineSecret("WA_WEBHOOK_VERIFY_TOKEN");
-
-// WA_TEMPLATE_LANGUAGE is set in functions/.env (not a secret).
-// queue.ts reads it via process.env.WA_TEMPLATE_LANGUAGE at runtime.
 
 
 /**
@@ -36,7 +34,7 @@ export const sendWaNotification = onDocumentCreated(
   {
     document: "waNotifications/{id}",
     region: REGION,
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID],
   },
   async (event) => {
     await processSingleNotification(event.params.id);
@@ -53,7 +51,7 @@ export const retryWaNotifications = onSchedule(
     region: REGION,
     timeoutSeconds: 120,
     memory: "256MiB",
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID],
   },
   async () => {
     await resetStuckAndFailed(25);

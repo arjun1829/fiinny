@@ -689,7 +689,9 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       }
 
       const template = isOnboarded ? "product_assignment_onboarded" : "product_assignment_pending_signup";
-      const payload: Record<string, string> = { manufacturerName: mfr, productName, productId };
+      // Retailer name: prefer store name on the product copy, fall back to profile lookup
+      const retailerName = String(d.store ?? d.shopName ?? "").trim() || await displayName(retailerPhone, retailerPhone);
+      const payload: Record<string, string> = { retailerName, manufacturerName: mfr, productName, productId };
       if (!isOnboarded && inviteCode) payload.inviteCode = inviteCode;
 
       logger.info("[notifyRetailerOnAssignment] before queueWaNotification", { template, isOnboarded });
@@ -738,6 +740,8 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
     logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
     if (retailerPhone) {
       const inviteCode = String(d.inviteCode ?? "").trim();
+      // Retailer name: prefer shopName stored on the invite doc, fall back to profile lookup
+      const retailerName = String(d.shopName ?? "").trim() || await displayName(retailerPhone, retailerPhone);
       logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
       await queueWaNotification(
         retailerPhone,
@@ -745,7 +749,7 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
         {
           template: "retailer_onboarding",
           type: "onboarding",
-          payload: { manufacturerName: mfr, inviteCode },
+          payload: { retailerName, manufacturerName: mfr, inviteCode },
           source: { event: "retailer_network_add", entityType: "manufacturerRetailer", entityId: event.params.docId },
         }
       );
