@@ -120,6 +120,8 @@ async function saveIncomingMessage(
     (msg.button as Record<string, string> | undefined)?.text ??
     null;
 
+  const msgTs = Timestamp.fromMillis(parseInt(String(msg.timestamp ?? "0"), 10) * 1000);
+
   await db
     .collection("waIncomingMessages")
     .doc(String(msg.id ?? ""))
@@ -130,12 +132,33 @@ async function saveIncomingMessage(
         messageId: msg.id,
         messageType: msg.type,
         messageText: text,
-        timestamp: Timestamp.fromMillis(parseInt(String(msg.timestamp ?? "0"), 10) * 1000),
+        timestamp: msgTs,
         receivedAt: FieldValue.serverTimestamp(),
         rawPayload: msg,
       },
       { merge: false }
     );
+
+  // Update conversation metadata so the admin inbox has unread counts and window tracking.
+  // Wrapped in try/catch so a failure here never blocks the primary write above.
+  try {
+    await db
+      .collection("waConversations")
+      .doc(waId)
+      .set(
+        {
+          phone: waId,
+          lastIncomingAt: msgTs,
+          lastIncomingText: text ?? "",
+          status: "open",
+          unreadCount: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+  } catch (err) {
+    console.error("[Webhook] Failed to update waConversations metadata:", err);
+  }
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
