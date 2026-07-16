@@ -483,6 +483,14 @@ export function Navbar({
                 >
                   {t('blog')}
                 </a>
+                <a
+                  href="/reels"
+                  data-tour-nav="reels"
+                  onClick={() => setIsMobileMoreOpen(false)}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  AgriReels
+                </a>
                 <button
                   type="button"
                   onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
