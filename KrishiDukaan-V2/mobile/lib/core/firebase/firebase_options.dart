@@ -12,10 +12,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return _isUat ? _androidUat : _androidProd;
       case TargetPlatform.iOS:
-        if (_isUat) {
-          throw UnsupportedError('iOS UAT flavor is not configured yet.');
-        }
-        return _iosProd;
+        return _isUat ? _iOSUat : _iOSProd;
       default:
         return _isUat ? _webUat : _webProd;
     }
@@ -49,6 +46,18 @@ class DefaultFirebaseOptions {
     measurementId: 'G-7MEFGCD4EX',
   );
 
+  static const FirebaseOptions _iOSProd = FirebaseOptions(
+    apiKey: 'AIzaSyCBXeLPoQA-ajsdsxgvjXD_kRpVtrRDyic',
+    appId: '1:650303885415:ios:4ba023025354cd4b2b84c2',
+    messagingSenderId: '650303885415',
+    projectId: 'krishidukan-e8315',
+    storageBucket: 'krishidukan-e8315.firebasestorage.app',
+    iosBundleId: 'com.karanarjuntechnologies.KrishiDukan',
+  );
+
+  // UAT iOS — using prod for now until a UAT iOS app is registered in Firebase
+  static const FirebaseOptions _iOSUat = _iOSProd;
+
   // ─── UAT (karan-arjun-uat) ────────────────────────────────────────────────
   static const FirebaseOptions _androidUat = FirebaseOptions(
     apiKey: 'AIzaSyDJHplQrjXKVpPOfqr7hBcjU93iPKwVu2g',
@@ -71,4 +80,5 @@ class DefaultFirebaseOptions {
   // Keep old names as aliases so any external references don't break.
   static FirebaseOptions get android => _isUat ? _androidUat : _androidProd;
   static FirebaseOptions get web => _isUat ? _webUat : _webProd;
+  static FirebaseOptions get ios => _isUat ? _iOSUat : _iOSProd;
 }

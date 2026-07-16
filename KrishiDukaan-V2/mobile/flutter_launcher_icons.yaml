@@ -1,6 +1,6 @@
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   # Place your 1024x1024 app icon at assets/icons/app_icon.png
   image_path: "assets/icons/app_icon.png"
   min_sdk_android: 21
