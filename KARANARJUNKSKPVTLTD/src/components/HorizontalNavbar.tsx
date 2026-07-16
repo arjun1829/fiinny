@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, BarChart3, Layers, ReceiptText, Activity, FileText, ClipboardList, Package, ShieldAlert } from 'lucide-react';
+import { Home, BarChart3, Layers, ReceiptText, Activity, FileText, ClipboardList, Package, ShieldAlert, Calculator } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AppScreen } from '../contexts/AuthContext';
 
@@ -8,10 +8,11 @@ const PRIORITY_NAV = [
   { path: '/b2c-dashboard',    label: 'B2C Dashboard',    icon: <BarChart3 size={15} />,      screenKey: 'b2c_dashboard' as AppScreen },
   { path: '/analytics',        label: 'Analytics',        icon: <Layers size={15} />,         screenKey: 'analytics' as AppScreen },
   { path: '/worklist',         label: 'Worklist',          icon: <ReceiptText size={15} />,    screenKey: 'worklist' as AppScreen },
+  { path: '/pos',              label: 'POS Billing',       icon: <Calculator size={15} />,     screenKey: 'pos' as AppScreen },
   { path: '/supplier-ledger', label: 'Supplier Ledger',   icon: <ClipboardList size={15} />,  screenKey: 'worklist' as AppScreen },
   { path: '/inventory',        label: 'Inventory',         icon: <Package size={15} />,        screenKey: 'inventory' as AppScreen },
   { path: '/administration',   label: 'Administration',    icon: <ShieldAlert size={15} />,    screenKey: 'admin' as AppScreen },
-  { path: '/b2b-invoice',      label: 'Billing & Invoice', icon: <ReceiptText size={15} />,   screenKey: 'worklist' as AppScreen },
+  { path: '/b2b-invoice',      label: 'B2B GST Invoice', icon: <ReceiptText size={15} />,   screenKey: 'worklist' as AppScreen },
   { path: '/barcode',          label: 'Barcode Labels',    icon: <Activity size={15} />,       screenKey: 'inventory' as AppScreen },
   { path: '/gst-reports',      label: 'GST Reports',      icon: <FileText size={15} />,       screenKey: 'analytics' as AppScreen },
   { path: '/order-history',    label: 'Audit Log',        icon: <ClipboardList size={15} />,  screenKey: 'order_history' as AppScreen },

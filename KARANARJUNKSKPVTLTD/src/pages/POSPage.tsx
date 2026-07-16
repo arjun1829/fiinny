@@ -19,6 +19,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { resolveDateRange, DATE_RANGE_PERIODS, type DateRangePeriod } from '../utils/dateRanges';
 import { AGRI_CATEGORIES } from '../utils/constants';
 import { fetchInvoiceTemplate, fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -195,9 +196,15 @@ export default function POSPage() {
     const [showInsightsPanel, setShowInsightsPanel] = useState(false);
     const [insightsTab, setInsightsTab] = useState<'bills' | 'customer' | 'today'>('bills');
     const [recentOrders, setRecentOrders] = useState<any[]>([]);
-    const [todayOrders, setTodayOrders] = useState<any[]>([]);
     const [customerRetailerDoc, setCustomerRetailerDoc] = useState<any>(null);
     const [reprintOrder, setReprintOrder] = useState<any>(null);
+
+    // Operations Analytics ("Today" tab) — period selector + the orders it resolves to.
+    const [analyticsPeriod, setAnalyticsPeriod] = useState<DateRangePeriod>('today');
+    const [analyticsCustomDate, setAnalyticsCustomDate] = useState('');
+    const [analyticsCustomFrom, setAnalyticsCustomFrom] = useState('');
+    const [analyticsCustomTo, setAnalyticsCustomTo] = useState('');
+    const [periodOrders, setPeriodOrders] = useState<any[]>([]);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -311,19 +318,23 @@ export default function POSPage() {
         return () => unsub();
     }, [tenantId, showInsightsPanel]);
 
-    // Today's Ops Dashboard: date-scoped query so totals stay accurate even
-    // past the 50-doc window the Recent Bills list uses.
+    // Operations Analytics ("Today" tab): date-scoped query so totals stay
+    // accurate even past the 50-doc window the Recent Bills list uses. Scope
+    // follows the selected period (defaults to today, preserving prior behavior).
     useEffect(() => {
         if (!tenantId || !showInsightsPanel) return;
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
+        const { start, end } = resolveDateRange(analyticsPeriod, analyticsCustomDate, analyticsCustomFrom, analyticsCustomTo);
+        const col = getTenantCollection(db, tenantId, 'salesOrders');
+        const q = start
+            ? query(col, where('createdAt', '>=', start), where('createdAt', '<=', end))
+            : query(col, where('createdAt', '<=', end));
         const unsub = onSnapshot(
-            query(getTenantCollection(db, tenantId, 'salesOrders'), where('createdAt', '>=', startOfToday)),
-            (snap) => setTodayOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isPosOrder)),
-            () => setTodayOrders([]),
+            q,
+            (snap) => setPeriodOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isPosOrder)),
+            () => setPeriodOrders([]),
         );
         return () => unsub();
-    }, [tenantId, showInsightsPanel]);
+    }, [tenantId, showInsightsPanel, analyticsPeriod, analyticsCustomDate, analyticsCustomFrom, analyticsCustomTo]);
 
     // Selected customer's retailer record (outstanding balance) for the panel only —
     // independent of handlePhoneLookup, which drives autofill at checkout time.
@@ -373,15 +384,36 @@ export default function POSPage() {
     const loyaltyDiscount = effectiveRedeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
     const grandTotal = Math.max(0, cartSubtotal - loyaltyDiscount);
 
+    // Tracks which phone number (if any) the currently-displayed name/address/pin
+    // were auto-populated from, so a lookup miss only clears fields *we* set —
+    // never text the cashier typed in manually for a genuine new walk-in.
+    const lastMatchedPhoneRef = useRef<string | null>(null);
+
     const handlePhoneLookup = async () => {
         if (!tenantId || customer.phone.length < 5) return;
         const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1));
         const snaps = await getDocs(q);
         if (!snaps.empty) {
             const data = snaps.docs[0].data();
+            lastMatchedPhoneRef.current = customer.phone;
             setCustomer({ ...customer, name: data.name ?? customer.name, address: data.atPost ?? '', pin: data.pin ?? '' });
+        } else if (lastMatchedPhoneRef.current !== null && lastMatchedPhoneRef.current !== customer.phone) {
+            // The number that produced this auto-fill no longer matches (edited/changed) —
+            // revert to a clean walk-in state instead of leaving the stale match displayed.
+            lastMatchedPhoneRef.current = null;
+            setCustomer({ ...customer, name: 'Walk-in Customer', address: '', pin: '' });
         }
     };
+
+    // Real-time auto-lookup: mirrors handlePhoneLookup's onBlur trigger but fires
+    // while typing, debounced so we don't query on every keystroke. Same function,
+    // same tenant-scoped query, same 5-char minimum — no lookup logic duplicated.
+    useEffect(() => {
+        if (!tenantId || customer.phone.length < 5) return;
+        const timer = setTimeout(() => { handlePhoneLookup(); }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customer.phone, tenantId]);
 
     const generateBillNumber = async (): Promise<string> => {
         if (!tenantId) return `POS-${Date.now().toString().slice(-6)}`;
@@ -615,9 +647,12 @@ export default function POSPage() {
         return Array.from(counts.values()).sort((a, b) => b.qty - a.qty).slice(0, 3);
     })();
 
-    const todaySummary = (() => {
-        const validOrders = todayOrders.filter(o => o.status !== 'cancelled');
-        const cancelledCount = todayOrders.filter(o => o.status === 'cancelled').length;
+    // Every KPI below is derived from this single filtered dataset (periodOrders,
+    // already POS-only via isPosOrder and date-scoped by the effect above), so
+    // changing the period recomputes every card from the exact same records.
+    const periodSummary = (() => {
+        const validOrders = periodOrders.filter(o => o.status !== 'cancelled');
+        const cancelledCount = periodOrders.filter(o => o.status === 'cancelled').length;
         const totalSales = validOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0);
         const billCount = validOrders.length;
         const sumByMethod = (method: string) => validOrders
@@ -629,6 +664,51 @@ export default function POSPage() {
             .reduce((s, o) => s + (Array.isArray(o.paymentSplits) ? o.paymentSplits
                 .filter((sp: any) => sp.method === method)
                 .reduce((s2: number, sp: any) => s2 + (Number(sp.amount) || 0), 0) : 0), 0);
+        const splitOrders = validOrders.filter(o => o.paymentMethod === 'Split');
+        const cashChangeOrders = validOrders.filter(o => Number(o.changeGiven) > 0);
+
+        const allLineItems = validOrders.flatMap(o => Array.isArray(o.lineItems) ? o.lineItems : []);
+        const totalItemsSold = allLineItems.reduce((s, li: any) => s + (Number(li.quantity) || 0), 0);
+        const taxCollected = allLineItems.reduce((s, li: any) => {
+            const amount = Number(li.amount) || 0;
+            const gstPct = Number(li.gstPct) || 0;
+            // amount is GST-inclusive line total; back out the tax portion.
+            return s + (gstPct > 0 ? amount - (amount / (1 + gstPct / 100)) : 0);
+        }, 0);
+
+        // Most Sold Product / Top Selling Category — category comes from a live
+        // join against the already-loaded `products` list (no extra query); a
+        // product no longer in inventory simply won't contribute a category.
+        const productQty = new Map<string, { name: string; qty: number }>();
+        const categoryQty = new Map<string, number>();
+        allLineItems.forEach((li: any) => {
+            const key = li.productId || li.productName;
+            if (key) {
+                const cur = productQty.get(key) || { name: li.productName || 'Unknown', qty: 0 };
+                cur.qty += Number(li.quantity) || 0;
+                productQty.set(key, cur);
+            }
+            const prod = products.find(p => p.id === li.productId);
+            const cat = (prod?.type || '').trim();
+            if (cat) categoryQty.set(cat, (categoryQty.get(cat) || 0) + (Number(li.quantity) || 0));
+        });
+        const mostSoldProduct = Array.from(productQty.values()).sort((a, b) => b.qty - a.qty)[0]?.name || null;
+        const topCategory = Array.from(categoryQty.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+        // Peak Billing Hour — hour (0-23) with the most bills.
+        const hourCounts = new Map<number, number>();
+        validOrders.forEach(o => {
+            const d = o.createdAt?.toDate?.();
+            if (!d) return;
+            hourCounts.set(d.getHours(), (hourCounts.get(d.getHours()) || 0) + 1);
+        });
+        const peakHourEntry = Array.from(hourCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+        const peakHour = peakHourEntry
+            ? new Date(2000, 0, 1, peakHourEntry[0]).toLocaleTimeString('en-IN', { hour: 'numeric', hour12: true })
+            : null;
+
+        const billTotals = validOrders.map(o => Number(o.grandTotal) || 0);
+
         return {
             totalSales,
             billCount,
@@ -637,6 +717,17 @@ export default function POSPage() {
             upiCollection: sumByMethod('UPI') + splitContribution('UPI'),
             khataCollection: validOrders.filter(o => o.paymentMethod === 'Khata').reduce((s, o) => s + (Number(o.grandTotal) || 0), 0),
             cancelledCount,
+            cashChangeCollection: cashChangeOrders.reduce((s, o) => s + (Number(o.changeGiven) || 0), 0),
+            splitPaymentCollection: splitOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0),
+            loyaltyRedemptions: validOrders.reduce((s, o) => s + (Number(o.loyaltyPointsRedeemed) || 0), 0),
+            discountGiven: validOrders.reduce((s, o) => s + (Number(o.discount) || 0), 0),
+            taxCollected,
+            avgItemsPerBill: billCount > 0 ? totalItemsSold / billCount : 0,
+            highestBill: billTotals.length > 0 ? Math.max(...billTotals) : 0,
+            lowestBill: billTotals.length > 0 ? Math.min(...billTotals) : 0,
+            peakHour,
+            mostSoldProduct,
+            topCategory,
         };
     })();
 
@@ -1004,7 +1095,7 @@ export default function POSPage() {
 
                         {/* Tabs */}
                         <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.25rem' }}>
-                            {([['bills', 'Recent Bills'], ['customer', 'Customer'], ['today', "Today"]] as const).map(([key, label]) => (
+                            {([['bills', 'Recent Bills'], ['customer', 'Customer'], ['today', 'Analytics']] as const).map(([key, label]) => (
                                 <button key={key} onClick={() => setInsightsTab(key)}
                                     style={{ flex: 1, padding: '0.4rem 0.5rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.8rem', border: '1px solid', cursor: 'pointer',
                                         background: insightsTab === key ? 'var(--primary)' : 'var(--surface-raised)',
@@ -1121,23 +1212,76 @@ export default function POSPage() {
                             )
                         )}
 
-                        {/* ── Today's Ops Dashboard ────────────────────────────────────── */}
+                        {/* ── POS Operations Analytics (default: Today) ───────────────────── */}
                         {insightsTab === 'today' && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                                {[
-                                    ['Today’s Sales', `₹${Math.round(todaySummary.totalSales).toLocaleString('en-IN')}`],
-                                    ["Today's Bills", todaySummary.billCount.toString()],
-                                    ['Avg Bill Value', `₹${Math.round(todaySummary.avgBillValue).toLocaleString('en-IN')}`],
-                                    ['Cash Collection', `₹${Math.round(todaySummary.cashCollection).toLocaleString('en-IN')}`],
-                                    ['UPI Collection', `₹${Math.round(todaySummary.upiCollection).toLocaleString('en-IN')}`],
-                                    ['Khata Collection', `₹${Math.round(todaySummary.khataCollection).toLocaleString('en-IN')}`],
-                                    ['Cancelled Bills', todaySummary.cancelledCount.toString()],
-                                ].map(([label, value]) => (
-                                    <div key={label} className="glass-panel" style={{ padding: '0.9rem' }}>
-                                        <p style={{ margin: '0 0 0.3rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</p>
-                                        <p style={{ margin: 0, fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{value}</p>
+                            <div>
+                                {/* Period selector */}
+                                <select
+                                    value={analyticsPeriod}
+                                    onChange={e => setAnalyticsPeriod(e.target.value as DateRangePeriod)}
+                                    style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+                                    {DATE_RANGE_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                                </select>
+
+                                {analyticsPeriod === 'customDate' && (
+                                    <input type="date" value={analyticsCustomDate} onChange={e => setAnalyticsCustomDate(e.target.value)}
+                                        className="input-field" style={{ width: '100%', marginBottom: '0.75rem', fontSize: '0.85rem' }} />
+                                )}
+                                {analyticsPeriod === 'customRange' && (
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                        <input type="date" value={analyticsCustomFrom} onChange={e => setAnalyticsCustomFrom(e.target.value)}
+                                            className="input-field" style={{ flex: 1, fontSize: '0.85rem' }} placeholder="From" />
+                                        <input type="date" value={analyticsCustomTo} onChange={e => setAnalyticsCustomTo(e.target.value)}
+                                            className="input-field" style={{ flex: 1, fontSize: '0.85rem' }} placeholder="To" />
                                     </div>
-                                ))}
+                                )}
+
+                                {/* Core KPIs */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    {[
+                                        ['Total Sales', `₹${Math.round(periodSummary.totalSales).toLocaleString('en-IN')}`],
+                                        ['Total Bills', periodSummary.billCount.toString()],
+                                        ['Avg Bill Value', `₹${Math.round(periodSummary.avgBillValue).toLocaleString('en-IN')}`],
+                                        ['Cash Collection', `₹${Math.round(periodSummary.cashCollection).toLocaleString('en-IN')}`],
+                                        ['UPI Collection', `₹${Math.round(periodSummary.upiCollection).toLocaleString('en-IN')}`],
+                                        ['Khata Collection', `₹${Math.round(periodSummary.khataCollection).toLocaleString('en-IN')}`],
+                                        ['Cancelled Bills', periodSummary.cancelledCount.toString()],
+                                    ].map(([label, value]) => (
+                                        <div key={label} className="glass-panel" style={{ padding: '0.9rem' }}>
+                                            <p style={{ margin: '0 0 0.3rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</p>
+                                            <p style={{ margin: 0, fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Additional operational KPIs — only shown when there's data to back them */}
+                                {periodSummary.billCount > 0 && (
+                                    <>
+                                        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '1.1rem 0 0.6rem' }}>
+                                            More Details
+                                        </p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                            {([
+                                                ['Cash+Change Collection', periodSummary.cashChangeCollection > 0 ? `₹${Math.round(periodSummary.cashChangeCollection).toLocaleString('en-IN')}` : null],
+                                                ['Split Payment Collection', periodSummary.splitPaymentCollection > 0 ? `₹${Math.round(periodSummary.splitPaymentCollection).toLocaleString('en-IN')}` : null],
+                                                ['Loyalty Redemptions', periodSummary.loyaltyRedemptions > 0 ? `${periodSummary.loyaltyRedemptions.toLocaleString('en-IN')} pts` : null],
+                                                ['Discount Given', periodSummary.discountGiven > 0 ? `₹${Math.round(periodSummary.discountGiven).toLocaleString('en-IN')}` : null],
+                                                ['Tax Collected', periodSummary.taxCollected > 0 ? `₹${Math.round(periodSummary.taxCollected).toLocaleString('en-IN')}` : null],
+                                                ['Avg Items / Bill', periodSummary.avgItemsPerBill.toFixed(1)],
+                                                ['Highest Bill', `₹${Math.round(periodSummary.highestBill).toLocaleString('en-IN')}`],
+                                                ['Lowest Bill', `₹${Math.round(periodSummary.lowestBill).toLocaleString('en-IN')}`],
+                                                ['Peak Billing Hour', periodSummary.peakHour],
+                                                ['Most Sold Product', periodSummary.mostSoldProduct],
+                                                ['Top Selling Category', periodSummary.topCategory],
+                                            ] as [string, string | null][]).filter(([, value]) => value !== null).map(([label, value]) => (
+                                                <div key={label} className="glass-panel" style={{ padding: '0.9rem' }}>
+                                                    <p style={{ margin: '0 0 0.3rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</p>
+                                                    <p style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
