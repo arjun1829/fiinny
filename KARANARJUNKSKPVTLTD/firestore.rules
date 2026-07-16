@@ -22,6 +22,11 @@ service cloud.firestore {
       let data = getUserData();
       return data != null && (data.role == 'admin' || data.role == 'analyst' || data.role == 'master');
     }
+
+    function isSales() {
+      let data = getUserData();
+      return data != null && data.role == 'sales';
+    }
     
     // Users collection
     match /users/{userId} {
@@ -51,17 +56,18 @@ service cloud.firestore {
     
     match /salesOrders/{soId} {
       allow read: if request.auth != null && (
-        isAdminOrAnalyst() ||
+        isAdminOrAnalyst() || isSales() ||
         (hasRole('retailer') && resource.data.retailerId == getLinkedId()) ||
         (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
       );
-      allow update: if request.auth != null && (isAdminOrAnalyst() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
-      allow create, delete: if request.auth != null && isAdminOrAnalyst();
+      allow update: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
+      allow create: if request.auth != null && (isAdminOrAnalyst() || isSales());
+      allow delete: if request.auth != null && isAdminOrAnalyst();
     }
-    
+
     match /orders/{oId} {
       allow read: if request.auth != null && (
-        isAdminOrAnalyst() || 
+        isAdminOrAnalyst() || isSales() ||
         (hasRole('retailer') && resource.data.retailerId == getLinkedId())
       );
       allow write: if request.auth != null && isAdminOrAnalyst();
@@ -139,37 +145,38 @@ service cloud.firestore {
       }
 
       match /retailers/{rId} {
-        allow read: if request.auth != null && (isAdminOrAnalyst() || (hasRole('retailer') && getLinkedId() == rId));
+        allow read: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('retailer') && getLinkedId() == rId));
         allow write: if request.auth != null && isAdminOrAnalyst();
-        
+
         match /{subcollection=**} {
           allow read, write: if request.auth != null && (isAdminOrAnalyst() || (hasRole('retailer') && getLinkedId() == rId));
         }
       }
-      
+
       match /manufacturers/{mId} {
         allow read: if request.auth != null && (isAdminOrAnalyst() || (hasRole('manufacturer') && getLinkedId() == mId));
         allow write: if request.auth != null && isAdminOrAnalyst();
       }
-      
+
       match /salesOrders/{soId} {
         allow read: if request.auth != null && (
-          isAdminOrAnalyst() ||
+          isAdminOrAnalyst() || isSales() ||
           (hasRole('retailer') && resource.data.retailerId == getLinkedId()) ||
           (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
         );
-        allow update: if request.auth != null && (isAdminOrAnalyst() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
-        allow create, delete: if request.auth != null && isAdminOrAnalyst();
+        allow update: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
+        allow create: if request.auth != null && (isAdminOrAnalyst() || isSales());
+        allow delete: if request.auth != null && isAdminOrAnalyst();
       }
-      
+
       match /orders/{oId} {
         allow read: if request.auth != null && (
-          isAdminOrAnalyst() || 
+          isAdminOrAnalyst() || isSales() ||
           (hasRole('retailer') && resource.data.retailerId == getLinkedId())
         );
         allow write: if request.auth != null && isAdminOrAnalyst();
       }
-      
+
       match /onlineOrders/{orderId} {
         allow read, write: if request.auth != null && isAdminOrAnalyst();
       }

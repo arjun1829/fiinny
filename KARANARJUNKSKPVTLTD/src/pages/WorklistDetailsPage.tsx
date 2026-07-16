@@ -92,6 +92,7 @@ export default function WorklistDetailsPage() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { userRole, tenantId } = useAuth();
+    const isSales = userRole === 'sales';
     const { t } = useTranslation();
     const { getSchema: _getSchema } = useSchema(); // kept for schema referencing
 
@@ -736,6 +737,13 @@ export default function WorklistDetailsPage() {
                 <ArrowLeft size={16} /> {t('worklist_details.back_to_worklist')}
             </button>
 
+            {/* View-only notice for sales users */}
+            {isSales && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1rem', marginBottom: '1rem', background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.25)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--secondary-dark)' }}>
+                    👁 View-only mode — you can inspect all data but cannot modify orders, payments or notes.
+                </div>
+            )}
+
             {/* Header Profile Card */}
             <div className="glass-panel" style={{ padding: '2rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
@@ -758,9 +766,11 @@ export default function WorklistDetailsPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary animate-pulse" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                        ₹ {t('worklist_details.record_payment')}
-                    </button>
+                    {!isSales && (
+                        <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary animate-pulse" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                            ₹ {t('worklist_details.record_payment')}
+                        </button>
+                    )}
                     {retailer?.number && (
                         <a href={`tel:${retailer.number}`} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem', textDecoration: 'none' }}>
                             <Phone size={16} /> {t('worklist_details.call')}
@@ -988,13 +998,15 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'tasks' && (
                     <div className="animate-fade-in">
-                        <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-                            <input
-                                required type="text" placeholder={t('worklist_details.add_task_placeholder')}
-                                className="input-field" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
-                            />
-                            <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>+ {t('common.add_new')}</button>
-                        </form>
+                        {!isSales && (
+                            <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+                                <input
+                                    required type="text" placeholder={t('worklist_details.add_task_placeholder')}
+                                    className="input-field" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                                />
+                                <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>+ {t('common.add_new')}</button>
+                            </form>
+                        )}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {tasks.length === 0 ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem' }}>{t('worklist_details.no_tasks')}</p> :
@@ -1016,7 +1028,7 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'notes' && (
                     <div className="animate-fade-in">
-                        <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
+                        {!isSales && <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ flex: '1 1 300px', position: 'relative' }}>
                                 <textarea
                                     required placeholder={t('worklist_details.add_note_placeholder')}
@@ -1046,7 +1058,7 @@ export default function WorklistDetailsPage() {
                                 />
                                 <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '0.5rem' }}>{t('common.save')}</button>
                             </div>
-                        </form>
+                        </form>}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {notes.length === 0 ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem' }}>{t('worklist_details.no_notes')}</p> :
@@ -1076,9 +1088,11 @@ export default function WorklistDetailsPage() {
                                     Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
                                 </span>
                             </div>
-                            <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                                <PlusCircle size={16} /> Add Credit / Payment
-                            </button>
+                            {!isSales && (
+                                <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+                                    <PlusCircle size={16} /> Add Credit / Payment
+                                </button>
+                            )}
                         </div>
 
                         {payments.length === 0 ? (
@@ -1103,14 +1117,16 @@ export default function WorklistDetailsPage() {
                                                     {p.notes && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.notes}</div>}
                                                 </div>
                                             </div>
-                                            <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                                                <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}>
-                                                    <Pencil size={13} /> Edit
-                                                </button>
-                                                <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
-                                                    <Trash2 size={13} />
-                                                </button>
-                                            </div>
+                                            {!isSales && (
+                                                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                                                    <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}>
+                                                        <Pencil size={13} /> Edit
+                                                    </button>
+                                                    <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1130,22 +1146,24 @@ export default function WorklistDetailsPage() {
                             >
                                 <AlertTriangle size={16} /> Outstanding Statement
                             </button>
-                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => navigate(`/sales-order/new?retailerId=${id}`)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
-                                >
-                                    <PlusCircle size={16} /> + New Sales Order
-                                </button>
-                                <button
-                                    className="btn btn-primary animate-pulse"
-                                    onClick={() => navigate(`/b2b-invoice?retailerId=${id}`)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
-                                >
-                                    <FilePen size={16} /> + New B2B GST Invoice
-                                </button>
-                            </div>
+                            {!isSales && (
+                                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => navigate(`/sales-order/new?retailerId=${id}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
+                                    >
+                                        <PlusCircle size={16} /> + New Sales Order
+                                    </button>
+                                    <button
+                                        className="btn btn-primary animate-pulse"
+                                        onClick={() => navigate(`/b2b-invoice?retailerId=${id}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
+                                    >
+                                        <FilePen size={16} /> + New B2B GST Invoice
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Outstanding Invoice Modal */}
@@ -1229,14 +1247,16 @@ export default function WorklistDetailsPage() {
                                             {/* Left: checkbox + order info */}
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem' }}>
-                                                    {/* Selection checkbox */}
-                                                    <button
-                                                        onClick={() => toggleSoSelection(so.id)}
-                                                        title={isSelected ? 'Deselect order' : 'Select order'}
-                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, color: isSelected ? 'var(--primary-light)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}
-                                                    >
-                                                        {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
-                                                    </button>
+                                                    {/* Selection checkbox — hidden in sales view-only mode */}
+                                                    {!isSales && (
+                                                        <button
+                                                            onClick={() => toggleSoSelection(so.id)}
+                                                            title={isSelected ? 'Deselect order' : 'Select order'}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, color: isSelected ? 'var(--primary-light)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}
+                                                        >
+                                                            {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
+                                                        </button>
+                                                    )}
                                                     <span style={{ fontWeight: 700, color: 'var(--primary-light)', fontSize: '1rem' }}>{so.orderNumber || so.invoiceNumber || so.id.slice(-8).toUpperCase()}</span>
                                                     <span style={{ background: `${color}22`, color, padding: '0.15rem 0.6rem', borderRadius: '99px', fontSize: '0.72rem', fontWeight: 700 }}>
                                                         {so.status?.toUpperCase() || 'DRAFT'}
@@ -1265,61 +1285,84 @@ export default function WorklistDetailsPage() {
                                                 )}
                                             </div>
                                         </div>
-                                        {/* Quick-update status dropdowns + payment date + notes */}
-                                        <div style={{ marginTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, whiteSpace: 'nowrap' }}>Quick update:</label>
-                                                <select value={so.status || 'pending'} onChange={e => updateOrderStatus(so.id, 'status', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                                                    <option value="draft">📋 Draft</option>
-                                                    <option value="confirmed">✅ Confirmed</option>
-                                                    <option value="in_transit">🚛 In Transit</option>
-                                                    <option value="dispatched">📦 Dispatched</option>
-                                                    <option value="delivered">🏠 Delivered</option>
-                                                    <option value="cancelled">❌ Cancelled</option>
-                                                    <option value="pending">⏳ Pending</option>
-                                                </select>
-                                                <select value={so.paymentStatus || 'Pending'} onChange={e => updateOrderStatus(so.id, 'paymentStatus', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', cursor: 'pointer' }}>
-                                                    <option value="Pending">💳 Payment Pending</option>
-                                                    <option value="Paid">✅ Payment Done</option>
-                                                    <option value="Partial">🔶 Partial</option>
-                                                </select>
-                                                <select value={so.modeOfPayment || ''} onChange={e => updateOrderStatus(so.id, 'modeOfPayment', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                                                    <option value="">-- Mode --</option>
-                                                    <option value="Cash">💵 Cash</option>
-                                                    <option value="UPI">📱 UPI</option>
-                                                    <option value="Cheque">🏦 Cheque</option>
-                                                    <option value="15 Days">⏱ 15 Days</option>
-                                                    <option value="30 Days">⏱ 30 Days</option>
-                                                    <option value="45 Days">⏱ 45 Days</option>
-                                                    <option value="Credit">💳 Credit</option>
-                                                </select>
-                                                {/* Payment Date */}
-                                                <input type="date" value={orderPayDates[so.id] ?? (so.paymentDate || '')}
-                                                    onChange={e => setOrderPayDates(prev => ({ ...prev, [so.id]: e.target.value }))}
-                                                    title="Payment Date"
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }} />
+                                        {/* Order status — interactive for editors, read-only for sales */}
+                                        {isSales ? (
+                                            <div style={{ marginTop: '0.65rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                {so.status && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)', fontWeight: 600 }}>
+                                                        📦 {so.status.charAt(0).toUpperCase() + so.status.slice(1)}
+                                                    </span>
+                                                )}
+                                                {so.paymentStatus && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', border: `1px solid ${so.paymentStatus === 'Paid' ? '#10b98140' : '#ef444440'}`, fontWeight: 600 }}>
+                                                        💳 {so.paymentStatus}
+                                                    </span>
+                                                )}
+                                                {so.modeOfPayment && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)' }}>
+                                                        {so.modeOfPayment}
+                                                    </span>
+                                                )}
+                                                {so.paymentNotes && (
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{so.paymentNotes}</span>
+                                                )}
                                             </div>
-                                            {/* Notes */}
-                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                <input type="text" placeholder="Payment notes / remarks…" value={orderNotes[so.id] ?? (so.paymentNotes || '')}
-                                                    onChange={e => setOrderNotes(prev => ({ ...prev, [so.id]: e.target.value }))}
-                                                    style={{ flex: 1, fontSize: '0.78rem', padding: '0.3rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
-                                                <button className="btn btn-secondary"
-                                                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', whiteSpace: 'nowrap' }}
-                                                    onClick={async () => {
-                                                        await updateDoc(getTenantDoc(db, tenantId!, 'salesOrders', so.id), {
-                                                            paymentDate: orderPayDates[so.id] ?? so.paymentDate ?? '',
-                                                            paymentNotes: orderNotes[so.id] ?? so.paymentNotes ?? '',
-                                                        });
-                                                    }}>💾 Save</button>
+                                        ) : (
+                                            <div style={{ marginTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                                <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, whiteSpace: 'nowrap' }}>Quick update:</label>
+                                                    <select value={so.status || 'pending'} onChange={e => updateOrderStatus(so.id, 'status', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                        <option value="draft">📋 Draft</option>
+                                                        <option value="confirmed">✅ Confirmed</option>
+                                                        <option value="in_transit">🚛 In Transit</option>
+                                                        <option value="dispatched">📦 Dispatched</option>
+                                                        <option value="delivered">🏠 Delivered</option>
+                                                        <option value="cancelled">❌ Cancelled</option>
+                                                        <option value="pending">⏳ Pending</option>
+                                                    </select>
+                                                    <select value={so.paymentStatus || 'Pending'} onChange={e => updateOrderStatus(so.id, 'paymentStatus', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', cursor: 'pointer' }}>
+                                                        <option value="Pending">💳 Payment Pending</option>
+                                                        <option value="Paid">✅ Payment Done</option>
+                                                        <option value="Partial">🔶 Partial</option>
+                                                    </select>
+                                                    <select value={so.modeOfPayment || ''} onChange={e => updateOrderStatus(so.id, 'modeOfPayment', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                        <option value="">-- Mode --</option>
+                                                        <option value="Cash">💵 Cash</option>
+                                                        <option value="UPI">📱 UPI</option>
+                                                        <option value="Cheque">🏦 Cheque</option>
+                                                        <option value="15 Days">⏱ 15 Days</option>
+                                                        <option value="30 Days">⏱ 30 Days</option>
+                                                        <option value="45 Days">⏱ 45 Days</option>
+                                                        <option value="Credit">💳 Credit</option>
+                                                    </select>
+                                                    {/* Payment Date */}
+                                                    <input type="date" value={orderPayDates[so.id] ?? (so.paymentDate || '')}
+                                                        onChange={e => setOrderPayDates(prev => ({ ...prev, [so.id]: e.target.value }))}
+                                                        title="Payment Date"
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }} />
+                                                </div>
+                                                {/* Notes */}
+                                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                    <input type="text" placeholder="Payment notes / remarks…" value={orderNotes[so.id] ?? (so.paymentNotes || '')}
+                                                        onChange={e => setOrderNotes(prev => ({ ...prev, [so.id]: e.target.value }))}
+                                                        style={{ flex: 1, fontSize: '0.78rem', padding: '0.3rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
+                                                    <button className="btn btn-secondary"
+                                                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', whiteSpace: 'nowrap' }}
+                                                        onClick={async () => {
+                                                            await updateDoc(getTenantDoc(db, tenantId!, 'salesOrders', so.id), {
+                                                                paymentDate: orderPayDates[so.id] ?? so.paymentDate ?? '',
+                                                                paymentNotes: orderNotes[so.id] ?? so.paymentNotes ?? '',
+                                                            });
+                                                        }}>💾 Save</button>
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                         {/* Action buttons */}
                                         <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--surface-border)', flexWrap: 'wrap' }}>
-                                            {outstanding > 0 && (
+                                            {!isSales && outstanding > 0 && (
                                                 <button className="btn btn-primary"
                                                     onClick={() => { setPayOrder(so); setPayOrderAmount(outstanding); setPayOrderNote(''); }}
                                                     title="Record a payment (partial or full) against this invoice"
@@ -1327,13 +1370,15 @@ export default function WorklistDetailsPage() {
                                                     <PlusCircle size={14} /> Add Payment
                                                 </button>
                                             )}
-                                            <button className="btn btn-secondary"
-                                                onClick={() => so.invoiceType === 'B2B_GST'
-                                                    ? navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)
-                                                    : navigate(`/sales-order/${so.id}`)}
-                                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-                                                <FilePen size={14} /> Edit Order
-                                            </button>
+                                            {!isSales && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => so.invoiceType === 'B2B_GST'
+                                                        ? navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)
+                                                        : navigate(`/sales-order/${so.id}`)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <FilePen size={14} /> Edit Order
+                                                </button>
+                                            )}
                                             <button className="btn btn-secondary" onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
                                                 <Printer size={14} /> View / Print Invoice

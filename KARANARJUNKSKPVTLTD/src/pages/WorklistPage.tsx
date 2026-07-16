@@ -33,6 +33,7 @@ interface Retailer {
     id: string;
     name?: string;
     location?: string;
+    district?: string;
     number?: string;
     alternateNumber?: string;
     portfolioSize?: string;
@@ -74,6 +75,12 @@ const MODULE_TABS: { id: ModuleTab; label: string; icon: React.ReactNode }[] = [
 
 export default function WorklistPage() {
     const [moduleTab, setModuleTab] = useState<ModuleTab>('partners');
+    const { userRole } = useAuth();
+
+    const visibleTabs = MODULE_TABS.filter(tab => {
+        if (userRole === 'sales' && tab.id === 'online-orders') return false;
+        return true;
+    });
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -92,7 +99,7 @@ export default function WorklistPage() {
                 overflowX: 'auto',
             }}
             >
-                {MODULE_TABS.map(tab => {
+                {visibleTabs.map(tab => {
                     const active = moduleTab === tab.id;
                     return (
                         <button
@@ -142,7 +149,8 @@ export default function WorklistPage() {
 
 function PartnersTab() {
     const navigate = useNavigate();
-    const { tenantId } = useAuth();
+    const { tenantId, userRole, assignedDistricts } = useAuth();
+    const isSales = userRole === 'sales';
     const { t } = useTranslation();
     const { getSchema } = useSchema();
     const [retailers, setRetailers] = useState<Retailer[]>([]);
@@ -273,7 +281,17 @@ function PartnersTab() {
                     return { ...r, hasPendingOrders: hasPending, closestCreditDays };
                 });
 
-                setRetailers(retailersWithStatus);
+                // District-based access: sales users only see their assigned districts
+                if (userRole === 'sales' && assignedDistricts.length > 0) {
+                    const lower = assignedDistricts.map(d => d.toLowerCase());
+                    setRetailers(retailersWithStatus.filter(r =>
+                        lower.includes((r.district || '').toLowerCase())
+                    ));
+                } else if (userRole === 'sales') {
+                    setRetailers([]); // sales with no districts assigned sees nothing
+                } else {
+                    setRetailers(retailersWithStatus);
+                }
             } catch (error) {
                 console.error('Error fetching retailers: ', error);
             } finally {
@@ -281,7 +299,7 @@ function PartnersTab() {
             }
         };
         fetchRetailers();
-    }, [tenantId]);
+    }, [tenantId, userRole, assignedDistricts.join('|')]);
 
     const processedRetailers = useMemo(() => {
         let result = [...retailers];
@@ -396,6 +414,16 @@ function PartnersTab() {
 
     return (
         <div>
+            {/* District filter indicator for sales users */}
+            {userRole === 'sales' && assignedDistricts.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', padding: '0.55rem 1rem', marginBottom: '1rem', background: 'hsla(152,60%,40%,0.07)', borderRadius: '8px', border: '1px solid hsla(152,60%,40%,0.2)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <Filter size={13} style={{ color: 'var(--primary-light)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, color: 'var(--primary-light)' }}>District filter active:</span>
+                    {assignedDistricts.map(d => (
+                        <span key={d} style={{ padding: '0.15rem 0.55rem', borderRadius: '10px', background: 'hsla(152,60%,40%,0.15)', color: 'var(--primary-light)', fontWeight: 600, fontSize: '0.75rem' }}>{d}</span>
+                    ))}
+                </div>
+            )}
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
@@ -405,15 +433,21 @@ function PartnersTab() {
                     <p style={{ color: 'var(--text-secondary)' }}>B2B wholesale partners — orders, dues and follow-ups.</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <input type="file" accept=".csv" ref={paymentsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'payments')} />
-                    <input type="file" accept=".csv" ref={followupsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'followups')} />
-                    <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Payments CSV Template" onClick={() => downloadTemplate('payments')}><Download size={13} /> T1</button>
-                    <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => paymentsFileRef.current?.click()}><FileSpreadsheet size={14} /> Payments</button>
-                    <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Followups CSV Template" onClick={() => downloadTemplate('followups')}><Download size={13} /> T2</button>
-                    <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => followupsFileRef.current?.click()}><FileSpreadsheet size={14} /> Followups</button>
+                    {!isSales && (
+                        <>
+                            <input type="file" accept=".csv" ref={paymentsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'payments')} />
+                            <input type="file" accept=".csv" ref={followupsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'followups')} />
+                            <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Payments CSV Template" onClick={() => downloadTemplate('payments')}><Download size={13} /> T1</button>
+                            <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => paymentsFileRef.current?.click()}><FileSpreadsheet size={14} /> Payments</button>
+                            <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Followups CSV Template" onClick={() => downloadTemplate('followups')}><Download size={13} /> T2</button>
+                            <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => followupsFileRef.current?.click()}><FileSpreadsheet size={14} /> Followups</button>
+                        </>
+                    )}
                     <button className="btn btn-secondary" onClick={handlePrintUdhari} disabled={processedRetailers.length === 0}><Download size={16} /> Print</button>
                     <button className="btn btn-secondary" onClick={handleExportCSV} disabled={processedRetailers.length === 0}><Download size={16} /> {t('worklist.export_csv')}</button>
-                    <button className="btn btn-primary" onClick={() => navigate('/onboarding')}><UserPlus size={16} /> {t('worklist.add_new')}</button>
+                    {!isSales && (
+                        <button className="btn btn-primary" onClick={() => navigate('/onboarding')}><UserPlus size={16} /> {t('worklist.add_new')}</button>
+                    )}
                 </div>
             </div>
 
@@ -524,9 +558,11 @@ function PartnersTab() {
                     <Store size={48} color="var(--surface-border)" style={{ margin: '0 auto 1rem auto', display: 'block' }} />
                     <h3>{t('worklist.no_retailers_found')}</h3>
                     <p>{t('worklist.no_retailers_found_desc')}</p>
-                    <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/onboarding')}>
-                        <UserPlus size={16} /> Onboard a Partner
-                    </button>
+                    {!isSales && (
+                        <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/onboarding')}>
+                            <UserPlus size={16} /> Onboard a Partner
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div style={{ marginTop: '1rem' }}>
