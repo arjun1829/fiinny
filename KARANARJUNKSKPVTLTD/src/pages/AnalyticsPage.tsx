@@ -4,8 +4,13 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
 import {
+    fetchSupplierLedgerCollections, poAmount, invAmount, pmtAmount,
+    poDateVal, invDateVal, pmtDateVal, docDateMs,
+    type RawSupplierCollections,
+} from '../utils/supplierAnalytics';
+import {
     Activity, IndianRupee, ShoppingCart, TrendingUp,
-    Layers, BarChart3, Target, Zap
+    Layers, BarChart3, Target, Zap, Truck, Building2, Receipt, Wallet, Package,
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -22,6 +27,7 @@ interface RawOrder {
 }
 
 const CH_COLORS = { B2B: '#0ea5e9', B2C: '#f59e0b', Online: '#8b5cf6' };
+const SUPPLIER_COLORS = { purchases: '#f97316', payments: '#10b981' };
 
 const fmtINR = (n: number) => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
@@ -33,6 +39,7 @@ const fmtINR = (n: number) => {
 export function AnalyticsPage() {
     const { tenantId, userRole } = useAuth();
     const [orders, setOrders] = useState<RawOrder[]>([]);
+    const [supplierData, setSupplierData] = useState<RawSupplierCollections | null>(null);
     const [loading, setLoading] = useState(true);
     const [timeRange, setTimeRange] = useState<TimeRange>('month');
     const [chartType, setChartType] = useState<'stacked' | 'bar'>('stacked');
@@ -72,6 +79,12 @@ export function AnalyticsPage() {
                     };
                 });
                 setOrders([...b2bOrders, ...b2cOrders, ...onlineOrders]);
+
+                // Supplier Ledger — read live from source collections (never the
+                // cached suppliers.totalInvoiced/totalPaid fields) so Analytics can
+                // never disagree with the Supplier Ledger detail page, even if a
+                // write path somewhere hasn't refreshed that cache yet.
+                setSupplierData(await fetchSupplierLedgerCollections(db, tenantId));
             } catch (e) {
                 console.error('Analytics fetch error', e);
             } finally {
@@ -81,12 +94,12 @@ export function AnalyticsPage() {
         fetchAll();
     }, [tenantId]);
 
-    // ── Time range filter ──
-    const filteredOrders = useMemo(() => {
+    // ── Time range window — the one filtering engine every widget on this page uses ──
+    const { rangeFrom, rangeTo } = useMemo(() => {
         if (timeRange === 'custom') {
             const from = customFrom ? new Date(customFrom) : new Date(0);
             const to   = customTo   ? new Date(customTo + 'T23:59:59') : new Date();
-            return orders.filter(o => o.createdAt >= from && o.createdAt <= to);
+            return { rangeFrom: from, rangeTo: to };
         }
         const now = new Date();
         const cuts: Record<Exclude<TimeRange,'custom'>, Date> = {
@@ -96,8 +109,12 @@ export function AnalyticsPage() {
             quarter: new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1),
             all:     new Date(0),
         };
-        return orders.filter(o => o.createdAt >= cuts[timeRange as Exclude<TimeRange,'custom'>]);
-    }, [orders, timeRange, customFrom, customTo]);
+        return { rangeFrom: cuts[timeRange as Exclude<TimeRange,'custom'>], rangeTo: now };
+    }, [timeRange, customFrom, customTo]);
+
+    const filteredOrders = useMemo(() => {
+        return orders.filter(o => o.createdAt >= rangeFrom && o.createdAt <= rangeTo);
+    }, [orders, rangeFrom, rangeTo]);
 
     // ── Compute metrics ──
     const metrics = useMemo(() => {
@@ -136,6 +153,101 @@ export function AnalyticsPage() {
         const sorted = Array.from(dailyMap.values()).sort((a, b) => a.isoDate.localeCompare(b.isoDate));
         return { pieData: pie, areaData: sorted };
     }, [filteredOrders, metrics]);
+
+    // ── Supplier metrics — same {rangeFrom, rangeTo} window as every other widget ──
+    const supplierMetrics = useMemo(() => {
+        const empty = {
+            supplierCount: 0, totalPurchases: 0, totalInvoiceCount: 0, totalPOCount: 0,
+            totalOutstanding: 0, totalPaid: 0, avgPurchaseValue: 0, avgOutstanding: 0,
+            topSuppliers: [] as { name: string; purchases: number }[],
+            topOutstanding: [] as { name: string; outstanding: number }[],
+            recentSuppliers: [] as { name: string; createdAt: number }[],
+            trend: [] as { date: string; isoDate: string; purchases: number; payments: number }[],
+        };
+        if (!supplierData) return empty;
+        const { suppliers, purchaseOrders, payments, invoices } = supplierData;
+        const inRange = (ms: number) => ms >= rangeFrom.getTime() && ms <= rangeTo.getTime();
+
+        const posInRange = purchaseOrders.filter(po => inRange(docDateMs(poDateVal(po))));
+        const invsInRange = invoices.filter(inv => inRange(docDateMs(invDateVal(inv))));
+        const pmtsInRange = payments.filter(p => inRange(docDateMs(pmtDateVal(p))));
+
+        const poTotal = posInRange.reduce((s, p) => s + poAmount(p), 0);
+        const invTotal = invsInRange.reduce((s, i) => s + invAmount(i), 0);
+        const totalPurchases = poTotal + invTotal;
+        const totalPaid = pmtsInRange.reduce((s, p) => s + pmtAmount(p), 0);
+        const totalOutstanding = totalPurchases - totalPaid;
+        const totalInvoiceCount = invsInRange.length;
+        const totalPOCount = posInRange.length;
+        const purchaseDocCount = totalPOCount + totalInvoiceCount;
+        const avgPurchaseValue = purchaseDocCount > 0 ? totalPurchases / purchaseDocCount : 0;
+
+        // Per-supplier purchases/outstanding — computed from the same in-range docs
+        // as the totals above, joined by supplierName/supplierId exactly like
+        // supplierLedgerSync.ts, so a supplier's number here always matches their
+        // own ledger detail page for the same range.
+        const bySupplier = new Map<string, { name: string; purchases: number; paid: number }>();
+        suppliers.forEach(s => bySupplier.set(s.id, { name: s.name, purchases: 0, paid: 0 }));
+        posInRange.forEach(po => {
+            const sup = suppliers.find(s => s.name === po.supplierName);
+            if (!sup) return;
+            bySupplier.get(sup.id)!.purchases += poAmount(po);
+        });
+        invsInRange.forEach(inv => {
+            if (!inv.supplierId || !bySupplier.has(inv.supplierId)) return;
+            bySupplier.get(inv.supplierId)!.purchases += invAmount(inv);
+        });
+        pmtsInRange.forEach(p => {
+            const sup = suppliers.find(s => s.name === p.supplierName);
+            if (!sup) return;
+            bySupplier.get(sup.id)!.paid += pmtAmount(p);
+        });
+
+        const perSupplier = Array.from(bySupplier.values());
+        const suppliersWithOutstanding = perSupplier.filter(s => s.purchases > 0 || s.paid > 0);
+        const avgOutstanding = suppliersWithOutstanding.length > 0
+            ? suppliersWithOutstanding.reduce((s, x) => s + (x.purchases - x.paid), 0) / suppliersWithOutstanding.length
+            : 0;
+
+        const topSuppliers = [...perSupplier]
+            .filter(s => s.purchases > 0)
+            .sort((a, b) => b.purchases - a.purchases)
+            .slice(0, 5)
+            .map(s => ({ name: s.name, purchases: s.purchases }));
+
+        const topOutstanding = [...perSupplier]
+            .map(s => ({ name: s.name, outstanding: s.purchases - s.paid }))
+            .filter(s => s.outstanding > 0)
+            .sort((a, b) => b.outstanding - a.outstanding)
+            .slice(0, 5);
+
+        const recentSuppliers = [...suppliers]
+            .map(s => ({ name: s.name, createdAt: docDateMs(s.createdAt) }))
+            .filter(s => s.createdAt > 0)
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .slice(0, 5);
+
+        // Purchase & Payment trend — same daily-bucket shape as the Channel Revenue Timeline.
+        const dailyMap = new Map<string, { date: string; isoDate: string; purchases: number; payments: number }>();
+        const bump = (ms: number, key: 'purchases' | 'payments', amount: number) => {
+            if (!ms) return;
+            const d = new Date(ms);
+            const isoDate = d.toISOString().split('T')[0];
+            const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+            if (!dailyMap.has(isoDate)) dailyMap.set(isoDate, { date: label, isoDate, purchases: 0, payments: 0 });
+            dailyMap.get(isoDate)![key] += amount;
+        };
+        posInRange.forEach(po => bump(docDateMs(poDateVal(po)), 'purchases', poAmount(po)));
+        invsInRange.forEach(inv => bump(docDateMs(invDateVal(inv)), 'purchases', invAmount(inv)));
+        pmtsInRange.forEach(p => bump(docDateMs(pmtDateVal(p)), 'payments', pmtAmount(p)));
+        const trend = Array.from(dailyMap.values()).sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+
+        return {
+            supplierCount: suppliers.length, totalPurchases, totalInvoiceCount, totalPOCount,
+            totalOutstanding, totalPaid, avgPurchaseValue, avgOutstanding,
+            topSuppliers, topOutstanding, recentSuppliers, trend,
+        };
+    }, [supplierData, rangeFrom, rangeTo]);
 
     if (userRole !== 'admin' && userRole !== 'analyst') {
         return <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--danger)' }}>Access Denied.</div>;
@@ -360,6 +472,122 @@ export function AnalyticsPage() {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    {/* Supplier Ledger Analytics */}
+                    <div style={{ marginTop: '2rem' }}>
+                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+                            <Truck size={22} color="var(--primary-light)" /> Supplier Ledger Analytics
+                        </h2>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>Purchases, payables and payments across your supplier base · {timeLabels[timeRange]}.</p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <KpiCard label="Total Suppliers" value={String(supplierMetrics.supplierCount)} sub="active in ledger" icon={Building2} border="#0ea5e9" bg="rgba(14,165,233,0.07)" />
+                            <KpiCard label="Total Purchases" value={fmtINR(supplierMetrics.totalPurchases)} sub={`${supplierMetrics.totalPOCount} POs · ${supplierMetrics.totalInvoiceCount} invoices`} icon={Package} border="#f97316" bg="rgba(249,115,22,0.07)" />
+                            <KpiCard label="Total Outstanding Payables" value={fmtINR(supplierMetrics.totalOutstanding)} sub={timeLabels[timeRange]} icon={IndianRupee} border="#ef4444" bg="rgba(239,68,68,0.07)" />
+                            <KpiCard label="Total Payments Made" value={fmtINR(supplierMetrics.totalPaid)} sub={timeLabels[timeRange]} icon={Wallet} border="#10b981" bg="rgba(16,185,129,0.07)" />
+                            <KpiCard label="Avg Purchase Value" value={fmtINR(supplierMetrics.avgPurchaseValue)} sub="per PO / invoice" icon={Receipt} border="#a78bfa" bg="rgba(167,139,250,0.07)" />
+                            <KpiCard label="Avg Supplier Outstanding" value={fmtINR(supplierMetrics.avgOutstanding)} sub="across active suppliers" icon={TrendingUp} border="#f59e0b" bg="rgba(245,158,11,0.07)" />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem', marginBottom: '1.5rem', alignItems: 'start' }}>
+
+                            {/* Purchase & Payment Trend */}
+                            <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                                <h3 style={{ margin: '0 0 1.25rem', fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <BarChart3 size={20} color="var(--primary-light)" /> Purchase &amp; Payment Trend
+                                </h3>
+                                {supplierMetrics.trend.length > 0 ? (
+                                    <div style={{ height: '380px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <ComposedChart data={supplierMetrics.trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-border)" vertical={false} />
+                                                <XAxis dataKey="date" stroke="var(--text-tertiary)" fontSize={11} tickLine={false} axisLine={false} />
+                                                <YAxis stroke="var(--text-tertiary)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmtINR} />
+                                                <Tooltip contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '10px', color: 'var(--text-primary)' }}
+                                                    formatter={(v, name) => [fmtINR(Number(v)), name]} />
+                                                <Legend iconType="circle" wrapperStyle={{ fontSize: '0.82rem' }} />
+                                                <Bar dataKey="purchases" name="Purchases" fill={SUPPLIER_COLORS.purchases} radius={[4,4,0,0]} />
+                                                <Bar dataKey="payments" name="Payments" fill={SUPPLIER_COLORS.payments} radius={[4,4,0,0]} />
+                                            </ComposedChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                ) : (
+                                    <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '3rem 0' }}>No supplier activity for selected range.</div>
+                                )}
+                            </div>
+
+                            {/* Top Outstanding Suppliers */}
+                            <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                                <h3 style={{ margin: '0 0 1rem', fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <IndianRupee size={20} color="var(--primary-light)" /> Top Outstanding Suppliers
+                                </h3>
+                                {supplierMetrics.topOutstanding.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {supplierMetrics.topOutstanding.map(s => (
+                                            <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.07)', borderLeft: '3px solid #ef4444' }}>
+                                                <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>{s.name}</span>
+                                                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#ef4444', flexShrink: 0 }}>{fmtINR(s.outstanding)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '3rem 0' }}>No outstanding payables.</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Top Suppliers by Purchase Value */}
+                        <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                            <h3 style={{ margin: '0 0 1rem', fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Layers size={20} color="var(--primary-light)" /> Top Suppliers by Purchase Value · {timeRange === 'custom' && customFrom && customTo ? `${customFrom} → ${customTo}` : timeLabels[timeRange]}
+                            </h3>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-secondary)' }}>
+                                            {['Supplier', 'Purchases', 'Contribution %'].map(h => (
+                                                <th key={h} style={{ padding: '0.75rem 1rem', fontWeight: 600, textAlign: h === 'Supplier' ? 'left' : 'right' }}>{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {supplierMetrics.topSuppliers.length === 0 && (
+                                            <tr><td colSpan={3} style={{ padding: '1rem', color: 'var(--text-tertiary)' }}>No purchases recorded for selected range.</td></tr>
+                                        )}
+                                        {supplierMetrics.topSuppliers.map(s => {
+                                            const pct = supplierMetrics.totalPurchases > 0 ? (s.purchases * 100 / supplierMetrics.totalPurchases) : 0;
+                                            return (
+                                                <tr key={s.name} style={{ borderBottom: '1px solid var(--surface-border)' }}
+                                                    onMouseOver={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                                                    onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
+                                                    <td style={{ padding: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{s.name}</td>
+                                                    <td style={{ padding: '1rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>{fmtINR(s.purchases)}</td>
+                                                    <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                                            <div style={{ width: '80px', height: '6px', borderRadius: '99px', background: 'var(--surface-border)', overflow: 'hidden' }}>
+                                                                <div style={{ width: `${pct}%`, height: '100%', background: SUPPLIER_COLORS.purchases, borderRadius: '99px' }} />
+                                                            </div>
+                                                            <span style={{ fontWeight: 700, color: SUPPLIER_COLORS.purchases, minWidth: '3rem' }}>{pct.toFixed(1)}%</span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {supplierMetrics.recentSuppliers.length > 0 && (
+                                <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--surface-border)' }}>
+                                    <p style={{ fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: '0.5rem' }}>Recently Added Suppliers</p>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                        {supplierMetrics.recentSuppliers.map(s => (
+                                            <span key={s.name} style={{ fontSize: '0.78rem', fontWeight: 600, padding: '0.3rem 0.7rem', borderRadius: '99px', background: 'var(--surface-raised)', color: 'var(--text-secondary)' }}>{s.name}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </>

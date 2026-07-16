@@ -143,6 +143,9 @@ class DashboardRepository {
     String? category,
     String? description,
     bool isActive = true,
+    String? sellMode,
+    bool? gstApplicable,
+    double? gstRate,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     await _db.collection('products').add({
@@ -172,7 +175,10 @@ class DashboardRepository {
       if (images.isNotEmpty) 'image': images.first,
       'variants': variants.map((v) => v.toMap()).toList(),
       'isActive': isActive,
-      'isOnline': true,
+      'isOnline': sellMode != 'offline_store_only',
+      'sellMode': sellMode,
+      'gstApplicable': gstApplicable,
+      'gstRate': gstRate,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

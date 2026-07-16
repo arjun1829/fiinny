@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1261,6 +1262,21 @@ class _PaymentCard extends StatelessWidget {
 }
 
 // Top-level Invoice dialog helper
+/// GSTIN lives on retailers/{phone} (canonical, same doc the web dashboard
+/// profile edits and the web invoice reads). Falls back to manufacturers/
+/// and users/ for manufacturer sellers or older profiles.
+Future<String?> _fetchSellerGstin(String phone) async {
+  final db = FirebaseFirestore.instance;
+  for (final col in ['retailers', 'manufacturers', 'users']) {
+    try {
+      final snap = await db.collection(col).doc(phone).get();
+      final gstin = snap.data()?['gstin'] as String?;
+      if (gstin != null && gstin.trim().isNotEmpty) return gstin.trim();
+    } catch (_) {}
+  }
+  return null;
+}
+
 void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerName, String? sellerPhone}) {
   final addressName = order.customerAddress['name'] as String? ?? '';
   final addressText = order.customerAddress['address'] as String? ?? '';
@@ -1335,6 +1351,22 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
                           'Phone: $sellerPhone',
                           style: AppTextStyles.bodySmall,
                         ),
+                      // Seller GSTIN — same source as the web invoice
+                      // (retailers/{phone}.gstin); hidden when not set.
+                      FutureBuilder<String?>(
+                        future: _fetchSellerGstin(
+                            sellerPhone ?? order.sellerId),
+                        builder: (context, snap) {
+                          final gstin = snap.data;
+                          if (gstin == null || gstin.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Text(
+                            'GSTIN: $gstin',
+                            style: AppTextStyles.bodySmall,
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -1466,6 +1498,17 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
                   ],
                 ),
               ),
+            if (order.totalGst > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('GST', style: AppTextStyles.bodySmall),
+                    Text(CurrencyUtils.format(order.totalGst), style: AppTextStyles.bodySmall),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: Row(
@@ -1507,6 +1550,9 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
                   textBuffer.writeln('Subtotal: ${CurrencyUtils.format(order.subtotal)}');
                   if (order.deliveryCharge > 0) {
                     textBuffer.writeln('Delivery Charge: ${CurrencyUtils.format(order.deliveryCharge)}');
+                  }
+                  if (order.totalGst > 0) {
+                    textBuffer.writeln('GST: ${CurrencyUtils.format(order.totalGst)}');
                   }
                   textBuffer.writeln('Grand Total: ${CurrencyUtils.format(order.total)}');
                   textBuffer.writeln('================================');

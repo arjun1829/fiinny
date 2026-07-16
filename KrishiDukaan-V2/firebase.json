@@ -10,6 +10,7 @@
     "indexes": "firestore.indexes.json"
   },
   "storage": {
+    "bucket": "krishidukan-e8315.firebasestorage.app",
     "rules": "storage.rules"
   },
   "hosting": [

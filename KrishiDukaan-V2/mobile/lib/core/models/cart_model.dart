@@ -22,6 +22,13 @@ class CartItemModel {
   final int quantity;
   final String? variantLabel;
 
+  /// Whether GST applies to this product (synced from catalog/listing).
+  final bool gstApplicable;
+
+  /// GST rate in percent (0, 5, 12, 18, 28). Only meaningful when
+  /// [gstApplicable] is true.
+  final double gstRate;
+
   const CartItemModel({
     required this.catalogId,
     required this.catalogName,
@@ -34,6 +41,8 @@ class CartItemModel {
     this.discountPct = 0,
     required this.quantity,
     this.variantLabel,
+    this.gstApplicable = false,
+    this.gstRate = 0,
   }) : originalPrice = originalPrice ?? price;
 
   double get lineTotal => price * quantity;
@@ -48,6 +57,12 @@ class CartItemModel {
   /// Total money saved across the whole line.
   double get lineSavings => unitSavings * quantity;
 
+  /// Per-unit GST amount.
+  double get unitGst => gstApplicable ? price * gstRate / 100 : 0;
+
+  /// Total GST for this line.
+  double get lineGst => unitGst * quantity;
+
   CartItemModel copyWith({
     String? listingId,
     String? sellerPhone,
@@ -56,6 +71,8 @@ class CartItemModel {
     double? originalPrice,
     double? discountPct,
     int? quantity,
+    bool? gstApplicable,
+    double? gstRate,
   }) =>
       CartItemModel(
         catalogId: catalogId,
@@ -69,6 +86,8 @@ class CartItemModel {
         discountPct: discountPct ?? this.discountPct,
         quantity: quantity ?? this.quantity,
         variantLabel: variantLabel,
+        gstApplicable: gstApplicable ?? this.gstApplicable,
+        gstRate: gstRate ?? this.gstRate,
       );
 
   Map<String, dynamic> toJson() => {
@@ -83,6 +102,8 @@ class CartItemModel {
         'discountPct': discountPct,
         'quantity': quantity,
         'variantLabel': variantLabel,
+        'gstApplicable': gstApplicable,
+        'gstRate': gstRate,
       };
 
   factory CartItemModel.fromJson(Map<String, dynamic> j) {
@@ -100,6 +121,8 @@ class CartItemModel {
       discountPct: (j['discountPct'] as num?)?.toDouble() ?? 0,
       quantity: j['quantity'] as int,
       variantLabel: j['variantLabel'] as String?,
+      gstApplicable: j['gstApplicable'] as bool? ?? false,
+      gstRate: (j['gstRate'] as num?)?.toDouble() ?? 0,
     );
   }
 

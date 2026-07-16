@@ -42,13 +42,13 @@ final locationNameProvider = FutureProvider<String>((ref) async {
     );
     if (details != null) {
       if (details.sublocality != null && details.sublocality!.isNotEmpty) {
-        if (details.city != null && details.city!.isNotEmpty) {
+        if (details.city != null && details.city!.isNotEmpty && details.city != details.sublocality) {
           return '${details.sublocality}, ${details.city}';
         }
         return details.sublocality!;
       }
       if (details.city != null && details.city!.isNotEmpty) {
-        if (details.state != null && details.state!.isNotEmpty) {
+        if (details.state != null && details.state!.isNotEmpty && details.state != details.city) {
           return '${details.city}, ${details.state}';
         }
         return details.city!;

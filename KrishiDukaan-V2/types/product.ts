@@ -112,4 +112,13 @@ export type MarketplaceProduct = {
    * Never use the merged effectiveDiscountPct for per-store display.
    */
   sellerDiscounts?: Record<string, number>;
+
+  /**
+   * Every underlying Firestore product doc id that merged into this one card
+   * (the manufacturer canonical `id` plus all retailer/admin copy ids), set by
+   * fetchMarketplaceProducts. Used to (a) resolve a deep-link that targets a
+   * secondary/copy id back to this merged product, and (b) find reels whose
+   * `linkedProductId` points at any of those docs. Falls back to `[id]`.
+   */
+  mergedProductIds?: string[];
 };
