@@ -90,6 +90,17 @@ class ReelsRepository {
         .map((s) => s.docs.map(ReelCommentModel.fromFirestore).toList());
   }
 
+  /// Adds a comment and bumps the reel's comment counter.
+  ///
+  /// Does NOT write to `notifications` — that collection's rules require
+  /// `isAdmin()` on create (any authenticated user writing straight into
+  /// another user's notification feed would let comments/likes/follows be
+  /// spoofed). The `notifyReelOwnerOnComment` Cloud Function trigger on
+  /// `reels/{reelId}/reel_comments/{commentId}` handles the owner
+  /// notification + push server-side instead. A client-side notifications
+  /// write here used to sit in the SAME batch as the comment itself, so the
+  /// whole batch (including the comment) was rejected with
+  /// `PERMISSION_DENIED` the moment it touched notifications.
   Future<void> addComment(
     String reelId,
     String userId,
@@ -97,6 +108,7 @@ class ReelsRepository {
     String text,
   ) async {
     final batch = _db.batch();
+
     final commentRef = _db
         .collection('reels')
         .doc(reelId)
@@ -111,6 +123,7 @@ class ReelsRepository {
     batch.update(_db.collection('reels').doc(reelId), {
       'commentsCount': FieldValue.increment(1),
     });
+
     await batch.commit();
   }
 
@@ -124,9 +137,19 @@ class ReelsRepository {
     return doc.exists;
   }
 
+  /// Toggles a like and adjusts the reel's like counter.
+  ///
+  /// Does NOT write to `notifications` (see [addComment] for why — same
+  /// `isAdmin()`-gated rule). This used to write a notification doc inside
+  /// the SAME transaction as the like, so security rules rejected the whole
+  /// transaction with `PERMISSION_DENIED` — the exact 403 that made liking
+  /// a reel appear completely broken. The `notifyReelOwnerOnLike` Cloud
+  /// Function trigger on `reel_likes/{likeId}` sends the owner notification
+  /// + push server-side instead.
   Future<void> toggleLike(String reelId, String userId) async {
     final likeRef = _db.collection('reel_likes').doc('${reelId}_$userId');
     final reelRef = _db.collection('reels').doc(reelId);
+
     await _db.runTransaction((txn) async {
       final snap = await txn.get(likeRef);
       if (snap.exists) {
@@ -153,6 +176,9 @@ class ReelsRepository {
     return doc.exists;
   }
 
+  /// Toggles a follow. Does NOT write to `notifications` — same rule/reason
+  /// as [addComment]/[toggleLike]. The `notifyShopOwnerOnFollow` Cloud
+  /// Function trigger on `follows/{followId}` handles it server-side.
   Future<void> toggleFollow(String followerId, String shopId) async {
     final ref = _db.collection('follows').doc('${followerId}_$shopId');
     final snap = await ref.get();
@@ -432,14 +458,15 @@ class ReelsRepository {
     await docRef.set({
       'shopOwnerId': shopOwnerId,
       'shopName': shopName,
-      'shopProfilePic': ?shopProfilePic,
+      if (shopProfilePic != null) 'shopProfilePic': shopProfilePic,
       'videoUrl': videoUrl,
-      'thumbnailUrl': ?thumbnailUrl,
+      if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
       'title': title,
       'caption': caption,
-      'linkedProductId': ?linkedProductId,
-      'linkedProductName': ?linkedProductName,
-      'linkedProductImageUrl': ?linkedProductImageUrl,
+      if (linkedProductId != null) 'linkedProductId': linkedProductId,
+      if (linkedProductName != null) 'linkedProductName': linkedProductName,
+      if (linkedProductImageUrl != null)
+        'linkedProductImageUrl': linkedProductImageUrl,
       'taggedShops': taggedShops,
       'taggedShopIds': taggedShopIds,
       if (filterId != null && filterId != 'none') 'filterId': filterId,

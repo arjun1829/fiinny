@@ -414,7 +414,13 @@ final trendingProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) 
 final catalogDetailProvider = FutureProvider.family<CatalogModel?, String>((
   ref,
   catalogId,
-) {
+) async {
+  // Check in-memory list first — avoids a redundant Firestore round-trip when
+  // the marketplace has already loaded all products into the cache.
+  final allAsync = ref.read(allMergedProductsProvider);
+  final cached = allAsync.value?.where((p) => p.id == catalogId).firstOrNull;
+  if (cached != null) return cached;
+  // Fall back to a targeted Firestore fetch (e.g. direct deep-link entry).
   return ref.read(catalogRepositoryProvider).fetchById(catalogId);
 });
 

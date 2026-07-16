@@ -29,14 +29,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link for invite codes -->
+            <!-- Deep link for invite codes and products -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https"
-                      android:host="krishidukan.com"
-                      android:pathPrefix="/signup"/>
+                <data android:scheme="https" android:host="krishidukan.com" />
+                <data android:scheme="https" android:host="karan-arjun-uat.web.app" />
             </intent-filter>
         </activity>
 

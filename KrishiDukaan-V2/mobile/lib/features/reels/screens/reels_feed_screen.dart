@@ -11,6 +11,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
+import '../../../core/utils/format_count.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -1085,11 +1086,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return count.toString();
-  }
+  String _formatCount(int count) => formatCount(count);
 }
 
 // ── Overlay helper widgets ────────────────────────────────────────────────────

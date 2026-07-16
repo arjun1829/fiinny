@@ -78,6 +78,38 @@ class HubAdvisoryModel {
       );
 }
 
+class HubVideoModel {
+  final String id;
+  final String title;
+  final String url;        // YouTube URL or direct video URL
+  final String thumbnail;  // Thumbnail image URL
+  final String description;
+
+  const HubVideoModel({
+    required this.id,
+    required this.title,
+    required this.url,
+    required this.thumbnail,
+    required this.description,
+  });
+
+  factory HubVideoModel.fromMap(Map<String, dynamic> m) => HubVideoModel(
+        id: m['id'] as String? ?? '',
+        title: m['title'] as String? ?? '',
+        url: m['url'] as String? ?? '',
+        thumbnail: m['thumbnail'] as String? ?? '',
+        description: m['description'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'title': title,
+        'url': url,
+        'thumbnail': thumbnail,
+        'description': description,
+      };
+}
+
 class HubGrowthStageModel {
   final String phase;
   final String duration;
@@ -116,6 +148,7 @@ class HubModel {
   final String? soilType;
   final String? waterNeeds;
   final String? bestSeason;
+  final List<HubVideoModel> videos;
 
   const HubModel({
     required this.id,
@@ -133,6 +166,7 @@ class HubModel {
     this.soilType,
     this.waterNeeds,
     this.bestSeason,
+    this.videos = const [],
   });
 
   factory HubModel.fromFirestore(DocumentSnapshot doc) {
@@ -169,6 +203,9 @@ class HubModel {
       soilType: m['soilType'] as String?,
       waterNeeds: m['waterNeeds'] as String?,
       bestSeason: m['bestSeason'] as String?,
+      videos: (m['videos'] as List? ?? [])
+          .map((e) => HubVideoModel.fromMap(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
