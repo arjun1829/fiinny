@@ -5,7 +5,7 @@ import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Ta
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { compressImage } from "../../utils/compressImage";
-import { updateManufacturerProduct, toggleProductActive } from "../_lib/manufacturer-products-firestore";
+import { updateManufacturerProduct, toggleProductActive, syncPriceToRetailers } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import type { InventoryRow } from "../_types/inventory";
 import { useI18n } from "../../i18n/I18nContext";
@@ -432,6 +432,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   const [saving, setSaving]           = useState(false);
   const [toggling, setToggling]       = useState(false);
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [updateRetailerPrices, setUpdateRetailerPrices] = useState(true);
   const [gstApplicable, setGstApplicable] = useState<boolean>(row.gstApplicable ?? false);
   const [gstRate, setGstRate]             = useState<GstRate>(row.gstRate ?? 0);
   const [sellMode, setSellMode]           = useState<"online_delivery" | "offline_store_only">(
@@ -569,6 +570,16 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
       });
+
+      // Sync updated price to all active retailer product copies (unless opted out).
+      // Only fires when the price or variants actually changed to avoid unnecessary writes.
+      const priceChanged =
+        parsedVariants[0].price !== row.price ||
+        JSON.stringify(parsedVariants.map((v) => ({ unit: v.unit, price: v.price }))) !==
+        JSON.stringify((row.variants ?? []).map((v: { unit: string; price: number }) => ({ unit: v.unit, price: v.price })));
+      if (updateRetailerPrices && priceChanged) {
+        await syncPriceToRetailers(row.productId, parsedVariants[0].price, parsedVariants);
+      }
 
       // Update sellMode separately — this cascades to assigned retailer copies.
       if (effectiveSellMode !== row.sellMode) {
@@ -759,6 +770,24 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
             )}
           </div>
 
+          {/* ── Update retailer prices — shown directly below pricing for context ── */}
+          {!row.assignedByManufacturer && row.source !== "manufacturer_assigned" && (
+            <label className="flex items-start gap-3 cursor-pointer select-none rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={updateRetailerPrices}
+                onChange={(e) => setUpdateRetailerPrices(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-outline-variant accent-primary flex-shrink-0"
+              />
+              <div>
+                <p className="text-sm font-medium text-on-surface">Update retailer prices also</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Applies this price change to all assigned retailer product copies. Retailers with custom pricing are unaffected.
+                </p>
+              </div>
+            </label>
+          )}
+
           {/* ── Images ────────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
@@ -886,17 +915,19 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         </div>
 
         {/* Footer */}
-        <div className="border-t border-outline-variant/30 px-5 py-4 flex items-center justify-between gap-3">
-          <button type="button" onClick={onClose}
-            className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors">
-            {t('cancelBtn')}
-          </button>
-          <button type="button" disabled={saving}
-            onClick={handleSave}
-            className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? t('savingBtn') : t('saveBtn')}
-          </button>
+        <div className="border-t border-outline-variant/30 px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={onClose}
+              className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors">
+              {t('cancelBtn')}
+            </button>
+            <button type="button" disabled={saving}
+              onClick={handleSave}
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50 transition-all">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? t('savingBtn') : t('saveBtn')}
+            </button>
+          </div>
         </div>
       </div>
     </>

@@ -521,6 +521,29 @@ service cloud.firestore {
       allow create: if true;
       allow read, write: if isAdmin();
     }
+
+    // ─── WhatsApp inbox ──────────────────────────────────────────────────────
+    // Written by Cloud Functions / webhook (admin SDK, bypasses rules).
+    // Read and write restricted to admins only from the client.
+    match /waIncomingMessages/{msgId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waNotifications/{notifId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waConversations/{phone} {
+      allow read, write: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read, write: if isAdmin();
+      }
+    }
     
        // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
     // Seller-level delivery config (online toggle, weight slabs, coverage).
@@ -673,7 +696,8 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAuthed();
     }
-
+    
+    
     // ─── daySessions ─────────────────────────────────────────────────────────
     // One document per sales executive per working day.
     // The exec owns their own sessions; the Cloud Function (admin SDK) writes

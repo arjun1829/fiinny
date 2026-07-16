@@ -13,7 +13,7 @@ import type { MetaWebhookPayload } from "../types";
  *
  * Uses `crypto.timingSafeEqual` to prevent timing-side-channel attacks.
  */
-function verifyHmacSignature(req: Request, rawBody: Buffer): boolean {
+export function verifyHmacSignature(req: Request, rawBody: Buffer): boolean {
   const appSecret = process.env.WA_APP_SECRET;
   if (!appSecret) {
     // Permissive: no secret configured — accept all POSTs (warned at startup)

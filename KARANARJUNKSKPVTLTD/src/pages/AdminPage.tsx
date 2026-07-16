@@ -23,9 +23,17 @@ export default function AdminPage() {
     const [newName, setNewName] = useState('');
     const [newEmail, setNewEmail] = useState('');
     const [newPassword, setNewPassword] = useState('');
-    const [newRole, setNewRole] = useState<'admin' | 'analyst' | 'retailer' | 'manufacturer' | 'customer'>('analyst');
+    const [newRole, setNewRole] = useState<'admin' | 'analyst' | 'retailer' | 'manufacturer' | 'customer' | 'sales'>('analyst');
+    const [newDistricts, setNewDistricts] = useState<string[]>([]);
+    const [districtInput, setDistrictInput] = useState('');
     const [createLoading, setCreateLoading] = useState(false);
     const [createError, setCreateError] = useState('');
+
+    // Edit Districts (for existing sales users)
+    const [editingDistrictsFor, setEditingDistrictsFor] = useState<string | null>(null);
+    const [editDistrictTags, setEditDistrictTags] = useState<string[]>([]);
+    const [editDistrictInput, setEditDistrictInput] = useState('');
+    const [savingDistricts, setSavingDistricts] = useState(false);
 
     // Invite Retailer States
     const [retailers, setRetailers] = useState<any[]>([]);
@@ -105,7 +113,8 @@ export default function AdminPage() {
                 name: newName,
                 email: newEmail,
                 role: newRole,
-                tenantId: tenantId || 'master', // Default to master or current admin's tenant
+                tenantId: tenantId || 'master',
+                assignedDistricts: newRole === 'sales' ? newDistricts : [],
                 createdAt: serverTimestamp()
             });
 
@@ -118,6 +127,8 @@ export default function AdminPage() {
             setNewEmail('');
             setNewPassword('');
             setNewRole('analyst');
+            setNewDistricts([]);
+            setDistrictInput('');
             setShowCreateForm(false);
             alert(t('admin.create_success', { name: newName }));
 
@@ -179,7 +190,7 @@ export default function AdminPage() {
         } finally { setInviteMfgLoading(false); }
     };
 
-    const handleRoleChange = async (userId: string, newRole: 'admin' | 'analyst' | 'retailer' | 'manufacturer' | 'customer') => {
+    const handleRoleChange = async (userId: string, newRole: 'admin' | 'analyst' | 'retailer' | 'manufacturer' | 'customer' | 'sales') => {
         setUpdatingId(userId);
         try {
             await updateDoc(doc(db, 'users', userId), {
@@ -212,6 +223,19 @@ export default function AdminPage() {
             alert(t('admin.update_error'));
         } finally {
             setUpdateLoading(false);
+        }
+    };
+
+    const handleSaveDistricts = async (userId: string) => {
+        setSavingDistricts(true);
+        try {
+            await updateDoc(doc(db, 'users', userId), { assignedDistricts: editDistrictTags });
+            setUsers(users.map(u => u.id === userId ? { ...u, assignedDistricts: editDistrictTags } : u));
+            setEditingDistrictsFor(null);
+        } catch {
+            alert('Failed to save districts.');
+        } finally {
+            setSavingDistricts(false);
         }
     };
 
@@ -306,14 +330,53 @@ export default function AdminPage() {
                         </div>
                         <div className="input-group" style={{ marginBottom: 0 }}>
                             <label>{t('admin.assign_role')}</label>
-                            <select className="input-field" value={newRole} onChange={e => setNewRole(e.target.value as any)}>
+                            <select className="input-field" value={newRole} onChange={e => { setNewRole(e.target.value as any); setNewDistricts([]); setDistrictInput(''); }}>
                                 <option value="analyst">{t('admin.role_analyst')}</option>
                                 <option value="admin">{t('admin.role_admin')}</option>
+                                <option value="sales">Sales</option>
                                 <option value="retailer">Retailer</option>
                                 <option value="manufacturer">Manufacturer</option>
                                 <option value="customer">Customer</option>
                             </select>
                         </div>
+
+                        {/* District assignment — only shown for sales role */}
+                        {newRole === 'sales' && (
+                            <div className="input-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
+                                <label>Assign Districts <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(press Enter or comma to add)</span></label>
+                                {newDistricts.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                                        {newDistricts.map(d => (
+                                            <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', borderRadius: '10px', background: 'hsla(152,60%,40%,0.12)', color: 'var(--primary-light)', border: '1px solid hsla(152,60%,40%,0.3)', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                {d}
+                                                <button type="button" onClick={() => setNewDistricts(p => p.filter(x => x !== d))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, lineHeight: 1 }}>×</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="e.g. Nashik, Pune"
+                                    value={districtInput}
+                                    onChange={e => setDistrictInput(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            const val = districtInput.trim().replace(/,+$/, '');
+                                            if (val && !newDistricts.includes(val)) setNewDistricts(p => [...p, val]);
+                                            setDistrictInput('');
+                                        }
+                                    }}
+                                    onBlur={() => {
+                                        const val = districtInput.trim().replace(/,+$/, '');
+                                        if (val && !newDistricts.includes(val)) setNewDistricts(p => [...p, val]);
+                                        setDistrictInput('');
+                                    }}
+                                />
+                            </div>
+                        )}
+
                         <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                             <button type="submit" className="btn btn-primary" disabled={createLoading} style={{ minWidth: '150px' }}>
                                 {createLoading ? <Loader2 size={18} className="animate-spin" /> : t('admin.create_button')}
@@ -441,7 +504,8 @@ export default function AdminPage() {
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                     <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{t('admin.current_role')}</span>
                                     <select
                                         value={user.role}
@@ -461,6 +525,7 @@ export default function AdminPage() {
                                     >
                                         <option value="analyst">{t('common.analyst')}</option>
                                         <option value="admin">{t('common.admin')}</option>
+                                        <option value="sales">Sales</option>
                                         <option value="retailer">Retailer</option>
                                         <option value="manufacturer">Manufacturer</option>
                                         <option value="customer">Customer</option>
@@ -486,6 +551,62 @@ export default function AdminPage() {
                                     {updatingId === user.id && (
                                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{t('admin.processing')}</span>
                                     )}
+                                  </div>
+
+                                  {/* District display + inline editor for sales users */}
+                                  {user.role === 'sales' && editingDistrictsFor !== user.id && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Districts:</span>
+                                      {(user.assignedDistricts || []).length === 0
+                                        ? <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>None assigned</span>
+                                        : (user.assignedDistricts as string[]).map((d: string) => (
+                                          <span key={d} style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '8px', background: 'hsla(152,60%,40%,0.1)', color: 'var(--primary-light)', fontWeight: 600, border: '1px solid hsla(152,60%,40%,0.25)' }}>{d}</span>
+                                        ))
+                                      }
+                                      <button
+                                        onClick={() => { setEditingDistrictsFor(user.id); setEditDistrictTags(user.assignedDistricts || []); setEditDistrictInput(''); }}
+                                        style={{ fontSize: '0.72rem', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit' }}
+                                      >Edit</button>
+                                    </div>
+                                  )}
+
+                                  {/* Inline district editor */}
+                                  {user.role === 'sales' && editingDistrictsFor === user.id && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-end', minWidth: '280px' }}>
+                                      {editDistrictTags.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                                          {editDistrictTags.map(d => (
+                                            <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '8px', background: 'hsla(152,60%,40%,0.1)', color: 'var(--primary-light)', fontWeight: 600, border: '1px solid hsla(152,60%,40%,0.25)' }}>
+                                              {d}
+                                              <button type="button" onClick={() => setEditDistrictTags(p => p.filter(x => x !== d))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, lineHeight: 1 }}>×</button>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <input
+                                        type="text"
+                                        className="input-field"
+                                        placeholder="Type district, press Enter"
+                                        value={editDistrictInput}
+                                        style={{ width: '100%', height: '32px', fontSize: '0.82rem' }}
+                                        onChange={e => setEditDistrictInput(e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            const val = editDistrictInput.trim().replace(/,+$/, '');
+                                            if (val && !editDistrictTags.includes(val)) setEditDistrictTags(p => [...p, val]);
+                                            setEditDistrictInput('');
+                                          }
+                                        }}
+                                      />
+                                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                        <button onClick={() => setEditingDistrictsFor(null)} style={{ fontSize: '0.78rem', padding: '0.3rem 0.75rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                                        <button onClick={() => handleSaveDistricts(user.id)} disabled={savingDistricts} style={{ fontSize: '0.78rem', padding: '0.3rem 0.75rem', borderRadius: '6px', border: 'none', background: 'var(--primary-light)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                                          {savingDistricts ? '…' : 'Save'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                             </div>
                         ))}

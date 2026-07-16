@@ -280,6 +280,51 @@ export async function updateManufacturerProduct(
   await updateDoc(ref, patch);
 }
 
+/**
+ * Syncs the manufacturer's updated price/variants to all active retailer product
+ * copies. Skips any copy that has `hasCustomPrice: true` (retailer opted into
+ * their own pricing). The `syncSellerProductToCanonical` Firebase Function
+ * automatically cascades each copy update to the manufacturer product's
+ * availability[] entry.
+ */
+export async function syncPriceToRetailers(
+  manufacturerProductId: string,
+  price: number,
+  variants: { unit: string; price: number; stock?: number }[],
+): Promise<{ updated: number; skipped: number }> {
+  const listingsSnap = await getDocs(
+    query(
+      collection(db, "retailerSeatListings"),
+      where("manufacturerProductId", "==", manufacturerProductId),
+      where("status", "==", "active"),
+    ),
+  );
+
+  if (listingsSnap.empty) return { updated: 0, skipped: 0 };
+
+  const copyIds = listingsSnap.docs
+    .map((d) => String(d.data().productId ?? ""))
+    .filter(Boolean);
+
+  const copySnaps = await Promise.all(
+    copyIds.map((id) => getDoc(doc(db, "products", id))),
+  );
+
+  const batch = writeBatch(db);
+  let updated = 0;
+  let skipped = 0;
+
+  for (const snap of copySnaps) {
+    if (!snap.exists()) continue;
+    if (snap.data().hasCustomPrice === true) { skipped++; continue; }
+    batch.update(snap.ref, { price, variants, updatedAt: serverTimestamp() });
+    updated++;
+  }
+
+  if (updated > 0) await batch.commit();
+  return { updated, skipped };
+}
+
 /** Toggle a product's isActive flag. */
 export async function toggleProductActive(productId: string, isActive: boolean): Promise<void> {
   await updateDoc(doc(db, "products", productId), { isActive, updatedAt: serverTimestamp() });

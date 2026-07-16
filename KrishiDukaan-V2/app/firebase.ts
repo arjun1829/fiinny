@@ -3836,3 +3836,95 @@ export async function adminDeleteUser(
 
   return { productsDeactivated, inventoryDeleted, seatListingsDeleted, subscriptionsDeleted, networkRelationshipsDeleted };
 }
+
+// ── WhatsApp Incoming Messages ────────────────────────────────────────────────
+
+export interface WaIncomingMessage {
+  id: string;
+  phone: string;
+  waId: string;
+  messageText: string;
+  messageType: string;
+  timestamp: any;
+  receivedAt: any;
+  rawPayload?: any;
+}
+
+export interface WaResolvedUser {
+  name: string;
+  businessName: string;
+  role: "retailer" | "manufacturer" | "salesExecutive" | "admin" | "customer" | "unknown";
+}
+
+export interface WaConvMeta {
+  phone: string;
+  status: "open" | "resolved";
+  unreadCount: number;
+  lastIncomingAt?: any;
+  lastIncomingText?: string;
+  lastOutgoingAt?: any;
+  lastOutgoingText?: string;
+  resolvedAt?: any;
+  updatedAt?: any;
+}
+
+export interface WaOutMessage {
+  id: string;
+  direction: "outgoing";
+  text: string | null;
+  messageType: string;
+  timestamp: any;
+  messageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  sentBy: string;
+}
+
+export interface WaNote {
+  id: string;
+  text: string;
+  createdAt: any;
+  createdBy: string;
+}
+
+export async function resolveWaUserByPhone(phone: string): Promise<WaResolvedUser | null> {
+  const tenDigit = phone.replace(/^91/, "");
+  const candidates = Array.from(new Set([phone, tenDigit]));
+
+  for (const p of candidates) {
+    const userSnap = await getDoc(doc(db, "users", p));
+    if (userSnap.exists()) {
+      const d = userSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.shopName || d.businessName || "",
+        role: (d.role as WaResolvedUser["role"]) || "unknown",
+      };
+    }
+  }
+
+  for (const p of candidates) {
+    const retailerSnap = await getDoc(doc(db, "retailers", p));
+    if (retailerSnap.exists()) {
+      const d = retailerSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.shopName || d.businessName || "",
+        role: "retailer",
+      };
+    }
+  }
+
+  for (const p of candidates) {
+    const mfrSnap = await getDoc(doc(db, "manufacturers", p));
+    if (mfrSnap.exists()) {
+      const d = mfrSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.businessName || d.shopName || "",
+        role: "manufacturer",
+      };
+    }
+  }
+
+  return null;
+}
