@@ -50,7 +50,13 @@ void _showFullStoreImage(BuildContext context, String imageUrl) {
 }
 
 class StoreLocatorScreen extends ConsumerStatefulWidget {
-  const StoreLocatorScreen({super.key});
+  // Set when arriving from a "Directions" tap elsewhere in the app (product,
+  // brand, dealer, search suggestion) — the target may not be part of the
+  // public storesByDistanceProvider result set, so it's merged in manually
+  // and the expanded map is opened on it automatically.
+  final StoreModel? initialFocusStore;
+
+  const StoreLocatorScreen({super.key, this.initialFocusStore});
 
   @override
   ConsumerState<StoreLocatorScreen> createState() => _StoreLocatorScreenState();
@@ -72,6 +78,36 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
 
   // Whether the map is expanded (full screen overlay)
   bool _mapExpanded = false;
+
+  StoreModel? _externalFocusStore;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyIncomingFocus(widget.initialFocusStore);
+  }
+
+  @override
+  void didUpdateWidget(covariant StoreLocatorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The screen stays alive inside the bottom-nav's IndexedStack, so a
+    // second "Directions" tap while this tab is already mounted arrives as
+    // a widget update, not a fresh initState.
+    if (widget.initialFocusStore?.id != oldWidget.initialFocusStore?.id ||
+        widget.initialFocusStore?.lat != oldWidget.initialFocusStore?.lat ||
+        widget.initialFocusStore?.lng != oldWidget.initialFocusStore?.lng) {
+      _applyIncomingFocus(widget.initialFocusStore);
+    }
+  }
+
+  void _applyIncomingFocus(StoreModel? store) {
+    if (store == null) return;
+    _externalFocusStore = store;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _openMapExpanded(store);
+    });
+  }
 
   @override
   void dispose() {
@@ -179,7 +215,14 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
             ],
           ),
         ),
-        data: (allStores) {
+        data: (rawStores) {
+          // Merge in a store passed from outside (product/brand/dealer/search)
+          // that might not be part of the public directory, so its pin and
+          // info drawer always render correctly.
+          final focus = _externalFocusStore;
+          final allStores = focus != null && !rawStores.any((s) => s.id == focus.id)
+              ? [...rawStores, focus]
+              : rawStores;
           final stores = _filteredStores(allStores);
           final selected = stores.firstWhere(
             (s) => s.id == _selectedStoreId,

@@ -1,13 +1,16 @@
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/brand_model.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/utils/store_focus_route.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../marketplace/providers/marketplace_provider.dart';
 import '../../marketplace/widgets/review_sheet.dart';
@@ -45,18 +48,27 @@ Future<void> _callNumber(String? phone) async {
   if (await canLaunchUrl(uri)) await launchUrl(uri);
 }
 
-Future<void> _openDirections({double? lat, double? lng, String? query}) async {
-  Uri? uri;
-  if (lat != null && lng != null) {
-    uri = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
-  } else if (query != null && query.isNotEmpty) {
-    uri = Uri.parse(
-        'https://www.google.com/maps/search/${Uri.encodeComponent(query)}');
-  }
-  if (uri != null && await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
+/// Sends the buyer to the Store tab's own map, focused on this location,
+/// instead of jumping straight to the external Google Maps app — reuses the
+/// single in-app map + directions flow shared by product/brand/search taps.
+void _openDirections(
+  BuildContext context,
+  WidgetRef ref, {
+  required String name,
+  String? phone,
+  double? lat,
+  double? lng,
+  String? query,
+}) {
+  context.go(
+    storeFocusRoute(
+      name: name,
+      phone: phone,
+      address: query,
+      lat: lat,
+      lng: lng,
+    ),
+  );
 }
 
 /// Extracts a YouTube video id from either a bare 11-char id (how the brand
@@ -375,7 +387,14 @@ class _BrandStatsHeader extends ConsumerWidget {
                   icon: Icons.location_on_outlined,
                   label: brand.location!,
                   onTap: () => _openDirections(
-                      lat: brand.lat, lng: brand.lng, query: brand.location),
+                    context,
+                    ref,
+                    name: brand.businessName,
+                    phone: manufacturerPhone,
+                    lat: brand.lat,
+                    lng: brand.lng,
+                    query: brand.location,
+                  ),
                 ),
               if (brand.establishedYear != null)
                 _MetaChip(
@@ -538,12 +557,12 @@ class _MetaChip extends StatelessWidget {
 
 // ─── About tab ───────────────────────────────────────────────────────────────
 
-class _AboutTab extends StatelessWidget {
+class _AboutTab extends ConsumerWidget {
   final BrandModel brand;
   const _AboutTab({required this.brand});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -584,9 +603,14 @@ class _AboutTab extends StatelessWidget {
                 icon: Icons.directions_outlined,
                 label: 'Directions',
                 onTap: () => _openDirections(
-                    lat: brand.lat,
-                    lng: brand.lng,
-                    query: brand.fullAddress ?? brand.location),
+                  context,
+                  ref,
+                  name: brand.businessName,
+                  phone: brand.phone,
+                  lat: brand.lat,
+                  lng: brand.lng,
+                  query: brand.fullAddress ?? brand.location,
+                ),
               ),
           ],
         ),
@@ -875,6 +899,12 @@ class _RetailersTabState extends ConsumerState<_RetailersTab> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Map — this manufacturer's own location + ONLY their dealers,
+            // never the global store locator. _brandRetailersProvider already
+            // scopes to manufacturerRetailers where manufacturerPhone ==
+            // this brand, so `retailers` here is correctly pre-filtered.
+            _DealerNetworkMap(brand: widget.brand, retailers: retailers),
+            const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
@@ -916,6 +946,151 @@ class _RetailersTabState extends ConsumerState<_RetailersTab> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Google Map scoped to ONE manufacturer's own network — a green pin for the
+/// manufacturer itself plus a red pin per dealer, never the global store
+/// locator. Auto-fits the camera to whatever points actually have geo data;
+/// renders nothing if none do (e.g. dealers pending address setup).
+class _DealerNetworkMap extends StatefulWidget {
+  final BrandModel brand;
+  final List<BrandRetailerModel> retailers;
+  const _DealerNetworkMap({required this.brand, required this.retailers});
+
+  @override
+  State<_DealerNetworkMap> createState() => _DealerNetworkMapState();
+}
+
+class _DealerNetworkMapState extends State<_DealerNetworkMap> {
+  GoogleMapController? _controller;
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final points = <LatLng>[
+      if (widget.brand.hasGeo)
+        LatLng(widget.brand.lat!, widget.brand.lng!),
+      for (final r in widget.retailers)
+        if (r.hasLocation) LatLng(r.lat!, r.lng!),
+    ];
+    if (points.isEmpty) return const SizedBox.shrink();
+
+    final markers = <Marker>{
+      if (widget.brand.hasGeo)
+        Marker(
+          markerId: const MarkerId('__manufacturer__'),
+          position: LatLng(widget.brand.lat!, widget.brand.lng!),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen),
+          infoWindow: InfoWindow(
+            title: widget.brand.businessName,
+            snippet: 'Manufacturer',
+          ),
+          zIndexInt: 2,
+        ),
+      for (final r in widget.retailers)
+        if (r.hasLocation)
+          Marker(
+            markerId: MarkerId(r.phone),
+            position: LatLng(r.lat!, r.lng!),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueRed),
+            infoWindow: InfoWindow(
+              title: r.displayName,
+              snippet: r.locationLabel,
+            ),
+          ),
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        height: 220,
+        child: Stack(
+          children: [
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: points.first,
+                zoom: 11,
+              ),
+              markers: markers,
+              onMapCreated: (c) {
+                _controller = c;
+                if (points.length > 1) _fitBounds(points);
+              },
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              mapToolbarEnabled: false,
+              compassEnabled: false,
+              rotateGesturesEnabled: false,
+              tiltGesturesEnabled: false,
+            ),
+            // Legend — matches the web brand page's map key.
+            Positioned(
+              left: 10,
+              bottom: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _legendDot(const Color(0xFF15803D)),
+                    const SizedBox(width: 4),
+                    Text('Manufacturer', style: AppTextStyles.caption),
+                    const SizedBox(width: 10),
+                    _legendDot(const Color(0xFFDC2626)),
+                    const SizedBox(width: 4),
+                    Text('Dealers', style: AppTextStyles.caption),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendDot(Color color) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+
+  /// Zooms/pans to fit every pin. Guarded by a post-frame delay — calling
+  /// animateCamera immediately in onMapCreated can race the map's own layout
+  /// on some devices and silently no-op.
+  Future<void> _fitBounds(List<LatLng> points) async {
+    double minLat = points.first.latitude, maxLat = points.first.latitude;
+    double minLng = points.first.longitude, maxLng = points.first.longitude;
+    for (final p in points) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted || _controller == null) return;
+    await _controller!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        48,
+      ),
     );
   }
 }
@@ -1185,12 +1360,12 @@ class _BrandProductCard extends StatelessWidget {
       );
 }
 
-class _RetailerCard extends StatelessWidget {
+class _RetailerCard extends ConsumerWidget {
   final BrandRetailerModel retailer;
   const _RetailerCard({required this.retailer});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1258,6 +1433,10 @@ class _RetailerCard extends StatelessWidget {
                 retailer.locationLabel.isNotEmpty)
               IconButton(
                 onPressed: () => _openDirections(
+                  context,
+                  ref,
+                  name: retailer.displayName,
+                  phone: retailer.phone,
                   lat: retailer.lat,
                   lng: retailer.lng,
                   query:

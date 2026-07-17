@@ -3,12 +3,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/store_model.dart';
 import '../../../core/providers/location_provider.dart';
+import '../../../core/utils/store_focus_route.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
@@ -221,21 +221,16 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
     }
   }
 
-  Future<void> _openStoreLocation(Map<String, dynamic> s) async {
-    final lat = s['lat'];
-    final lng = s['lng'];
-    if (lat != null && lng != null) {
-      final url = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
-      );
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
-        return;
-      }
-    }
-
-    if (!mounted) return;
-    context.go('/stores');
+  void _openStoreLocation(Map<String, dynamic> s) {
+    context.go(
+      storeFocusRoute(
+        name: (s['name'] as String?) ?? 'Store',
+        phone: s['phone'] as String?,
+        id: s['id'] as String?,
+        lat: (s['lat'] as num?)?.toDouble(),
+        lng: (s['lng'] as num?)?.toDouble(),
+      ),
+    );
   }
 
   @override

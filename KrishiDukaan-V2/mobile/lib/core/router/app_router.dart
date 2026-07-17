@@ -11,6 +11,7 @@ import '../../features/marketplace/screens/home_screen.dart';
 import '../../features/marketplace/screens/marketplace_screen.dart';
 import '../../features/marketplace/screens/product_detail_screen.dart';
 import '../../features/marketplace/screens/store_locator_screen.dart';
+import '../models/store_model.dart';
 import '../../features/cart/screens/cart_screen.dart';
 import '../../features/cart/screens/checkout_screen.dart';
 import '../../features/orders/screens/customer_orders_screen.dart';
@@ -505,7 +506,28 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/stores',
-                builder: (_, _) => const StoreLocatorScreen(),
+                builder: (_, state) {
+                  final q = state.uri.queryParameters;
+                  final lat = double.tryParse(q['focusLat'] ?? '');
+                  final lng = double.tryParse(q['focusLng'] ?? '');
+                  final name = q['focusName'];
+                  StoreModel? focus;
+                  if ((lat != null && lng != null) ||
+                      (name != null && name.isNotEmpty)) {
+                    final phone = q['focusPhone'];
+                    focus = StoreModel(
+                      id: q['focusId']?.isNotEmpty == true
+                          ? q['focusId']!
+                          : (phone?.isNotEmpty == true ? phone! : (name ?? 'focus')),
+                      name: name ?? 'Store',
+                      phone: phone,
+                      address: q['focusAddress'],
+                      lat: lat,
+                      lng: lng,
+                    );
+                  }
+                  return StoreLocatorScreen(initialFocusStore: focus);
+                },
               ),
             ],
           ),

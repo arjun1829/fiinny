@@ -11,6 +11,7 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../reels/data/reels_repository.dart';
+import '../data/account_service.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -318,6 +319,27 @@ class _ProfileBody extends ConsumerWidget {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+
+        // Delete account
+        OutlinedButton.icon(
+          onPressed: () => _showDeleteAccountDialog(context, isHindi),
+          icon: const Icon(Icons.delete_forever_outlined,
+              color: AppColors.onSurfaceVariant),
+          label: Text(
+            isHindi ? 'खाता हटाएं' : 'Delete Account',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.onSurfaceVariant),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppColors.divider),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            minimumSize: const Size(double.infinity, 0),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
         Center(
           child: Text(
@@ -329,6 +351,115 @@ class _ProfileBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 80),
+      ],
+    );
+  }
+}
+
+void _showDeleteAccountDialog(BuildContext context, bool isHindi) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _DeleteAccountDialog(isHindi: isHindi),
+  );
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  final bool isHindi;
+  const _DeleteAccountDialog({required this.isHindi});
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _ctrl = TextEditingController();
+  bool _deleting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirm() async {
+    setState(() {
+      _deleting = true;
+      _error = null;
+    });
+    try {
+      await AccountService().deleteMyAccount();
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        Navigator.of(context).pop();
+        context.go('/');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+          _error = 'Failed to delete account. Please try again.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canConfirm = _ctrl.text.trim().toUpperCase() == 'DELETE' && !_deleting;
+    return AlertDialog(
+      title: Text(
+        widget.isHindi ? 'खाता हटाएं' : 'Delete Account',
+        style: AppTextStyles.heading3.copyWith(color: AppColors.error),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.isHindi
+                ? 'यह आपकी प्रोफ़ाइल, लिस्टिंग, सदस्यता, रील्स, रिव्यू और अन्य खाता डेटा को स्थायी रूप से हटा देगा। यह पूर्ववत नहीं किया जा सकता। पुष्टि करने के लिए नीचे DELETE टाइप करें।'
+                : 'This permanently deletes your profile, listings, subscriptions, reels, reviews, and other account data. Past orders/payments are kept for records. This cannot be undone. Type DELETE to confirm.',
+            style: AppTextStyles.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            enabled: !_deleting,
+            textCapitalization: TextCapitalization.characters,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'DELETE',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _deleting ? null : () => Navigator.of(context).pop(),
+          child: Text(widget.isHindi ? 'रद्द करें' : 'Cancel'),
+        ),
+        FilledButton(
+          onPressed: canConfirm ? _confirm : null,
+          style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+          child: _deleting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : Text(widget.isHindi ? 'हटाएं' : 'Delete'),
+        ),
       ],
     );
   }

@@ -16,6 +16,7 @@ import '../../../core/providers/cart_provider.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
+import '../../../core/utils/store_focus_route.dart';
 import '../../../core/utils/web_links.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/expandable_text.dart';
@@ -2198,22 +2199,20 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
     }
   }
 
-  void _openMap(ListingModel listing) async {
-    // Prefer exact coordinates; fall back to searching the store address/name.
-    final query = listing.hasLocation
-        ? '${listing.sellerLat},${listing.sellerLng}'
-        : Uri.encodeComponent(
-            [
-              listing.sellerName,
-              listing.sellerAddress ?? '',
-            ].where((s) => s.trim().isNotEmpty).join(' '),
-          );
-    final url = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$query',
+  /// Sends the buyer to the Store tab's own map, focused on this seller,
+  /// instead of jumping straight to the external Google Maps app — keeps
+  /// them inside KrishiDukan and reuses the single in-app map + directions
+  /// flow shared by product, brand, and search-suggestion "Directions" taps.
+  void _openMap(ListingModel listing) {
+    context.go(
+      storeFocusRoute(
+        name: listing.sellerName,
+        phone: listing.sellerPhone,
+        address: listing.sellerAddress,
+        lat: listing.sellerLat,
+        lng: listing.sellerLng,
+      ),
     );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
   }
 
   void _addToCart(BuildContext context) {
