@@ -126,9 +126,13 @@ export default function SignupView({
 
   // ── Shared invite acceptance ────────────────────────────────────────────────
 
-  const acceptInviteIfNeeded = async (uid: string, profile: any) => {
-    if (!trimmedInvite) return;
-    const result = await acceptManufacturerInvite({ uid, inviteCode: trimmedInvite });
+  // P1: Accept a specific code (captured before OTP confirm) rather than reading
+  // trimmedInvite at call time. This lets us clear the invite code in the parent
+  // before the OTP confirm resolves so page.tsx's auto-accept effect never races
+  // with this call when onAuthStateChanged fires.
+  const acceptInviteIfNeeded = async (uid: string, profile: any, inviteCodeSnapshot: string) => {
+    if (!inviteCodeSnapshot) return;
+    const result = await acceptManufacturerInvite({ uid, inviteCode: inviteCodeSnapshot });
     if (result.ok === false) {
       setError(`${result.message} Your account was created, but the invite could not be linked automatically.`);
     } else {
@@ -180,6 +184,14 @@ export default function SignupView({
     }
     setError(null);
     setLoading(true);
+
+    // P1: Capture and immediately clear the invite code so that when Firebase
+    // fires onAuthStateChanged (before this async function continues past the
+    // confirm() await), the page.tsx auto-accept effect sees signupInviteCode=null
+    // and does not race with our acceptInviteIfNeeded call below.
+    const inviteCodeSnapshot = trimmedInvite;
+    if (inviteCodeSnapshot) onInviteConsumed?.();
+
     const normalizedPhone = normalizePhone(phone);
     const profileEmail = `${normalizedPhone}@krishidukan.local`;
     try {
@@ -193,8 +205,7 @@ export default function SignupView({
         phoneNormalized: normalizedPhone,
       };
       await saveUserProfile(user.uid, profile);
-      await acceptInviteIfNeeded(user.uid, profile);
-      onInviteConsumed?.();
+      await acceptInviteIfNeeded(user.uid, profile, inviteCodeSnapshot);
       onSuccess(user, profile);
     } catch (err: unknown) {
       const code = (err as any)?.code ?? "";

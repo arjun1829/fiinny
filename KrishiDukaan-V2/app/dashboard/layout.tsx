@@ -3,11 +3,7 @@
 import { DashboardShell } from "./_components/dashboard-shell";
 import { DashboardTour } from "./_components/dashboard-tour";
 import { auth, getUserProfile } from '../firebase';
-import {
-  autoAcceptPendingInvitesForPhone,
-  grantAccessIfManufacturerLinked,
-  grantAccessIfHasActiveSeat,
-} from '../lib/invite/invite-acceptance-service';
+import { grantAccessIfManufacturerLinked } from '../lib/invite/invite-acceptance-service';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -156,21 +152,15 @@ export default function DashboardLayout({
       if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
         setLoading(false);
       } else if (role === 'retailer') {
-        const accepted = await autoAcceptPendingInvitesForPhone(user.uid).catch(() => false);
-        if (accepted) {
+        // P5: The dashboard only observes access state — invite acceptance and backfill
+        // are handled exclusively by the signup/invite flow. grantAccessIfManufacturerLinked
+        // is a lightweight read-only check that writes isPaid:true when the invite was
+        // accepted but the flag hasn't propagated yet (race between backfill and redirect).
+        const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
+        if (linked) {
           setLoading(false);
         } else {
-          const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
-          if (linked) {
-            setLoading(false);
-          } else {
-            const hasSeat = await grantAccessIfHasActiveSeat(user.uid).catch(() => false);
-            if (hasSeat) {
-              setLoading(false);
-            } else {
-              router.push('/');
-            }
-          }
+          router.push('/');
         }
       } else {
         router.push('/');

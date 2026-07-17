@@ -12,6 +12,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   limit,
   query,
@@ -32,6 +33,16 @@ import {
 } from "./invite-validation";
 
 const COLLECTION = "manufacturerRetailers";
+
+// P3: In-memory lock — prevents concurrent processing of the same invite code
+// within the same browser tab (e.g., SignupView + page.tsx auto-accept racing
+// after OTP confirmation fires onAuthStateChanged before onInviteConsumed is called).
+const _processingInvites = new Set<string>();
+
+// Backfill-level lock — keyed by retailerDocId, held for the duration of the batch
+// commit. Covers the gap between the P3 lock release (when acceptManufacturerInvite
+// returns) and the moment backfilledAt is written to Firestore.
+const _backfillingRetailers = new Set<string>();
 
 export async function findInviteByCode(
   inviteCode: string,
@@ -67,6 +78,16 @@ export async function acceptManufacturerInvite(params: {
     return { ok: false, message: "Missing invite code." };
   }
 
+  // P3: Skip if this exact code is already being processed in this tab.
+  // Prevents the race where onAuthStateChanged fires in page.tsx before
+  // SignupView calls onInviteConsumed(), causing two concurrent calls.
+  if (_processingInvites.has(code)) {
+    console.log(`[acceptInvite] Duplicate concurrent call for ${code} — already in progress, skipping`);
+    return { ok: true, alreadyActive: true };
+  }
+  _processingInvites.add(code);
+
+  try {
   console.log(`[acceptInvite] Starting for code: ${code}, uid: ${params.uid}`);
 
   const normalize = (p: string): string => {
@@ -168,13 +189,34 @@ export async function acceptManufacturerInvite(params: {
     };
   }
 
-  // After successful invite acceptance, backfill product/inventory/listing records.
-  // Pass the already-resolved phone so backfill skips its own uidIndex read.
   const retailerDocId = initial!.retailerDocId;
-  console.log(`[acceptInvite] Triggering backfill for retailerDocId: ${retailerDocId} to uid: ${params.uid}`);
-  const backfillError = await backfillRetailerAfterInvite(params.uid, retailerDocId, currentPhoneRaw);
 
-  return { ok: true, alreadyActive: wasAlreadyActive, backfillError };
+  // P4: Only run backfill for new acceptances. If wasAlreadyActive the backfill
+  // already completed previously (backfilledAt idempotency guard will also catch it).
+  if (!wasAlreadyActive) {
+    // P7: Write isPaid immediately so the dashboard can load without waiting for
+    // the heavy backfill work (product/inventory/listing sync).
+    if (currentPhone) {
+      setDoc(doc(db, "users", currentPhone), {
+        isPaid: true,
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch(e =>
+        console.warn("[acceptInvite] isPaid pre-write failed (non-critical):", e)
+      );
+    }
+    // P7: Run backfill in the background — user is redirected immediately after
+    // this function returns. The backfill has its own idempotency guard (backfilledAt).
+    console.log(`[acceptInvite] Scheduling background backfill for retailerDocId: ${retailerDocId}`);
+    void backfillRetailerAfterInvite(params.uid, retailerDocId, currentPhoneRaw).catch(e =>
+      console.warn("[acceptInvite] Background backfill failed (non-critical):", e)
+    );
+  }
+
+  return { ok: true, alreadyActive: wasAlreadyActive };
+  } finally {
+    // P3: Always release the lock so future calls (e.g. page refresh) can proceed.
+    _processingInvites.delete(code);
+  }
 }
 
 /**
@@ -384,6 +426,28 @@ export async function backfillRetailerAfterInvite(
     console.warn("[backfill] retailerDocId is empty");
     return "retailerDocId is empty — cannot sync products. Contact your manufacturer.";
   }
+
+  // P3b: Backfill-level lock — prevents a second concurrent backfill from starting
+  // during the window between the invite-level lock release and backfilledAt commit.
+  if (_backfillingRetailers.has(retailerDocId)) {
+    console.log(`[backfill] Already running for ${retailerDocId}, skipping concurrent call`);
+    return undefined;
+  }
+  _backfillingRetailers.add(retailerDocId);
+
+  try {
+  // P2: Idempotency — skip if a prior run already completed. Uses getDocFromServer
+  // to bypass the SDK cache so a fresh page load after redirect always reads the truth.
+  try {
+    const idempotencySnap = await getDocFromServer(doc(db, "retailers", retailerDocId));
+    if (idempotencySnap.exists() && idempotencySnap.data()?.backfilledAt) {
+      console.log(`[backfill] Already completed for ${retailerDocId} (backfilledAt set), skipping`);
+      return undefined;
+    }
+  } catch {
+    // Proceed on read error — better to re-run than silently skip
+  }
+
   console.log(`[backfill] Starting for uid: ${uid}, retailerDocId: ${retailerDocId}`);
   try {
     const now = serverTimestamp();
@@ -400,16 +464,11 @@ export async function backfillRetailerAfterInvite(
     // 2. Kick off all read queries in parallel while we build the batch
     //    (products/inventory/listings keyed by retailerDocId)
     console.log(`[backfill] Querying products/inventory/listings for retailerDocId: ${retailerDocId}`);
-    const [productsSnap, inventorySnap, listingsSnap, retailerSnap] = await Promise.all([
+    const [productsSnap, inventorySnap, listingsSnap] = await Promise.all([
       getDocs(query(collection(db, "products"),            where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "inventory"),           where("retailerDocId", "==", retailerDocId))),
       getDocs(query(collection(db, "retailerSeatListings"),where("retailerDocId", "==", retailerDocId))),
-      getDoc(doc(db, "retailers", retailerDocId)),
     ]);
-    const retailerDocData = retailerSnap.exists() ? (retailerSnap.data() as Record<string, unknown>) : null;
-    const storeName = retailerDocData
-      ? String(retailerDocData.shopName ?? retailerDocData.businessName ?? retailerDocData.ownerName ?? "")
-      : "";
 
     console.log(`[backfill] Found: ${productsSnap.size} products, ${inventorySnap.size} inventory, ${listingsSnap.size} listings`);
 
@@ -432,6 +491,7 @@ export async function backfillRetailerAfterInvite(
       userId: uid,
       retailerId: uid,
       active: true,
+      backfilledAt: now,  // P2: idempotency marker — prevents re-running on duplicate calls
       updatedAt: now,
       ...(phone ? { phone } : {}),
     }, { merge: true });
@@ -471,40 +531,10 @@ export async function backfillRetailerAfterInvite(
     await batch.commit();
     console.log("[backfill] Success!");
 
-    // Patch manufacturer product availability entries that were written before storePhone/storeName existed.
-    // Each assigned product copy has a `manufacturerProductId` pointing to the original product.
-    // We read that doc, find the entry with storeId===retailerDocId, and write the enriched version.
-    (async () => {
-      try {
-        const mfgProductIds = Array.from(new Set(
-          productsSnap.docs
-            .map((d) => String((d.data() as Record<string, unknown>).manufacturerProductId ?? ""))
-            .filter(Boolean),
-        ));
-        await Promise.all(mfgProductIds.map(async (mfgId) => {
-          try {
-            const mfgSnap = await getDoc(doc(db, "products", mfgId));
-            if (!mfgSnap.exists()) return;
-            const mfgData = mfgSnap.data() as Record<string, unknown>;
-            const avArr = Array.isArray(mfgData.availability) ? mfgData.availability as Record<string, unknown>[] : [];
-            const existing = avArr.find((e) => e.storeId === retailerDocId);
-            if (!existing) return;
-            // Only patch if storePhone or storeName is missing
-            if (existing.storePhone && existing.storeName) return;
-            const { updateDoc: ud, arrayRemove: ar, arrayUnion: au } = await import("firebase/firestore");
-            await ud(doc(db, "products", mfgId), { availability: ar(existing) });
-            await ud(doc(db, "products", mfgId), {
-              availability: au({
-                storeId: retailerDocId,
-                storePhone: phone ?? null,
-                storeName: storeName || null,
-                stockLevel: String(existing.stockLevel ?? "In Stock"),
-              }),
-            });
-          } catch { /* non-critical — marketplace display degrades gracefully */ }
-        }));
-      } catch { /* non-critical */ }
-    })();
+    // storePhone enrichment in root product availability[] is now handled by the
+    // syncSellerProductToCanonical Cloud Function (P6/P8) when it sees the
+    // retailerPhone field written to product copies above — no per-product
+    // arrayRemove+arrayUnion loop needed here.
 
     // Sync all manufacturer mirror docs for this retailer to status: "active"
     if (phone) {
@@ -588,5 +618,11 @@ export async function backfillRetailerAfterInvite(
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[backfill] Failed:", e);
     return `Sync failed: ${msg}`;
+  }
+  // end of inner main-logic try/catch — now back inside the outer P3b try
+  } finally {
+    // P3b: Always release the backfill lock — runs for every return path including
+    // the P2 idempotency early return above the main-logic try.
+    _backfillingRetailers.delete(retailerDocId);
   }
 }
