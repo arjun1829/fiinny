@@ -8,6 +8,8 @@ import {
   startDaySession,
   endDaySession,
   fetchTodaySession,
+  fetchActiveSession,
+  getTodayIST,
   calculateRoute,
   type DaySession,
 } from "./day-session-service";
@@ -51,11 +53,16 @@ export default function SalesDashboardPage() {
   const loadSession = async (uid: string) => {
     setSessionLoading(true);
     try {
-      const [s, visits] = await Promise.all([
+      // Operate on the ACTIVE session regardless of its date: if a rep forgot to
+      // "End Day" yesterday, that session must surface today (so it can be closed)
+      // instead of being orphaned while a fresh session is silently started.
+      // Fall back to today's session (e.g. a COMPLETED one) when nothing is active.
+      const [active, today, visits] = await Promise.all([
+        fetchActiveSession(uid),
         fetchTodaySession(uid),
         fetchTodayVisits(uid),
       ]);
-      setSession(s);
+      setSession(active ?? today);
       setVisitCount(visits.length);
     } catch {
       // Non-fatal: session just won't show
@@ -127,6 +134,8 @@ export default function SalesDashboardPage() {
 
   const isActive    = session?.status === 'ACTIVE';
   const isCompleted = session?.status === 'COMPLETED';
+  // An ACTIVE session whose date is before today = a day the rep forgot to end.
+  const isStaleActive = isActive && !!session && session.date !== getTodayIST();
 
   return (
     <div className="flex min-h-screen flex-col bg-surface">
@@ -145,6 +154,14 @@ export default function SalesDashboardPage() {
           ) : isActive && session ? (
             /* Active session — show summary + End Day button */
             <div className="space-y-3">
+              {isStaleActive ? (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
+                  <Sun className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <p className="text-xs text-amber-700">
+                    You have an unfinished session from <span className="font-semibold">{session.date}</span>. Please end it before starting a new day.
+                  </p>
+                </div>
+              ) : null}
               <DaySummary session={session} visitCount={visitCount} />
               <button
                 onClick={handleEndDay}

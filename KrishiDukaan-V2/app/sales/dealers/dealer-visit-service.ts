@@ -10,6 +10,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { getTodayIST } from '../day-session-service';
 
 export const VISIT_PURPOSES = [
   'Pitching',
@@ -118,15 +119,23 @@ export function sortVisits(visits: DealerVisit[]): DealerVisit[] {
 
 // ── Read operations ───────────────────────────────────────────────────────────
 
-/** Returns today's visits for the exec, newest first. */
+/**
+ * Returns today's visits for the exec, newest first.
+ * "Today" is anchored to the IST calendar day — matching daySessions
+ * (getTodayIST) and fetchVisitsForDate — so the dashboard's visit count and
+ * visitSequence stay consistent regardless of the device's local timezone or
+ * proximity to the UTC/IST midnight boundary.
+ */
 export async function fetchTodayVisits(uid: string): Promise<DealerVisit[]> {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  // Midnight IST for today = Date.UTC(y, m-1, d) - 5h30m, where y/m/d are the
+  // IST calendar date components (from getTodayIST).
+  const [y, m, d] = getTodayIST().split('-').map(Number);
+  const startMs = Date.UTC(y, m - 1, d) - 5.5 * 3_600_000;
 
   const q = query(
     collection(db, 'dealerVisits'),
     where('salesExecutiveId', '==', uid),
-    where('visitedAt', '>=', Timestamp.fromDate(startOfDay)),
+    where('visitedAt', '>=', Timestamp.fromDate(new Date(startMs))),
     orderBy('visitedAt', 'desc'),
   );
   const snap = await getDocs(q);

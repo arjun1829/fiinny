@@ -533,9 +533,10 @@ export default function AdminUsersPage() {
   const handleCreateUser = async () => {
     const { name, email, phone, password, shopName, role, gstin, secondaryPhone, subscriptionStatus, seats, durationMonths } = createForm;
 
-    // ── Admin: server route (needs Firebase Auth createUser) ──────────────────
-    if (role === "admin") {
-      if (!email.trim())                    { setCreateError("Email is required for admin accounts."); return; }
+    // ── Admin / Sales Executive: server route (needs Firebase Auth createUser) ─
+    if (role === "admin" || role === "salesExecutive") {
+      const label = role === "salesExecutive" ? "sales executive" : "admin";
+      if (!email.trim())                    { setCreateError(`Email is required for ${label} accounts.`); return; }
       if (!password || password.length < 6) { setCreateError("Password must be at least 6 characters."); return; }
       setCreating(true); setCreateError(null); setCreateSuccess(null);
       try {
@@ -543,15 +544,15 @@ export default function AdminUsersPage() {
         const res = await fetch("/api/admin/create-user", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password, callerUid }),
+          body: JSON.stringify({ name, email, password, callerUid, role }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to create admin.");
-        setCreateSuccess(data.message ?? "Admin account created.");
+        if (!res.ok) throw new Error(data.error || `Failed to create ${label}.`);
+        setCreateSuccess(data.message ?? `${label} account created.`);
         setCreateForm(BLANK_FORM);
         load();
       } catch (e) {
-        setCreateError(e instanceof Error ? e.message : "Failed to create admin.");
+        setCreateError(e instanceof Error ? e.message : `Failed to create ${label}.`);
       } finally { setCreating(false); }
       return;
     }
@@ -1381,18 +1382,22 @@ export default function AdminUsersPage() {
                   <option value="customer">Customer (Regular User)</option>
                   <option value="retailer">Retailer</option>
                   <option value="manufacturer">Manufacturer</option>
+                  <option value="salesExecutive">Sales Executive (Field Team)</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
 
-              {/* ── Admin path ── */}
-              {createForm.role === "admin" ? (
+              {/* ── Email + password path (admin & sales executive) ── */}
+              {createForm.role === "admin" || createForm.role === "salesExecutive" ? (
                 <div className="rounded-xl border border-red-100 bg-red-50/50 p-4 space-y-3">
                   <p className="text-xs font-bold text-red-700 flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5" /> Admin — Email + Password login at /admin-login
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {createForm.role === "salesExecutive"
+                      ? "Sales Executive — Email + Password login at /sales/login"
+                      : "Admin — Email + Password login at /admin-login"}
                   </p>
-                  <Field label="Full Name" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} placeholder="e.g. Vinay Admin" />
-                  <Field label="Email *" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} placeholder="admin@example.com" type="email" />
+                  <Field label="Full Name" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} placeholder={createForm.role === "salesExecutive" ? "e.g. Ramesh Field" : "e.g. Vinay Admin"} />
+                  <Field label="Email *" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} placeholder={createForm.role === "salesExecutive" ? "rep@example.com" : "admin@example.com"} type="email" />
                   <Field label="Password * (min 6 chars)" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} placeholder="Secure password" type="password" />
                 </div>
               ) : (
