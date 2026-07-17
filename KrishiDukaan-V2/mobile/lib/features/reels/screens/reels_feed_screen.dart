@@ -31,6 +31,16 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   int _currentPage = 0;
   bool _initialized = false;
 
+  // Route-level visibility guard. The tab-switch listener below only fires
+  // when activeShellIndexProvider changes, which misses two real cases:
+  //  1. a screen pushed ON TOP of the shell (upload, cart, product detail…)
+  //     — the tab index never changes, so audio kept playing underneath;
+  //  2. tab changes that bypass the nav bar's onTap (Android back gesture
+  //     going Home via PopScope's goBranch, programmatic context.go).
+  // Listening to the router delegate catches every navigation of any kind:
+  // the feed is audible only while the top-most location is exactly /reels.
+  GoRouter? _router;
+
   @override
   void initState() {
     super.initState();
@@ -38,7 +48,32 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_router == null) {
+      _router = GoRouter.of(context);
+      _router!.routerDelegate.addListener(_handleRouteChange);
+    }
+  }
+
+  void _handleRouteChange() {
+    if (!mounted) return;
+    final path = _router!.routerDelegate.currentConfiguration.uri.path;
+    if (path != '/reels') {
+      for (final c in _controllers.values) {
+        c.pause();
+      }
+    } else {
+      final reels = ref.read(reelsFeedProvider).value ?? [];
+      if (_currentPage < reels.length) {
+        _controllers[reels[_currentPage].id]?.play();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_handleRouteChange);
     WidgetsBinding.instance.removeObserver(this);
     for (final c in _controllers.values) {
       c.dispose();

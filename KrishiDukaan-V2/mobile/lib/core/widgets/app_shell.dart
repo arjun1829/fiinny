@@ -78,6 +78,18 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentIndex = navigationShell.currentIndex;
+
+    // Keep the provider in sync with the REAL active branch. Setting it only
+    // in the nav bar's onTap misses tab changes that bypass the bar — the
+    // PopScope back-to-home goBranch(0) below, and any programmatic
+    // context.go — which left reels' pause/resume logic reading a stale tab.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      if (ref.read(activeShellIndexProvider) != currentIndex) {
+        ref.read(activeShellIndexProvider.notifier).setIndex(currentIndex);
+      }
+    });
+
     final cartCount = ref.watch(cartCountProvider);
     final userModel = ref.watch(currentUserProvider).value;
     final isSeller = userModel?.isSeller ?? false;

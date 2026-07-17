@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Lets Firebase's silent APNs pushes (phone-auth verification, FCM data
+	     messages) wake the app in the background. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>KrishiDukan uses your location to show nearby agri stores, calculate delivery availability, and give directions to dealers.</string>
 	<key>NSCameraUsageDescription</key>
@@ -46,6 +52,12 @@
 		<string>comgooglemaps</string>
 		<string>youtube</string>
 	</array>
+	<!-- ONE CFBundleURLTypes key only. This key was previously declared twice
+	     in this dict (Firebase schemes here, bundle-id scheme further down);
+	     plist duplicate keys are invalid and the LAST one silently wins at
+	     parse time, so the Firebase schemes were dropped from the built app —
+	     the direct cause of the PhoneAuthProvider.verifyPhoneNumber fatal
+	     (EXC_BREAKPOINT) during phone login on TestFlight. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -62,6 +74,14 @@
 				<string>app-1-650303885415-ios-883857d3efb69c8b2b84c2</string>
 				<string>app-1-650303885415-ios-4ba023025354cd4b2b84c2</string>
 				<string>app-1-650303885415-ios-c0db03e9833fbd7e2b84c2</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.karanarjuntechnologies.KrishiDukan</string>
 			</array>
 		</dict>
 	</array>
@@ -86,17 +106,6 @@
 			</array>
 		</dict>
 	</dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.karanarjuntechnologies.KrishiDukan</string>
-			</array>
-		</dict>
-	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
