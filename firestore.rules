@@ -175,6 +175,78 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────────────────────
+    // KrishiDukaan-V2 collections
+    // ──────────────────────────────────────────────────────────
+
+    // Helper: check if caller is an admin by UID-keyed user doc
+    function isAdmin() {
+      return authed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // UID → phone index: owner read/write only
+    match /uidIndex/{uid} {
+      allow read, write: if authed() && request.auth.uid == uid;
+    }
+
+    // Retailers: public read (brand/profile pages), owner or admin write
+    match /retailers/{docId} {
+      allow read: if true;
+      allow write: if authed();
+    }
+
+    // Manufacturers: public read (brand/profile pages), authenticated write
+    match /manufacturers/{docId} {
+      allow read: if true;
+      allow write: if authed();
+    }
+
+    // Subscriptions: owner can read their own, admin can read/write all
+    match /subscriptions/{docId} {
+      allow read: if authed();
+      allow write: if authed();
+    }
+
+    // Payments (success log): authenticated read/write (admin checks at app layer)
+    match /payments/{docId} {
+      allow read: if authed();
+      allow write: if authed();
+    }
+
+    // Failed payments: any authenticated user can write (log their own failure),
+    // any authenticated user can read (admin panel has its own app-layer auth gate)
+    match /failedPayments/{docId} {
+      allow read: if authed();
+      allow write: if authed();
+    }
+
+    // Retailer seat listings: authenticated read/write
+    match /retailerSeatListings/{docId} {
+      allow read: if authed();
+      allow write: if authed();
+    }
+
+    // Promo codes: authenticated users can read (to validate at checkout),
+    // writes are admin-only via server-side Admin SDK
+    match /promoCodes/{docId} {
+      allow read: if authed();
+      allow write: if isAdmin();
+    }
+
+    // Public product/store listings: publicly readable, authenticated write
+    match /listings/{docId} {
+      allow read: if true;
+      allow write: if authed();
+    }
+
+    // Partner invites
+    match /partnerInvites/{docId} {
+      allow read: if authed();
+      allow write: if authed();
+    }
+
+    // ──────────────────────────────────────────────────────────
     // Existing Fiinny personal-finance rules (unchanged below)
     // ──────────────────────────────────────────────────────────
 

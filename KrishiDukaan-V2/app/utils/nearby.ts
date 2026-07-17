@@ -26,23 +26,25 @@ export function computeStoreDistances(
   stores: Store[],
   userLocation: LatLng
 ): StoreWithDistance[] {
-  return stores.map((store) => {
-    const storeLoc = store.location;
-    if (storeLoc && storeLoc.lat && storeLoc.lng) {
-      const distanceKm = haversineDistance(userLocation, storeLoc);
+  return stores
+    .map((store) => {
+      const storeLoc = store.location;
+      if (storeLoc && storeLoc.lat && storeLoc.lng) {
+        const distanceKm = haversineDistance(userLocation, storeLoc);
+        return {
+          ...store,
+          distanceKm,
+          distanceLabel: formatDistance(distanceKm),
+        };
+      }
+      // No valid coordinates — keep original distance string
       return {
         ...store,
-        distanceKm,
-        distanceLabel: formatDistance(distanceKm),
+        distanceKm: Infinity,
+        distanceLabel: store.distance || 'Unknown',
       };
-    }
-    // No valid coordinates — keep original distance string
-    return {
-      ...store,
-      distanceKm: Infinity,
-      distanceLabel: store.distance || 'Unknown',
-    };
-  });
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 }
 
 /**
@@ -170,6 +172,43 @@ function getMinProductDistance(
     if (d !== undefined && d < min) min = d;
   }
   return min;
+}
+
+/**
+ * Does this store stock the given product, per the product's `availability[]`?
+ *
+ * A store's identity is spread across several fields depending on how the store
+ * document was created (legacy `stores/`, phone-keyed `retailers/`, UID-keyed, …):
+ *   - `store.id`        — Firestore doc id (sometimes the phone, sometimes a UID)
+ *   - `store.phone`     — E.164 phone (matches retailers/{phone} doc id)
+ *   - `store.userId`    — Firebase Auth UID
+ *   - `store.retailerId`— Firebase Auth UID (legacy field)
+ *
+ * Correspondingly, `availability[].storeId` may hold any one of those identifiers
+ * (admin-assigned copies use the seller's phone; manufacturer-assigned copies use
+ * the retailer doc id), and newer entries also carry `storePhone`.
+ *
+ * This mirrors the robust multi-key match already used in ProductDetailView so the
+ * marketplace / map filter resolves the same stores the product-detail page shows.
+ */
+export function storeStocksProduct(
+  store: { id: string; phone?: string; [k: string]: unknown },
+  availability: { storeId?: string; storePhone?: string }[] | undefined
+): boolean {
+  if (!availability || availability.length === 0) return false;
+  const storePhone = typeof store.phone === 'string' ? store.phone : undefined;
+  const storeUserId = typeof store.userId === 'string' ? (store.userId as string) : undefined;
+  const storeRetailerId = typeof store.retailerId === 'string' ? (store.retailerId as string) : undefined;
+
+  return availability.some(
+    (a) =>
+      a.storeId === store.id ||
+      (!!a.storePhone && !!storePhone && a.storePhone === storePhone) ||
+      (!!a.storePhone && a.storePhone === store.id) ||
+      (!!a.storeId && !!storePhone && a.storeId === storePhone) ||
+      (!!a.storeId && !!storeUserId && a.storeId === storeUserId) ||
+      (!!a.storeId && !!storeRetailerId && a.storeId === storeRetailerId)
+  );
 }
 
 /** Normalize Firestore address (string or structured object) for display and search. */

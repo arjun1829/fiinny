@@ -1,81 +1,293 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Box, Plus, Pencil, Trash2, Search, X } from "lucide-react";
-import { fetchMarketplaceProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct } from "../../firebase";
+import { useEffect, useMemo, useState } from "react";
+import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Link2, Loader2, Check, Store, Users } from "lucide-react";
+import { auth, fetchAllProductsForAdmin, fetchAllSellerProducts, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing, fetchAllUsers } from "../../firebase";
 import type { MarketplaceProduct } from "../../../types/product";
-
-const EMPTY_FORM = {
-  name: "", fullName: "", price: "", category: "seeds",
-  description: "", image: "", stock: "In Stock", store: "", distance: "Nearby",
-};
+import { cn } from "../../dashboard/_lib/cn";
+import { AddProductInventoryForm } from "../../dashboard/_components/add-product-inventory-form";
 
 const CATEGORIES = ["seeds", "fertilizers", "pesticides", "irrigation", "tools", "general"];
+const ADMIN_SEAT_STATS = { totalPurchased: 99, activeUsed: 0, available: 99, expiringSoon: 0 };
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  const [rawProducts, setRawProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
+  const [editProduct, setEditProduct] = useState<MarketplaceProduct | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<MarketplaceProduct | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+
+  // Assign to seller
+  const [assignTarget, setAssignTarget] = useState<MarketplaceProduct | null>(null);
+  const [sellers, setSellers] = useState<{ id: string; name: string; phone: string; role: string; city: string; isPreCreated: boolean }[]>([]);
+  const [sellersLoaded, setSellersLoaded] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState("");
+  const [assigningSeller, setAssigningSeller] = useState<string | null>(null);
+  const [assignErr, setAssignErr] = useState<string | null>(null);
+  const [assignOk, setAssignOk] = useState<string | null>(null);
+
+  const loadSellers = async () => {
+    if (sellersLoaded) return;
+    const users = await fetchAllUsers();
+    setSellers(
+      users
+        .filter(u => u.role === "retailer" || u.role === "manufacturer")
+        .map(u => ({
+          id: u.id,
+          name: u.shopName || u.businessName || u.name || u.phone || u.id,
+          phone: u.phone || u.id,
+          role: u.role,
+          city: u.city || "",
+          isPreCreated: !!u.preCreatedByAdmin && !u.uid,
+        }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name))
+    );
+    setSellersLoaded(true);
+  };
+
+  const handleAssignToSeller = async (seller: { id: string; name: string; phone: string; role: string }) => {
+    if (!assignTarget) return;
+    setAssigningSeller(seller.id);
+    setAssignErr(null);
+    setAssignOk(null);
+    try {
+      const adminUid = auth.currentUser?.uid ?? "admin";
+      const role = seller.role === "manufacturer" ? "manufacturer" : "retailer";
+      const res = await adminAssignProductToSeller(
+        assignTarget.id, assignTarget.name, seller.phone, seller.name, role, adminUid,
+      );
+      if (res.alreadyAssigned) setAssignErr(`"${assignTarget.name}" is already assigned to ${seller.name}.`);
+      else setAssignOk(`Assigned to ${seller.name}`);
+    } catch (e) {
+      setAssignErr(e instanceof Error ? e.message : "Assignment failed.");
+    } finally { setAssigningSeller(null); }
+  };
 
   const load = () => {
     setLoading(true);
-    fetchMarketplaceProducts().then(setProducts).finally(() => setLoading(false));
+    Promise.all([fetchAllProductsForAdmin(), fetchAllSellerProducts().catch(() => [])])
+      .then(([prods, raw]) => { setProducts(prods); setRawProducts(raw); })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
-  const filtered = products.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
-    const matchCat = catFilter === "all" || p.category === catFilter;
-    return matchSearch && matchCat;
-  });
+  // Map of base product id → active admin-assigned seller copies.
+  const assignmentsByOriginal = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const d of rawProducts) {
+      if (d.source !== "admin_assigned" || d.isActive === false) continue;
+      const key = String(d.originalProductId || "");
+      if (!key) continue;
+      const arr = m.get(key) ?? [];
+      arr.push(d);
+      m.set(key, arr);
+    }
+    return m;
+  }, [rawProducts]);
 
-  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setFormError(null); setShowForm(true); };
-  const openEdit = (p: MarketplaceProduct) => {
-    setForm({
-      name: p.name, fullName: p.fullName || "", price: String(p.price), category: p.category,
-      description: p.description, image: p.image, stock: p.stock, store: p.store, distance: p.distance,
-    });
-    setEditId(p.id);
-    setFormError(null);
-    setShowForm(true);
+  // ── Assignments viewer (which sellers carry a product) ──
+  const [viewAssignmentsFor, setViewAssignmentsFor] = useState<MarketplaceProduct | null>(null);
+  const [assignmentRows, setAssignmentRows] = useState<{ copyId: string; store: string; phone: string; role: string; active: boolean; price: string; stock: string; variants?: { unit: string; price: number; stock?: number }[] }[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [savingRow, setSavingRow] = useState<string | null>(null);
+  const [removingRow, setRemovingRow] = useState<string | null>(null);
+  const [rowMsg, setRowMsg] = useState<string | null>(null);
+
+  const openAssignments = async (p: MarketplaceProduct) => {
+    setViewAssignmentsFor(p);
+    setAssignmentRows([]);
+    setRowMsg(null);
+    setAssignmentsLoading(true);
+    try {
+      const docIds = (p as any).allDocIds || [p.id];
+      const copies: any[] = [];
+      for (const docId of docIds) {
+        copies.push(...(assignmentsByOriginal.get(docId) ?? []));
+      }
+      const inv = await fetchInventoryForProducts(copies.map(c => c.id)).catch(() => ({}));
+      setAssignmentRows(copies.map(c => {
+        const iv = (inv as any)[c.id];
+        return {
+          copyId: c.id,
+          store: c.store || c.ownerId || "—",
+          phone: c.ownerId || c.ownerPhone || c.retailerPhone || "",
+          role: c.ownerType || "retailer",
+          active: c.isActive !== false,
+          price: String(iv?.sellingPrice ?? c.price ?? ""),
+          stock: String(iv?.stockQuantity ?? ""),
+          variants: c.variants || [],
+        };
+      }));
+    } finally { setAssignmentsLoading(false); }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name || !form.price || !form.image) {
-      setFormError("Name, price, and image URL are required."); return;
-    }
-    setSaving(true);
-    setFormError(null);
-    try {
-      const payload = {
-        name: form.name.trim(), fullName: form.fullName.trim() || form.name.trim(),
-        price: Number(form.price), category: form.category, description: form.description.trim(),
-        image: form.image.trim(), stock: form.stock, store: form.store.trim(), distance: form.distance.trim(),
-      };
-      if (editId) {
-        await adminUpdateProduct(editId, payload);
-      } else {
-        await adminCreateProduct(payload as any);
+  const setRowField = (copyId: string, field: "price" | "stock", val: string) =>
+    setAssignmentRows(prev => prev.map(r => r.copyId === copyId ? { ...r, [field]: val } : r));
+
+  const setRowVariantField = (copyId: string, variantIndex: number, field: "price" | "stock", val: string) => {
+    setAssignmentRows(prev => prev.map(r => {
+      if (r.copyId !== copyId) return r;
+      const nextVariants = [...(r.variants || [])];
+      if (nextVariants[variantIndex]) {
+        nextVariants[variantIndex] = {
+          ...nextVariants[variantIndex],
+          [field]: field === "price" ? (Number(val) || 0) : (Number(val) || 0)
+        };
       }
+      return { ...r, variants: nextVariants };
+    }));
+  };
+
+  const saveAssignmentRow = async (row: typeof assignmentRows[number]) => {
+    setSavingRow(row.copyId); setRowMsg(null);
+    try {
+      await adminUpdateAssignmentPricing(row.copyId, {
+        sellingPrice: Number(row.price) || 0,
+        stockQuantity: Number(row.stock) || 0,
+        variants: row.variants,
+      });
       await load();
-      setShowForm(false);
-    } catch (err) {
-      console.error(err);
-      setFormError("Save failed. Please try again.");
-    } finally {
-      setSaving(false);
+      setRowMsg(`Saved ${row.store}.`);
+    } catch (e) {
+      setRowMsg(e instanceof Error ? e.message : "Save failed.");
+    } finally { setSavingRow(null); }
+  };
+
+  const [confirmRemoveAssignment, setConfirmRemoveAssignment] = useState<any | null>(null);
+
+  const removeAssignmentRow = (row: typeof assignmentRows[number]) => {
+    setConfirmRemoveAssignment(row);
+  };
+
+  const performRemoveAssignment = async () => {
+    if (!viewAssignmentsFor || !confirmRemoveAssignment) return;
+    const row = confirmRemoveAssignment;
+    setConfirmRemoveAssignment(null);
+    setRemovingRow(row.copyId); setRowMsg(null);
+    try {
+      const adminUid = auth.currentUser?.uid ?? "admin";
+      await adminRemoveAssignment(row.copyId, viewAssignmentsFor.name, row.phone, adminUid);
+      setAssignmentRows(prev => prev.filter(r => r.copyId !== row.copyId));
+      await load();
+      setRowMsg(`Removed ${row.store}.`);
+    } catch (e) {
+      setRowMsg(e instanceof Error ? e.message : "Remove failed.");
+    } finally { setRemovingRow(null); }
+  };
+
+  // Seller-owned copies are surfaced via the "Assigned" column on their base
+  // product, so exclude them from the main catalog list to avoid duplicate rows.
+  const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
+
+  const groupedProducts = useMemo(() => {
+    const groups = new Map<string, MarketplaceProduct[]>();
+    for (const p of products) {
+      if (COPY_SOURCES.has((p as any).source)) continue;
+      const key = p.name.toLowerCase().trim();
+      const arr = groups.get(key) ?? [];
+      arr.push(p);
+      groups.set(key, arr);
+    }
+
+    const result: MarketplaceProduct[] = [];
+    for (const [key, list] of Array.from(groups.entries())) {
+      // Find canonical one in group: prefer manufacturer_inventory, then admin, then retailer_inventory
+      const canonical = list.find(p => p.source === 'manufacturer_inventory')
+        || list.find(p => p.source === 'admin')
+        || list[0];
+
+      // Merge all variants from all docs in the list
+      const mergedVariants: any[] = [];
+      const seenVariantKeys = new Set<string>();
+
+      for (const p of list) {
+        if (p.variants && p.variants.length > 0) {
+          for (const v of p.variants) {
+            const vKey = `${v.unit}-${v.price}`;
+            if (!seenVariantKeys.has(vKey)) {
+              seenVariantKeys.add(vKey);
+              mergedVariants.push(v);
+            }
+          }
+        } else {
+          // If no variants array, treat the product itself as a variant
+          const unit = (p as any).unit || p.stock || "Standard";
+          const vKey = `${unit}-${p.price}`;
+          if (!seenVariantKeys.has(vKey)) {
+            seenVariantKeys.add(vKey);
+            mergedVariants.push({
+              unit,
+              price: p.price,
+              stock: p.stock === 'Out of Stock' ? 0 : 50
+            });
+          }
+        }
+      }
+
+      const allDocIds = list.map(p => p.id);
+
+      result.push({
+        ...canonical,
+        variants: mergedVariants,
+        allDocIds,
+      } as any);
+    }
+    return result;
+  }, [products]);
+
+  const filtered = useMemo(() => {
+    return groupedProducts.filter(p => {
+      const q = search.toLowerCase();
+      const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
+      const matchCat = catFilter === "all" || p.category === catFilter;
+      return matchSearch && matchCat;
+    });
+  }, [groupedProducts, search, catFilter]);
+
+  const openAdd  = () => { setEditProduct(null); setShowForm(true); };
+  const openEdit = (p: MarketplaceProduct) => { setEditProduct(p); setShowForm(true); };
+
+  const handleAdminSave = async (payload: any) => {
+    const { editProductId, ...data } = payload;
+    if (editProductId) {
+      // ── OWNERSHIP AUDIT ────────────────────────────────────────────────
+      const editingEntry = products.find(p => p.id === editProductId);
+      console.log("[AdminProducts] handleAdminSave (edit)", {
+        "Saving to (products)": editProductId,
+        "Source of canonical": (editingEntry as any)?.source ?? "unknown",
+        "allDocIds in group": (editingEntry as any)?.allDocIds ?? [editProductId],
+        "price": data.price,
+        "name": data.name,
+        "NOTE: duplicate docs will be deactivated": true,
+      });
+      // ────────────────────────────────────────────────────────────────────
+      // Edit: update the product and deactivate any stale duplicate docs
+      await adminUpdateProduct(editProductId, data);
+      const original = products.find(p => p.id === editProductId);
+      if (original) {
+        const docIds: string[] = (original as any).allDocIds || [];
+        const others = docIds.filter(id => id !== editProductId);
+        if (others.length > 0) {
+          const { writeBatch, doc, serverTimestamp } = await import("firebase/firestore");
+          const { db: fdb } = await import("../../firebase");
+          const batch = writeBatch(fdb);
+          others.forEach(id => batch.update(doc(fdb, "products", id), { isActive: false, updatedAt: serverTimestamp() }));
+          const othersSet = new Set(others);
+          rawProducts
+            .filter(rp => rp.source === "admin_assigned" && othersSet.has(rp.originalProductId))
+            .forEach(cp => batch.update(doc(fdb, "products", cp.id), { originalProductId: editProductId }));
+          await batch.commit().catch(err => console.error("Failed to deactivate duplicates:", err));
+        }
+      }
+    } else {
+      // Add: create a new master catalog product
+      await adminCreateProduct(data as any);
     }
   };
 
@@ -84,7 +296,18 @@ export default function AdminProductsPage() {
     setDeleteError(null);
     try {
       await adminDeleteProduct(p.id);
-      setProducts(prev => prev.filter(x => x.id !== p.id));
+      const docIds = (p as any).allDocIds || [p.id];
+      const otherDocIds = docIds.filter((id: string) => id !== p.id);
+      if (otherDocIds.length > 0) {
+        const { writeBatch, doc } = await import("firebase/firestore");
+        const { db: fdb } = await import("../../firebase");
+        const batch = writeBatch(fdb);
+        otherDocIds.forEach((id: string) => {
+          batch.delete(doc(fdb, 'products', id));
+        });
+        await batch.commit().catch(err => console.error("Failed to delete duplicate docs:", err));
+      }
+      setProducts(prev => prev.filter(x => !docIds.includes(x.id)));
       setConfirmDelete(null);
     } catch {
       setDeleteError("Delete failed. Please try again.");
@@ -95,20 +318,19 @@ export default function AdminProductsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Box className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-black text-on-surface">Products</h1>
+          <div className="mb-1 flex items-center gap-2 sm:gap-3">
+            <Box className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
+            <h1 className="text-lg font-black text-on-surface sm:text-2xl">Products</h1>
           </div>
-          <p className="text-sm text-on-surface-variant ml-9">All marketplace products. Admin can add, edit, or delete any product — no seat limits.</p>
+          <p className="ml-7 text-xs text-on-surface-variant sm:ml-9 sm:text-sm">All marketplace products. Admin can add, edit, or delete any product.</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors shrink-0">
+        <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-container sm:w-auto shrink-0">
           <Plus className="h-4 w-4" /> Add Product
         </button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-2">
         {["all", ...CATEGORIES].map(c => (
           <button key={c} onClick={() => setCatFilter(c)}
@@ -133,125 +355,190 @@ export default function AdminProductsPage() {
           <div className="px-5 py-3 border-b border-outline-variant/20 bg-surface-container-low">
             <span className="text-xs font-bold text-on-surface-variant">{filtered.length} product{filtered.length !== 1 ? "s" : ""}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-outline-variant/20">
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Product</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Category</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Price</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Images</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Stock</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Store</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Assigned</th>
                   <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => (
-                  <tr key={p.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-surface-container shrink-0">
-                          <img src={p.image} alt={p.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                {filtered.map(p => {
+                  const imgs: string[] = (p as any).images?.length ? (p as any).images : (p.image ? [p.image] : []);
+                  return (
+                    <tr key={p.id} className="border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-surface-container shrink-0 relative">
+                            {imgs[0] ? (
+                              <img src={imgs[0]} alt={p.name} className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-on-surface-variant/30">
+                                <ImageIcon className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-on-surface">{p.name}</p>
+                            <p className="text-xs text-on-surface-variant truncate max-w-[160px]">{p.description}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-semibold text-on-surface">{p.name}</p>
-                          <p className="text-xs text-on-surface-variant truncate max-w-[160px]">{p.description}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[10px] font-black uppercase">{p.category}</span>
+                      </td>
+                      <td className="px-5 py-3 font-bold text-on-surface">₹{p.price}</td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-1">
+                          {imgs.slice(0, 3).map((url, i) => (
+                            <div key={i} className="w-7 h-7 rounded-lg overflow-hidden bg-surface-container border border-outline-variant/20">
+                              <img src={url} alt="" className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            </div>
+                          ))}
+                          {imgs.length > 3 && (
+                            <span className="text-[10px] font-bold text-on-surface-variant">+{imgs.length - 3}</span>
+                          )}
+                          {imgs.length === 0 && <span className="text-xs text-on-surface-variant/50">—</span>}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[10px] font-black uppercase">{p.category}</span>
-                    </td>
-                    <td className="px-5 py-3 font-bold text-on-surface">₹{p.price}</td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-bold ${p.stock === "In Stock" ? "text-green-600" : p.stock === "Low Stock" ? "text-harvest" : "text-red-500"}`}>{p.stock}</span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-on-surface-variant">{p.store}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => { setConfirmDelete(p); setDeleteError(null); }} disabled={deleting === p.id}
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-variant hover:text-red-600 transition-colors disabled:opacity-50">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={`text-xs font-bold ${p.stock === "In Stock" ? "text-green-600" : p.stock === "Low Stock" ? "text-yellow-600" : "text-red-500"}`}>{p.stock}</span>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-on-surface-variant">{p.store}</td>
+                      <td className="px-5 py-3">
+                        {(() => {
+                          const docIds = (p as any).allDocIds || [p.id];
+                          const n = docIds.reduce((sum: number, docId: string) => sum + (assignmentsByOriginal.get(docId) ?? []).length, 0);
+                          return n > 0 ? (
+                            <button onClick={() => openAssignments(p)}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 px-2.5 py-1 text-xs font-bold text-secondary hover:bg-secondary/20 transition-colors">
+                              <Users className="h-3.5 w-3.5" /> {n} seller{n !== 1 ? "s" : ""}
+                            </button>
+                          ) : <span className="text-xs text-on-surface-variant/50">—</span>;
+                        })()}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => { setAssignTarget(p); setAssignErr(null); setAssignOk(null); setSellerSearch(""); loadSellers(); }}
+                            className="p-1.5 rounded-lg hover:bg-secondary/10 text-on-surface-variant hover:text-secondary transition-colors" title="Assign to seller">
+                            <Link2 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => { setConfirmDelete(p); setDeleteError(null); }} disabled={deleting === p.id}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-on-surface-variant hover:text-red-600 transition-colors disabled:opacity-50">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</td></tr>
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="divide-y divide-outline-variant/10 md:hidden">
+            {filtered.map(p => {
+              const imgs: string[] = (p as any).images?.length ? (p as any).images : (p.image ? [p.image] : []);
+              return (
+                <div key={p.id} className="space-y-3 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-container">
+                      {imgs[0] ? (
+                        <img src={imgs[0]} alt={p.name} className="h-full w-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-on-surface-variant/30">
+                          <ImageIcon className="h-5 w-5" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-on-surface">{p.name}</p>
+                      <p className="mt-0.5 text-[11px] text-on-surface-variant">{p.description}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-surface-container px-2 py-0.5 text-[10px] font-black uppercase text-on-surface-variant">{p.category}</span>
+                        <span className="text-sm font-bold text-on-surface">₹{p.price}</span>
+                        <span className={`text-[11px] font-bold ${p.stock === "In Stock" ? "text-green-600" : p.stock === "Low Stock" ? "text-yellow-600" : "text-red-500"}`}>{p.stock}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] text-on-surface-variant">{p.store || "—"}</p>
+                      {(() => {
+                        const docIds = (p as any).allDocIds || [p.id];
+                        const n = docIds.reduce((sum: number, docId: string) => sum + (assignmentsByOriginal.get(docId) ?? []).length, 0);
+                        return n > 0 ? (
+                          <button onClick={() => openAssignments(p)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-bold text-secondary">
+                            <Users className="h-3 w-3" /> {n} seller{n !== 1 ? "s" : ""}
+                          </button>
+                        ) : <p className="text-[11px] text-on-surface-variant">{imgs.length} image{imgs.length !== 1 ? "s" : ""}</p>;
+                      })()}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => { setAssignTarget(p); setAssignErr(null); setAssignOk(null); setSellerSearch(""); loadSellers(); }}
+                        className="rounded-lg border border-secondary/30 px-2.5 py-1.5 text-[11px] font-medium text-secondary hover:bg-secondary/5 transition-colors">
+                        Assign
+                      </button>
+                      <button onClick={() => openEdit(p)} className="rounded-lg border border-outline-variant/30 px-2.5 py-1.5 text-[11px] font-medium text-on-surface hover:bg-surface-container transition-colors">
+                        Edit
+                      </button>
+                      <button onClick={() => { setConfirmDelete(p); setDeleteError(null); }} disabled={deleting === p.id}
+                        className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && (
+              <div className="px-5 py-10 text-center text-sm text-on-surface-variant">No products found.</div>
+            )}
           </div>
         </div>
       )}
 
       {/* Add/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-surface-container">
-              <h2 className="text-lg font-bold text-on-surface">{editId ? "Edit Product" : "Add Product"}</h2>
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-surface-container px-5 py-4 shrink-0">
+              <h2 className="text-base font-bold text-on-surface">{editProduct ? "Edit Product" : "Add Product"}</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-surface-container transition-colors"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={handleSave} className="p-6 space-y-4">
-              {formError && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">
-                  {formError}
-                </div>
-              )}
-              {[
-                { label: "Product Name *", key: "name", placeholder: "e.g. Organic Urea" },
-                { label: "Full Name", key: "fullName", placeholder: "Extended product name" },
-                { label: "Price (₹) *", key: "price", placeholder: "e.g. 450", type: "number" },
-                { label: "Image URL *", key: "image", placeholder: "https://..." },
-                { label: "Store Name", key: "store", placeholder: "e.g. Sharma Agro Store" },
-                { label: "Distance", key: "distance", placeholder: "e.g. 2.3 km" },
-              ].map(({ label, key, placeholder, type }) => (
-                <div key={key}>
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">{label}</label>
-                  <input type={type || "text"} value={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                </div>
-              ))}
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Category</label>
-                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Stock Status</label>
-                <select value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))}
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none">
-                  {["In Stock", "Low Stock", "Out of Stock"].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Description</label>
-                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  rows={3} placeholder="Product description…"
-                  className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none resize-none" />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowForm(false)} className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors">Cancel</button>
-                <button type="submit" disabled={saving} className="flex-1 py-3 rounded-2xl bg-primary text-white text-sm font-bold hover:bg-primary-container transition-colors disabled:opacity-60">
-                  {saving ? "Saving…" : editId ? "Save Changes" : "Add Product"}
-                </button>
-              </div>
-            </form>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <AddProductInventoryForm
+                adminMode
+                initialProduct={editProduct}
+                userId={auth.currentUser?.uid ?? null}
+                role="manufacturer"
+                seatStats={ADMIN_SEAT_STATS}
+                onAdminSave={handleAdminSave}
+                onCreated={async () => { await load(); setShowForm(false); }}
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Delete Confirmation Modal */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-4 backdrop-blur-sm sm:items-center">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
             <div className="text-center">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4">
@@ -262,36 +549,235 @@ export default function AdminProductsPage() {
                 Are you sure you want to delete <span className="font-semibold text-on-surface">&quot;{confirmDelete.name}&quot;</span>? This action cannot be undone.
               </p>
             </div>
-            
             {deleteError && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">
-                {deleteError}
-              </div>
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 font-semibold">{deleteError}</div>
             )}
-
-            <div className="flex gap-3 pt-2">
-              <button 
-                type="button" 
-                onClick={() => { setConfirmDelete(null); setDeleteError(null); }} 
-                disabled={deleting === confirmDelete.id}
-                className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors disabled:opacity-50"
-              >
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
+              <button type="button" onClick={() => { setConfirmDelete(null); setDeleteError(null); }} disabled={deleting === confirmDelete.id}
+                className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button 
-                type="button" 
-                onClick={() => performDelete(confirmDelete)} 
-                disabled={deleting === confirmDelete.id}
-                className="flex-1 py-3 bg-red-600 text-white text-sm font-bold rounded-2xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-              >
+              <button type="button" onClick={() => performDelete(confirmDelete)} disabled={deleting === confirmDelete.id}
+                className="flex-1 py-3 bg-red-600 text-white text-sm font-bold rounded-2xl hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                 {deleting === confirmDelete.id ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Deleting…
-                  </>
-                ) : (
-                  "Delete"
-                )}
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting…</>
+                ) : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Assign to Seller Modal ─────────────────────────────────────────── */}
+      {assignTarget && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-on-surface/40 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-md flex flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl max-h-[90dvh]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-outline-variant/20 px-5 py-4 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link2 className="h-5 w-5 text-secondary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-on-surface truncate">Assign Product</p>
+                  <p className="text-xs text-on-surface-variant truncate">{assignTarget.name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setAssignTarget(null); setAssignErr(null); setAssignOk(null); }}
+                className="p-2 rounded-xl hover:bg-surface-container shrink-0"><X className="h-5 w-5" /></button>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 pt-4 pb-2 shrink-0">
+              {assignErr && (
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 font-medium">{assignErr}</div>
+              )}
+              {assignOk && (
+                <div className="mb-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 font-medium flex items-center gap-1.5">
+                  <Check className="h-3.5 w-3.5 shrink-0" />{assignOk}
+                </div>
+              )}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-outline" />
+                <input type="text" placeholder="Search by name or phone…"
+                  value={sellerSearch} onChange={e => setSellerSearch(e.target.value)}
+                  className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low pl-9 pr-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
+
+            {/* Seller list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-outline-variant/10 px-2 pb-4">
+              {!sellersLoaded ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : sellers.filter(s => {
+                  const q = sellerSearch.toLowerCase();
+                  return !q || s.name.toLowerCase().includes(q) || s.phone.includes(q);
+                }).length === 0 ? (
+                <p className="text-sm text-center text-on-surface-variant py-10">
+                  No sellers found. Create one in <strong>Users &amp; Roles</strong> first.
+                </p>
+              ) : sellers
+                  .filter(s => {
+                    const q = sellerSearch.toLowerCase();
+                    return !q || s.name.toLowerCase().includes(q) || s.phone.includes(q);
+                  })
+                  .map(s => (
+                  <div key={s.id} className="flex items-center gap-3 px-3 py-3 hover:bg-surface-container-low rounded-xl transition-colors">
+                    <span className={cn(
+                      "w-2 h-2 rounded-full shrink-0",
+                      s.role === "manufacturer" ? "bg-blue-500" : "bg-green-500",
+                    )} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-semibold text-on-surface truncate">{s.name}</p>
+                        {s.isPreCreated && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-amber-100 text-amber-700 shrink-0">OTP pending</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant font-mono">{s.phone}</p>
+                      {s.city && <p className="text-[10px] text-on-surface-variant">{s.city}</p>}
+                    </div>
+                    <span className={cn(
+                      "shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase",
+                      s.role === "manufacturer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700",
+                    )}>{s.role}</span>
+                    <button
+                      type="button"
+                      disabled={assigningSeller === s.id}
+                      onClick={() => handleAssignToSeller(s)}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all"
+                    >
+                      {assigningSeller === s.id
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Assigning…</>
+                        : <><Link2 className="h-3.5 w-3.5" /> Assign</>
+                      }
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Assignments Viewer (who carries this product) ──────────────────── */}
+      {viewAssignmentsFor && (
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-end justify-center bg-on-surface/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[calc(100dvh-64px)] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
+            <div className="flex items-center justify-between border-b border-outline-variant/20 px-5 py-4 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Store className="h-5 w-5 text-secondary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-on-surface truncate">Assigned sellers</p>
+                  <p className="text-xs text-on-surface-variant truncate">{viewAssignmentsFor.name}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setViewAssignmentsFor(null)}
+                className="p-2 rounded-xl hover:bg-surface-container shrink-0"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {rowMsg && (
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs font-medium text-on-surface-variant">{rowMsg}</div>
+              )}
+              {assignmentsLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : assignmentRows.length === 0 ? (
+                <p className="text-sm text-center text-on-surface-variant py-10">Not assigned to any seller yet.</p>
+              ) : assignmentRows.map(row => (
+                <div key={row.copyId} className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/40 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-on-surface truncate">{row.store}</p>
+                        <span className={cn(
+                          "shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase",
+                          row.role === "manufacturer" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700",
+                        )}>{row.role}</span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant font-mono">{row.phone}</p>
+                    </div>
+                    <button type="button" onClick={() => removeAssignmentRow(row)} disabled={removingRow === row.copyId}
+                      className="shrink-0 p-1.5 rounded-lg text-on-surface-variant hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50" title="Remove assignment">
+                      {removingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {row.variants && row.variants.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Variants Pricing & Stock:</p>
+                      {row.variants.map((v: any, vIdx: number) => (
+                        <div key={vIdx} className="flex items-center gap-2 bg-surface-container-low/50 p-2 rounded-xl border border-outline-variant/20">
+                          <span className="text-xs font-semibold text-on-surface w-20 truncate">{v.unit}</span>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Price:</span>
+                            <input type="number" min={0} value={v.price}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "price", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs outline-none focus:border-primary" />
+                          </label>
+                          <label className="flex items-center gap-1 text-xs flex-1">
+                            <span className="font-medium text-on-surface-variant">Stock:</span>
+                            <input type="number" min={0} value={v.stock !== undefined ? v.stock : ""}
+                              onChange={e => setRowVariantField(row.copyId, vIdx, "stock", e.target.value)}
+                              className="w-full rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-xs text-center outline-none focus:border-primary" />
+                          </label>
+                        </div>
+                      ))}
+                      <div className="flex justify-end pt-1">
+                        <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                          className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                          {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Variants"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-end gap-2">
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Price (₹)</span>
+                        <input type="number" min={0} value={row.price}
+                          onChange={e => setRowField(row.copyId, "price", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs flex-1">
+                        <span className="font-medium text-on-surface-variant">Stock Qty</span>
+                        <input type="number" min={0} value={row.stock}
+                          onChange={e => setRowField(row.copyId, "stock", e.target.value)}
+                          className="w-full rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-center outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                      </label>
+                      <button type="button" onClick={() => saveAssignmentRow(row)} disabled={savingRow === row.copyId}
+                        className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all">
+                        {savingRow === row.copyId ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Remove Assignment Confirmation Modal */}
+      {confirmRemoveAssignment && viewAssignmentsFor && (
+        <div className="fixed inset-x-0 bottom-0 top-16 z-[60] flex items-end justify-center bg-on-surface/40 p-4 backdrop-blur-sm sm:items-center">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 mb-4">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-bold text-on-surface">Remove Assignment</h3>
+              <p className="text-sm text-on-surface-variant mt-2">
+                Are you sure you want to remove <span className="font-semibold text-on-surface">&quot;{viewAssignmentsFor.name}&quot;</span> from <span className="font-semibold text-on-surface">{confirmRemoveAssignment.store}</span>?
+              </p>
+            </div>
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
+              <button type="button" onClick={() => setConfirmRemoveAssignment(null)}
+                className="flex-1 py-3 rounded-2xl border border-outline-variant text-sm font-bold hover:bg-surface-container transition-colors">
+                Cancel
+              </button>
+              <button type="button" onClick={performRemoveAssignment}
+                className="flex-1 py-3 bg-red-600 text-white text-sm font-bold rounded-2xl hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
+                Remove
               </button>
             </div>
           </div>

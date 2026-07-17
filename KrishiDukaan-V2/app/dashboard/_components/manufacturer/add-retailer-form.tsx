@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint } from "firebase/firestore";
-import { Link2, Loader2, LocateFixed, MapPin, Search, UserPlus, X } from "lucide-react";
+import { Loader2, LocateFixed, MapPin, UserPlus, X } from "lucide-react";
 import {
   createNetworkRetailer,
   linkExistingRetailerToNetwork,
@@ -127,11 +127,9 @@ export function AddRetailerModal({
   const [address, setAddress] = useState<NetworkRetailerAddress>(emptyAddress);
   const [geo, setGeo] = useState<GeoPoint | null>(null);
 
-  // "Link existing" state
+  // "Link existing" state (kept for future use)
   const [existingUsers, setExistingUsers] = useState<RegisteredRetailer[]>([]);
-  const [existingSearch, setExistingSearch] = useState("");
-  const [selectedExisting, setSelectedExisting] = useState<RegisteredRetailer | null>(null);
-  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [, setLoadingExisting] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -222,15 +220,14 @@ export function AddRetailerModal({
   }, []);
 
   const filteredExisting = existingUsers.filter((u) => {
-    const q = (tab === "existing" ? existingSearch : shopName).toLowerCase();
+    const q = shopName.toLowerCase();
     if (!q) return false;
-    // Don't suggest if it's an exact match already (prevents redundant dropdown)
-    if (tab === "new" && u.shopName?.toLowerCase() === shopName.toLowerCase()) return true; 
+    if (u.shopName?.toLowerCase() === shopName.toLowerCase()) return true;
     return [u.shopName, u.ownerName, u.name, u.email, u.phone].join(" ").toLowerCase().includes(q);
   });
 
   const handleLinkExisting = async (retailerToLink?: RegisteredRetailer) => {
-    const target = retailerToLink || selectedExisting;
+    const target = retailerToLink || null;
     console.log("Linking retailer:", { manufacturerId, target });
     if (!target) return;
     setError(null);
@@ -296,8 +293,7 @@ export function AddRetailerModal({
       autocompleteListenerRef.current = ac.addListener("place_changed", () => {
         const place = ac.getPlace();
         if (!place) return;
-        // Only auto-fill shop name if the user hasn't typed one yet
-        if (place.name && !shopName.trim()) setShopName(place.name);
+        if (place.name) setShopName(place.name);
         if (place.address_components?.length) {
           const fields = extractAddressFields(
             place as Parameters<typeof extractAddressFields>[0],
@@ -383,8 +379,8 @@ export function AddRetailerModal({
     setError(null);
 
     const trimmedPhone = phone.trim();
-    if (!trimmedPhone) {
-      setError(t('phoneNumberRequired'));
+    if (!trimmedPhone || trimmedPhone.length < 10) {
+      setError("Phone number must be exactly 10 digits.");
       return;
     }
 
@@ -471,31 +467,8 @@ export function AddRetailerModal({
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-outline-variant/20 shrink-0">
-          {(["new", "existing"] as Tab[]).map((tabKey) => (
-            <button
-              key={tabKey}
-              type="button"
-              onClick={() => { setTab(tabKey); setError(null); }}
-              className={[
-                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                tab === tabKey
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-on-surface-variant hover:text-on-surface",
-              ].join(" ")}
-            >
-              {tabKey === "new" ? (
-                <><UserPlus className="h-4 w-4" /> {t('newRetailerTab')}</>
-              ) : (
-                <><Link2 className="h-4 w-4" /> {t('linkExistingTab')}</>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Seat guard (new retailer tab only) */}
-        {tab === "new" && seatsRemaining <= 0 ? (
+        {/* Seat guard */}
+        {seatsRemaining <= 0 ? (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <div className="rounded-full bg-harvest/10 p-3">
               <UserPlus className="h-6 w-6 text-harvest" />
@@ -512,78 +485,6 @@ export function AddRetailerModal({
             >
               {t('upgradeSubscription')}
             </a>
-          </div>
-        ) : tab === "existing" ? (
-          /* ── Link existing registered retailer ── */
-          <div className="flex flex-col gap-4 overflow-y-auto px-5 py-5">
-            {error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-            )}
-            <p className="text-sm text-on-surface-variant">
-              {t('linkExistingDesc')}
-            </p>
-            <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2">
-              <Search className="h-4 w-4 text-outline shrink-0" />
-              <input
-                type="text"
-                placeholder={t('searchRetailerPlaceholder')}
-                value={existingSearch}
-                onChange={(e) => setExistingSearch(e.target.value)}
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
-              />
-            </div>
-            {loadingExisting ? (
-              <div className="flex justify-center py-6">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : (
-              <div className="max-h-60 overflow-y-auto rounded-xl border border-outline-variant/30 divide-y divide-outline-variant/10">
-                {filteredExisting.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-on-surface-variant">
-                    {existingSearch ? t('noMatchingRetailers') : t('noRegisteredRetailers')}
-                  </p>
-                ) : (
-                  filteredExisting.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => setSelectedExisting(u)}
-                      className={[
-                        "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors",
-                        selectedExisting?.id === u.id ? "bg-primary/10" : "hover:bg-surface-container",
-                      ].join(" ")}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-on-surface truncate">
-                          {u.shopName || u.name || t('retailerFallbackName')}
-                        </p>
-                        <p className="text-xs text-on-surface-variant truncate">
-                          {u.ownerName || u.name} {u.email ? `· ${u.email}` : ""}
-                        </p>
-                      </div>
-                      {selectedExisting?.id === u.id && (
-                        <span className="text-xs font-bold text-primary shrink-0 mt-0.5">{t('selectedLabel')}</span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-            <div className="flex items-center justify-end gap-3 border-t border-outline-variant/20 pt-4">
-              <button type="button" onClick={onClose} disabled={submitting}
-                className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
-                {t('cancelBtn')}
-              </button>
-              <button type="button" onClick={() => handleLinkExisting()}
-                disabled={!selectedExisting || submitting}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60">
-                {submitting ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> {t('linkingText')}</>
-                ) : (
-                  <><Link2 className="h-4 w-4" /> {t('linkToNetworkBtn')}</>
-                )}
-              </button>
-            </div>
           </div>
         ) : (
           <form
@@ -664,12 +565,19 @@ export function AddRetailerModal({
                 <input
                   required
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   disabled={submitting}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91…"
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="10-digit mobile number"
                   className={inputCls}
                 />
+                {phone.length > 0 && phone.length < 10 ? (
+                  <p className="text-xs text-red-600 mt-0.5">Enter exactly 10 digits ({phone.length}/10)</p>
+                ) : (
+                  <p className="text-[11px] text-amber-700 mt-0.5">Please verify the phone number carefully. It cannot be changed after the retailer is created.</p>
+                )}
               </label>
               <label className={labelCls}>
                 <span className="font-medium text-on-surface">

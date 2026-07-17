@@ -12,12 +12,22 @@ service cloud.firestore {
     // Resolve the caller's normalized phone from uidIndex.
     // Costs 1 cached read per rule evaluation — only call this for
     // collections that truly need phone-based identity.
-    function myPhone() {
-      return get(/databases/$(database)/documents/uidIndex/$(request.auth.uid)).data.phone;
+    function hasPhone() {
+      return exists(/databases/$(database)/documents/uidIndex/$(request.auth.uid));
     }
 
+    function myPhone() {
+      return hasPhone() ? get(/databases/$(database)/documents/uidIndex/$(request.auth.uid)).data.phone : '';
+    }
+
+    function hasUserDoc() {
+      return myPhone() != '' && exists(/databases/$(database)/documents/users/$(myPhone()));
+    }
+
+    // Returns caller's role, or '' if missing or not resolved.
+    // E.g., 'retailer', 'manufacturer', 'admin', 'customer', etc.
     function myRole() {
-      return get(/databases/$(database)/documents/users/$(myPhone())).data.role;
+      return hasUserDoc() ? get(/databases/$(database)/documents/users/$(myPhone())).data.role : '';
     }
 
     // Direct admin check for email-based admin accounts that have no uidIndex entry.
@@ -34,6 +44,22 @@ service cloud.firestore {
       return isDirectAdmin() || (isAuthed() && myRole() == 'admin');
     }
 
+    // Direct sales-exec check for email-based field-team accounts whose doc
+    // lives at users/{uid} (created via the admin "create user" flow, same
+    // shape as email admins). Mirrors isDirectAdmin().
+    function isDirectSalesExec() {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'salesExecutive';
+    }
+
+    // isSalesExec() works for email-based execs (users/{uid}) and any
+    // phone-based exec (users/{phone} via myRole). Used to gate the shared
+    // dealer master + sales writes so ordinary customers cannot read/pollute them.
+    function isSalesExec() {
+      return isDirectSalesExec() || (isAuthed() && myRole() == 'salesExecutive');
+    }
+
     // Compares a stored phone value against the caller's phone (myPhone()),
     // handling both E164 (+919876543210) and 10-digit (9876543210) formats.
     // This is the fix for the invite-acceptance "Missing or insufficient permissions" error:
@@ -48,7 +74,7 @@ service cloud.firestore {
     // Maps Firebase Auth UID → normalized phone. Written once on first login.
     // Rule deliberately avoids myPhone() to break the bootstrap chicken-and-egg.
     match /uidIndex/{uid} {
-      allow read:   if isAuthed() && request.auth.uid == uid;
+      allow read:   if isAuthed() && (request.auth.uid == uid || isAdmin());
       allow create: if isAuthed() && request.auth.uid == uid
                        && request.resource.data.keys().hasAll(['phone', 'createdAt'])
                        && request.resource.data.phone is string;
@@ -59,13 +85,23 @@ service cloud.firestore {
     // Document ID = normalized phone e.g. "+919876543210"
     match /users/{phone} {
       allow read: if isAuthed() && (
+        isAdmin() ||
         request.auth.uid == phone ||
-        myPhone() == phone || isAdmin() || myRole() in ['retailer', 'manufacturer']
+        myPhone() == phone || myRole() in ['retailer', 'manufacturer'] ||
+        // Allow first-time phone-auth login to read their pre-created doc before uidIndex exists.
+        // request.auth.token.phone_number is the E.164 number from the Firebase auth JWT.
+        request.auth.token.phone_number == phone
       );
-      allow create: if isAuthed()
+      allow create: if isAdmin()
+                       || (isAuthed()
                        && myPhone() == phone
-                       && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer'];
-      allow update: if isAdmin() || (isAuthed() && (request.auth.uid == phone || myPhone() == phone) &&
+                       && request.resource.data.role in ['customer', 'consumer', 'retailer', 'manufacturer']);
+      allow update: if isAdmin() || (isAuthed() && (
+          request.auth.uid == phone ||
+          myPhone() == phone ||
+          // Allow linking uid on first login before uidIndex is bootstrapped.
+          request.auth.token.phone_number == phone
+        ) &&
         // Prevent role downgrade
         !(
           (resource.data.role == 'retailer'     && request.resource.data.role == 'customer') ||
@@ -80,8 +116,9 @@ service cloud.firestore {
     // Business profile — public read, owner write.
     match /profiles/{phone} {
       allow read: if true;
-      allow create: if isAuthed() && myPhone() == phone;
-      allow update: if isAdmin() || (isAuthed() && myPhone() == phone);
+      allow create: if isAdmin() || (isAuthed() && myPhone() == phone);
+      allow update: if isAdmin() || (isAuthed() && myPhone() == phone)
+                       || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalReviews', 'averageRating']));
       allow delete: if isAdmin();
     }
 
@@ -91,7 +128,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthed() && myRole() in ['retailer', 'manufacturer', 'admin']
                        && request.resource.data.createdByPhone == myPhone();
-      allow update: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
+      allow update: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone())
+                       || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalReviews', 'averageRating']));
       allow delete: if isAdmin() || (isAuthed() && resource.data.createdByPhone == myPhone());
     }
 
@@ -185,6 +223,17 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ─── failedPayments ──────────────────────────────────────────────────────
+    match /failedPayments/{paymentId} {
+      allow read: if isAdmin();
+      allow create: if isAuthed() && (
+        (request.resource.data.userPhone is string && request.resource.data.userPhone == myPhone()) ||
+        request.resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
     // ─── orders ──────────────────────────────────────────────────────────────
     // Accepts both new (customerPhone/sellerPhone) and legacy (customerId/sellerId) fields.
     match /orders/{orderId} {
@@ -204,7 +253,17 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthed() && (
         resource.data.sellerPhone == myPhone() ||
         resource.data.sellerId == request.auth.uid
-      ) && request.resource.data.status in ['placed','accepted','out_for_delivery','delivered','rejected']);
+      ) && request.resource.data.status in ['placed','accepted','out_for_delivery','delivered','rejected'])
+        // Allow customer to update payment field on their own order
+        || (isAuthed() && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.customerPhone == myPhone()
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payment', 'updatedAt']))
+        // Allow customer to write invoice metadata after PDF upload
+        || (isAuthed() && (
+          resource.data.customerId == request.auth.uid ||
+          resource.data.customerPhone == myPhone()
+        ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['invoice']));
     }
 
     // ─── hubs ────────────────────────────────────────────────────────────────
@@ -223,20 +282,24 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
+    // Public list/count — needed for brand page retailer count (unauthenticated visitors).
+      // Individual doc reads still restricted to the manufacturer or the retailer themselves.
+      allow list: if true;
+      allow get: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer reads their roster; retailer reads their own entry.
-      allow read: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone);
+      allow read: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
       // Manufacturer manages their roster; retailer can update their own entry
       // (e.g. backfill sets status:"active" after onboarding).
       allow write: if isAuthed() && (myPhone() == mPhone || myPhone() == rPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/products/{pid} {
-      allow read: if isAuthed() && myPhone() == mPhone;
+      allow read: if isAuthed() && (myPhone() == mPhone || isAdmin());
       allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
     }
 
     match /manufacturers/{mPhone}/inventory/{iid} {
-      allow read: if isAuthed() && myPhone() == mPhone;
+      allow read: if isAuthed() && (myPhone() == mPhone || isAdmin());
       allow write: if isAuthed() && (myPhone() == mPhone || isAdmin());
     }
 
@@ -248,7 +311,7 @@ service cloud.firestore {
     }
 
     match /retailers/{rPhone}/inventory/{iid} {
-      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer');
+      allow read: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
       allow write: if isAuthed() && (myPhone() == rPhone || myRole() == 'manufacturer' || isAdmin());
     }
 
@@ -275,29 +338,41 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.createdBy == request.auth.uid ||
-        // Allow claiming assigned product if it matches the user's retailerDocId (from invite)
-        (resource.data.source == 'manufacturer_assigned' && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
+        phoneMatches(resource.data.retailerDocId) ||
+        // Allow claiming assigned product if it matches the user's retailerDocId (from invite or admin assignment)
+        ((resource.data.source == 'manufacturer_assigned' || resource.data.source == 'admin_assigned') && resource.data.retailerDocId != null && request.resource.data.retailerId == request.auth.uid) ||
         // Allow any retailer to add their store to the product's availability array
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability']) ||
+        // Allow owner to update discount mirror fields (effectiveDiscountPct, maxDiscountPct, availability+discount)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['effectiveDiscountPct', 'updatedAt']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['maxDiscountPct']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt', 'effectiveDiscountPct'])
       ));
       allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.manufacturerId == request.auth.uid
+        resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.manufacturerId)
       ));
     }
 
     match /retailers/{retailerId} {
       allow read: if true;
       allow create: if isAuthed();
-      allow update: if isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.userId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         retailerId == request.auth.uid ||
         resource.data.phone == myPhone() ||
-        resource.data.phone == myPhone().replace('+91', '')
-      );
-      allow delete: if isAuthed() && retailerId == request.auth.uid;
+        resource.data.phone == myPhone().replace('+91', '') ||
+        resource.data.manufacturerId == request.auth.uid ||
+        resource.data.manufacturerPhone == myPhone()
+      ));
+      allow delete: if isAdmin() || (isAuthed() && retailerId == request.auth.uid);
     }
 
     match /stores/{storeId} {
@@ -307,53 +382,96 @@ service cloud.firestore {
 
     match /manufacturers/{manufacturerId} {
       allow read: if true;
-      // Allow write when manufacturerId is the auth UID (legacy) OR the caller's phone (new schema)
-      allow create, update: if isAuthed() && (
+      // Allow write when manufacturerId is the auth UID (legacy) OR the caller's phone (new schema), or admin
+      allow create, update: if isAdmin() || (isAuthed() && (
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
+      ));
+    }
+    
+       // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
+    // Optional brand-page customization — public read, manufacturer owner write.
+    // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
+    match /brandPages/{manufacturerPhone} {
+      allow read: if true;
+      allow create, update: if isAuthed() && (myPhone() == manufacturerPhone || isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    // ─── Discount field validation helper ───────────────────────────────────
+    // Returns true when the incoming write does not set invalid discount values.
+    // discountPct must be 0–99; dates must be absent or timestamps.
+    // Also validates new fields: discountType, discountFixedAmt, bulk tiers.
+    function discountFieldsValid() {
+      let d = request.resource.data;
+      return (
+        // discountPct: absent, or a number in [0, 99]
+        (!('discountPct' in d) || (d.discountPct is number && d.discountPct >= 0 && d.discountPct <= 99)) &&
+        // discountFixedAmt: absent, or a non-negative number
+        (!('discountFixedAmt' in d) || (d.discountFixedAmt is number && d.discountFixedAmt >= 0)) &&
+        // discountType: absent, or one of the valid values
+        (!('discountType' in d) || d.discountType in ['percentage', 'fixed_amount']) &&
+        // discountEnabled: absent or bool
+        (!('discountEnabled' in d) || d.discountEnabled is bool) &&
+        // bulkDiscountEnabled: absent or bool
+        (!('bulkDiscountEnabled' in d) || d.bulkDiscountEnabled is bool) &&
+        // bulkDiscountTiers: absent or list
+        (!('bulkDiscountTiers' in d) || d.bulkDiscountTiers is list) &&
+        // date fields: absent, null, or timestamp
+        (!('discountStartDate' in d) || d.discountStartDate == null || d.discountStartDate is timestamp) &&
+        (!('discountEndDate'   in d) || d.discountEndDate   == null || d.discountEndDate   is timestamp)
       );
     }
 
     match /inventory/{inventoryId} {
-      allow read: if isAuthed() && (
+      allow read: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
+        phoneMatches(resource.data.manufacturerId) ||
         // retailerDocId can be stored as 10-digit or E164 — match both formats
         phoneMatches(resource.data.retailerDocId) ||
         // Allow if retailerPhone is set (post-backfill) and matches caller
         (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone))
-      );
-      allow create: if isAuthed();
-      allow update: if isAuthed() && (
+      ));
+      allow create: if isAdmin() || (isAuthed() && discountFieldsValid());
+      allow update: if isAdmin() || (isAuthed() && discountFieldsValid() && (
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId) ||
         // Backfill claim: retailerDocId matches caller's phone → allowed to set retailerId=uid
         (phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid) ||
         // Also allow if retailerPhone already matches (re-running backfill)
         (resource.data.retailerPhone is string && phoneMatches(resource.data.retailerPhone) && request.resource.data.retailerId == request.auth.uid)
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
-        resource.data.retailerId == request.auth.uid
-      );
+        resource.data.retailerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId) ||
+        phoneMatches(resource.data.retailerId)
+      ));
     }
 
     match /manufacturerRetailers/{docId} {
       allow get: if isAuthed() && (
+        isAdmin() ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         resource.data.retailerId == request.auth.uid ||
         // Allow retailer to read their own invite by phone (for auto-accept flow)
         phoneMatches(resource.data.retailerPhone)
       );
-      allow list: if isAuthed();
+      allow list: if true;
       allow create: if isAuthed() && (
-        request.resource.data.manufacturerId == request.auth.uid
+        request.resource.data.manufacturerId == request.auth.uid ||
+        isAdmin()
       );
-      allow update: if isAuthed() && (
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone() ||
         (
@@ -368,11 +486,11 @@ service cloud.firestore {
           request.resource.data.retailerId == request.auth.uid &&
           request.resource.data.claimable == false
         )
-      );
-      allow delete: if isAuthed() && (
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone()
-      );
+      ));
     }
 
     match /retailerSeatListings/{docId} {
@@ -380,14 +498,29 @@ service cloud.firestore {
         resource.data.ownerId == request.auth.uid ||
         resource.data.retailerId == request.auth.uid ||
         resource.data.manufacturerId == request.auth.uid ||
-        phoneMatches(resource.data.retailerDocId)
+        // Phone-keyed reads — required so the seat-stats queries that filter by
+        // ownerPhone / manufacturerPhone are authorized. The dashboard "Listing
+        // Seats" card depends on these; without them the query is denied and the
+        // whole card silently disappears.
+        resource.data.ownerPhone == myPhone() ||
+        resource.data.manufacturerPhone == myPhone() ||
+        phoneMatches(resource.data.retailerDocId) ||
+        // Admin-assigned listings key ownerId by the seller's phone, not their UID.
+        phoneMatches(resource.data.ownerId)
       ));
-      allow create: if isAuthed() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if isAuthed() && (
+      // Admin creates a seat listing on the seller's behalf at assignment time
+      // (the seller is not the authed caller then), keyed by the seller's phone.
+      allow create: if isAdmin() || (isAuthed() && request.resource.data.ownerId == request.auth.uid);
+      allow update: if isAdmin() || (isAuthed() && (
         resource.data.ownerId == request.auth.uid ||
+        // Seller releasing their own admin-assigned (phone-keyed) listing.
+        phoneMatches(resource.data.ownerId) ||
         (resource.data.retailerDocId != null && phoneMatches(resource.data.retailerDocId) && request.resource.data.retailerId == request.auth.uid)
-      );
-      allow delete: if isAuthed() && resource.data.ownerId == request.auth.uid;
+      ));
+      allow delete: if isAdmin() || (isAuthed() && (
+        resource.data.ownerId == request.auth.uid ||
+        phoneMatches(resource.data.ownerId)
+      ));
     }
 
     match /manufacturer_contacts/{contactId} {
@@ -400,5 +533,235 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /contactMessages/{docId} {
+      allow create: if true;
+      allow read, write: if isAdmin();
+    }
+
+    // ─── WhatsApp inbox ──────────────────────────────────────────────────────
+    // Written by Cloud Functions / webhook (admin SDK, bypasses rules).
+    // Read and write restricted to admins only from the client.
+    match /waIncomingMessages/{msgId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waNotifications/{notifId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waConversations/{phone} {
+      allow read, write: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read, write: if isAdmin();
+      }
+    }
+    
+       // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
+    // Seller-level delivery config (online toggle, weight slabs, coverage).
+    // Public read so customers/checkout can verify delivery area.
+    // Write restricted to the owning seller (phone match) or admin.
+    match /deliverySettings/{sellerPhone} {
+      allow read: if true;
+      allow create, update: if isAuthed() && (myPhone() == sellerPhone || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ─── companyPages ────────────────────────────────────────────────────────
+    // Brand pages created by manufacturers. Public read, owner or admin write.
+    match /companyPages/{companyId} {
+      allow read: if true;
+      allow create: if isAdmin() || (isAuthed() && myRole() == 'manufacturer');
+      allow update: if isAdmin() || (isAuthed() && (
+        resource.data.ownerPhone == myPhone() ||
+        companyId == myPhone()
+      ));
+      allow delete: if isAdmin();
+    }
+
+    // ─── blogPosts ───────────────────────────────────────────────────────────
+    // Public read (published posts visible to all for SEO).
+    // Only admins can create, update or delete posts.
+    match /blogPosts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── siteVisits ──────────────────────────────────────────────────────────
+    // Daily traffic analytics — admin read, public write (create/update to log visits).
+    match /siteVisits/{date} {
+      allow read: if isAdmin();
+      allow create, update: if true;
+    }
+
+    match /appVersion/{vId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ─── productReviews & storeReviews ───────────────────────────────────────
+    // Public read, authenticated users can write.
+    match /productReviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthed() && request.resource.data.reviewerPhone == myPhone();
+      allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
+    }
+
+    match /storeReviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthed() && request.resource.data.reviewerPhone == myPhone();
+      allow update, delete: if isAdmin() || (isAuthed() && resource.data.reviewerPhone == myPhone());
+    }
+
+    // ─── notifications ───────────────────────────────────────────────────────
+    // Written by Cloud Functions (admin SDK bypasses rules). Recipients can
+    // read their own notifications and mark them read / delete them.
+    match /notifications/{notifId} {
+      // GET (single doc): resource.data is available — check phone directly.
+      allow get: if isAdmin() || (isAuthed() && (
+        phoneMatches(resource.data.recipientPhone) ||
+        (resource.data.recipientPhones is list &&
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+      ));
+      // LIST (query): resource.data is NOT available during query evaluation.
+      // Allow any authenticated user — the query is always filtered by
+      // `recipientPhones arrayContains <callerPhone>` so results are already scoped.
+      allow list: if isAuthed();
+      allow update: if isAuthed()
+        && (phoneMatches(resource.data.recipientPhone) ||
+            (resource.data.recipientPhones is list &&
+              resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')])))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAdmin() || (isAuthed() && (
+        phoneMatches(resource.data.recipientPhone) ||
+        (resource.data.recipientPhones is list &&
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+      ));
+      allow create: if isAdmin();
+    }
+
+    // ─── carts/{phone} ───────────────────────────────────────────────────────────
+    // Shopping cart — keyed by phone (same as users/{phone}).
+    // Only the cart owner or an admin may read or write.
+    match /carts/{phone} {
+      allow read, write: if isAdmin() || (isAuthed() && myPhone() == phone);
+    }
+
+    // ─── usernames ───────────────────────────────────────────────────────────
+    // Doc ID = lowercase handle (e.g. "agriking").
+    // Public read for search. Only the owning seller (phone match) or admin writes.
+    // Uniqueness is enforced at the doc level — a create fails if the doc already exists.
+    match /usernames/{handle} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.phone == myPhone()
+        && myRole() in ['retailer', 'manufacturer'];
+      allow update: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+      allow delete: if isAdmin()
+        || (isAuthed() && resource.data.phone == myPhone());
+    }
+
+    // ─── reels ───────────────────────────────────────────────────────────────
+    // Public read. Any authenticated user can create.
+    // Only the shop owner (matched by phone) or admin can update/delete.
+    // viewsCount increment is the only anonymous-adjacent write, but we keep
+    // write gated on auth to prevent abuse — unauthenticated viewers still
+    // generate a view event because the mobile calls incrementViewsCount only
+    // after the user has the app open (implying phone auth).
+    match /reels/{reelId} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.shopOwnerId == myPhone();
+      allow update: if isAdmin()
+        || (isAuthed() && phoneMatches(resource.data.shopOwnerId))
+        // Allow any authed user to increment the counter fields only
+        // (likesCount via toggleLike, commentsCount via addComment, viewsCount via incrementViewsCount)
+        || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['viewsCount', 'likesCount', 'commentsCount']));
+      allow delete: if isAdmin()
+        || (isAuthed() && phoneMatches(resource.data.shopOwnerId));
+
+      match /reel_comments/{commentId} {
+        allow read: if true;
+        // Accept userId match via uidIndex (myPhone) OR directly from the auth token
+        // phone_number claim — guards against missing uidIndex on first login.
+        allow create: if isAuthed()
+          && (request.resource.data.userId == myPhone()
+              || request.resource.data.userId == request.auth.token.phone_number);
+        allow delete: if isAdmin()
+          || (isAuthed() && phoneMatches(resource.data.userId))
+          || (isAuthed() && resource.data.userId == request.auth.token.phone_number);
+      }
+    }
+
+    // ─── reel_likes ──────────────────────────────────────────────────────────
+    // Doc ID = {reelId}_{userId}. Any authenticated user can like/unlike.
+    match /reel_likes/{likeId} {
+      allow read: if true;
+      allow write: if isAuthed();
+    }
+
+    // ─── follows ─────────────────────────────────────────────────────────────
+    // Doc ID = {followerId}_{shopId}. Any authenticated user can follow/unfollow.
+    match /follows/{followId} {
+      allow read: if true;
+      allow write: if isAuthed();
+    }
+    
+    
+    // ─── daySessions ─────────────────────────────────────────────────────────
+    // One document per sales executive per working day.
+    // The exec owns their own sessions; the Cloud Function (admin SDK) writes
+    // totalDistanceKm + calculatedAt back — admin SDK bypasses client rules.
+    match /daySessions/{sessionId} {
+      allow read:   if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
+      allow create: if isSalesExec()
+                       && request.resource.data.salesExecutiveId == request.auth.uid
+                       && request.resource.data.status == 'ACTIVE';
+      allow update: if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ─── dealers ─────────────────────────────────────────────────────────────
+    // Shared dealer master, created by Sales Executives via /sales/dealers and
+    // read by the whole field team. Read/write is restricted to sales execs (or
+    // admins) — previously ANY authenticated user (incl. customers) could read
+    // the entire dealer master (shop name, owner, phone, address, geo). A sales
+    // exec may only create docs carrying their own UID as createdBy, and may
+    // only update their own records. Soft-delete (active=false) goes through
+    // update. Hard-delete is admin-only.
+    match /dealers/{dealerId} {
+      allow read:   if isSalesExec() || isAdmin();
+      allow create: if isSalesExec()
+                       && request.resource.data.createdBy == request.auth.uid
+                       && request.resource.data.active    == true;
+      allow update: if (isSalesExec() && resource.data.createdBy == request.auth.uid)
+                       || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── dealerVisits ─────────────────────────────────────────────────────────
+    // One document per dealer visit logged by a sales executive.
+    // A sales exec can only create/read/update visits tagged with their own UID.
+    // Reads are OWNER-SCOPED: an exec sees only their own visits; admins see all
+    // (admin SDK bypasses rules anyway, but isAdmin() covers admin client reads).
+    // Every client query already filters where('salesExecutiveId','==',uid), so
+    // owner-scoping breaks no existing read path while closing the prior hole
+    // where ANY authenticated user (incl. customers) could read all visit data.
+    // Hard-delete is admin-only.
+    match /dealerVisits/{visitId} {
+      allow read:   if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
+      allow create: if isSalesExec()
+                       && request.resource.data.salesExecutiveId == request.auth.uid;
+      allow update: if isAuthed()
+                       && resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
   }
-}
+  }

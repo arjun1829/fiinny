@@ -13,6 +13,7 @@ import {
   Package,
   ReceiptText,
   Star,
+  Truck,
   UserCircle2,
   UsersRound,
   X,
@@ -20,12 +21,14 @@ import {
 import { auth, getUserProfile } from "../../firebase";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
+import { useEffectiveUser } from "../_context/effective-user-context";
 
 const baseNav = [
   { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
   { href: "/dashboard/analytics", labelKey: "sideAnalytics" as const, icon: BarChart3 },
   { href: "/dashboard/inventory", labelKey: "sideInventory" as const, icon: Package },
   { href: "/dashboard/orders", labelKey: "sideOrders" as const, icon: ReceiptText },
+  { href: "/dashboard/delivery", labelKey: "sideDelivery" as const, icon: Truck },
   { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
   { href: "/dashboard/profile", labelKey: "sideProfile" as const, icon: UserCircle2 },
 ] as const;
@@ -58,6 +61,8 @@ function hrefToTourKey(href: string): string {
       return "profile";
     case "/dashboard/settings":
       return "settings";
+    case "/dashboard/delivery":
+      return "delivery";
     case "/dashboard/manufacturer/retailers":
       return "retailer-network";
     default:
@@ -73,16 +78,23 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
-  const [ownerCompanyId, setOwnerCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (effectiveUid && effectiveProfile) {
+      // Use context when available (normal user or admin view)
+      const r = effectiveProfile?.role;
+      setRole(r === "manufacturer" || r === "retailer" ? r : null);
+      setOnlineDelivery(!!(effectiveProfile as any)?.onlineDelivery);
+      return;
+    }
+    // Fallback to auth listener when context is not yet populated
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole(null);
         setOnlineDelivery(false);
-        setOwnerCompanyId(null);
         return;
       }
       try {
@@ -90,19 +102,17 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
         const r = profile?.role;
         setRole(r === "manufacturer" || r === "retailer" ? r : null);
         setOnlineDelivery(!!(profile as any)?.onlineDelivery);
-        setOwnerCompanyId((profile as any)?.ownerCompanyId ?? null);
       } catch {
         setRole(null);
         setOnlineDelivery(false);
-        setOwnerCompanyId(null);
       }
     });
     return () => unsub();
-  }, []);
+  }, [effectiveUid, effectiveProfile]);
 
   type NavItem = { href: string; labelKey: string; icon: React.ElementType };
 
-  const companyPageNavItem: NavItem | null = ownerCompanyId
+  const companyPageNavItem: NavItem | null = role === "manufacturer"
     ? { href: "/dashboard/company", labelKey: "sideCompanyPage", icon: Building2 }
     : null;
 
@@ -177,9 +187,11 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
                 ? pathname === "/dashboard"
                 : pathname.startsWith(href);
             const tourKey = hrefToTourKey(href);
-            const isOrdersLocked = href === "/dashboard/orders" && !onlineDelivery;
+            const isLocked =
+              (href === "/dashboard/orders" || href === "/dashboard/delivery") &&
+              !onlineDelivery;
 
-            if (isOrdersLocked) {
+            if (isLocked) {
               return (
                 <Link
                   key={href}

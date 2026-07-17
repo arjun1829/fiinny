@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { auth, saveUserProfile } from "../firebase";
 import { useI18n } from "../i18n/I18nContext";
+import { HelperIcon, HelperTooltip } from "../../components/helpers";
 import { acceptManufacturerInvite } from "../lib/invite/invite-acceptance-service";
 import {
   fetchInviteDetailsForSignup,
@@ -47,6 +48,21 @@ export default function SignupView({
   const confirmationRef = useRef<ConfirmationResult | null>(null);
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
+  useEffect(() => {
+    let div = document.getElementById('recaptcha-container-signup-global');
+    if (!div) {
+      div = document.createElement('div');
+      div.id = 'recaptcha-container-signup-global';
+      document.body.appendChild(div);
+    }
+    const verifier = new RecaptchaVerifier(auth, div, { size: 'invisible' });
+    recaptchaRef.current = verifier;
+    return () => {
+      try { verifier.clear(); } catch { /* ignore */ }
+      recaptchaRef.current = null;
+    };
+  }, []);
+
   const trimmedInvite = inviteCode?.trim() || "";
 
   useLayoutEffect(() => {
@@ -66,8 +82,8 @@ export default function SignupView({
         if (!cancelled) {
           setInviteDetails({
             found: false, claimable: false, inviteCode: trimmedInvite,
-            status: "", retailerEmail: "", retailerId: "",
-            manufacturerId: "", manufacturerName: null,
+            status: "", retailerEmail: "", retailerPhone: "", retailerId: "",
+            retailerShopName: null, manufacturerId: "", manufacturerName: null,
           });
         }
       } finally {
@@ -88,7 +104,13 @@ export default function SignupView({
 
   useEffect(() => {
     if (inviteDetails?.claimable || inviteDetails?.status === "active") setRole("retailer");
-  }, [inviteDetails?.claimable, inviteDetails?.status]);
+    // Auto-fill phone from invite so the retailer can't sign up with a different number
+    if (inviteDetails?.claimable && inviteDetails.retailerPhone) {
+      const digits = inviteDetails.retailerPhone.replace(/\D/g, "");
+      const tenDigit = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+      setPhone(tenDigit || inviteDetails.retailerPhone);
+    }
+  }, [inviteDetails?.claimable, inviteDetails?.status, inviteDetails?.retailerPhone]);
 
   const manufacturerLabel = inviteDetails?.manufacturerName?.trim() || "this manufacturer";
 
@@ -127,17 +149,10 @@ export default function SignupView({
     if (normalizedPhone.length < 10) { setError("Please enter a valid 10-digit mobile number."); return; }
     setLoading(true);
     try {
-      try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
-      // Always pass a fresh div — avoids "already rendered" error on retries
-      const freshDiv = document.createElement("div");
-      document.body.appendChild(freshDiv);
-      const verifier = new RecaptchaVerifier(auth, freshDiv, {
-        size: "invisible",
-        callback: () => { /* OTP send proceeds silently */ },
-        "expired-callback": () => { /* token expired — next send will recreate verifier */ },
-      });
-      recaptchaRef.current = verifier;
-      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), verifier);
+      if (!recaptchaRef.current) {
+        throw new Error("reCAPTCHA not ready. Please refresh and try again.");
+      }
+      const result = await signInWithPhoneNumber(auth, toE164(normalizedPhone), recaptchaRef.current);
       confirmationRef.current = result;
       setStep("otp");
     } catch (err: unknown) {
@@ -201,35 +216,45 @@ export default function SignupView({
 
   const rolePicker = (
     <div className="mb-2">
-      <p className="mb-3 ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">I am a…</p>
+      <div className="mb-3 ml-1 flex items-center gap-1.5">
+        <p className="text-xs font-black uppercase tracking-widest text-on-surface-variant">I am a…</p>
+        <HelperIcon
+          size="xs"
+          variant="ghost"
+          side="right"
+          textKey="signupRole"
+          ariaLabel="Role selection help"
+        />
+      </div>
       <div className="grid grid-cols-3 gap-3">
         {([
-          { value: "customer" as const, icon: Tractor, label: "Farmer", sub: "Buy products online", activeBg: "bg-green-600" },
-          { value: "retailer" as const, icon: Store, label: "Retailer", sub: "Run an agri shop", activeBg: "bg-blue-600" },
-          { value: "manufacturer" as const, icon: Factory, label: "Manufacturer", sub: "Supply & distribute", activeBg: "bg-orange-600" },
-        ]).map(({ value, icon: Icon, label, sub, activeBg }) => {
+          { value: "customer" as const, icon: Tractor, label: "Farmer", sub: "Buy products online", activeBg: "bg-green-600", helperKey: "signupRoleFarmer" as const },
+          { value: "retailer" as const, icon: Store, label: "Retailer", sub: "Run an agri shop", activeBg: "bg-blue-600", helperKey: "signupRoleRetailer" as const },
+          { value: "manufacturer" as const, icon: Factory, label: "Manufacturer", sub: "Supply & distribute", activeBg: "bg-orange-600", helperKey: "signupRoleManufacturer" as const },
+        ]).map(({ value, icon: Icon, label, sub, activeBg, helperKey }) => {
           const active = role === value;
           return (
-            <button
-              key={value}
-              type="button"
-              disabled={loading}
-              onClick={() => setRole(value)}
-              className={`relative flex flex-col items-center gap-2 rounded-2xl border-2 px-2 py-4 text-center transition-all disabled:opacity-50 ${
-                active
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-outline-variant/40 bg-surface-container-low hover:border-outline-variant hover:bg-surface-container"
-              }`}
-            >
-              {active && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5 text-primary" />}
-              <span className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${active ? `${activeBg} text-white` : "bg-surface-container text-on-surface-variant"}`}>
-                <Icon className="h-5 w-5" />
-              </span>
-              <span className="flex flex-col gap-0.5">
-                <span className={`text-xs font-black leading-tight ${active ? "text-primary" : "text-on-surface"}`}>{label}</span>
-                <span className="text-[10px] leading-tight text-on-surface-variant">{sub}</span>
-              </span>
-            </button>
+            <HelperTooltip key={value} side="bottom" textKey={helperKey}>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setRole(value)}
+                className={`relative flex flex-col items-center gap-2 rounded-2xl border-2 px-2 py-4 text-center transition-all disabled:opacity-50 ${
+                  active
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-outline-variant/40 bg-surface-container-low hover:border-outline-variant hover:bg-surface-container"
+                }`}
+              >
+                {active && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5 text-primary" />}
+                <span className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${active ? `${activeBg} text-white` : "bg-surface-container text-on-surface-variant"}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="flex flex-col gap-0.5">
+                  <span className={`text-xs font-black leading-tight ${active ? "text-primary" : "text-on-surface"}`}>{label}</span>
+                  <span className="text-[10px] leading-tight text-on-surface-variant">{sub}</span>
+                </span>
+              </button>
+            </HelperTooltip>
           );
         })}
       </div>
@@ -252,42 +277,56 @@ export default function SignupView({
           <span className="font-black text-2xl text-primary">Krishi<span className="text-secondary">Dukan</span></span>
         </div>
 
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-6 flex items-center gap-2 font-bold text-primary transition-transform hover:translate-x-1"
-        >
-          <ICONS.ChevronRight className="h-4 w-4 rotate-180" /> {t("backToStore")}
-        </button>
+        {!trimmedInvite && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-6 flex items-center gap-2 font-bold text-primary transition-transform hover:translate-x-1"
+          >
+            <ICONS.ChevronRight className="h-4 w-4 rotate-180" /> {t("backToStore")}
+          </button>
+        )}
 
-        <h1 className="mb-2 text-3xl font-bold text-on-surface">{t("createAccountTitle")}</h1>
-        <p className="mb-6 font-medium text-on-surface-variant">{t("signupSubtitle")}</p>
-
-        {/* Invite banner */}
-        {trimmedInvite && (
-          <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm">
+        {/* Invite banner — replaces generic heading when a valid invite is present */}
+        {trimmedInvite ? (
+          <div className="mb-6">
             {inviteLoading ? (
-              <p className="font-medium text-on-surface-variant">Loading invite…</p>
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-on-surface-variant">Loading invite…</p>
+              </div>
             ) : inviteDetails?.claimable ? (
-              <>
-                <p className="font-bold text-primary">Manufacturer invite</p>
-                <p className="mt-2 text-on-surface">
-                  You are invited by <span className="font-semibold text-primary">{manufacturerLabel}</span> to join as a retailer.
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                <p className="text-xl font-black text-on-surface mb-1">Welcome to Krishi Dukan!</p>
+                {inviteDetails.retailerShopName && (
+                  <p className="text-lg font-bold text-primary mb-3">Welcome, {inviteDetails.retailerShopName}!</p>
+                )}
+                <p className="text-sm text-on-surface-variant">
+                  Your business has been invited by{' '}
+                  <span className="font-semibold text-primary">{manufacturerLabel}</span>
+                  {' '}to join Krishi Dukan. Complete your account setup to start managing your products and orders.
                 </p>
-                <p className="mt-2 text-xs text-on-surface-variant">Your account type must be <strong>retailer</strong> for this invite.</p>
-              </>
+              </div>
             ) : inviteDetails && !inviteDetails.found ? (
-              <p className="text-harvest">We could not find this invite link. You can still sign up; it will not be linked to a manufacturer.</p>
+              <div className="rounded-2xl border border-harvest/30 bg-harvest/5 p-4">
+                <p className="text-sm text-harvest">We could not find this invite link. You can still sign up; it will not be linked to a manufacturer.</p>
+              </div>
             ) : (
-              <p className="text-harvest">
-                {inviteDetails?.status === "revoked"
-                  ? "This invite is no longer valid (revoked)."
-                  : inviteDetails?.status === "active"
-                    ? "This invite link was already activated. If this is your shop, continue with the same mobile number or sign in to your retailer account."
-                    : "This invite cannot be used anymore."}
-              </p>
+              <div className="rounded-2xl border border-harvest/30 bg-harvest/5 p-4">
+                <p className="text-sm text-harvest">
+                  {inviteDetails?.status === "revoked"
+                    ? "This invite is no longer valid (revoked)."
+                    : inviteDetails?.status === "active"
+                      ? "This invite link was already activated. If this is your shop, continue with the same mobile number or sign in to your retailer account."
+                      : "This invite cannot be used anymore."}
+                </p>
+              </div>
             )}
           </div>
+        ) : (
+          <>
+            <h1 className="mb-2 text-3xl font-bold text-on-surface">{t("createAccountTitle")}</h1>
+            <p className="mb-6 font-medium text-on-surface-variant">{t("signupSubtitle")}</p>
+          </>
         )}
 
         {error && (
@@ -296,7 +335,6 @@ export default function SignupView({
           </div>
         )}
 
-        <div id="recaptcha-container-signup" />
 
         {/* ── Phone OTP flow ── */}
         {step === "details" ? (
@@ -317,19 +355,41 @@ export default function SignupView({
             </div>
 
             <div className="space-y-2">
-              <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">Mobile Number</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-outline-variant bg-surface-container-low px-5 py-4">
+              <div className="ml-1 flex items-center gap-1.5">
+                <label className="text-xs font-black uppercase tracking-widest text-on-surface-variant">Mobile Number</label>
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="signupMobile"
+                  ariaLabel="Mobile number help"
+                />
+              </div>
+              <div className={`flex items-center gap-2 rounded-2xl border px-5 py-4 ${inviteDetails?.claimable && inviteDetails.retailerPhone ? "border-primary/30 bg-primary/5" : "border-outline-variant bg-surface-container-low"}`}>
                 <span className="text-sm font-bold text-on-surface-variant">+91</span>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   required
                   disabled={loading}
+                  readOnly={Boolean(inviteDetails?.claimable && inviteDetails.retailerPhone)}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                   placeholder="10-digit mobile number"
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface"
                 />
+                {inviteDetails?.claimable && inviteDetails.retailerPhone && (
+                  <span className="text-xs font-semibold text-primary shrink-0">Invite</span>
+                )}
               </div>
+              {inviteDetails?.claimable && inviteDetails.retailerPhone ? (
+                <p className="ml-1 text-xs text-on-surface-variant">
+                  Your mobile number was pre-registered by your manufacturer and cannot be changed.
+                </p>
+              ) : phone.length > 0 && phone.length < 10 ? (
+                <p className="ml-1 text-xs text-red-600">Enter exactly 10 digits ({phone.length}/10)</p>
+              ) : null}
             </div>
 
             <button
@@ -343,7 +403,16 @@ export default function SignupView({
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-5">
             <div className="space-y-2">
-              <label className="ml-1 text-xs font-black uppercase tracking-widest text-on-surface-variant">Enter OTP</label>
+              <div className="ml-1 flex items-center gap-1.5">
+                <label className="text-xs font-black uppercase tracking-widest text-on-surface-variant">Enter OTP</label>
+                <HelperIcon
+                  size="xs"
+                  variant="ghost"
+                  side="right"
+                  textKey="signupOtp"
+                  ariaLabel="OTP help"
+                />
+              </div>
               <input
                 type="text"
                 inputMode="numeric"
@@ -377,15 +446,24 @@ export default function SignupView({
         )}
 
         <div className="mt-8 text-center">
-          <p className="text-sm font-medium text-on-surface-variant">
-            {t("alreadyHaveAccount")}
-            <button
-              type="button"
-              onClick={onNavigateToLogin}
-              className="ml-1 font-bold text-primary hover:underline"
-            >
-              {t("signIn")}
-            </button>
+          <p className="inline-flex items-center justify-center gap-1.5 text-sm font-medium text-on-surface-variant">
+            <span>
+              {t("alreadyHaveAccount")}
+              <button
+                type="button"
+                onClick={onNavigateToLogin}
+                className="ml-1 font-bold text-primary hover:underline"
+              >
+                {t("signIn")}
+              </button>
+            </span>
+            <HelperIcon
+              size="xs"
+              variant="ghost"
+              side="top"
+              textKey="signupExistingUser"
+              ariaLabel="New vs existing user help"
+            />
           </p>
         </div>
       </motion.div>

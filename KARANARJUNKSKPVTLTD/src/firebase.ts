@@ -4,7 +4,6 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 import { getPerformance } from "firebase/performance";
-import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
 export const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -26,14 +25,3 @@ export const functions = getFunctions(app, 'asia-south1');
 
 // ✅ Firebase Performance Monitoring (tracks page load, network calls)
 export const perf = getPerformance(app);
-
-// ✅ Firebase App Check (reCAPTCHA v3) — only in production
-const isDev = (import.meta as any).env?.DEV;
-const recaptchaKey = (import.meta as any).env?.VITE_RECAPTCHA_KEY;
-
-if (!isDev && recaptchaKey) {
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(recaptchaKey),
-    isTokenAutoRefreshEnabled: true,
-  });
-}

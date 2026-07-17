@@ -42,10 +42,16 @@ export interface RetailerSeatListing {
 
   /** Set when a manufacturer is involved (own OR assigned) */
   manufacturerId: string | null;
+  /** Manufacturer's E164 phone — written by the assignment flow, avoids uidIndex round-trips */
+  manufacturerPhone?: string | null;
+  /** Owner's E164 phone (same as manufacturerPhone for manufacturer-owned listings) */
+  ownerPhone?: string | null;
   /** Set when the listing covers a retailer slot (assigned listings) */
   retailerDocId: string | null;
   /** Retailer's Firebase Auth uid — empty string until they sign up */
   retailerId: string | null;
+  /** Retailer's E164 phone — populated after signup */
+  retailerPhone?: string | null;
 
   /** The product doc this listing covers (retailer copy ID for assigned listings) */
   productId: string;

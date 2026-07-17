@@ -128,6 +128,128 @@
         { "fieldPath": "userPhone", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "manufacturerId", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "blogPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "productReviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "catalogId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "storeReviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storePhone", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "waNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "retryCount",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shopOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "follows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "followedShopId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taggedShopIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt",     "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linkedProductId", "order": "ASCENDING" },
+        { "fieldPath": "viewsCount",      "order": "DESCENDING" },
+        { "fieldPath": "createdAt",       "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dealerVisits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "visitedAt",        "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "daySessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "status",           "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "daySessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "date",             "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "daySessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "date",             "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dealerVisits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "salesExecutiveId", "order": "ASCENDING" },
+        { "fieldPath": "visitedAt",        "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dealerVisits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealerId",  "order": "ASCENDING" },
+        { "fieldPath": "visitedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { ReceiptText, Package, Plus, Edit2, Trash2, Loader2, Save, X, Calculator, ShoppingCart, Store, Users, Download, FileSpreadsheet } from 'lucide-react';
+import { ReceiptText, Package, Plus, Edit2, Trash2, Loader2, Save, X, Calculator, ShoppingCart, Store, Users, Download, FileSpreadsheet, Search } from 'lucide-react';
 import { query, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { AGRI_CATEGORIES } from '../utils/constants';
 import Papa from 'papaparse';
 
 interface Product {
     id: string;
     productNumber?: string;
     category?: 'B2B' | 'B2C';
+    type?: string;            // Agri category (Insecticide, Fertilizer, …) — POS filters on this
     name: string;
     description?: string;
     maxRetailPrice: number; // Piece MRP
@@ -40,12 +43,25 @@ export default function RateSheetPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [viewMode, setViewMode] = useState<'B2B' | 'B2C'>('B2B');
+    const [searchTerm, setSearchTerm] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Suggest the next sequential SKU (KA-001, KA-002, …) so the user never has
+    // to invent product codes by hand when adding a product.
+    const generateNextSku = () => {
+        let max = 0;
+        products.forEach(p => {
+            const m = /^KA-(\d+)$/i.exec((p.productNumber || '').trim());
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return `KA-${String(max + 1).padStart(3, '0')}`;
+    };
 
     // Form State
     const [formData, setFormData] = useState({
         productNumber: '',
         name: '',
+        type: '',
         maxRetailPrice: 0,
         boxMaxRetailPrice: 0,
         retailerPrice: 0,
@@ -88,6 +104,7 @@ export default function RateSheetPage() {
             setFormData({
                 productNumber: product.productNumber || '',
                 name: product.name,
+                type: product.type || '',
                 maxRetailPrice: product.maxRetailPrice || 0,
                 boxMaxRetailPrice: product.boxMaxRetailPrice || 0,
                 retailerPrice: product.retailerPrice || 0,
@@ -110,8 +127,9 @@ export default function RateSheetPage() {
         } else {
             setEditingProduct(null);
             setFormData({
-                productNumber: '',
+                productNumber: generateNextSku(),
                 name: '',
+                type: '',
                 maxRetailPrice: 0,
                 boxMaxRetailPrice: 0,
                 retailerPrice: 0,
@@ -141,15 +159,39 @@ export default function RateSheetPage() {
         setImagePreview(null);
     };
 
+    // Resize + compress the chosen image before storing it.
+    // Product images live inline on the Firestore product doc, which has a ~1MB
+    // hard limit — a raw phone photo (2-7MB) overflows it and makes "Add Product"
+    // silently fail. We downscale to <=1000px and re-encode as JPEG (~0.82) so the
+    // result is ~100-250KB, comfortably under the limit.
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result as string;
-            setImagePreview(base64);
-            setFormData(prev => ({ ...prev, imageUrl: base64 }));
+            const dataUrl = reader.result as string;
+            const img = new Image();
+            img.onload = () => {
+                const MAX_DIM = 1000;
+                let { width, height } = img;
+                if (width > MAX_DIM || height > MAX_DIM) {
+                    if (width >= height) { height = Math.round((height * MAX_DIM) / width); width = MAX_DIM; }
+                    else { width = Math.round((width * MAX_DIM) / height); height = MAX_DIM; }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) { setImagePreview(dataUrl); setFormData(prev => ({ ...prev, imageUrl: dataUrl })); return; }
+                ctx.drawImage(img, 0, 0, width, height);
+                const compressed = canvas.toDataURL('image/jpeg', 0.82);
+                setImagePreview(compressed);
+                setFormData(prev => ({ ...prev, imageUrl: compressed }));
+            };
+            // Non-decodable (e.g. SVG) — fall back to the raw data URL.
+            img.onerror = () => { setImagePreview(dataUrl); setFormData(prev => ({ ...prev, imageUrl: dataUrl })); };
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     };
@@ -166,6 +208,14 @@ export default function RateSheetPage() {
             updatedAt: serverTimestamp()
         };
 
+        // Final safety net: a Firestore document is capped at ~1MB. If an image
+        // somehow remains oversized, fail loudly with a clear message rather than
+        // a generic error.
+        if ((formData.imageUrl?.length || 0) > 900_000) {
+            alert('That product photo is too large even after compression. Please pick a smaller image and try again.');
+            return;
+        }
+
         try {
             if (editingProduct) {
                 await updateDoc(getTenantDoc(db, tenantId!, 'products', editingProduct.id), productData);
@@ -176,9 +226,9 @@ export default function RateSheetPage() {
                 });
             }
             handleCloseModal();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving product:", error);
-            alert(t('inventory.save_error') || "Failed to save product.");
+            alert(`${t('inventory.save_error') || 'Failed to save product.'}\n\n${error?.message || error}`);
         }
     };
 
@@ -210,6 +260,7 @@ export default function RateSheetPage() {
                         if (!name) continue;
 
                         const productNumber = row['Product Number']?.trim() || '';
+                        const type = row['Category']?.trim() || '';
                         const maxRetailPrice = Number(row['MRP']) || 0;
                         const retailerPrice = Number(row['PTR']) || 0;
                         const purchasePrice = Number(row['Rate']) || 0;
@@ -229,6 +280,7 @@ export default function RateSheetPage() {
                         const productData = {
                             productNumber,
                             name,
+                            type,
                             maxRetailPrice,
                             retailerPrice,
                             purchasePrice,
@@ -274,8 +326,8 @@ export default function RateSheetPage() {
     };
 
     const handleDownloadTemplate = () => {
-        const csvContent = "Product Number,Product Name,MRP,PTR,Rate,Offer,Quantity (Boxes),Loose Pieces,Pcs/Box,Base Unit,Unit Size,Unit Measure,GST %\n" +
-            "KA-001,Sample Fertilizer,1500,1200,1000,1400,10,2,5,pcs,5,ltr,5\n";
+        const csvContent = "Product Number,Product Name,Category,MRP,PTR,Rate,Offer,Quantity (Boxes),Loose Pieces,Pcs/Box,Base Unit,Unit Size,Unit Measure,GST %\n" +
+            "KA-001,Sample Fertilizer,Fertilizer,1500,1200,1000,1400,10,2,5,pcs,5,ltr,5\n";
 
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
@@ -309,6 +361,14 @@ export default function RateSheetPage() {
         const ratePerUnit = p.retailerPrice / sizeInCanonical;
         return `₹${Math.round(ratePerUnit)} / ${canonicalUnit}`;
     };
+
+    const visibleProducts = products.filter(p => {
+        const inCatalog = viewMode === 'B2B' ? (!p.category || p.category === 'B2B') : p.category === 'B2C';
+        if (!inCatalog) return false;
+        if (!searchTerm.trim()) return true;
+        const q = searchTerm.toLowerCase();
+        return p.name.toLowerCase().includes(q) || (p.productNumber || '').toLowerCase().includes(q);
+    });
 
     if (loading) {
         return (
@@ -349,23 +409,41 @@ export default function RateSheetPage() {
                 )}
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', padding: '0.5rem', background: 'var(--surface-raised)', borderRadius: '12px', width: 'fit-content' }}>
-                <button
-                    onClick={() => setViewMode('B2B')}
-                    className={`btn ${viewMode === 'B2B' ? 'btn-primary' : ''}`}
-                    style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2B' ? 'transparent' : '', color: viewMode !== 'B2B' ? 'var(--text-secondary)' : '', border: 'none' }}
-                >
-                    <Store size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
-                    B2B (Retailers)
-                </button>
-                <button
-                    onClick={() => setViewMode('B2C')}
-                    className={`btn ${viewMode === 'B2C' ? 'btn-primary' : ''}`}
-                    style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2C' ? 'transparent' : '', color: viewMode !== 'B2C' ? 'var(--text-secondary)' : '', border: 'none' }}
-                >
-                    <Users size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
-                    B2C (Consumers)
-                </button>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', gap: '1rem', padding: '0.5rem', background: 'var(--surface-raised)', borderRadius: '12px', width: 'fit-content' }}>
+                    <button
+                        onClick={() => setViewMode('B2B')}
+                        className={`btn ${viewMode === 'B2B' ? 'btn-primary' : ''}`}
+                        style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2B' ? 'transparent' : '', color: viewMode !== 'B2B' ? 'var(--text-secondary)' : '', border: 'none' }}
+                    >
+                        <Store size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
+                        B2B (Retailers)
+                    </button>
+                    <button
+                        onClick={() => setViewMode('B2C')}
+                        className={`btn ${viewMode === 'B2C' ? 'btn-primary' : ''}`}
+                        style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2C' ? 'transparent' : '', color: viewMode !== 'B2C' ? 'var(--text-secondary)' : '', border: 'none' }}
+                    >
+                        <Users size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
+                        B2C (Consumers)
+                    </button>
+                </div>
+                <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '360px', minWidth: '200px' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                    <input
+                        type="text"
+                        className="input-field"
+                        placeholder={t('inventory.search_placeholder')}
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        style={{ paddingLeft: '2.4rem', margin: 0, height: '40px' }}
+                    />
+                    {searchTerm && (
+                        <button onClick={() => setSearchTerm('')} title="Clear" style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}>
+                            <X size={15} />
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="glass-panel" style={{ overflowX: 'auto' }}>
@@ -394,7 +472,7 @@ export default function RateSheetPage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {products.filter(p => viewMode === 'B2B' ? (!p.category || p.category === 'B2B') : p.category === 'B2C').map((product, i) => (
+                        {visibleProducts.map((product, i) => (
                             <tr
                                 key={product.id}
                                 className={`animate-fade-in delay-${(i % 5)}00`}
@@ -423,6 +501,7 @@ export default function RateSheetPage() {
                                         <div>{product.name}</div>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                                             {product.productNumber && <span style={{ marginRight: '8px', background: 'var(--surface-raised)', padding: '2px 6px', borderRadius: '4px' }}>{product.productNumber}</span>}
+                                            {product.type && <span style={{ marginRight: '8px', background: 'hsla(152,60%,40%,0.12)', color: 'var(--primary-light)', padding: '2px 6px', borderRadius: '4px' }}>{product.type}</span>}
                                             {viewMode === 'B2B' && <span>{t('inventory.margin')}: {product.margin}</span>}
                                         </div>
                                     </div>
@@ -475,14 +554,32 @@ export default function RateSheetPage() {
                                 )}
                             </tr>
                         ))}
+                        {visibleProducts.length === 0 && (
+                            <tr>
+                                <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                    <Package size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.3, display: 'block' }} />
+                                    {searchTerm
+                                        ? <div>No products match "<strong>{searchTerm}</strong>" in {viewMode}.</div>
+                                        : <div>No {viewMode} products yet.</div>}
+                                    {userRole === 'admin' && (
+                                        <button onClick={() => handleOpenModal()} className="btn btn-primary" style={{ marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Plus size={16} /> {t('inventory.add_product')}
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
 
-            {/* Modal */}
-            {isModalOpen && (
+            {/* Modal — rendered via portal to document.body so it escapes the page's
+                .animate-fade-in transform (a transformed ancestor becomes the
+                containing block for position:fixed, which previously broke centering
+                and left a huge blank scroll area). */}
+            {isModalOpen && createPortal(
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(8px)', padding: '1rem' }}>
-                    <div className="glass-panel animate-scale-in" style={{ width: '95vw', maxWidth: '1300px', height: '95vh', position: 'relative', display: 'flex', flexDirection: 'column', boxShadow: 'var(--neon-glow)', overflow: 'hidden' }}>
+                    <div className="glass-panel animate-scale-in" style={{ width: '95vw', maxWidth: '1300px', maxHeight: '95vh', position: 'relative', display: 'flex', flexDirection: 'column', boxShadow: 'var(--neon-glow)', overflow: 'hidden' }}>
 
                         {/* Sticky Header — always visible, close button here */}
                         <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--surface-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -501,7 +598,7 @@ export default function RateSheetPage() {
                         </div>
 
                         {/* Scrollable Form Body */}
-                        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1, overflowY: 'auto', padding: '1.5rem 2rem 1.5rem 2rem' }}>
+                        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1, minHeight: 0, overflowY: 'auto', padding: '1.5rem 2rem 1.5rem 2rem' }}>
                             {/* Section 1: Basic Info */}
                             <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(0, 0%, 100%, 0.02)', border: '1px solid var(--surface-border)' }}>
                                 <h3 style={{ fontSize: '0.95rem', color: 'var(--primary-light)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -543,6 +640,13 @@ export default function RateSheetPage() {
                                             <select className="input-field" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as 'B2B' | 'B2C' })}>
                                                 <option value="B2B">B2B (Retailers)</option>
                                                 <option value="B2C">B2C (Consumers)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Category</label>
+                                            <select className="input-field" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
+                                                <option value="">— Select category —</option>
+                                                {AGRI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -686,7 +790,8 @@ export default function RateSheetPage() {
                             </button>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <div style={{ marginTop: '2rem', padding: '1rem', background: 'var(--surface-raised)', borderRadius: '10px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>

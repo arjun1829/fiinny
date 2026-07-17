@@ -24,6 +24,10 @@ yarn-error.log*
 
 # local env files
 .env*.local
+# env backups / variants — may contain LIVE secrets, never commit
+.env*.local.*
+.env*.bak*
+*.bak-*
 
 # vercel
 .vercel
@@ -34,3 +38,7 @@ next-env.d.ts
 
 # Windows metadata
 *:Zone.Identifier
+
+# Firebase CLI debug logs
+firebase-debug.log
+firebase-debug.*.log

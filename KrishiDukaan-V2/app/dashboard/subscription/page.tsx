@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckSquare, ChevronLeft, ChevronRight, CreditCard, Filter, Loader2, RefreshCw, Search, Square, Trash2, X } from "lucide-react";
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
-import { auth, db, getUserProfile } from "../../firebase";
+import { db } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import {
   computeSeatStats,
@@ -17,7 +17,7 @@ import {
   isListingActive,
   isSubscriptionActive,
 } from "../_lib/subscriptions-firestore";
-import { removeProductAssignment } from "../_lib/product-assignment-firestore";
+import { fetchAssignmentsForRetailer, removeProductAssignment } from "../_lib/product-assignment-firestore";
 import { fetchManufacturerRetailers } from "../_lib/manufacturer-retailers-firestore";
 import type { RetailerSeatListing, SeatStats, Subscription } from "../_types/subscriptions";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
@@ -143,35 +143,49 @@ function ReleaseAction({
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
   const [releasing,  setReleasing]  = useState(false);
+  const [releaseErr, setReleaseErr] = useState<string | null>(null);
 
   if (!isListingActive(listing)) return null;
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1">
-        <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
-        <span className="text-xs font-medium text-red-700">{t('releaseQ')}</span>
-        <button type="button" disabled={releasing}
-          onClick={async () => {
-            setReleasing(true);
-            try { await removeProductAssignment(listing.id); onReleased(listing.id); }
-            catch { /* swallow — parent will refresh */ }
-            finally { setReleasing(false); setConfirming(false); }
-          }}
-          className="rounded px-1.5 py-0.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60">
-          {releasing ? <Loader2 className="h-3 w-3 animate-spin" /> : t('yesLabel')}
-        </button>
-        <button type="button" disabled={releasing} onClick={() => setConfirming(false)}
-          className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60">{t('noLabel')}</button>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2 py-1">
+          <AlertTriangle className="h-3 w-3 shrink-0 text-red-600" />
+          <span className="text-xs font-medium text-red-700">{t('releaseQ')}</span>
+          <button type="button" disabled={releasing}
+            onClick={async () => {
+              setReleasing(true);
+              setReleaseErr(null);
+              try {
+                await removeProductAssignment(listing.id);
+                onReleased(listing.id);
+              } catch (e) {
+                setReleaseErr(e instanceof Error ? e.message : "Release failed.");
+                setConfirming(false);
+              } finally {
+                setReleasing(false);
+              }
+            }}
+            className="rounded px-1.5 py-0.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60">
+            {releasing ? <Loader2 className="h-3 w-3 animate-spin" /> : t('yesLabel')}
+          </button>
+          <button type="button" disabled={releasing} onClick={() => { setConfirming(false); setReleaseErr(null); }}
+            className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60">{t('noLabel')}</button>
+        </div>
+        {releaseErr && <p className="text-[10px] text-red-600 max-w-[160px]">{releaseErr}</p>}
       </div>
     );
   }
 
   return (
-    <button type="button" onClick={() => setConfirming(true)}
-      className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-      <Trash2 className="h-3 w-3" /> {t('releaseBtn')}
-    </button>
+    <div className="flex flex-col gap-0.5">
+      <button type="button" onClick={() => { setConfirming(true); setReleaseErr(null); }}
+        className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-xs font-medium text-on-surface-variant hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+        <Trash2 className="h-3 w-3" /> {t('releaseBtn')}
+      </button>
+      {releaseErr && <p className="text-[10px] text-red-600 max-w-[160px]">{releaseErr}</p>}
+    </div>
   );
 }
 
@@ -194,7 +208,6 @@ function ActiveListingsSection({
   const [page, setPage] = useState(1);
   const [search,       setSearch]       = useState("");
   const [typeFilter,   setTypeFilter]   = useState<"all" | "own" | "assigned">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "released" | "expired">("all");
   const [shopFilter,   setShopFilter]   = useState("all");
   const [assignedFrom, setAssignedFrom] = useState("");
   const [assignedTo,   setAssignedTo]   = useState("");
@@ -222,9 +235,6 @@ function ActiveListingsSection({
   const filtered = useMemo(() => {
     return listings.filter((l) => {
       if (typeFilter !== "all" && l.listingType !== typeFilter) return false;
-      if (statusFilter === "active"   && !isListingActive(l))    return false;
-      if (statusFilter === "released" && l.status !== "released") return false;
-      if (statusFilter === "expired"  && l.status !== "expired")  return false;
       if (shopFilter !== "all") {
         const name = l.retailerDocId ? retailerMap.get(l.retailerDocId) : undefined;
         if (name !== shopFilter) return false;
@@ -244,22 +254,26 @@ function ActiveListingsSection({
       if (search.trim()) {
         const q = search.toLowerCase();
         const shopName = l.retailerDocId ? (retailerMap.get(l.retailerDocId) ?? "") : "";
-        const hit = l.productId?.toLowerCase().includes(q)
+        // Resolve product name: for assigned listings, prefer original product name
+        const lookupId = (l.listingType === "assigned" && l.manufacturerProductId)
+          ? (productMap.has(l.productId ?? "") ? (l.productId ?? "") : l.manufacturerProductId)
+          : (l.productId ?? "");
+        const productName = productMap.get(lookupId)?.name ?? "";
+        const hit = productName.toLowerCase().includes(q)
           || l.listingType.toLowerCase().includes(q)
           || l.status.toLowerCase().includes(q)
-          || (l.retailerId ?? "").toLowerCase().includes(q)
           || shopName.toLowerCase().includes(q);
         if (!hit) return false;
       }
       return true;
     });
-  }, [listings, typeFilter, statusFilter, shopFilter, assignedFrom, assignedTo, expiresFrom, expiresTo, search, retailerMap]);
+  }, [listings, typeFilter, shopFilter, assignedFrom, assignedTo, expiresFrom, expiresTo, search, retailerMap]);
 
-  const hasActiveFilters = typeFilter !== "all" || statusFilter !== "all" || shopFilter !== "all"
+  const hasActiveFilters = typeFilter !== "all" || shopFilter !== "all"
     || assignedFrom || assignedTo || expiresFrom || expiresTo || search.trim();
 
   const clearAll = () => {
-    setSearch(""); setTypeFilter("all"); setStatusFilter("all"); setShopFilter("all");
+    setSearch(""); setTypeFilter("all"); setShopFilter("all");
     setAssignedFrom(""); setAssignedTo(""); setExpiresFrom(""); setExpiresTo("");
     setPage(1);
   };
@@ -267,10 +281,9 @@ function ActiveListingsSection({
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Multi-select helpers
-  const activeFiltered = filtered.filter((l) => isListingActive(l));
-  const allSelected  = activeFiltered.length > 0 && activeFiltered.every((l) => selected.has(l.id));
-  const someSelected = !allSelected && activeFiltered.some((l) => selected.has(l.id));
+  // Multi-select helpers — all incoming listings are already active (pre-filtered at call site)
+  const allSelected  = filtered.length > 0 && filtered.every((l) => selected.has(l.id));
+  const someSelected = !allSelected && filtered.some((l) => selected.has(l.id));
 
   const toggleRow = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -280,7 +293,7 @@ function ActiveListingsSection({
 
   const toggleAll = () => {
     if (allSelected) setSelected(new Set());
-    else setSelected(new Set(activeFiltered.map((l) => l.id)));
+    else setSelected(new Set(filtered.map((l) => l.id)));
   };
 
   const handleBulkRelease = async () => {
@@ -361,17 +374,6 @@ function ActiveListingsSection({
               <option value="all">{t('allTypes')}</option>
               <option value="own">{t('ownProductType')}</option>
               <option value="assigned">{t('assignedToRetailerType')}</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-on-surface-variant">{t('statusLabel')}</span>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="rounded-xl border border-outline-variant/40 bg-white px-2.5 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none">
-              <option value="all">{t('allStatuses')}</option>
-              <option value="active">{t('activeFilter')}</option>
-              <option value="released">{t('releasedFilter')}</option>
-              <option value="expired">{t('expiredFilter')}</option>
             </select>
           </label>
 
@@ -472,28 +474,27 @@ function ActiveListingsSection({
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
                 {paginated.map((listing) => {
-                  const active    = isListingActive(listing);
                   const isChecked = selected.has(listing.id);
                   const shopName  = listing.retailerDocId ? (retailerMap.get(listing.retailerDocId) ?? "—") : "—";
-                  const product   = productMap.get(listing.productId ?? "");
+                  // For assigned listings, the copy product may be deleted; use the original
+                  // manufacturer product as fallback so the name always resolves.
+                  const displayProductId =
+                    (listing.listingType === "assigned" && listing.manufacturerProductId)
+                      ? (productMap.has(listing.productId ?? "")
+                          ? (listing.productId ?? "")
+                          : listing.manufacturerProductId)
+                      : (listing.productId ?? "");
+                  const product = productMap.get(displayProductId);
                   return (
                     <tr key={listing.id}
-                      className={[
-                        "transition-colors",
-                        !active ? "opacity-50" : "",
-                        isChecked ? "bg-primary/5" : "hover:bg-surface-container/50",
-                      ].join(" ")}>
+                      className={isChecked ? "bg-primary/5 transition-colors" : "hover:bg-surface-container/50 transition-colors"}>
                       <td className="w-10 px-3 py-3">
-                        {active ? (
-                          <button type="button" onClick={() => toggleRow(listing.id)}
-                            className="text-on-surface-variant hover:text-primary">
-                            {isChecked
-                              ? <CheckSquare className="h-4 w-4 text-primary" />
-                              : <Square className="h-4 w-4" />}
-                          </button>
-                        ) : (
-                          <span className="inline-block h-4 w-4" />
-                        )}
+                        <button type="button" onClick={() => toggleRow(listing.id)}
+                          className="text-on-surface-variant hover:text-primary">
+                          {isChecked
+                            ? <CheckSquare className="h-4 w-4 text-primary" />
+                            : <Square className="h-4 w-4" />}
+                        </button>
                       </td>
                       <td className="px-4 py-3"><ListingTypeBadge type={listing.listingType} /></td>
                       {isManufacturer && (
@@ -570,6 +571,7 @@ function ActiveListingsSection({
 export default function SubscriptionPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [access, setAccess] = useState<AccessState>("checking");
   const [uid, setUid] = useState<string | null>(null);
   const [role, setRole] = useState<Role>("retailer");
@@ -579,7 +581,7 @@ export default function SubscriptionPage() {
   const [assignedToMe, setAssignedToMe] = useState<RetailerSeatListing[]>([]);
   const [stats, setStats] = useState<SeatStats | null>(null);
   const [retailerMap, setRetailerMap] = useState<Map<string, string>>(new Map());
-  const [productMap, setProductMap] = useState<Map<string, { name: string; image: string }>>(new Map());
+  const [productMap, setProductMap] = useState<Map<string, { name: string; image: string; store?: string }>>(new Map());
   const [manufacturerNameMap, setManufacturerNameMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -598,7 +600,15 @@ export default function SubscriptionPage() {
 
       let assigned: RetailerSeatListing[] = [];
       if (userRole === "retailer") {
-        assigned = await fetchSeatListingsForRetailer(userId);
+        // Resolve the retailer's phone so we can query by both uid AND retailerDocId.
+        // Pre-signup assignments use retailerDocId (phone) because the uid wasn't known yet.
+        let retailerPhone: string | null = null;
+        try {
+          const idxSnap = await getDoc(doc(db, "uidIndex", userId));
+          if (idxSnap.exists()) retailerPhone = String(idxSnap.data().phone ?? "") || null;
+        } catch { /* non-critical */ }
+
+        assigned = await fetchAssignmentsForRetailer(userId, retailerPhone);
         setAssignedToMe(assigned);
       } else {
         setAssignedToMe([]);
@@ -609,13 +619,19 @@ export default function SubscriptionPage() {
         } catch { /* non-critical, table degrades gracefully */ }
       }
 
-      // Fetch product name + image for all unique productIds in listings
+      // Fetch product name + image for all unique productIds in listings.
+      // For manufacturer-assigned listings, the seat's productId is the RETAILER'S COPY — which
+      // may be deleted after the retailer removes the assignment. Also include manufacturerProductId
+      // (the original product) so display works even after the copy is gone.
       try {
         const allListings = [...ownData, ...(userRole === "retailer" ? assigned : [])];
-        const productIds = Array.from(new Set(allListings.map((l) => l.productId).filter(Boolean))) as string[];
+        const productIds = Array.from(new Set([
+          ...allListings.map((l) => l.productId),
+          ...allListings.map((l) => l.manufacturerProductId ?? null),
+        ].filter((id): id is string => !!id)));
         if (productIds.length > 0) {
           const CHUNK = 30; // Firestore `in` limit
-          const pMap = new Map<string, { name: string; image: string }>();
+          const pMap = new Map<string, { name: string; image: string; store?: string }>();
           for (let i = 0; i < productIds.length; i += CHUNK) {
             const chunk = productIds.slice(i, i + CHUNK);
             const snap = await getDocs(query(collection(db, "products"), where(documentId(), "in", chunk)));
@@ -624,6 +640,8 @@ export default function SubscriptionPage() {
               pMap.set(d.id, {
                 name:  String(data.name  ?? ""),
                 image: String(data.image ?? ""),
+                // `store` on manufacturer_inventory products = the manufacturer's business name
+                store: data.store ? String(data.store) : undefined,
               });
             });
           }
@@ -631,22 +649,48 @@ export default function SubscriptionPage() {
         }
       } catch { /* non-critical */ }
 
-      // Fetch manufacturer business names for assigned-to-me listings
+      // Fetch manufacturer business names for assigned-to-me listings.
+      // NOTE: The primary manufacturer name source is now the original product's `store` field
+      // (fetched via productMap above). This map is a secondary fallback for legacy records.
+      //
+      // Security note: a retailer CANNOT read uidIndex/{manufacturerUID} (rule requires
+      // request.auth.uid == uid). We must never attempt uidIndex reads for other users' UIDs.
+      // Instead, use the phone stored directly on the listing doc (ownerPhone/manufacturerPhone),
+      // which is populated at assignment time by the manufacturer (who CAN read their own uidIndex).
       if (userRole === "retailer" && assigned.length > 0) {
         try {
-          const uniqueMfrIds = Array.from(new Set(assigned.map((l) => l.manufacturerId).filter(Boolean))) as string[];
           const mfrNameMap = new Map<string, string>();
-          await Promise.all(uniqueMfrIds.map(async (mfrId) => {
+          const uniqueMfrEntries = Array.from(
+            new Map(
+              assigned
+                .map((l) => [l.manufacturerId || l.ownerId, l.manufacturerPhone || l.ownerPhone || null] as [string, string | null])
+                .filter(([id]) => !!id)
+            ).entries()
+          );
+
+          await Promise.all(uniqueMfrEntries.map(async ([mfrId, phone]) => {
             try {
-              const idxSnap = await getDoc(doc(db, "uidIndex", mfrId));
-              const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : null;
-              const mfrSnap = await getDoc(doc(db, "manufacturers", phone || mfrId));
-              if (mfrSnap.exists()) {
-                const d = mfrSnap.data() as Record<string, unknown>;
-                mfrNameMap.set(mfrId, String(d.businessName ?? d.ownerName ?? ""));
+              let name = "";
+              // Try phone-keyed doc (new schema) — phone is on the listing, no uidIndex needed
+              if (phone) {
+                const snap = await getDoc(doc(db, "manufacturers", phone));
+                if (snap.exists()) {
+                  const d = snap.data() as Record<string, unknown>;
+                  name = String(d.businessName ?? d.ownerName ?? "");
+                }
               }
-            } catch { /* skip */ }
+              // Fallback: uid-keyed doc (legacy schema manufacturers)
+              if (!name) {
+                const snap = await getDoc(doc(db, "manufacturers", mfrId));
+                if (snap.exists()) {
+                  const d = snap.data() as Record<string, unknown>;
+                  name = String(d.businessName ?? d.ownerName ?? "");
+                }
+              }
+              if (name) mfrNameMap.set(mfrId, name);
+            } catch { /* skip — manufacturer name is non-critical; productMap.store is primary */ }
           }));
+
           setManufacturerNameMap(mfrNameMap);
         } catch { /* non-critical */ }
       }
@@ -658,27 +702,16 @@ export default function SubscriptionPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setAccess("denied");
-        router.replace("/");
-        return;
-      }
-      try {
-        const profile = await getUserProfile(user.uid);
-        const userRole: Role =
-          profile?.role === "manufacturer" ? "manufacturer" : "retailer";
-        setUid(user.uid);
-        setRole(userRole);
-        setAccess("ready");
-        await loadAll(user.uid, userRole);
-      } catch {
-        setAccess("denied");
-        router.replace("/dashboard");
-      }
+    if (!effectiveUid || !effectiveProfile) return;
+    const userRole: Role =
+      effectiveProfile?.role === "manufacturer" ? "manufacturer" : "retailer";
+    setUid(effectiveUid);
+    setRole(userRole);
+    setAccess("ready");
+    loadAll(effectiveUid, userRole).catch(() => {
+      setAccess("denied");
     });
-    return () => unsub();
-  }, [router, loadAll]);
+  }, [effectiveUid, effectiveProfile, loadAll]);
 
   if (access === "checking") {
     return (
@@ -831,9 +864,9 @@ export default function SubscriptionPage() {
             )}
           </section>
 
-          {/* ── Active seat listings (own) with advanced search ── */}
+          {/* ── Active seat listings (own) — pre-filtered to active only ── */}
           <ActiveListingsSection
-            listings={ownListings}
+            listings={ownListings.filter(isListingActive)}
             isManufacturer={isManufacturer}
             retailerMap={retailerMap}
             productMap={productMap}
@@ -841,71 +874,108 @@ export default function SubscriptionPage() {
           />
 
           {/* ── Products assigned to this retailer by manufacturers ── */}
-          {!isManufacturer && assignedToMe.length > 0 ? (
-            <section aria-label="Products assigned by manufacturers">
-              <div className="mb-3">
-                <h2 className="text-base font-semibold text-on-surface">
-                  {t('assignedByMfgTitle')}
-                </h2>
-                <p className="text-sm text-on-surface-variant">
-                  {t('assignedByMfgDesc')}
-                </p>
-              </div>
-              <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
-                      <tr>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('statusCol')}</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Product</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">Manufacturer</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('assignedCol')}</th>
-                        <th className="whitespace-nowrap px-4 py-3 font-medium">{t('expiresCol')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-outline-variant/20">
-                      {assignedToMe.map((listing) => (
-                        <tr
-                          key={listing.id}
-                          className={
-                            !isListingActive(listing)
-                              ? "opacity-50 hover:bg-surface-container/50"
-                              : "hover:bg-surface-container/50"
-                          }
-                        >
-                          <td className="px-4 py-3">
-                            <ListingBadge listing={listing} />
-                          </td>
-                          <td className="px-4 py-3 text-on-surface font-medium">
-                            {productMap.get(listing.productId)?.name ?? "—"}
-                          </td>
-                          <td className="px-4 py-3 text-on-surface-variant">
-                            {listing.manufacturerId
-                              ? (manufacturerNameMap.get(listing.manufacturerId) ?? "—")
-                              : "—"}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
-                            {listing.assignedAt
-                              ? listing.assignedAt
-                                  .toDate()
-                                  .toLocaleDateString(undefined, { dateStyle: "medium" })
-                              : "—"}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
-                            {listing.expiresAt
-                              ? listing.expiresAt
-                                  .toDate()
-                                  .toLocaleDateString(undefined, { dateStyle: "medium" })
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {!isManufacturer && (() => {
+            // Only show active, non-expired listings. Deduplicate by manufacturer+product so
+            // stale reassignments don't produce duplicates (same product released+reassigned).
+            const seen = new Set<string>();
+            const activeAssignments = assignedToMe.filter((l) => {
+              if (!isListingActive(l)) return false;
+              const key = `${l.manufacturerId ?? l.ownerId}:${l.manufacturerProductId ?? l.productId}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            if (activeAssignments.length === 0) return null;
+            return (
+              <section aria-label="Products assigned by manufacturers">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-on-surface">
+                      {t('assignedByMfgTitle')}
+                    </h2>
+                    <p className="text-sm text-on-surface-variant">
+                      {t('assignedByMfgDesc')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => uid && loadAll(uid, role)}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-on-surface-variant hover:bg-surface-container"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {t('refreshBtn')}
+                  </button>
                 </div>
-              </div>
-            </section>
-          ) : null}
+                <div className="overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="border-b border-outline-variant/30 bg-surface-container-low text-on-surface-variant">
+                        <tr>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">Product</th>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">Manufacturer</th>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">{t('statusCol')}</th>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">{t('assignedCol')}</th>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">{t('expiresCol')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/20">
+                        {activeAssignments.map((listing) => {
+                          // Resolve product: prefer the copy, fall back to original if copy deleted
+                          const resolvedProduct =
+                            productMap.get(listing.productId) ??
+                            (listing.manufacturerProductId ? productMap.get(listing.manufacturerProductId) : undefined);
+                          // Manufacturer name — read from the original product's `store` field.
+                          // This is the most reliable source: set at product creation time, requires
+                          // no uidIndex read (retailer can't read other users' uidIndex entries),
+                          // and the `products` collection is publicly readable.
+                          const origProduct = listing.manufacturerProductId
+                            ? productMap.get(listing.manufacturerProductId)
+                            : undefined;
+                          const mfrName =
+                            origProduct?.store ||
+                            manufacturerNameMap.get(listing.manufacturerId ?? listing.ownerId) ||
+                            "—";
+                          return (
+                            <tr key={listing.id} className="hover:bg-surface-container/50">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2 min-w-[140px] max-w-[220px]">
+                                  {resolvedProduct?.image ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={resolvedProduct.image} alt="" className="h-8 w-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                                  ) : (
+                                    <span className="h-8 w-8 rounded-lg bg-surface-container shrink-0 flex items-center justify-center text-on-surface-variant/30 text-xs">🌿</span>
+                                  )}
+                                  <span className="text-xs font-semibold text-on-surface truncate">
+                                    {resolvedProduct?.name ?? "—"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-on-surface-variant font-medium">
+                                {mfrName}
+                              </td>
+                              <td className="px-4 py-3">
+                                <ListingBadge listing={listing} />
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-xs text-on-surface-variant">
+                                {listing.assignedAt
+                                  ? listing.assignedAt.toDate().toLocaleDateString(undefined, { dateStyle: "medium" })
+                                  : "—"}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-xs text-on-surface-variant">
+                                {listing.expiresAt
+                                  ? listing.expiresAt.toDate().toLocaleDateString(undefined, { dateStyle: "medium" })
+                                  : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
         </>
       )}
     </>

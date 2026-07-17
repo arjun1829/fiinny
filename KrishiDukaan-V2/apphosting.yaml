@@ -6,6 +6,28 @@ runConfig:
   maxInstances: 2
 
 env:
+  # ─── Firebase Client SDK (injected at build time via NEXT_PUBLIC_*) ──────────
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: krishidukan-e8315
+
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: krishidukan.com
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: krishidukan-e8315.firebasestorage.app
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "650303885415"
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:650303885415:web:7db7619260aa478b2b84c2
+
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-7MEFGCD4EX
+
   - variable: NEXT_PUBLIC_BASE_URL
     value: https://krishidukan.com
 
@@ -61,3 +83,18 @@ env:
 
   - variable: FIREBASE_PRIVATE_KEY
     secret: FIREBASE_PRIVATE_KEY
+
+  # ─── WhatsApp Cloud API ────────────────────────────────────────────────────
+  # Store via: firebase apphosting:secrets:set WA_ACCESS_TOKEN
+  #            firebase apphosting:secrets:set WA_PHONE_NUMBER_ID
+  - variable: WA_ACCESS_TOKEN
+    secret: WA_ACCESS_TOKEN
+
+  - variable: WA_PHONE_NUMBER_ID
+    secret: WA_PHONE_NUMBER_ID
+
+  - variable: WA_WEBHOOK_VERIFY_TOKEN
+    secret: WA_WEBHOOK_VERIFY_TOKEN
+
+  - variable: WA_APP_SECRET
+    secret: WA_APP_SECRET

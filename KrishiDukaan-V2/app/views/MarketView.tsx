@@ -8,6 +8,8 @@ import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { trackProductImpression } from '../firebase';
 import type { StoreWithDistance } from '../utils/nearby';
 import { useI18n } from '../i18n/I18nContext';
+import type { CartItem } from '../../types/order';
+import { Tag } from 'lucide-react';
 
 interface MarketViewProps {
   products?: MarketplaceProduct[];
@@ -15,9 +17,106 @@ interface MarketViewProps {
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   storesWithDistance?: StoreWithDistance[];
+  onAddToCart?: (product: MarketplaceProduct) => void;
+  onBuyNow?: (product: MarketplaceProduct) => void;
+  cartItems?: CartItem[];
+  onGoToCart?: () => void;
 }
 
 type SortKey = 'default' | 'price-asc' | 'price-desc' | 'name-asc';
+
+// ─── Category scroll strip with mobile scroll arrows ──────────────────────────
+
+function CategoryStrip({
+  categories,
+  selectedCategory,
+  onCategoryChange,
+}: {
+  categories: { id: string; name: string; icon: React.ComponentType<{ className?: string }> | null }[];
+  selectedCategory: string;
+  onCategoryChange: (id: string) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft,  setCanScrollLeft]  = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateArrows = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+
+  useEffect(() => {
+    updateArrows();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateArrows, { passive: true });
+    const ro = new ResizeObserver(updateArrows);
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', updateArrows); ro.disconnect(); };
+  }, [categories]);
+
+  const scroll = (dir: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -200 : 200, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative flex-1 md:flex-initial min-w-0 flex items-center">
+      {/* Left fade + arrow — mobile only */}
+      {canScrollLeft && (
+        <div className="md:hidden absolute left-0 top-0 bottom-0 z-10 flex items-center pointer-events-none">
+          <div className="w-10 h-full bg-gradient-to-r from-white to-transparent" />
+          <button
+            type="button"
+            aria-label="Scroll categories left"
+            onClick={() => scroll('left')}
+            className="pointer-events-auto absolute left-0 flex items-center justify-center w-7 h-7 rounded-full bg-white shadow-md border border-outline-variant/30 text-on-surface"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+        </div>
+      )}
+
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto hide-scrollbar -mx-4 px-4 md:mx-0 md:px-0"
+      >
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => onCategoryChange(cat.id)}
+            className={`flex-shrink-0 px-6 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 transition-all shadow-sm ${
+              selectedCategory === cat.id
+                ? 'bg-primary text-white shadow-primary/20'
+                : 'bg-white text-on-surface border border-surface-container-highest hover:bg-surface-container-low'
+            }`}
+          >
+            {cat.icon && <cat.icon className="w-4 h-4 text-secondary" />}
+            {cat.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Right fade + arrow — mobile only */}
+      {canScrollRight && (
+        <div className="md:hidden absolute right-0 top-0 bottom-0 z-10 flex items-center justify-end pointer-events-none">
+          <div className="w-10 h-full bg-gradient-to-l from-white to-transparent" />
+          <button
+            type="button"
+            aria-label="Scroll categories right"
+            onClick={() => scroll('right')}
+            className="pointer-events-auto absolute right-0 flex items-center justify-center w-7 h-7 rounded-full bg-white shadow-md border border-outline-variant/30 text-on-surface"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function inferBrand(name: string): string {
   // First word of product name is a reasonable brand proxy for this catalog.
@@ -37,6 +136,10 @@ export default function MarketView({
   selectedCategory,
   onCategoryChange,
   storesWithDistance = [],
+  onAddToCart,
+  onBuyNow,
+  cartItems = [],
+  onGoToCart,
 }: MarketViewProps) {
   const { t } = useI18n();
   const DISTANCE_OPTIONS = useMemo(() => [
@@ -59,11 +162,14 @@ export default function MarketView({
   }, [products]);
 
   const categories = [
-    { id: 'all', name: t('allProducts'), icon: null },
-    { id: 'seeds', name: t('catSeeds'), icon: ICONS.Sprout },
-    { id: 'fertilizers', name: t('catFertilizers'), icon: ICONS.Science },
-    { id: 'pesticides', name: t('catPesticides'), icon: ICONS.Science },
-    { id: 'tools', name: t('catTools'), icon: ICONS.Market },
+    { id: 'all',           name: t('allProducts'),      icon: null },
+    { id: 'Seeds',         name: t('catSeeds'),         icon: ICONS.Sprout },
+    { id: 'Fertilizers',  name: t('catFertilizers'),  icon: ICONS.Science },
+    { id: 'Pesticides',   name: t('catPesticides'),   icon: ICONS.Science },
+    { id: 'Herbicides',   name: t('catHerbicides'),   icon: ICONS.Science },
+    { id: 'Bio Pesticides', name: t('catBioStimulants'), icon: ICONS.Science },
+    { id: 'Sprayers',     name: t('catSprayers'),     icon: ICONS.Market },
+    { id: 'Tools',        name: t('catTools'),        icon: ICONS.Market },
   ];
 
   const [filterOpen, setFilterOpen] = useState(false);
@@ -71,7 +177,23 @@ export default function MarketView({
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(Infinity);
   const [sortBy, setSortBy] = useState<SortKey>('default');
   const [brandFilter, setBrandFilter] = useState<string>('all');
-  const [priceMax, setPriceMax] = useState<number>(3000);
+  // Price ceiling is data-driven so the slider always spans the full catalogue and
+  // no product is silently hidden. A user only narrows the range; until they do,
+  // priceMax sits at the ceiling and the filter is a no-op (see visibleProducts).
+  // Rounded up to the next ₹100 and floored at ₹3000 so the control still has a
+  // sensible range when the catalogue is small/cheap.
+  const priceCeiling = useMemo(() => {
+    const maxPrice = products.reduce((m, p) => Math.max(m, (p.lowestPrice ?? p.price) || 0), 0);
+    return Math.max(3000, Math.ceil(maxPrice / 100) * 100);
+  }, [products]);
+  const [priceMax, setPriceMax] = useState<number>(priceCeiling);
+
+  // Keep priceMax pinned to the ceiling while the user hasn't narrowed it, so a
+  // newly-loaded higher-priced product expands the range instead of being hidden.
+  const userSetPriceRef = useRef(false);
+  useEffect(() => {
+    if (!userSetPriceRef.current) setPriceMax(priceCeiling);
+  }, [priceCeiling]);
 
   const storeDistanceMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -101,18 +223,21 @@ export default function MarketView({
     if (brandFilter !== 'all') {
       list = list.filter((p) => inferBrand(p.name) === brandFilter);
     }
-    if (Number.isFinite(priceMax)) {
-      list = list.filter((p) => p.price <= priceMax);
+    // Only apply the price cap when the user has actually narrowed it below the
+    // catalogue ceiling. At the ceiling it's a no-op, so high-priced products are
+    // never hidden by default.
+    if (priceMax < priceCeiling) {
+      list = list.filter((p) => (p.lowestPrice ?? p.price) <= priceMax);
     }
     if (Number.isFinite(maxDistanceKm)) {
       list = list.filter((p) => productDistance(p) <= maxDistanceKm);
     }
     switch (sortBy) {
       case 'price-asc':
-        list.sort((a, b) => a.price - b.price);
+        list.sort((a, b) => (a.lowestPrice ?? a.price) - (b.lowestPrice ?? b.price));
         break;
       case 'price-desc':
-        list.sort((a, b) => b.price - a.price);
+        list.sort((a, b) => (b.lowestPrice ?? b.price) - (a.lowestPrice ?? a.price));
         break;
       case 'name-asc':
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -121,14 +246,14 @@ export default function MarketView({
         list.sort((a, b) => productDistance(a) - productDistance(b));
     }
     return list;
-  }, [products, brandFilter, priceMax, maxDistanceKm, sortBy, storeDistanceMap]);
+  }, [products, brandFilter, priceMax, priceCeiling, maxDistanceKm, sortBy, storeDistanceMap]);
 
   const distanceLabel =
     DISTANCE_OPTIONS.find((o) => o.km === maxDistanceKm)?.label || t('within5km');
 
   const activeFilterCount =
     (brandFilter !== 'all' ? 1 : 0) +
-    (priceMax < 3000 ? 1 : 0) +
+    (priceMax < priceCeiling ? 1 : 0) +
     (sortBy !== 'default' ? 1 : 0);
 
   return (
@@ -142,24 +267,14 @@ export default function MarketView({
         </p>
       </header>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-6 pb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex gap-3 overflow-x-auto hide-scrollbar">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => onCategoryChange(cat.id)}
-                className={`flex-shrink-0 px-6 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 transition-all shadow-sm ${
-                  selectedCategory === cat.id
-                    ? 'bg-primary text-white shadow-primary/20'
-                    : 'bg-white text-on-surface border border-surface-container-highest hover:bg-surface-container-low'
-                }`}
-              >
-                {cat.icon && <cat.icon className="w-4 h-4 text-secondary" />}
-                {cat.name}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-6 mb-6 pb-2">
+        <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
+          {/* Category scroll strip with arrow indicators on mobile */}
+          <CategoryStrip
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onCategoryChange={onCategoryChange}
+          />
           <HelperIcon
             size="xs"
             variant="ghost"
@@ -204,7 +319,7 @@ export default function MarketView({
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  className="absolute right-0 top-full mt-2 w-[280px] bg-white rounded-2xl shadow-2xl border border-surface-container p-4 z-50"
+                  className="absolute left-0 md:left-auto md:right-0 top-full mt-2 w-[min(280px,calc(100vw-2rem))] md:w-[280px] bg-white rounded-2xl shadow-2xl border border-surface-container p-4 z-50"
                 >
                   <div className="mb-4">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-outline">
@@ -244,17 +359,21 @@ export default function MarketView({
                     <input
                       type="range"
                       min={100}
-                      max={3000}
+                      max={priceCeiling}
                       step={50}
                       value={priceMax}
-                      onChange={(e) => setPriceMax(Number(e.target.value))}
+                      onChange={(e) => {
+                        userSetPriceRef.current = true;
+                        setPriceMax(Number(e.target.value));
+                      }}
                       className="w-full mt-1 accent-primary"
                     />
                   </div>
                   <button
                     onClick={() => {
                       setBrandFilter('all');
-                      setPriceMax(3000);
+                      userSetPriceRef.current = false;
+                      setPriceMax(priceCeiling);
                       setSortBy('default');
                     }}
                     className="text-xs font-bold text-primary hover:underline mt-2"
@@ -296,7 +415,7 @@ export default function MarketView({
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  className="absolute right-0 top-full mt-2 w-[200px] bg-white rounded-2xl shadow-2xl border border-surface-container py-2 z-50"
+                  className="absolute right-0 top-full mt-2 w-[min(200px,calc(100vw-2rem))] md:w-[200px] bg-white rounded-2xl shadow-2xl border border-surface-container py-2 z-50"
                 >
                   {DISTANCE_OPTIONS.map((o) => (
                     <button
@@ -329,12 +448,24 @@ export default function MarketView({
           visibleProducts.map((product, idx) => {
             const dist = productDistance(product);
             const distText = formatDistance(dist, t('nearby'));
-            const brand = inferBrand(product.name);
-            // Try to derive size by stripping the brand-like prefix from fullName.
-            const size =
-              product.fullName && product.fullName !== product.name
-                ? product.fullName.replace(product.name, '').trim() || null
-                : null;
+            // lowestFinalPrice = min(sellingPrice × (1 − discountPct/100)) across all sellers.
+            // lowestPrice      = min(sellingPrice) before discounts.
+            // Never mix lowestPrice with maxDiscountPct — they may belong to different sellers
+            // and produce a fictional price no seller actually charges.
+            const sellerBasePrice = product.lowestPrice ?? product.price;
+            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
+            const hasOffer = discountedPrice < sellerBasePrice;
+            // A discount is shown either as a seller promo (hasOffer: lowestFinalPrice
+            // below lowestPrice) OR when the seller's selling price is below the
+            // catalog price (sellerBasePrice < product.price). The ribbon + green theme
+            // must cover BOTH; the % is computed against the price actually struck
+            // through in the block below so the label always matches the numbers.
+            const ribbonOriginal = hasOffer ? sellerBasePrice : product.price;
+            const ribbonFinal = hasOffer ? discountedPrice : sellerBasePrice;
+            const showsDiscount = ribbonFinal < ribbonOriginal;
+            const savingsPct = ribbonOriginal > 0
+              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
+              : 0;
             return (
               <motion.article
                 key={`${product.id}-${idx}`}
@@ -342,7 +473,11 @@ export default function MarketView({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: Math.min(idx * 0.03, 0.6) }}
                 onClick={() => onProductClick(product.id)}
-                className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-ambient transition-all duration-300 flex flex-col border border-surface-container group cursor-pointer"
+                className={`bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-ambient transition-all duration-300 flex flex-col border group cursor-pointer ${
+                  showsDiscount
+                    ? 'border-green-400 shadow-green-100 hover:shadow-green-200'
+                    : 'border-surface-container'
+                }`}
               >
                 <div className="aspect-[4/3] relative overflow-hidden bg-surface-container">
                   <img
@@ -350,87 +485,155 @@ export default function MarketView({
                     alt={product.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105 bg-white"
                   />
-                  <div className="absolute top-3 left-3" onClick={(e) => e.stopPropagation()}>
-                    <HelperTooltip
-                      side="bottom"
-                      textKey="stockBadge"
-                    >
-                      <span className="bg-primary-container/90 backdrop-blur-md text-on-primary-container text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm cursor-help">
-                        {t('inStock')}
-                      </span>
-                    </HelperTooltip>
-                  </div>
-                  {product.category && product.category !== 'general' && (
-                    <span className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-on-surface text-[10px] uppercase font-black px-2 py-0.5 rounded-full shadow-sm capitalize">
-                      {product.category}
+
+                  {/* ── Corner offer ribbon (top-left) ── */}
+                  {showsDiscount && savingsPct > 0 && (
+                    <div className="absolute top-0 left-0 w-24 h-24 overflow-hidden pointer-events-none">
+                      <div
+                        className="absolute bg-green-500 shadow-md text-white text-center"
+                        style={{ width: 130, top: 20, left: -32, transform: 'rotate(-45deg)', padding: '5px 0' }}
+                      >
+                        <span className="flex items-center justify-center gap-0.5 text-[10px] font-black tracking-wide">
+                          <Tag className="h-2.5 w-2.5 shrink-0" />
+                          {savingsPct}% OFF
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rating badge — bottom left */}
+                  {(product.averageRating ?? 0) > 0 && (
+                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                      <span className="text-amber-400">★</span>
+                      {product.averageRating!.toFixed(1)}
+                      {product.totalReviews ? <span className="text-white/70">({product.totalReviews})</span> : null}
                     </span>
                   )}
                 </div>
 
-                <div className="p-4 flex flex-col flex-1">
-                  <div onClick={(e) => e.stopPropagation()} className="self-start mb-2">
-                    <HelperTooltip side="bottom" textKey="marketNearbyStore">
-                      <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help">
-                        <ICONS.Market className="w-3 h-3" />
-                        <span className="text-[10px] font-bold tracking-tight">
-                          {product.store} • {formatDistance(dist, t('nearby'))}
-                        </span>
-                      </div>
-                    </HelperTooltip>
-                  </div>
-                  <h3 className="font-bold text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
-                    {product.name}
-                  </h3>
-                  <p className="text-on-surface-variant text-xs mt-1 line-clamp-2">
-                    {product.description}
-                  </p>
-
-                  <div className="mt-auto pt-3 flex justify-between items-end border-t border-surface-container">
-                    <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
-                      <HelperTooltip side="top" textKey="marketUnits">
-                        <span className="text-[10px] text-outline font-bold uppercase tracking-widest cursor-help">
-                          {size || t('perUnitCaps')}
-                        </span>
-                      </HelperTooltip>
-                      <HelperTooltip side="top" textKey="marketPriceInfo">
-                        <div className="flex items-baseline gap-1 cursor-help">
-                          {product.lowestPrice && product.lowestPrice < product.price ? (
-                            <>
-                              <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-                              <span className="text-lg font-bold text-secondary">
-                                ₹{product.lowestPrice.toLocaleString('en-IN')}
-                              </span>
-                              <span className="text-[10px] text-outline line-through">
-                                ₹{product.price.toLocaleString('en-IN')}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-lg font-bold text-secondary">
-                                ₹{product.price.toLocaleString('en-IN')}
-                              </span>
-                              {product.oldPrice && product.oldPrice > product.price && (
-                                <span className="text-[10px] text-outline line-through">
-                                  ₹{product.oldPrice}
-                                </span>
-                              )}
-                            </>
-                          )}
+                <div className={`p-3 md:p-4 flex flex-col flex-1 ${showsDiscount ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                  {/* Store badge + out-of-stock */}
+                  <div className="flex items-center justify-between gap-1 mb-2">
+                    <div onClick={(e) => e.stopPropagation()} className="self-start min-w-0">
+                      <HelperTooltip side="bottom" textKey="marketNearbyStore">
+                        <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help max-w-full">
+                          <ICONS.Market className="w-3 h-3 shrink-0" />
+                          <span className="text-[10px] font-bold tracking-tight truncate">
+                            {product.store} • {distText}
+                          </span>
                         </div>
                       </HelperTooltip>
                     </div>
-                    <span className="text-[10px] text-outline font-semibold">{brand}</span>
+                    {product.stock && product.stock.toLowerCase().includes('out') && (
+                      <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-red-500 border border-red-200 bg-red-50 px-1.5 py-0.5 rounded-full">
+                        Out of Stock
+                      </span>
+                    )}
                   </div>
-                  <div onClick={(e) => e.stopPropagation()} className="mt-2">
-                    <HelperTooltip side="top" textKey="marketAddToCart">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
-                        className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
-                      >
-                        {t('addToCart')}
-                      </button>
-                    </HelperTooltip>
+
+                  {/* Product name */}
+                  <h3 className="font-bold text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
+                    {product.name}
+                  </h3>
+
+                  {/* Price */}
+                  <div className={`mt-auto pt-2.5 border-t ${showsDiscount ? 'border-green-100' : 'border-surface-container'} mt-2`}>
+                    {hasOffer ? (
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
+                        <span className="text-xl font-black text-green-700 leading-none">
+                          ₹{discountedPrice.toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-sm font-semibold text-outline line-through leading-none">
+                          ₹{sellerBasePrice.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-baseline gap-1">
+                        {sellerBasePrice < product.price ? (
+                          <>
+                            <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
+                            <span className="text-lg font-bold text-secondary">
+                              ₹{sellerBasePrice.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-outline line-through">
+                              ₹{product.price.toLocaleString('en-IN')}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-lg font-bold text-secondary">
+                              ₹{sellerBasePrice.toLocaleString('en-IN')}
+                            </span>
+                            {product.oldPrice && product.oldPrice > sellerBasePrice && (
+                              <span className="text-[10px] text-outline line-through">
+                                ₹{product.oldPrice}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {product.sellMode !== "offline_store_only" && (() => {
+                    const inCart = cartItems.some((ci) => ci.productId === product.id);
+                    if (inCart) {
+                      return (
+                        <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                          {/* Mobile: single compact in-cart button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
+                            className="md:hidden w-full border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                          >
+                            ✓ In Cart
+                          </button>
+                          {/* Desktop: Go to Cart + Buy Now */}
+                          <div className="hidden md:flex gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onGoToCart?.(); }}
+                              className="flex-1 border-2 border-green-600 text-green-700 text-xs font-bold py-1.5 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
+                            >
+                              Go to Cart
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : onGoToCart?.(); }}
+                              className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                            >
+                              Buy Now
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-2">
+                        {/* Mobile: single + Add button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                          className="md:hidden w-full bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span className="text-sm font-black leading-none">+</span> Add
+                        </button>
+                        {/* Desktop: Add to Cart + Buy Now */}
+                        <div className="hidden md:flex gap-1">
+                          <HelperTooltip side="top" textKey="marketAddToCart">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                              className="flex-1 border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                            >
+                              {t('addToCart')}
+                            </button>
+                          </HelperTooltip>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onBuyNow ? onBuyNow(product) : (onAddToCart ? onAddToCart(product) : onProductClick(product.id)); }}
+                            className="flex-1 bg-primary text-white text-xs font-bold py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                          >
+                            Buy Now
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.article>
             );

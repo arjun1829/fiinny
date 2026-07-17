@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -137,8 +138,11 @@ export default function ManufacturersPage() {
                 </div>
             )}
 
-            {/* Add/Edit Modal */}
-            {showModal && (
+            {/* Add/Edit Modal — rendered via portal to document.body so it escapes the page's
+                .animate-fade-in transform (a transformed ancestor becomes the containing
+                block for position:fixed, which previously clipped the modal under the
+                sticky Administration tab bar and cut off the bottom of the form). */}
+            {showModal && createPortal(
                 <div style={{ position: 'fixed', inset: 0, background: 'hsla(0,0%,0%,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
                     <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '2rem', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
                         <button onClick={() => setShowModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
@@ -180,7 +184,8 @@ export default function ManufacturersPage() {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

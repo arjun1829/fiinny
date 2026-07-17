@@ -1,7 +1,8 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import { LayoutGrid } from 'lucide-react';
+import { useRouter, usePathname } from 'next/navigation';
 import { ICONS } from '../../app/constants';
 import { auth, getUserProfile } from '../../app/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -11,7 +12,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
 
 interface NavbarProps {
   currentView?: View;
@@ -51,6 +52,8 @@ export function Navbar({
   onCartClick,
 }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isOnBlog = pathname?.startsWith('/blog') ?? false;
   const [localUser, setLocalUser] = useState<any>(null);
   const [localUserRole, setLocalUserRole] = useState<string>('customer');
   const [localUserProfile, setLocalUserProfile] = useState<any>({ isPaid: false });
@@ -61,10 +64,20 @@ export function Navbar({
   const { language, setLanguage, t } = useI18n();
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMoreRef = useRef<HTMLDivElement>(null);
   const desktopSearchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
+  
+  const [internalSearch, setInternalSearch] = useState(productSearch || '');
+  const activeSearch = setProductSearch ? productSearch : internalSearch;
+  const updateSearch = (val: string) => {
+    if (setProductSearch) setProductSearch(val);
+    setInternalSearch(val);
+  };
+
 
   const fetchLocation = async () => {
     if (!navigator.geolocation) {
@@ -136,6 +149,9 @@ export function Navbar({
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
         setIsAccountMenuOpen(false);
       }
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(event.target as Node)) {
+        setIsMobileMoreOpen(false);
+      }
       // Close search results if clicking outside both search bars
       const inDesktop = desktopSearchRef.current?.contains(event.target as Node);
       const inMobile = mobileSearchRef.current?.contains(event.target as Node);
@@ -147,6 +163,7 @@ export function Navbar({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsAccountMenuOpen(false);
+        setIsMobileMoreOpen(false);
         setShowResults(false);
       }
     };
@@ -161,7 +178,7 @@ export function Navbar({
   }, []);
 
   const searchResults = useMemo(() => {
-    const query = productSearch.trim().toLowerCase();
+    const query = activeSearch.trim().toLowerCase();
     if (query.length < 2) return { products: [], stores: [] };
 
     const products = allProducts
@@ -190,10 +207,10 @@ export function Navbar({
   }, [productSearch, allProducts, allStores]);
 
   const hasResults = searchResults.products.length > 0 || searchResults.stores.length > 0;
-  const shouldShowDropdown = showResults && productSearch.trim().length >= 2 && hasResults;
+  const shouldShowDropdown = showResults && activeSearch.trim().length >= 2 && hasResults;
 
   const handleResultClick = (action: () => void) => {
-    if (setProductSearch) setProductSearch('');
+    updateSearch('');
     setShowResults(false);
     action();
   };
@@ -227,6 +244,11 @@ export function Navbar({
   ];
   const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
   const isAdmin = userRole === 'admin';
+  const cycleLanguage = () => {
+    const langs = ['en', 'mr', 'hi'] as const;
+    const idx = langs.indexOf(language as any);
+    setLanguage(langs[(idx + 1) % langs.length]!);
+  };
 
   const SearchDropdown = () => (
     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-ambient border border-surface-container z-[100] overflow-hidden max-h-[70vh] overflow-y-auto">
@@ -295,15 +317,15 @@ export function Navbar({
   );
 
   return (
-    <header className="sticky top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-4 md:px-6 py-2 transition-colors">
-      <div className="flex justify-between items-center gap-4">
+    <header className="sticky top-0 z-[80] bg-white/80 backdrop-blur-md border-b border-surface-container shadow-sm px-3 md:px-6 py-2 transition-colors">
+      <div className="flex justify-between items-center gap-2 md:gap-4">
         <div
           className="flex items-center gap-2 tracking-tight cursor-pointer hover:scale-[1.02] transition-transform shrink-0 group"
           onClick={() => navigate('home')}
         >
-          <img 
-            src="/images/krishidukan icon.webp" 
-            alt="KrishiDukan Logo" 
+          <img
+            src="/images/krishidukan icon.webp"
+            alt="KrishiDukan Logo"
             className="w-8 h-8 md:w-10 md:h-10 object-contain"
           />
           <span className="font-black text-xl md:text-2xl text-primary group-hover:text-primary/90 transition-colors">
@@ -317,7 +339,7 @@ export function Navbar({
             <button
               key={item.id}
               data-tour-nav={item.id}
-              onClick={() => navigate(item.id as View)}
+              onClick={() => { if (item.id === 'map') setProductSearch?.(''); navigate(item.id as View); }}
               className={`text-xs font-semibold transition-colors hover:text-primary whitespace-nowrap ${
                 currentView === item.id ? 'text-primary' : 'text-on-surface-variant'
               }`}
@@ -328,34 +350,58 @@ export function Navbar({
               )}
             </button>
           ))}
+          <a
+            href="/blog"
+            data-tour-nav="blog"
+            className={`text-xs font-semibold transition-colors hover:text-primary whitespace-nowrap ${
+              isOnBlog ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            {t('blog')}
+            {isOnBlog && (
+              <motion.div layoutId="activeTab" className="h-0.5 bg-primary mt-0.5 rounded-full" />
+            )}
+          </a>
+          <a
+            href="/reels"
+            data-tour-nav="reels"
+            className="text-xs font-semibold text-on-surface-variant transition-colors hover:text-primary whitespace-nowrap"
+          >
+            AgriReels
+          </a>
         </nav>
 
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {/* Desktop Product Search Bar */}
-          {!isDashboard && setProductSearch && (
-            <div 
-              ref={desktopSearchRef} 
-              data-tour="search"
-              className="hidden md:block relative flex-1 max-w-sm"
-            >
-              <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-                <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
-                <input
-                  type="text"
-                  placeholder={t('searchPlaceholder')}
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                  onFocus={() => setShowResults(true)}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2 placeholder-on-surface-variant font-medium"
-                />
-                {productSearch ? (
-                  <button
-                    onMouseDown={() => { setProductSearch(''); setShowResults(false); }}
-                    className="mr-2 text-outline hover:text-on-surface transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                  </button>
-                ) : (
+          <div 
+            ref={desktopSearchRef} 
+            data-tour="search"
+            className="hidden md:block relative flex-1 max-w-sm"
+          >
+            <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+              <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                value={activeSearch}
+                onChange={e => updateSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && activeSearch.trim()) {
+                    setShowResults(false);
+                    router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
+                  }
+                }}
+                onFocus={() => setShowResults(true)}
+                className="flex-1 bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2 placeholder-on-surface-variant font-medium"
+              />
+              {activeSearch ? (
+                <button
+                  onMouseDown={() => { updateSearch(''); setShowResults(false); }}
+                  className="mr-2 text-outline hover:text-on-surface transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              ) : (
                   <HelperIcon
                     size="xs"
                     variant="ghost"
@@ -368,10 +414,9 @@ export function Navbar({
               </div>
               {shouldShowDropdown && <SearchDropdown />}
             </div>
-          )}
-        </div>
+          </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* Cart icon (placeholder) */}
           <button
             onClick={() => {
@@ -409,6 +454,7 @@ export function Navbar({
           </div>
 
           <button
+            data-tour="location-mobile"
             className={`p-1.5 hover:bg-surface-container rounded-full transition-colors text-primary md:hidden ${isFetchingLocation ? 'animate-pulse' : ''}`}
             onClick={fetchLocation}
             title="Detect current location"
@@ -416,30 +462,139 @@ export function Navbar({
             <ICONS.Location className="w-5 h-5" />
           </button>
 
-          {/* Language toggle — always visible on mobile */}
+          {/* More menu — mobile only */}
+          <div className="relative md:hidden" ref={mobileMoreRef}>
+            <button
+              type="button"
+              onClick={() => setIsMobileMoreOpen(prev => !prev)}
+              className={`p-1.5 rounded-xl transition-colors ${isMobileMoreOpen ? 'bg-primary text-white' : 'hover:bg-surface-container text-on-surface-variant'}`}
+              aria-label="More"
+              aria-expanded={isMobileMoreOpen}
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+
+            <div className={`absolute right-0 top-full mt-2 w-52 rounded-2xl border border-surface-container bg-white p-2 shadow-ambient z-[90] ${isMobileMoreOpen ? 'block' : 'hidden'}`}>
+              <div className="grid grid-cols-2 gap-2 p-1">
+                <a
+                  href="/blog"
+                  onClick={() => setIsMobileMoreOpen(false)}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  {t('blog')}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('about'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'about' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  {t('about')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('help'); }}
+                  className={`rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors ${currentView === 'help' ? 'bg-primary text-white' : 'bg-surface-container-low text-on-surface hover:bg-surface-container'}`}
+                >
+                  {t('help')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { cycleLanguage(); setIsMobileMoreOpen(false); }}
+                  className="rounded-xl bg-surface-container-low px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container"
+                >
+                  {t('language')}: {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
+                </button>
+              </div>
+
+              <div className="my-2 border-t border-surface-container" />
+
+              {user ? (
+                <div className="space-y-1">
+                  {isAdmin && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/admin'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      {t('adminPanel')}
+                    </button>
+                  )}
+                  {canAccessDashboard && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('dashboard')}
+                    </button>
+                  )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => { setIsMobileMoreOpen(false); router.push('/dashboard/my-orders'); }}
+                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('profile'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        {t('myProfile')}
+                      </button>
+                      <button
+                        onClick={() => { setIsMobileMoreOpen(false); navigate('orders'); }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-low"
+                      >
+                        {t('myOrders')}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setIsMobileMoreOpen(false); handleLogout(); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                  >
+                    {t('logout')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setIsMobileMoreOpen(false); navigate('login'); }}
+                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-primary transition-colors hover:bg-primary/10"
+                >
+                  {t('login')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Help / Documentation */}
           <button
-            className="md:hidden flex items-center justify-center bg-surface-container-low border border-outline-variant rounded-xl px-2.5 py-1.5 text-[11px] font-black text-on-surface hover:bg-surface-container transition-colors min-w-[36px]"
-            onClick={() => {
-              const langs = ['en', 'mr', 'hi'] as const;
-              const idx = langs.indexOf(language as any);
-              setLanguage(langs[(idx + 1) % langs.length]!);
-            }}
-            title="Change language"
-            aria-label="Change language"
+            data-tour-nav="help"
+            onClick={() => navigate('help')}
+            className={`hidden md:inline-flex items-center gap-1.5 border border-outline-variant rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 text-xs font-bold transition-colors ${
+              currentView === 'help'
+                ? 'bg-primary text-white border-primary'
+                : 'bg-surface-container-low text-on-surface hover:bg-surface-container'
+            }`}
+            aria-label={t('help')}
+            title={t('help')}
           >
-            {language === 'en' ? 'EN' : language === 'mr' ? 'मर' : 'हि'}
+            <ICONS.Help className="w-4 h-4 shrink-0" />
+            <span className="hidden md:inline whitespace-nowrap">{t('help')}</span>
           </button>
 
-          <div className="relative" ref={accountMenuRef}>
+          <div className="relative hidden md:block" ref={accountMenuRef}>
             <button
-              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-surface-container-highest transition-all"
+              data-account-trigger
+              className="inline-flex items-center gap-1.5 bg-surface-container-high text-on-surface text-xs font-bold px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-xl hover:bg-surface-container-highest transition-all whitespace-nowrap"
               aria-label="Open account menu"
               aria-haspopup="menu"
               aria-expanded={isAccountMenuOpen}
               onClick={() => setIsAccountMenuOpen((prev) => !prev)}
             >
               {t('account')}
-              <ICONS.ChevronRight className="w-3.5 h-3.5 rotate-90" />
+              <ICONS.ChevronRight className="hidden md:inline w-3.5 h-3.5 rotate-90" />
             </button>
 
             <div className={`absolute right-0 top-full mt-2 z-50 w-52 bg-white border border-surface-container rounded-2xl shadow-ambient p-2 ${isAccountMenuOpen ? 'block' : 'hidden'}`}>
@@ -467,7 +622,7 @@ export function Navbar({
                       }}
                       className="w-full text-left px-2.5 py-2 text-xs font-bold text-primary hover:bg-primary/10 rounded-lg transition-colors"
                     >
-                      Admin Panel
+                      {t('adminPanel')}
                     </button>
                   )}
                   {canAccessDashboard && (
@@ -480,6 +635,39 @@ export function Navbar({
                     >
                       {t('dashboard')}
                     </button>
+                  )}
+                  {(userRole === 'retailer' || userRole === 'manufacturer') && !!user && (
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        router.push('/dashboard/my-orders');
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
+                  {userRole === 'customer' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('profile');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        {t('myProfile')}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          navigate('orders');
+                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                      >
+                        {t('myOrders')}
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => {
@@ -504,33 +692,39 @@ export function Navbar({
               )}
             </div>
           </div>
+
         </div>
       </div>
 
-      {!isDashboard && setProductSearch && (
-        <div 
-          ref={mobileSearchRef} 
-          data-tour="search-mobile"
-          className="md:hidden mt-2 relative"
-        >
-          <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-            <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
-            <input
-              type="text"
-              placeholder={t('searchPlaceholder')}
-              value={productSearch}
-              onChange={e => setProductSearch(e.target.value)}
-              onFocus={() => setShowResults(true)}
-              className="w-full bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2.5 placeholder-on-surface-variant font-medium"
-            />
-            {productSearch ? (
-              <button
-                onMouseDown={() => { setProductSearch(''); setShowResults(false); }}
-                className="mr-2 text-outline hover:text-on-surface transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            ) : (
+      <div 
+        ref={mobileSearchRef} 
+        data-tour="search-mobile"
+        className="md:hidden mt-2 relative"
+      >
+        <div className="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden shadow-sm group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+          <ICONS.Search className="w-4 h-4 text-outline group-focus-within:text-primary transition-colors shrink-0 ml-3" />
+          <input
+            type="text"
+            placeholder={t('searchPlaceholder')}
+            value={activeSearch}
+            onChange={e => updateSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && activeSearch.trim()) {
+                setShowResults(false);
+                router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
+              }
+            }}
+            onFocus={() => setShowResults(true)}
+            className="w-full bg-transparent border-none focus:ring-0 text-xs text-on-surface px-2 py-2.5 placeholder-on-surface-variant font-medium"
+          />
+          {activeSearch ? (
+            <button
+              onMouseDown={() => { updateSearch(''); setShowResults(false); }}
+              className="mr-2 text-outline hover:text-on-surface transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          ) : (
               <HelperIcon
                 size="xs"
                 variant="ghost"
@@ -543,7 +737,7 @@ export function Navbar({
           </div>
           {shouldShowDropdown && <SearchDropdown />}
         </div>
-      )}
+
     </header>
   );
 }

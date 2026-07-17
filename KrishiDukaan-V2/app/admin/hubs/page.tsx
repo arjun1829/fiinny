@@ -107,23 +107,25 @@ function ArrayField<T extends Record<string, string>>({
       </div>
       <div className="space-y-2">
         {items.map((item, i) => (
-          <div key={i} className="flex gap-2 items-start">
-            {fields.map(f => (
-              f.type === "select" ? (
-                <select key={String(f.key)} value={String(item[f.key])}
-                  onChange={e => { const n = [...items]; n[i] = { ...n[i], [f.key]: e.target.value }; onChange(n); }}
-                  className="rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none">
-                  {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : (
-                <input key={String(f.key)} type="text" value={String(item[f.key])} placeholder={f.placeholder}
-                  onChange={e => { const n = [...items]; n[i] = { ...n[i], [f.key]: e.target.value }; onChange(n); }}
-                  className="flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20" />
-              )
-            ))}
+          <div key={i} className="flex flex-col sm:flex-row gap-2 items-start bg-surface-container-lowest sm:bg-transparent border border-outline-variant/30 sm:border-none p-3 sm:p-0 rounded-xl">
+            <div className="flex flex-col sm:flex-row gap-2 flex-1 w-full">
+              {fields.map(f => (
+                f.type === "select" ? (
+                  <select key={String(f.key)} value={String(item[f.key])}
+                    onChange={e => { const n = [...items]; n[i] = { ...n[i], [f.key]: e.target.value }; onChange(n); }}
+                    className="w-full sm:w-auto rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none">
+                    {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <input key={String(f.key)} type="text" value={String(item[f.key])} placeholder={f.placeholder}
+                    onChange={e => { const n = [...items]; n[i] = { ...n[i], [f.key]: e.target.value }; onChange(n); }}
+                    className="w-full sm:flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20" />
+                )
+              ))}
+            </div>
             <button type="button" onClick={() => onChange(items.filter((_, j) => j !== i))}
-              className="p-2 text-on-surface-variant hover:text-red-500 transition-colors shrink-0 mt-0.5">
-              <X className="h-4 w-4" />
+              className="w-full sm:w-auto flex items-center justify-center p-2 text-red-600 sm:text-on-surface-variant hover:text-red-500 sm:hover:bg-red-50 transition-colors shrink-0 mt-1 sm:mt-0.5 rounded-xl border border-red-100 sm:border-none bg-red-50 sm:bg-transparent">
+              <X className="h-4 w-4 sm:mr-0 mr-1" /> <span className="text-xs font-bold sm:hidden">Remove</span>
             </button>
           </div>
         ))}
@@ -216,7 +218,7 @@ export default function AdminHubsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <Layers className="h-6 w-6 text-primary" />
@@ -226,13 +228,13 @@ export default function AdminHubsPage() {
             Manage crop hubs — add, edit, delete. Hubs saved here replace the default mock hubs on the public site.
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 w-full sm:w-auto">
           <button onClick={handleImportDefaults} disabled={saving}
-            className="flex items-center gap-2 border border-outline bg-surface-container-low text-on-surface-variant text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-50">
-            {saving ? "Importing..." : "Import Default Hubs"}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 border border-outline bg-surface-container-low text-on-surface-variant text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-50">
+            {saving ? "Importing..." : "Import Hubs"}
           </button>
           <button onClick={openAdd}
-            className="flex items-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors">
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-primary-container transition-colors">
             <Plus className="h-4 w-4" /> New Hub
           </button>
         </div>
@@ -254,11 +256,11 @@ export default function AdminHubsPage() {
           <Layers className="h-10 w-10 text-outline mx-auto mb-4" />
           <h3 className="text-lg font-bold text-on-surface mb-1">No hubs yet</h3>
           <p className="text-sm text-on-surface-variant mb-6">Your Firestore database has no hubs. You can seed it with the 10 default hubs or create a new one.</p>
-          <div className="flex items-center justify-center gap-4">
-            <button onClick={openAdd} className="bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+            <button onClick={openAdd} className="w-full sm:w-auto bg-primary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-primary-container transition-colors">
               Create Custom Hub
             </button>
-            <button onClick={handleImportDefaults} disabled={saving} className="bg-secondary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-secondary-container transition-colors disabled:opacity-50">
+            <button onClick={handleImportDefaults} disabled={saving} className="w-full sm:w-auto bg-secondary text-white px-6 py-3 rounded-2xl font-bold text-sm hover:bg-secondary-container transition-colors disabled:opacity-50">
               {saving ? "Importing..." : "Seed 10 Default Hubs"}
             </button>
           </div>
@@ -268,27 +270,29 @@ export default function AdminHubsPage() {
           {hubs.map(h => (
             <div key={h.id} className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
               {/* Hub header */}
-              <div className="flex items-center gap-4 p-5">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-surface-container shrink-0">
-                  {h.heroImage ? (
-                    <img src={h.heroImage} alt={h.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center"><ImageIcon className="h-6 w-6 text-outline" /></div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <h3 className="font-bold text-on-surface text-lg">{h.name} Hub</h3>
-                    <span className="text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary px-2 py-0.5 rounded-full">Live</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5">
+                <div className="flex items-center gap-4 w-full sm:w-auto overflow-hidden">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-surface-container shrink-0">
+                    {h.heroImage ? (
+                      <img src={h.heroImage} alt={h.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center"><ImageIcon className="h-6 w-6 text-outline" /></div>
+                    )}
                   </div>
-                  <p className="text-sm text-on-surface-variant truncate">{h.tagline}</p>
-                  <div className="flex gap-4 mt-1">
-                    <span className="text-xs text-on-surface-variant">{h.seeds.length} seeds</span>
-                    <span className="text-xs text-on-surface-variant">{h.nutrition.length} nutrition</span>
-                    <span className="text-xs text-on-surface-variant">{h.irrigation.items.length} irrigation items</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <h3 className="font-bold text-on-surface text-lg">{h.name} Hub</h3>
+                      <span className="text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary px-2 py-0.5 rounded-full">Live</span>
+                    </div>
+                    <p className="text-sm text-on-surface-variant truncate">{h.tagline}</p>
+                    <div className="flex flex-wrap gap-2 sm:gap-4 mt-1">
+                      <span className="text-xs text-on-surface-variant">{h.seeds.length} seeds</span>
+                      <span className="text-xs text-on-surface-variant">{h.nutrition.length} nutrition</span>
+                      <span className="text-xs text-on-surface-variant">{h.irrigation.items.length} irrigation</span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center justify-end gap-2 shrink-0 w-full sm:w-auto border-t sm:border-t-0 border-outline-variant/10 pt-3 sm:pt-0">
                   <button onClick={() => setExpandedHub(expandedHub === h.id ? null : h.id)}
                     className="p-2 rounded-xl hover:bg-surface-container text-on-surface-variant transition-colors">
                     {expandedHub === h.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -396,7 +400,7 @@ export default function AdminHubsPage() {
 
       {/* Add/Edit Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-on-surface/40 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex items-start justify-center bg-on-surface/40 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b border-surface-container sticky top-0 bg-white rounded-t-3xl z-10">
               <h2 className="text-lg font-bold text-on-surface">{editId ? "Edit Hub" : "New Hub"}</h2>

@@ -1,0 +1,81 @@
+runConfig:
+  concurrency: 20
+  cpu: 1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 1
+
+env:
+  # ─── Firebase Client SDK (UAT) ───────────────────────────────────────────────
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: karan-arjun-uat
+
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyAG7Q5QIhI0awPbyrmK0eGWd7-eatwmpNw
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: karan-arjun-uat.firebaseapp.com
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: karan-arjun-uat.firebasestorage.app
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "823396858694"
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:823396858694:web:647ee169b50a6f06328347
+
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: G-KPJCC681D5
+
+  - variable: NEXT_PUBLIC_BASE_URL
+    value: https://karan-arjun-uat.web.app
+
+  - variable: NEXT_PUBLIC_RAZORPAY_KEY_ID
+    value: rzp_test_SmPxtEcNJ25LUj
+
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778
+
+  # ─── Email (SMTP) ────────────────────────────────────────────────────────────
+  - variable: SMTP_HOST
+    value: smtp.gmail.com
+
+  - variable: SMTP_PORT
+    value: "587"
+
+  - variable: SMTP_SECURE
+    value: "false"
+
+  - variable: SMTP_USER
+    secret: SMTP_USER
+
+  - variable: SMTP_PASS
+    secret: SMTP_PASS
+
+  - variable: SMTP_FROM
+    value: "KrishiDukan UAT <vinay.sharma@fiinny.com>"
+
+  # ─── Razorpay (server-side TEST keys for UAT) ─────────────────────────────
+  - variable: RAZORPAY_KEY_ID
+    value: rzp_test_SmPxtEcNJ25LUj
+
+  - variable: RAZORPAY_KEY_SECRET
+    secret: RAZORPAY_KEY_SECRET_UAT
+
+  # ─── Cron ────────────────────────────────────────────────────────────────────
+  - variable: CRON_SECRET
+    value: krishidukan-uat-cron-secret
+
+  - variable: NEXT_PUBLIC_CRON_SECRET
+    value: krishidukan-uat-cron-secret
+
+  # ─── Firebase Admin SDK ──────────────────────────────────────────────────────
+  - variable: FIREBASE_PROJECT_ID
+    value: karan-arjun-uat
+
+  - variable: FIREBASE_CLIENT_EMAIL
+    secret: FIREBASE_CLIENT_EMAIL_UAT
+
+  - variable: FIREBASE_PRIVATE_KEY
+    secret: FIREBASE_PRIVATE_KEY_UAT

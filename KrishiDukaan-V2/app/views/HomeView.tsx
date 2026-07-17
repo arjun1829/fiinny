@@ -7,6 +7,7 @@ import { MarketplaceProduct } from '../../types/product';
 import { Hub } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
+import { Tag } from 'lucide-react';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -14,6 +15,9 @@ interface HomeViewProps {
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
+  onMarketSearch?: (query: string) => void;
+  onAddToCart?: (product: MarketplaceProduct) => void;
+  onRegisterClick?: () => void;
 }
 
 type Slide = {
@@ -25,7 +29,7 @@ type Slide = {
   bgClass: string;
   bgImg?: string;
   imgUrl?: string;
-  onCta: 'powerPlus' | 'hub' | 'retailer';
+  onCta: 'powerPlus' | 'market' | 'retailer';
 };
 
 export default function HomeView({
@@ -34,6 +38,9 @@ export default function HomeView({
   onProductClick,
   onHubClick,
   onCategoryClick,
+  onMarketSearch,
+  onAddToCart,
+  onRegisterClick,
 }: HomeViewProps) {
   const { t } = useI18n();
 
@@ -65,7 +72,7 @@ export default function HomeView({
       ctaLabel: 'Explore Products',
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1400&q=80',
-      onCta: 'hub',
+      onCta: 'market',
     },
     {
       id: 'genuine',
@@ -80,7 +87,7 @@ export default function HomeView({
       ctaLabel: 'Explore products',
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=1400&q=80',
-      onCta: 'hub',
+      onCta: 'market',
     },
     {
       id: 'manufacturer',
@@ -121,21 +128,26 @@ export default function HomeView({
   }, [slides.length]);
 
   const goToSlideCta = (s: Slide) => {
-    if (s.onCta === 'powerPlus' && powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
-    else if (s.onCta === 'hub') onHubClick();
-    else if (s.onCta === 'retailer') onHubClick();
+    if (s.onCta === 'powerPlus') {
+      if (powerPlusProducts[0]) onProductClick(powerPlusProducts[0].id);
+      else onMarketSearch?.('Power Plus');
+    } else if (s.onCta === 'market') {
+      onCategoryClick?.('all');
+    } else if (s.onCta === 'retailer') {
+      onRegisterClick?.();
+    }
   };
 
-  // Quick-access category tiles. Map clicks to Market with that category preselected.
+  // Quick-access category tiles — IDs match Firestore product.category values (case-insensitive).
   const categoryTiles = [
-    { id: 'pesticides', label: t('catPesticides'), imgUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-emerald-50 to-emerald-100' },
-    { id: 'fertilizers', label: t('catFertilizers'), imgUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-amber-50 to-orange-100' },
-    { id: 'pesticides', label: t('catHerbicides'), imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-rose-50 to-pink-100' },
-    { id: 'fertilizers', label: t('catBioStimulants'), imgUrl: 'https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-teal-50 to-cyan-100' },
-    { id: 'tools', label: t('catSprayers'), imgUrl: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-sky-50 to-blue-100' },
-    { id: 'seeds', label: t('catSeeds'), imgUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-yellow-50 to-amber-100' },
-    { id: 'tools', label: t('catTools'), imgUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-slate-50 to-gray-100' },
-    { id: 'all', label: t('catViewAll'), imgUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-primary/10 to-primary/20' },
+    { id: 'Pesticides',    label: t('catPesticides'),    imgUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-emerald-50 to-emerald-100' },
+    { id: 'Fertilizers',  label: t('catFertilizers'),  imgUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-amber-50 to-orange-100' },
+    { id: 'Herbicides',   label: t('catHerbicides'),   imgUrl: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-rose-50 to-pink-100' },
+    { id: 'Bio Pesticides', label: t('catBioStimulants'), imgUrl: 'https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-teal-50 to-cyan-100' },
+    { id: 'Sprayers',     label: t('catSprayers'),     imgUrl: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-sky-50 to-blue-100' },
+    { id: 'Seeds',        label: t('catSeeds'),        imgUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-yellow-50 to-amber-100' },
+    { id: 'Tools',        label: t('catTools'),        imgUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-slate-50 to-gray-100' },
+    { id: 'all',          label: t('catViewAll'),      imgUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=120&h=120&q=80', color: 'from-primary/10 to-primary/20' },
   ];
 
   return (
@@ -173,15 +185,13 @@ export default function HomeView({
                       <p className="text-white/85 text-base md:text-lg mb-7 max-w-md">
                         {s.subtitle}
                       </p>
-                      <HelperTooltip side="bottom" textKey="homeHeroCta">
-                        <button
-                          onClick={() => goToSlideCta(s)}
-                          className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl hover:scale-105 transition-transform shadow-xl inline-flex items-center gap-2"
-                        >
-                          <ICONS.ArrowRight className="w-5 h-5" />
-                          {s.ctaLabel}
-                        </button>
-                      </HelperTooltip>
+                      <button
+                        onClick={() => goToSlideCta(s)}
+                        className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl shadow-xl inline-flex items-center gap-2"
+                      >
+                        <ICONS.ArrowRight className="w-5 h-5" />
+                        {s.ctaLabel}
+                      </button>
                     </div>
                     {s.imgUrl && (
                       <div className="flex-shrink-0 w-48 md:w-64">
@@ -304,17 +314,37 @@ export default function HomeView({
               ariaLabel="Trending near you help"
             />
           </div>
-          <button className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform text-sm">
+          <button
+            onClick={() => onCategoryClick?.('all')}
+            className="text-primary font-bold flex items-center gap-2 hover:translate-x-1 transition-transform text-sm"
+          >
             {t('viewAll')} <ICONS.ArrowRight className="w-4 h-4" />
           </button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-          {products.length > 0 ? products.slice(0, 10).map((product) => (
+          {products.length > 0 ? products.slice(0, 10).map((product) => {
+            // Mirror MarketView's discount model: a discount is either a seller promo
+            // (lowestFinalPrice below lowestPrice) OR the selling price being below the
+            // catalog price (lowestPrice < product.price). Previously this card only
+            // used maxDiscountPct, so catalog markdowns showed neither price nor label.
+            const sellerBasePrice = product.lowestPrice ?? product.price;
+            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
+            const promo = discountedPrice < sellerBasePrice;
+            const ribbonOriginal = promo ? sellerBasePrice : product.price;
+            const ribbonFinal = promo ? discountedPrice : sellerBasePrice;
+            const hasOffer = ribbonFinal < ribbonOriginal;
+            const maxPct = ribbonOriginal > 0
+              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
+              : 0;
+            const savings = Math.round(ribbonOriginal - ribbonFinal);
+            return (
             <motion.div
               key={product.id}
               whileHover={{ y: -4 }}
-              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-surface-container flex flex-col group cursor-pointer"
+              className={`bg-white rounded-2xl overflow-hidden shadow-sm flex flex-col group cursor-pointer border ${
+                hasOffer ? 'border-green-400 shadow-green-100' : 'border-surface-container'
+              }`}
               onClick={() => onProductClick(product.id)}
             >
               <div className="aspect-square relative overflow-hidden bg-surface-container-low">
@@ -323,35 +353,68 @@ export default function HomeView({
                   alt={product.name}
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
                 />
-                <div className="absolute top-2 left-2" onClick={(e) => e.stopPropagation()}>
-                  <HelperTooltip side="bottom" textKey="stockBadge">
-                    <span className="bg-primary-container/90 text-on-primary-container backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-sm cursor-help">
-                      {product.stock}
-                    </span>
-                  </HelperTooltip>
-                </div>
-              </div>
-              <div className="p-3 flex flex-col flex-1">
-                <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>
-                <div className="mt-auto flex items-baseline gap-1.5">
-                  <span className="text-base font-bold text-secondary">₹{product.price}</span>
-                  {product.oldPrice && product.oldPrice > product.price && (
-                    <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
-                  )}
-                </div>
-                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                  <HelperTooltip side="top" textKey="marketAddToCart">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onProductClick(product.id); }}
-                      className="w-full border-2 border-primary text-primary text-xs font-bold py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors"
+                {/* Corner offer ribbon */}
+                {hasOffer && maxPct > 0 && (
+                  <div className="absolute top-0 left-0 w-20 h-20 overflow-hidden pointer-events-none">
+                    <div
+                      className="absolute bg-green-500 shadow text-white text-center"
+                      style={{ width: 110, top: 17, left: -28, transform: 'rotate(-45deg)', padding: '4px 0' }}
                     >
-                      {t('addToCart')}
-                    </button>
-                  </HelperTooltip>
-                </div>
+                      <span className="flex items-center justify-center gap-0.5 text-[9px] font-black tracking-wide">
+                        <Tag className="h-2 w-2 shrink-0" />{maxPct}% OFF
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {(product.averageRating ?? 0) > 0 && (
+                  <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/60 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                    <span className="text-amber-400">★</span>
+                    {product.averageRating!.toFixed(1)}
+                    {product.totalReviews ? <span className="text-white/70">({product.totalReviews})</span> : null}
+                  </span>
+                )}
+              </div>
+              <div className={`p-3 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
+                <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>
+                {hasOffer ? (
+                  <div className="mt-auto">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-base font-black text-green-700">₹{ribbonFinal.toLocaleString('en-IN')}</span>
+                      <span className="text-[11px] text-outline line-through">₹{ribbonOriginal.toLocaleString('en-IN')}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 mt-1 rounded-md bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">
+                      <Tag className="h-2 w-2 shrink-0" />Save ₹{savings}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-auto flex items-baseline gap-1.5">
+                    <span className="text-base font-bold text-secondary">₹{sellerBasePrice.toLocaleString('en-IN')}</span>
+                    {product.oldPrice && product.oldPrice > sellerBasePrice && (
+                      <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
+                    )}
+                  </div>
+                )}
+                {(() => { console.log("[HomeView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
+                {product.sellMode !== "offline_store_only" && (
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <HelperTooltip side="top" textKey="marketAddToCart">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAddToCart ? onAddToCart(product) : onProductClick(product.id); }}
+                        className={`w-full border-2 text-xs font-bold py-1.5 rounded-lg transition-colors ${
+                          hasOffer
+                            ? 'border-green-600 text-green-700 hover:bg-green-600 hover:text-white'
+                            : 'border-primary text-primary hover:bg-primary hover:text-white'
+                        }`}
+                      >
+                        {t('addToCart')}
+                      </button>
+                    </HelperTooltip>
+                  </div>
+                )}
               </div>
             </motion.div>
-          )) : (
+            );
+          }) : (
             <div className="col-span-full py-10 text-center bg-surface-container-low rounded-3xl border border-dashed border-surface-container">
               <p className="text-on-surface-variant font-medium">{t('noTrending')}</p>
             </div>
@@ -362,9 +425,8 @@ export default function HomeView({
       {/* Service strip */}
       <section className="px-4 md:px-10 max-w-7xl mx-auto w-full">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <HelperTooltip side="top" textKey="homeServiceRetailer">
-            <button
-              onClick={() => onHubClick()}
+          <button
+              onClick={() => onRegisterClick?.()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-amber-500 to-orange-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
               <ICONS.Market className="absolute -bottom-4 -right-4 w-32 h-32 text-white/15 group-hover:scale-110 transition-transform" />
@@ -378,9 +440,7 @@ export default function HomeView({
                 </span>
               </div>
             </button>
-          </HelperTooltip>
-          <HelperTooltip side="top" textKey="homeServiceAdvisory">
-            <button
+          <button
               onClick={() => onHubClick()}
               className="text-left rounded-3xl p-6 bg-gradient-to-br from-sky-500 to-indigo-600 text-white relative overflow-hidden group min-h-[170px] w-full"
             >
@@ -395,7 +455,6 @@ export default function HomeView({
                 </span>
               </div>
             </button>
-          </HelperTooltip>
         </div>
       </section>
     </div>

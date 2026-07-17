@@ -1,28 +1,36 @@
 "use client";
 
+import Link from 'next/link';
 import { ICONS } from '../../app/constants';
 import { useI18n } from '../../app/i18n/I18nContext';
 
 type FooterProps = {
-  onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about') => void;
+  onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer') => void;
   onCategoryClick?: (categoryId: string) => void;
+  userRole?: 'customer' | 'retailer' | 'manufacturer';
+  onUpgradeRole?: () => void;
 };
 
-export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
+export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgradeRole }: FooterProps) {
   const { t } = useI18n();
-  const shopLinks = [
-    { label: t('catPesticides'), cat: 'pesticides' },
-    { label: t('catFertilizers'), cat: 'fertilizers' },
-    { label: t('catBioStimulants'), cat: 'fertilizers' },
-    { label: t('footerSprayersTools'), cat: 'tools' },
-    { label: t('catSeeds'), cat: 'seeds' },
+
+  const upgradeLabel = userRole === 'retailer' || userRole === 'manufacturer'
+    ? t('footerBecomeManufacturer')
+    : t('footerBecomeRetailer');
+
+  const shopLinks: { label: string; cat: string; slug?: string }[] = [
+    { label: t('catSeeds'),        cat: 'seeds',        slug: 'seeds' },
+    { label: t('catFertilizers'),  cat: 'fertilizers',  slug: 'fertilizers' },
+    { label: t('catPesticides'),   cat: 'pesticides',   slug: 'pesticides' },
+    { label: t('catHerbicides'),   cat: 'herbicides',   slug: 'herbicides' },
+    { label: t('catBioStimulants'), cat: 'bio-stimulants', slug: 'bio-stimulants' },
+    { label: t('catSprayers'),     cat: 'sprayers',     slug: 'sprayers' },
     { label: t('footerViewAllProducts'), cat: 'all' },
   ];
-  const companyLinks: { label: string; view: 'home' | 'market' | 'hub' | 'map' | 'about' }[] = [
+  const companyLinks: { label: string; view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer' }[] = [
     { label: t('footerAbout'), view: 'about' },
     { label: t('footerStores'), view: 'map' },
     { label: t('footerCropHubs'), view: 'hub' },
-    { label: t('footerBecomeRetailer'), view: 'hub' },
     { label: t('footerContact'), view: 'about' },
     { label: t('footerFAQs'), view: 'about' },
   ];
@@ -57,16 +65,28 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
               {t('footerShop')}
             </h4>
             <ul className="space-y-2 text-sm">
-              {shopLinks.map((c) => (
-                <li key={c.label}>
-                  <button
-                    onClick={() => onCategoryClick?.(c.cat)}
-                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-                  >
-                    {c.label}
-                  </button>
-                </li>
-              ))}
+              {shopLinks.map((c) =>
+                c.slug ? (
+                  <li key={c.label}>
+                    <Link
+                      href={`/category/${c.slug}`}
+                      onClick={(e) => { e.preventDefault(); onCategoryClick?.(c.cat); }}
+                      className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                    >
+                      {c.label}
+                    </Link>
+                  </li>
+                ) : (
+                  <li key={c.label}>
+                    <button
+                      onClick={() => onCategoryClick?.(c.cat)}
+                      className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                    >
+                      {c.label}
+                    </button>
+                  </li>
+                )
+              )}
             </ul>
           </div>
 
@@ -86,6 +106,20 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
                   </button>
                 </li>
               ))}
+              <li>
+                <button
+                  onClick={() => {
+                    if (userRole === 'retailer' || userRole === 'manufacturer') {
+                      onUpgradeRole?.();
+                    } else {
+                      onNavigate?.('become-retailer');
+                    }
+                  }}
+                  className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                >
+                  {upgradeLabel}
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -98,8 +132,8 @@ export default function Footer({ onNavigate, onCategoryClick }: FooterProps) {
               <p className="font-semibold text-on-surface">Karan Arjun Krushi Seva Kendra</p>
               <p>Chatrapati Shivaji Nagar, 132 KV</p>
               <p>Karjat, Ahilyanagar — 414402</p>
-              <a href="tel:9307199040" className="block font-bold text-primary hover:underline">
-                +91 93071 99040
+              <a href="tel:+918658032751" className="block font-bold text-primary hover:underline">
+                +91 86580 32751
               </a>
             </div>
             <div className="mt-5">

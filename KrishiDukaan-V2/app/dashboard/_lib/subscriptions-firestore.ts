@@ -83,8 +83,11 @@ function mapSeatListingDoc(id: string, data: Record<string, unknown>): RetailerS
     ownerId: String(data.ownerId ?? ""),
     ownerType: data.ownerType === "retailer" ? "retailer" : "manufacturer",
     manufacturerId: data.manufacturerId ? String(data.manufacturerId) : null,
+    manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : null,
+    ownerPhone: data.ownerPhone ? String(data.ownerPhone) : null,
     retailerDocId: data.retailerDocId ? String(data.retailerDocId) : null,
     retailerId: data.retailerId ? String(data.retailerId) : null,
+    retailerPhone: data.retailerPhone ? String(data.retailerPhone) : null,
     productId: String(data.productId ?? ""),
     manufacturerProductId: data.manufacturerProductId ? String(data.manufacturerProductId) : null,
     listingType: data.listingType === "assigned" ? "assigned" : "own",
@@ -176,17 +179,21 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
 
 export async function fetchSubscriptions(ownerId: string): Promise<Subscription[]> {
   // Dual query: legacy ownerId (UID) + new ownerPhone (E164).
-  // Resolves phone via uidIndex; falls back to UID-only if not found.
-  let ownerPhone: string | null = null;
-  try {
-    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
-    if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
-  } catch { /* ignore */ }
+  // If the id is already E164, use it directly; otherwise resolve via uidIndex.
+  let ownerPhone: string | null = ownerId.startsWith('+') ? ownerId : null;
+  if (!ownerPhone) {
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+      if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+    } catch { /* ignore */ }
+  }
 
   const queries = [
     getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerId", "==", ownerId))),
   ];
-  if (ownerPhone && ownerPhone !== ownerId) {
+  // Always add the ownerPhone query when a phone is known — the two queries target
+  // different fields (ownerId vs ownerPhone) and deduplication handles overlaps.
+  if (ownerPhone) {
     queries.push(getDocs(query(collection(db, SUBSCRIPTIONS), where("ownerPhone", "==", ownerPhone))));
   }
 
@@ -211,13 +218,46 @@ export function getActiveSubscriptions(subs: Subscription[]): Subscription[] {
 
 // ─── Seat listings ────────────────────────────────────────────────────────────
 
-/** Listings owned by a manufacturer (seats they've assigned to retailers). */
+/**
+ * Listings owned by a seat owner, keyed by ownerId.
+ *
+ * Dual query (UID + phone), mirroring fetchSubscriptions: own/manufacturer-assigned
+ * listings set ownerId = Auth UID, while ADMIN-assigned listings set ownerId =
+ * sellerPhone (the assignment happens before the seller is the authed caller).
+ * Querying both axes and de-duplicating means a seller's seat count, and the
+ * deactivate/delete/activate seat lookups (all of which call this), consistently
+ * include admin-assigned listings too. Results are de-duped by doc id.
+ */
 export async function fetchSeatListingsForOwner(ownerId: string): Promise<RetailerSeatListing[]> {
-  const q = query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerId));
-  const snap = await getDocs(q);
-  const listings = snap.docs.map((d) =>
-    mapSeatListingDoc(d.id, d.data() as Record<string, unknown>),
-  );
+  // Resolve phone via uidIndex so admin-assigned (phone-keyed) listings are found.
+  // If the id is already E164, use it directly; otherwise resolve via uidIndex.
+  let ownerPhone: string | null = ownerId.startsWith('+') ? ownerId : null;
+  if (!ownerPhone) {
+    try {
+      const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+      if (idxSnap.exists()) ownerPhone = String(idxSnap.data().phone ?? "") || null;
+    } catch { /* ignore — phone is optional enrichment */ }
+  }
+
+  const queries = [
+    getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerId))),
+  ];
+  // Always add the phone-keyed query when a phone is known. When ownerId IS the
+  // phone (admin-created users), the two queries are identical and dedup handles it.
+  if (ownerPhone && ownerPhone !== ownerId) {
+    queries.push(getDocs(query(collection(db, SEAT_LISTINGS), where("ownerId", "==", ownerPhone))));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const listings: RetailerSeatListing[] = [];
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      listings.push(mapSeatListingDoc(d.id, d.data() as Record<string, unknown>));
+    });
+  });
   listings.sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
   return listings;
 }

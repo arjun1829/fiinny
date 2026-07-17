@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { Star, RefreshCw, MessageSquare } from "lucide-react";
-import { auth, getUserProfile } from "../../firebase";
+import { useEffectiveUser } from "../_context/effective-user-context";
+import { Star, RefreshCw, MessageSquare, Store, Package } from "lucide-react";
 import { PageHeader } from "../_components/page-header";
 import { fetchOwnerReviews, type ReviewDoc } from "../_lib/reviews-firestore";
 import { useI18n } from "../../i18n/I18nContext";
@@ -58,6 +57,7 @@ function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
 
 export default function ReviewsPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
   const [reviews, setReviews] = useState<ReviewDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,13 +77,10 @@ export default function ReviewsPage() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) { setLoading(false); return; }
-      setUid(user.uid);
-      await load(user.uid);
-    });
-    return () => unsub();
-  }, [load]);
+    if (!effectiveUid) { setLoading(false); return; }
+    setUid(effectiveUid);
+    load(effectiveUid);
+  }, [effectiveUid, load]);
 
   return (
     <>
@@ -136,6 +133,15 @@ export default function ReviewsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-on-surface">{r.authorName}</span>
                     <StarRow rating={r.rating} />
+                    {r.reviewType === "store" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold px-2 py-0.5">
+                        <Store className="h-2.5 w-2.5" /> Store Review
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/8 border border-primary/20 text-primary text-[10px] font-bold px-2 py-0.5">
+                        <Package className="h-2.5 w-2.5" /> Product Review
+                      </span>
+                    )}
                   </div>
                   {r.comment ? (
                     <p className="mt-2 max-w-prose text-sm text-on-surface-variant">{r.comment}</p>

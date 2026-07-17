@@ -1,11 +1,12 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Home, Users, UserPlus, LogOut, ReceiptText, ShieldAlert, Calculator, Settings, Package, ChevronDown, Layers, Palette, Database, Factory, Truck, Store, ShoppingCart, BarChart3, Activity, FileText, Bell, ClipboardList, Star, Link2, Bot, Loader2, Menu, X } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
+import { Home, Users, UserPlus, LogOut, ReceiptText, ShieldAlert, Calculator, Settings, Package, ChevronDown, Layers, Palette, Database, Factory, Truck, Store, ShoppingCart, BarChart3, Activity, FileText, Bell, ClipboardList, Star, Link2, Bot, Loader2, Menu, X, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import OfflineBanner from './components/OfflineBanner';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
+import ModuleGate from './components/ModuleGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { AppScreen } from './contexts/AuthContext';
 import { SchemaProvider } from './contexts/SchemaContext';
@@ -52,7 +53,9 @@ const B2BInvoicePage         = lazy(() => import('./pages/B2BInvoicePage'));
 const GSTReportsPage         = lazy(() => import('./pages/GSTReportsPage'));
 const QuotationsPage         = lazy(() => import('./pages/QuotationsPage'));
 const PaymentRemindersPage   = lazy(() => import('./pages/PaymentRemindersPage'));
-const PurchaseOrdersPage     = lazy(() => import('./pages/PurchaseOrdersPage'));
+// TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken — hidden
+// until rebuilt. Do not delete. See matching route/nav comments below.
+// const PurchaseOrdersPage     = lazy(() => import('./pages/PurchaseOrdersPage'));
 const DeliveryChallansPage   = lazy(() => import('./pages/DeliveryChallansPage'));
 const FinancialReportsPage   = lazy(() => import('./pages/FinancialReportsPage'));
 const WarehousePage          = lazy(() => import('./pages/WarehousePage'));
@@ -67,12 +70,24 @@ const AIAdvisorPage          = lazy(() => import('./pages/AIAdvisorPage'));
 const DigitalReceiptPage     = lazy(() => import('./pages/DigitalReceiptPage'));
 const DigitalKhataPage       = lazy(() => import('./pages/DigitalKhataPage'));
 const ModuleMarketplacePage  = lazy(() => import('./pages/ModuleMarketplacePage'));
-const ReturnsPage            = lazy(() => import('./pages/ReturnsPage'));
+// TEMPORARILY DISABLED (2026-07-03)
+// Returns & Exchanges module is incomplete.
+// Hidden until the feature is redesigned and rebuilt.
+// const ReturnsPage            = lazy(() => import('./pages/ReturnsPage'));
 const LoyaltyPage            = lazy(() => import('./pages/LoyaltyPage'));
-const CustomerFeedbackPage   = lazy(() => import('./pages/CustomerFeedbackPage'));
+// TEMPORARILY DISABLED (2026-07-06)
+// Customer Feedback module is under redevelopment.
+// Keep this code for future reactivation.
+// const CustomerFeedbackPage   = lazy(() => import('./pages/CustomerFeedbackPage'));
 const CustomerFeedbackSubmitPage = lazy(() => import('./pages/CustomerFeedbackSubmitPage'));
 const VCheckoutPage          = lazy(() => import('./pages/VCheckoutPage'));
 const KrishiDukanPage        = lazy(() => import('./pages/KrishiDukanPage'));
+const SupplierLedgerPage     = lazy(() => import('./pages/SupplierLedgerPage'));
+const SupplierLedgerDetailPage = lazy(() => import('./pages/SupplierLedgerDetailPage'));
+const CareOffReconcilePage    = lazy(() => import('./pages/CareOffReconcilePage'));
+const SupplierInvoicePage     = lazy(() => import('./pages/SupplierInvoicePage'));
+const DataSecurityPage        = lazy(() => import('./pages/DataSecurityPage'));
+const NotFoundPage            = lazy(() => import('./pages/NotFoundPage'));
 
 // Full-page spinner shown while a lazy chunk is loading
 function PageLoader() {
@@ -88,8 +103,13 @@ import HorizontalNavbar from './components/HorizontalNavbar';
 
 function Layout({ children }: { children: React.ReactNode, currentTheme: 'light' | 'dark', toggleTheme: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { currentUser, userRole, tenantData, permissions, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout().then(() => navigate('/login', { replace: true }));
+  };
   const [adminExpanded, setAdminExpanded] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -112,7 +132,7 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <LanguageSwitcher />
             {currentUser && (
-              <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)', font: 'inherit', fontSize: '0.875rem' }}>
+              <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'transparent', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)', font: 'inherit', fontSize: '0.875rem' }}>
                 <LogOut size={16} /> Logout
               </button>
             )}
@@ -124,6 +144,10 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
   }
 
   const isOwner = userRole === 'admin' || userRole === 'analyst';
+  const isSalesUser = userRole === 'sales';
+
+  // Paths sales role is allowed to see in the sidebar nav
+  const SALES_NAV_PATHS = ['/worklist'];
 
   const mainNavItems = [
     { path: '/dashboard', icon: <Home size={19} />, label: 'B2B Dashboard', screenKey: 'dashboard' },
@@ -137,7 +161,11 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
     { path: '/b2b-invoice', icon: <ReceiptText size={19} />, label: 'B2B GST Invoice', screenKey: 'worklist' },
     { path: '/quotations', icon: <ClipboardList size={19} />, label: 'Quotations', screenKey: 'worklist' },
     { path: '/payment-reminders', icon: <Bell size={19} />, label: 'Payment Reminders', screenKey: 'worklist' },
-    { path: '/purchase-orders', icon: <ShoppingCart size={19} />, label: 'Purchase Orders', screenKey: 'worklist' },
+    // TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken — hidden
+    // until rebuilt. Do not delete. Unrelated to Supplier Ledger → Purchase Orders (separate
+    // PurchaseOrderModal-based implementation), which is unaffected.
+    // { path: '/purchase-orders', icon: <ShoppingCart size={19} />, label: 'Purchase Orders', screenKey: 'worklist' },
+    { path: '/supplier-ledger', icon: <Truck size={19} />, label: 'Supplier Ledger', screenKey: 'worklist' },
     { path: '/delivery-challans', icon: <Truck size={19} />, label: 'Delivery Challans', screenKey: 'worklist' },
     { path: '/gst-reports', icon: <FileText size={19} />, label: 'GST Reports', screenKey: 'analytics' },
     { path: '/financial-reports', icon: <BarChart3 size={19} />, label: 'Financial Reports', screenKey: 'analytics' },
@@ -148,15 +176,22 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
     { path: '/modules', icon: <Package size={19} />, label: '🧩 Module Marketplace', screenKey: 'analytics' },
     { path: '/payment-links', icon: <Link2 size={19} />, label: '💳 Payment Links', screenKey: 'worklist' },
     { path: '/ai-advisor', icon: <Bot size={19} />, label: '🤖 AI Advisor', screenKey: 'analytics' },
-    { path: '/returns', icon: <ReceiptText size={19} />, label: 'Returns & Exchanges', screenKey: 'pos' },
-    { path: '/loyalty', icon: <Star size={19} />, label: 'Loyalty & Memberships', screenKey: 'pos' },
-    { path: '/feedback', icon: <Users size={19} />, label: 'Customer Feedback', screenKey: 'pos' },
+    // TEMPORARILY DISABLED (2026-07-03)
+    // Returns & Exchanges module is incomplete.
+    // Hidden until the feature is redesigned and rebuilt.
+    // { path: '/returns', icon: <ReceiptText size={19} />, label: 'Returns & Exchanges', screenKey: 'pos' },
+    { path: '/loyalty', icon: <Star size={19} />, label: 'Loyalty & Memberships', screenKey: 'loyalty' },
+    // TEMPORARILY DISABLED (2026-07-06)
+    // Customer Feedback module is under redevelopment.
+    // Keep this code for future reactivation.
+    // { path: '/feedback', icon: <Users size={19} />, label: 'Customer Feedback', screenKey: 'pos' },
     { path: '/rates', icon: <Package size={19} />, label: t('common.inventory'), screenKey: 'inventory' },
     { path: '/order-history', icon: <ReceiptText size={19} />, label: 'Order History', screenKey: 'order_history' },
     { path: '/online-orders', icon: <ShoppingCart size={19} />, label: 'Online Orders', screenKey: 'online_orders' },
   ];
 
   const navItems = mainNavItems.filter(item => {
+    if (isSalesUser) return SALES_NAV_PATHS.includes(item.path);
     if (!isOwner) return false;
     if (userRole && permissions && !permissions[userRole]?.[item.screenKey as AppScreen]) return false;
     return true;
@@ -164,6 +199,7 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
 
   const adminItems = [
     { path: '/admin/manage-roles', icon: <ShieldAlert size={17} />, label: 'Role Matrix', screenKey: 'admin' },
+    { path: '/admin/data-security', icon: <Lock size={17} />, label: 'Data Security', screenKey: 'admin' },
     { path: '/admin/manage-retailers', icon: <Users size={17} />, label: t('common.manage_retailers'), screenKey: 'manage_retailers' },
     { path: '/admin', icon: <ShieldAlert size={17} />, label: t('common.manage_users'), screenKey: 'admin' },
     { path: '/admin/manufacturers', icon: <Factory size={17} />, label: 'Manufacturers', screenKey: 'manufacturers' },
@@ -258,8 +294,8 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
           </button>
         </div>
 
-        {/* Main Nav (owner only) */}
-        {isOwner && (
+        {/* Main Nav (owner + sales) */}
+        {(isOwner || isSalesUser) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.5rem' }}>
             <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0.25rem 1rem', marginBottom: '0.2rem' }}>Main</div>
             {navItems.map(item => (
@@ -308,7 +344,7 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
         {currentUser && (
           <div style={{ marginTop: 'auto', borderTop: '1px solid var(--surface-border)', paddingTop: '1rem' }}>
             <button
-              onClick={() => { setDrawerOpen(false); logout(); }}
+              onClick={() => { setDrawerOpen(false); handleLogout(); }}
               style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.75rem 1rem', width: '100%', borderRadius: '10px', color: 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 400, font: 'inherit', fontSize: '0.9rem', transition: 'all var(--transition-fast)' }}
               onMouseOver={e => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.background = 'hsla(0,84%,60%,0.08)'; }}
               onMouseOut={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.background = 'transparent'; }}
@@ -384,6 +420,10 @@ function AppRoutes() {
     if ((userRole === 'admin' || userRole === 'analyst') && (locationHook.pathname === '/' || locationHook.pathname === '/login')) {
       return <Navigate to="/dashboard" replace />;
     }
+    // Sales users are confined to /worklist — redirect from any other path
+    if (userRole === 'sales' && !locationHook.pathname.startsWith('/worklist')) {
+      return <Navigate to="/worklist" replace />;
+    }
   }
 
   // Force incomplete setups to finish onboarding — but ONLY for protected routes
@@ -424,8 +464,8 @@ function AppRoutes() {
       <Route path="/analytics" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><AnalyticsPage /></ProtectedRoute>} />
       <Route path="/admin/manage-store" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="manage_store"><AdminStoreProductsPage /></ProtectedRoute>} />
       <Route path="/onboarding" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="retailers"><OnboardingPage /></ProtectedRoute>} />
-      <Route path="/worklist" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><WorklistPage /></ProtectedRoute>} />
-      <Route path="/worklist/:id" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><WorklistDetailsPage /></ProtectedRoute>} />
+      <Route path="/worklist" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales']} appScreen="worklist"><WorklistPage /></ProtectedRoute>} />
+      <Route path="/worklist/:id" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales']} appScreen="worklist"><WorklistDetailsPage /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="inventory"><InventoryPage /></ProtectedRoute>} />
       <Route path="/administration" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><AdministrationPage /></ProtectedRoute>} />
       <Route path="/digital-khata" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DigitalKhataPage /></ProtectedRoute>} />
@@ -436,7 +476,14 @@ function AppRoutes() {
       <Route path="/b2b-invoice" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><B2BInvoicePage /></ProtectedRoute>} />
       <Route path="/quotations" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><QuotationsPage /></ProtectedRoute>} />
       <Route path="/payment-reminders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PaymentRemindersPage /></ProtectedRoute>} />
-      <Route path="/purchase-orders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PurchaseOrdersPage /></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-03): Worklist Purchase Orders is incomplete/broken —
+          route hidden until rebuilt. Do not delete. Supplier Ledger → Purchase Orders is a
+          separate implementation (PurchaseOrderModal) and is unaffected. */}
+      {/* <Route path="/purchase-orders" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><PurchaseOrdersPage /></ProtectedRoute>} /> */}
+      <Route path="/supplier-ledger" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerPage /></ProtectedRoute>} />
+      <Route path="/supplier-ledger/:id" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierLedgerDetailPage /></ProtectedRoute>} />
+      <Route path="/careoff-sync" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="accounts"><CareOffReconcilePage /></ProtectedRoute>} />
+      <Route path="/supplier-invoice" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SupplierInvoicePage /></ProtectedRoute>} />
       <Route path="/delivery-challans" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DeliveryChallansPage /></ProtectedRoute>} />
       <Route path="/gst-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><GSTReportsPage /></ProtectedRoute>} />
       <Route path="/financial-reports" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><FinancialReportsPage /></ProtectedRoute>} />
@@ -450,9 +497,15 @@ function AppRoutes() {
       <Route path="/modules" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><ModuleMarketplacePage /></ProtectedRoute>} />
 
       {/* POS add-on pages */}
-      <Route path="/returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><ReturnsPage /></ProtectedRoute>} />
-      <Route path="/loyalty" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><LoyaltyPage /></ProtectedRoute>} />
-      <Route path="/feedback" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><CustomerFeedbackPage /></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-03)
+          Returns & Exchanges module is incomplete.
+          Hidden until the feature is redesigned and rebuilt. */}
+      {/* <Route path="/returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><ReturnsPage /></ProtectedRoute>} /> */}
+      <Route path="/loyalty" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="loyalty"><ModuleGate moduleId="loyalty" moduleName="Loyalty & Memberships"><LoyaltyPage /></ModuleGate></ProtectedRoute>} />
+      {/* TEMPORARILY DISABLED (2026-07-06)
+          Customer Feedback module is under redevelopment.
+          Keep this code for future reactivation. */}
+      {/* <Route path="/feedback" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><CustomerFeedbackPage /></ProtectedRoute>} /> */}
 
       {/* Public pages */}
       <Route path="/feedback-submit" element={<CustomerFeedbackSubmitPage />} />
@@ -471,11 +524,15 @@ function AppRoutes() {
       {/* Admin Routes */}
       <Route path="/admin" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><AdminPage /></ProtectedRoute>} />
       <Route path="/admin/manage-roles" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><ManageRolesPage /></ProtectedRoute>} />
+      <Route path="/admin/data-security" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><DataSecurityPage /></ProtectedRoute>} />
       <Route path="/admin/manage-retailers" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="manage_retailers"><ManageRetailersPage /></ProtectedRoute>} />
       <Route path="/admin/manufacturers" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="manufacturers"><ManufacturersPage /></ProtectedRoute>} />
       <Route path="/admin/invoice-settings" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="invoice_settings"><InvoiceSettingsPage /></ProtectedRoute>} />
       <Route path="/admin/schema-builder" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="schema_builder"><SchemaBuilderPage /></ProtectedRoute>} />
       <Route path="/admin/invoice-templates" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="invoice_templates"><InvoiceTemplateBuilderPage /></ProtectedRoute>} />
+
+      {/* Catch-all: 404 for logged-in users, /login redirect for guests */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
     </Suspense>
   );

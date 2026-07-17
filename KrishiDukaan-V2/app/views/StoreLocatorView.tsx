@@ -9,6 +9,8 @@ import { cacheLocation, reverseGeocodeToDisplay } from '../utils/geolocation';
 import { filterStoresByQuery, storeAddressToDisplayString, StoreWithDistance } from '../utils/nearby';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
+import { ReviewSection } from '../../components/shared/ReviewSection';
+import { usePlacesInput } from '../lib/usePlacesInput';
 
 interface StoreLocatorViewProps {
   onBack: () => void;
@@ -18,6 +20,12 @@ interface StoreLocatorViewProps {
   location?: string;
   onLocationChange?: (location: string, coordinates?: { lat: number, lng: number }) => void;
   userCoords?: { lat: number, lng: number };
+  /** Active global/platform search query that pre-filtered the stores list. */
+  globalSearch?: string;
+  /** Called when the user dismisses the global search context chip. */
+  onClearGlobalSearch?: () => void;
+  /** Called when user taps "Browse Products" / "Visit Brand Store" in the details modal. */
+  onBrowseProducts?: (store: any) => void;
 }
 
 function makePinSvg(color: string, selected: boolean): string {
@@ -33,26 +41,41 @@ function makePinSvg(color: string, selected: boolean): string {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 
-export default function StoreLocatorView({ 
-  onBack, 
-  selectedStoreId, 
+export default function StoreLocatorView({
+  onBack,
+  selectedStoreId,
   onStoreSelect,
-  stores = [], 
+  stores = [],
   location = 'Pune, Maharashtra',
   onLocationChange,
-  userCoords = { lat: 18.5204, lng: 73.8567 }
+  userCoords = { lat: 18.5204, lng: 73.8567 },
+  globalSearch = '',
+  onClearGlobalSearch,
+  onBrowseProducts,
 }: StoreLocatorViewProps) {
   const { t } = useI18n();
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [storeSearch, setStoreSearch] = useState('');
   const [mobileMapOverlay, setMobileMapOverlay] = useState(false);
   const [detailStore, setDetailStore] = useState<any | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const locationInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+  });
+
+  // ── Places autocomplete on the desktop location input ──────────────────────
+  // Reuses the existing usePlacesInput hook (same provider as the rest of the app).
+  // When the user selects a suggestion: update the parent location + coords,
+  // and pan the map to the chosen place.
+  usePlacesInput(locationInputRef, (place) => {
+    const coords = { lat: place.lat, lng: place.lng };
+    onLocationChange?.(place.address || place.name, coords);
+    if (map) { map.panTo(coords); map.setZoom(13); }
   });
 
   // stripMapRef keeps the strip/desktop map instance so controls work after the overlay unmounts
@@ -171,6 +194,24 @@ export default function StoreLocatorView({
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+  };
+
+  const handleShare = async () => {
+    const params = new URLSearchParams();
+    params.set('view', 'map');
+    params.set('lat', userCoords.lat.toFixed(6));
+    params.set('lng', userCoords.lng.toFixed(6));
+    if (location) params.set('loc', location);
+    const url = `${window.location.origin}/?${params.toString()}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Nearby stores — ${location}`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+      }
+    } catch { /* user cancelled */ }
   };
 
   if (stores.length === 0) {
@@ -316,7 +357,31 @@ export default function StoreLocatorView({
               <ICONS.MyPosition className="w-3 h-3" /> {location.split(',')[0]}
             </button>
           </HelperTooltip>
+          <button
+            type="button"
+            onClick={handleShare}
+            title={shareCopied ? 'Link copied!' : 'Share location'}
+            className="flex items-center gap-1 text-[10px] font-bold text-on-surface-variant bg-surface-container-low px-2 py-1 rounded-full shrink-0 border border-outline-variant/40"
+          >
+            {shareCopied
+              ? <ICONS.Check className="w-3 h-3 text-green-600" />
+              : <ICONS.Share className="w-3 h-3" />}
+          </button>
         </div>
+        {globalSearch && (
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <span className="text-[11px] text-on-surface-variant">Showing stores matching:</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+              {globalSearch}
+              {onClearGlobalSearch && (
+                <button type="button" onClick={onClearGlobalSearch} aria-label="Clear global search"
+                  className="hover:text-primary/60 transition-colors">
+                  <ICONS.Minus className="w-3 h-3" />
+                </button>
+              )}
+            </span>
+          </div>
+        )}
         <div data-tour="store-search"
           className="flex items-center bg-surface-container-low rounded-xl px-3 py-2 border border-outline-variant focus-within:border-primary transition-all mb-2">
           <ICONS.Search className="w-3.5 h-3.5 text-outline mr-2 shrink-0" />
@@ -328,17 +393,6 @@ export default function StoreLocatorView({
               <ICONS.Minus className="w-3.5 h-3.5" />
             </button>
           )}
-        </div>
-        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-0.5">
-          <button className="whitespace-nowrap px-4 py-1.5 rounded-full bg-primary text-white text-xs font-bold flex items-center gap-1.5 shrink-0">
-            <ICONS.Check className="w-3.5 h-3.5" /> {t('openNow')}
-          </button>
-          <button className="whitespace-nowrap px-4 py-1.5 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold shrink-0">
-            {t('ureaInStock')}
-          </button>
-          <button className="whitespace-nowrap px-4 py-1.5 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold shrink-0">
-            {t('npkFertilizer')}
-          </button>
         </div>
       </div>
 
@@ -371,9 +425,21 @@ export default function StoreLocatorView({
                     <span className="text-[10px] text-on-surface-variant flex items-center gap-0.5">
                       <ICONS.Location className="w-2.5 h-2.5" /> {(store as any).distanceLabel || store.distance || t('nearby')}
                     </span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
-                    <span className="text-[10px] text-on-surface-variant">{(store.status || '').split('•')[0].trim()}</span>
+                    {store.status && store.status.toLowerCase() !== 'active' && (
+                      <>
+                        <span className={`w-1.5 h-1.5 rounded-full ${store.status.includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                        <span className="text-[10px] text-on-surface-variant">{store.status.split('•')[0].trim()}</span>
+                      </>
+                    )}
                   </div>
+                  {(store.averageRating ?? 0) > 0 && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-amber-400 text-[10px] leading-none">{'★'.repeat(Math.round(store.averageRating!))}</span>
+                      <span className="text-[10px] font-semibold text-on-surface-variant tabular-nums">
+                        {store.averageRating!.toFixed(1)}{store.totalReviews ? ` · ${store.totalReviews} review${store.totalReviews !== 1 ? 's' : ''}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {/* MAP button — shows map overlay from top */}
                 <button
@@ -386,19 +452,19 @@ export default function StoreLocatorView({
               {addressLine && (
                 <p className="px-3.5 pb-2 text-[11px] text-on-surface-variant font-medium -mt-1">{addressLine}</p>
               )}
-              {/* Action buttons */}
+              {/* Action buttons — mirror desktop: primary "Get Directions" + secondary "Details" (opens shared details modal) */}
               <div className="flex gap-2 px-3.5 pb-3">
                 <button
                   onClick={(e) => { e.stopPropagation(); handleGetDirections(store); }}
                   className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-white py-2 rounded-xl text-[11px] font-bold"
                 >
-                  <ICONS.Directions className="w-3 h-3" /> Directions
+                  <ICONS.Directions className="w-3 h-3" /> {t('getDirections')}
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleStoreClick(store.id, true); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 border border-primary text-primary py-2 rounded-xl text-[11px] font-bold"
+                  onClick={(e) => { e.stopPropagation(); setDetailStore(store); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-outline-variant text-on-surface py-2 rounded-xl text-[11px] font-bold"
                 >
-                  <ICONS.Location className="w-3 h-3" /> View on Map
+                  {t('detailsLabel')}
                 </button>
               </div>
             </div>
@@ -422,7 +488,7 @@ export default function StoreLocatorView({
           animate={{ y: 0 }}
           exit={{ y: '-100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-          className="fixed inset-0 z-50 md:hidden flex flex-col bg-white"
+          className="fixed inset-0 z-[120] md:hidden flex flex-col bg-white"
         >
           {/* Map fills top portion */}
           <div className="flex-1 relative bg-surface-container-high">
@@ -462,9 +528,13 @@ export default function StoreLocatorView({
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-on-surface text-base truncate">{focusedStore.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`w-1.5 h-1.5 rounded-full ${(focusedStore.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
-                    <span className="text-xs text-on-surface-variant">{(focusedStore.status || '').split('•')[0].trim()}</span>
-                    <span className="text-xs text-on-surface-variant">·</span>
+                    {focusedStore.status && focusedStore.status.toLowerCase() !== 'active' && (
+                      <>
+                        <span className={`w-1.5 h-1.5 rounded-full ${focusedStore.status.includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
+                        <span className="text-xs text-on-surface-variant">{focusedStore.status.split('•')[0].trim()}</span>
+                        <span className="text-xs text-on-surface-variant">·</span>
+                      </>
+                    )}
                     <span className="text-xs text-on-surface-variant flex items-center gap-0.5">
                       <ICONS.Location className="w-3 h-3" /> {(focusedStore as any).distanceLabel || focusedStore.distance || t('nearby')}
                     </span>
@@ -502,33 +572,60 @@ export default function StoreLocatorView({
             <h2 className="text-2xl font-bold text-on-surface">{t('nearbyStores')}</h2>
           </div>
 
-          {/* Location label */}
+          {/* Location search — Places autocomplete + geocode-on-Enter fallback */}
           <div className="flex items-center gap-2 mb-2 md:mb-3">
+            <div className="flex-1 flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+              <ICONS.Location className="w-4 h-4 text-outline mr-3 shrink-0" />
+              <input
+                ref={locationInputRef}
+                type="text"
+                value={location}
+                onChange={handleLocationChange}
+                onKeyDown={handleLocationSubmit}
+                placeholder={t('enterLocation')}
+                className="bg-transparent border-none w-full focus:ring-0 text-sm text-on-surface font-semibold placeholder:font-normal"
+              />
+            </div>
             <HelperTooltip side="bottom" textKey="storeLocateMe">
               <button
+                type="button"
                 onClick={handleLocateMe}
-                className="flex items-center gap-2 text-xs font-bold text-primary bg-primary/5 px-3 py-1.5 rounded-full hover:bg-primary/10 transition-colors"
+                title="Use my current location"
+                className="flex items-center justify-center w-10 h-10 shrink-0 rounded-2xl border border-outline-variant text-on-surface-variant hover:text-primary hover:border-primary transition-colors"
               >
-                <ICONS.MyPosition className="w-3.5 h-3.5" />
-                {location}
+                <ICONS.MyPosition className="w-4 h-4" />
               </button>
             </HelperTooltip>
+            <button
+              type="button"
+              onClick={handleShare}
+              title={shareCopied ? 'Link copied!' : 'Share this location'}
+              className="flex items-center gap-1.5 shrink-0 px-3 h-10 rounded-2xl border border-outline-variant text-xs font-bold text-on-surface-variant hover:text-primary hover:border-primary transition-colors"
+            >
+              {shareCopied
+                ? <ICONS.Check className="w-4 h-4 text-green-600" />
+                : <ICONS.Share className="w-4 h-4" />}
+              <span className="hidden lg:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+            </button>
           </div>
 
-          {/* Location search (geocode on Enter) */}
-          <div className="flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 mb-2 md:mb-3 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
-            <ICONS.Location className="w-4 h-4 text-outline mr-3 shrink-0" />
-            <input
-              type="text"
-              value={location}
-              onChange={handleLocationChange}
-              onKeyDown={handleLocationSubmit}
-              placeholder={t('enterLocation')}
-              className="bg-transparent border-none w-full focus:ring-0 text-sm text-on-surface font-semibold placeholder:font-normal"
-            />
-          </div>
+          {/* Global search context chip */}
+          {globalSearch && (
+            <div className="flex items-center gap-2 mb-2 md:mb-3">
+              <span className="text-xs text-on-surface-variant">Showing stores matching:</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                {globalSearch}
+                {onClearGlobalSearch && (
+                  <button type="button" onClick={onClearGlobalSearch} aria-label="Clear global search"
+                    className="hover:text-primary/60 transition-colors">
+                    <ICONS.Minus className="w-3 h-3" />
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
 
-          {/* Store name / area search */}
+          {/* Store name / area filter */}
           <div
             data-tour="store-search"
             className="flex items-center bg-surface-container-low rounded-2xl px-3 py-2 md:px-4 md:py-3 mb-2 md:mb-4 border border-outline-variant group focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all"
@@ -546,7 +643,7 @@ export default function StoreLocatorView({
                 type="button"
                 onClick={() => setStoreSearch('')}
                 className="text-outline hover:text-on-surface transition-colors ml-2 shrink-0"
-                aria-label="Clear store search"
+                aria-label="Clear store filter"
               >
                 <ICONS.Minus className="w-4 h-4" />
               </button>
@@ -556,26 +653,9 @@ export default function StoreLocatorView({
                 variant="ghost"
                 side="bottom"
                 textKey="storeSearch"
-                ariaLabel="Store search help"
+                ariaLabel="Store filter help"
               />
             )}
-          </div>
-
-          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-4 hide-scrollbar">
-            <HelperTooltip
-              side="bottom"
-              textKey="storeOpenNow"
-            >
-              <button className="whitespace-nowrap px-5 py-2 rounded-full bg-primary text-white text-xs font-bold shadow-lg shadow-primary/20 flex items-center gap-2">
-                <ICONS.Check className="w-4 h-4" /> {t('openNow')}
-              </button>
-            </HelperTooltip>
-            <button className="whitespace-nowrap px-5 py-2 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold hover:bg-surface-container-low">
-              {t('ureaInStock')}
-            </button>
-            <button className="whitespace-nowrap px-5 py-2 rounded-full border border-surface-container-highest text-on-surface text-xs font-bold hover:bg-surface-container-low">
-              {t('npkFertilizer')}
-            </button>
           </div>
 
           {/* Stores count */}
@@ -641,10 +721,12 @@ export default function StoreLocatorView({
               </div>
 
               <div className="mb-6 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${store.status?.includes('Open') ? 'bg-green-500' : 'bg-error'}`} />
-                  <span className="text-xs font-bold text-on-surface-variant">{store.status || t('active')}</span>
-                </div>
+                {store.status && store.status.toLowerCase() !== 'active' && (
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${store.status.includes('Open') ? 'bg-green-500' : 'bg-error'}`} />
+                    <span className="text-xs font-bold text-on-surface-variant">{store.status}</span>
+                  </div>
+                )}
                 {addressLine ? (
                   <p className="text-[11px] text-on-surface-variant font-medium truncate">{addressLine}</p>
                 ) : null}
@@ -753,7 +835,7 @@ export default function StoreLocatorView({
     <AnimatePresence>
       {detailStore && (
         <div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[120] flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm p-4 pb-20 md:pb-4"
           onClick={() => setDetailStore(null)}
         >
           <motion.div
@@ -762,7 +844,7 @@ export default function StoreLocatorView({
             exit={{ y: 60, opacity: 0 }}
             transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[calc(100vh-7rem)] md:max-h-[85vh] overflow-y-auto overscroll-contain"
           >
             <div className="p-6">
               <div className="flex items-start justify-between mb-5">
@@ -770,6 +852,15 @@ export default function StoreLocatorView({
                   <h2 className="text-2xl font-bold text-on-surface">{detailStore.name || detailStore.shopName}</h2>
                   {detailStore.ownerName && (
                     <p className="text-sm text-on-surface-variant mt-1">{t('owner')}: {detailStore.ownerName}</p>
+                  )}
+                  {(detailStore.averageRating ?? 0) > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="text-amber-400 text-sm leading-none">{'★'.repeat(Math.round(detailStore.averageRating))}</span>
+                      <span className="text-sm font-bold text-on-surface tabular-nums">{detailStore.averageRating.toFixed(1)}</span>
+                      {detailStore.totalReviews > 0 && (
+                        <span className="text-xs text-on-surface-variant">({detailStore.totalReviews} review{detailStore.totalReviews !== 1 ? 's' : ''})</span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <button
@@ -810,15 +901,17 @@ export default function StoreLocatorView({
                   </div>
                 )}
 
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-2xl bg-surface-container-low flex items-center justify-center shrink-0">
-                    <div className={`w-2.5 h-2.5 rounded-full ${(detailStore.status || '').includes('Open') ? 'bg-green-500' : 'bg-amber-500'}`} />
+                {detailStore.status && detailStore.status.toLowerCase() !== 'active' && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-2xl bg-surface-container-low flex items-center justify-center shrink-0">
+                      <div className={`w-2.5 h-2.5 rounded-full ${detailStore.status.includes('Open') ? 'bg-green-500' : 'bg-amber-500'}`} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-0.5">{t('status')}</p>
+                      <p className="text-sm font-semibold text-on-surface">{detailStore.status}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-0.5">{t('status')}</p>
-                    <p className="text-sm font-semibold text-on-surface">{detailStore.status || t('active')}</p>
-                  </div>
-                </div>
+                )}
 
                 {(detailStore.stock || []).length > 0 && (
                   <div>
@@ -854,6 +947,24 @@ export default function StoreLocatorView({
                   </HelperTooltip>
                 )}
               </div>
+              {onBrowseProducts && (
+                <button
+                  onClick={() => { onBrowseProducts(detailStore); setDetailStore(null); }}
+                  className="w-full mt-3 border border-primary/30 bg-primary/5 text-primary py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-primary/10 transition-colors"
+                >
+                  <ICONS.Market className="w-4 h-4" />
+                  {(detailStore.role === 'manufacturer' || detailStore.onboardingType === 'manufacturer')
+                    ? 'Visit Brand Store'
+                    : 'Browse Products'}
+                </button>
+              )}
+
+              {/* Store Reviews */}
+              {detailStore.phone && (
+                <div className="mt-2">
+                  <ReviewSection targetId={detailStore.phone} targetType="store" />
+                </div>
+              )}
             </div>
           </motion.div>
         </div>

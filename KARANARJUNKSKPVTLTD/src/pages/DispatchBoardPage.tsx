@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getDocs, query, orderBy, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { getDocs, query, orderBy, updateDoc, serverTimestamp, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
 import { useToast } from '../contexts/ToastContext';
 import { Truck, CheckCircle, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -14,22 +15,30 @@ const STATUS_COLS = [
 ];
 
 export default function DispatchBoardPage() {
-    const { tenantId } = useAuth();
+    const { tenantId, userRole } = useAuth();
+    const isSales = userRole === 'sales';
     const { showToast } = useToast();
     const navigate = useNavigate();
+    const { allowedRetailerIds, filterLoading } = useSalesFilter();
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     const fetchOrders = async () => {
-        if (!tenantId) return;
+        if (!tenantId || filterLoading) return;
         try {
-            const snap = await getDocs(query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc')));
-            setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => ['confirmed', 'dispatched', 'delivered'].includes(o.status)));
+            let docs;
+            if (allowedRetailerIds === null) {
+                const snap = await getDocs(query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc')));
+                docs = snap.docs;
+            } else {
+                docs = await fetchSalesOrdersByRetailerIds(tenantId, allowedRetailerIds);
+            }
+            setOrders(docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => ['confirmed', 'dispatched', 'delivered'].includes(o.status)));
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
     };
 
-    useEffect(() => { fetchOrders(); }, [tenantId]);
+    useEffect(() => { fetchOrders(); }, [tenantId, filterLoading, allowedRetailerIds === null ? 'all' : Array.from(allowedRetailerIds).sort().join(',')]);
 
     const moveStatus = async (order: any, newStatus: string) => {
         if (!tenantId) return;
@@ -65,14 +74,19 @@ export default function DispatchBoardPage() {
                                     <span style={{ fontWeight: 700, color: col.color, fontSize: '0.9rem' }}>{col.label}</span>
                                     <span style={{ background: col.color, color: 'white', borderRadius: '20px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 700 }}>{colOrders.length}</span>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div className="themed-scroll" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: 'calc(6 * 158px)', overflowY: 'auto', paddingRight: '0.4rem' }}>
                                     {colOrders.length === 0 && (
                                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-tertiary)', border: '2px dashed var(--surface-border)', borderRadius: '10px', fontSize: '0.85rem' }}>
                                             No orders
                                         </div>
                                     )}
                                     {colOrders.map((order: any) => (
-                                        <div key={order.id} className="glass-panel" style={{ padding: '1.25rem', cursor: 'pointer' }} onClick={() => navigate(`/sales-order/${order.id}`)}>
+                                        <div
+                                            key={order.id}
+                                            className="glass-panel"
+                                            style={{ padding: '1.25rem', cursor: isSales ? 'default' : 'pointer' }}
+                                            onClick={isSales ? undefined : () => navigate(`/sales-order/${order.id}`)}
+                                        >
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                                                 <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary-light)' }}>{order.orderNumber}</span>
                                                 <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{order.createdAt?.toDate ? new Date(order.createdAt.toDate()).toLocaleDateString() : ''}</span>
@@ -85,20 +99,22 @@ export default function DispatchBoardPage() {
                                                 </p>
                                             )}
                                             <p style={{ fontWeight: 700, color: 'var(--primary-light)', margin: '0 0 0.75rem' }}>₹{Number(order.grandTotal).toLocaleString()}</p>
-                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                {col.id === 'confirmed' && (
-                                                    <button className="btn btn-primary" style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                                                        onClick={e => { e.stopPropagation(); moveStatus(order, 'dispatched'); }}>
-                                                        <Truck size={13} /> Mark Dispatched
-                                                    </button>
-                                                )}
-                                                {col.id === 'dispatched' && (
-                                                    <button className="btn" style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', background: 'hsla(142,60%,40%,0.15)', color: 'var(--success)', border: '1px solid hsla(142,60%,40%,0.3)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                                                        onClick={e => { e.stopPropagation(); moveStatus(order, 'delivered'); }}>
-                                                        <CheckCircle size={13} /> Mark Delivered
-                                                    </button>
-                                                )}
-                                            </div>
+                                            {!isSales && (
+                                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    {col.id === 'confirmed' && (
+                                                        <button className="btn btn-primary" style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                                                            onClick={e => { e.stopPropagation(); moveStatus(order, 'dispatched'); }}>
+                                                            <Truck size={13} /> Mark Dispatched
+                                                        </button>
+                                                    )}
+                                                    {col.id === 'dispatched' && (
+                                                        <button className="btn" style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', background: 'hsla(142,60%,40%,0.15)', color: 'var(--success)', border: '1px solid hsla(142,60%,40%,0.3)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                                                            onClick={e => { e.stopPropagation(); moveStatus(order, 'delivered'); }}>
+                                                            <CheckCircle size={13} /> Mark Delivered
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

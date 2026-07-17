@@ -7,11 +7,14 @@ export interface ProductDoc {
   category: string;
   description: string;
   image: string;
+  /** Full ordered gallery. `image` is the main/first image, kept for backward compat. */
+  images?: string[];
   unit: string;
   price: number;
   createdAt?: Timestamp | null;
   updatedAt?: Timestamp | null;
   isActive: boolean;
+  variants?: { unit: string; price: number; stock?: number }[];
 
   /** Ownership — primary query fields */
   ownerId?: string;
@@ -29,6 +32,26 @@ export interface ProductDoc {
   store?: string;
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
+
+  /** GST fields */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+
+  /** Category-specific structured information (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** Optional YouTube demonstration URL. */
+  videoUrl?: string | null;
+  /** Composition / ingredient list (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
+  composition?: { name: string; value: string }[] | null;
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[] | null;
+  /** @deprecated Legacy fertilizer flat fields — backward compat only. */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 }
 
 /**
@@ -48,47 +71,131 @@ export interface InventoryDoc {
   assignedByManufacturer?: boolean;
   manufacturerProductId?: string;
   retailerDocId?: string;
+
+  // Discount fields
+  discountEnabled?:   boolean;
+  discountType?:      "percentage" | "fixed_amount";
+  discountPct?:       number;        // 0–99 (used when type=percentage)
+  discountFixedAmt?:  number;        // rupee amount (used when type=fixed_amount)
+  discountStartDate?: Timestamp | null;
+  discountEndDate?:   Timestamp | null;
+  // Bulk/quantity-based discounts
+  bulkDiscountEnabled?: boolean;
+  bulkDiscountTiers?:   BulkDiscountTier[];
 }
+
+/** One tier in a bulk/quantity-based discount ladder. */
+export type BulkDiscountTier = {
+  minQty: number;    // minimum quantity to trigger this tier
+  discountPct: number; // percentage off at this tier (0–99)
+};
+
+export type DiscountUpdateInput = {
+  discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
+  discountPct: number;
+  discountFixedAmt: number;       // used when discountType === "fixed_amount"
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
+};
 
 export type StockStatus = "out_of_stock" | "low_stock" | "in_stock";
 
-/** Joined row for the retailer inventory table. */
-export interface InventoryRow {
-  inventoryId: string;
-  productId: string;
-  productName: string;
-  category: string;
-  unit: string;
-  stockQuantity: number;
-  sellingPrice: number;
-  reorderThreshold: number;
-  status: StockStatus;
-  isActive: boolean;
-  assignedByManufacturer: boolean;
-  updatedAt: Date | null;
-  /** 'retailer_inventory' | 'manufacturer_assigned' */
-  source?: string;
-  /** UID or placeholder retailerDocId */
-  ownerId?: string;
-}
+export type ProductVariant = { unit: string; price: number; stock?: number };
 
-/** Row for the manufacturer's catalogue table. */
-export interface ManufacturerProductRow {
+/**
+ * Unified inventory row used by BOTH the manufacturer catalogue and the retailer
+ * inventory. It is a superset that carries everything the shared InventoryTable
+ * and the shared EditProductModal need, regardless of role.
+ *
+ * Role/source differences are expressed via fields (source, assignedByManufacturer,
+ * ownerId), never via separate row shapes.
+ */
+export interface InventoryRow {
+  // ── Identity ──────────────────────────────────────────────────────────────
   productId: string;
-  inventoryId?: string;
+  /** Joined inventory doc id. "" when no inventory record exists yet. */
+  inventoryId: string;
+
+  // ── Display ───────────────────────────────────────────────────────────────
   productName: string;
   category: string;
   unit: string;
-  price: number;
   description: string;
   image: string;
   images: string[];
-  variants: { unit: string; price: number }[];
+  variants: ProductVariant[];
+
+  // ── Pricing & stock ───────────────────────────────────────────────────────
+  /** Base/list price (manufacturer catalogue price; equals sellingPrice for retailers). */
+  price: number;
+  /** Effective selling price from the inventory record. */
+  sellingPrice: number;
   stockQuantity: number;
-  source: string;
+  reorderThreshold: number;
+  status: StockStatus;
+
+  // ── Delivery mode ─────────────────────────────────────────────────────────
+  sellMode: "online_delivery" | "offline_store_only";
+
+  // ── GST ───────────────────────────────────────────────────────────────────
+  gstApplicable: boolean;
+  gstRate: 0 | 5 | 12 | 18 | 28;
+
+  // ── Lifecycle / ownership ───────────────────────────────────────────────────
   isActive: boolean;
+  assignedByManufacturer: boolean;
+  /** 'manufacturer_inventory' | 'retailer_inventory' | 'manufacturer_assigned' | ... */
+  source: string;
+  /** Owner UID (or placeholder retailerDocId for pending assignments). */
+  ownerId?: string;
+  originalProductId?: string | null;
   updatedAt: Date | null;
+
+  // ── Discount fields ─────────────────────────────────────────────────────────
+  discountEnabled: boolean;
+  discountType: "percentage" | "fixed_amount";
+  discountPct: number;
+  discountFixedAmt: number;
+  discountStartDate: Date | null;
+  discountEndDate: Date | null;
+  effectiveDiscountPct: number;
+  effectiveDiscountAmt: number;  // resolved rupee amount to deduct
+  // Bulk discount fields
+  bulkDiscountEnabled: boolean;
+  bulkDiscountTiers: BulkDiscountTier[];
+
+  // ── Video ─────────────────────────────────────────────────────────────────────
+  /** Optional YouTube URL for product demonstration. */
+  videoUrl?: string;
+
+  // ── Composition ───────────────────────────────────────────────────────────────
+  /** Ingredient / nutrient breakdown for Fertilizers, Pesticides, Herbicides, Bio-Stimulants. */
+  composition?: { name: string; value: string }[];
+
+  // ── Custom fields ─────────────────────────────────────────────────────────────
+  /** Free-form additional fields entered by the seller. */
+  customFields?: { title: string; value: string }[];
+
+  // ── Category-specific info ────────────────────────────────────────────────────
+  /** Structured category info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** @deprecated Legacy fertilizer flat fields. */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 }
+
+/**
+ * @deprecated Use {@link InventoryRow}. Kept as an alias so existing imports keep
+ * working after the manufacturer/retailer inventory unification.
+ */
+export type ManufacturerProductRow = InventoryRow;
 
 export function deriveStockStatus(
   stockQuantity: number,

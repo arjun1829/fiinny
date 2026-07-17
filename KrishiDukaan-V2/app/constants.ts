@@ -24,7 +24,22 @@ import {
   MessageSquare,
   LocateFixed,
   Navigation,
-  X
+  X,
+  LifeBuoy,
+  BookOpen,
+  Compass,
+  LayoutDashboard,
+  Package,
+  Users,
+  CreditCard,
+  ListChecks,
+  MessageCircle,
+  Settings,
+  Network,
+  KeyRound,
+  Share2,
+  ClipboardList,
+  CircleUser
 } from 'lucide-react';
 import { MarketplaceProduct } from '../types/product';
 
@@ -54,7 +69,22 @@ export const ICONS = {
   Chat: MessageSquare,
   MyPosition: LocateFixed,
   Directions: Navigation,
-  X
+  X,
+  Help: LifeBuoy,
+  Docs: BookOpen,
+  Compass,
+  Dashboard: LayoutDashboard,
+  Package,
+  Users,
+  Payment: CreditCard,
+  ListChecks,
+  Review: MessageCircle,
+  Settings,
+  Network,
+  Auth: KeyRound,
+  Share: Share2,
+  Clipboard: ClipboardList,
+  Account: CircleUser
 };
 
 export const COLORS = {
@@ -68,14 +98,14 @@ export const COLORS = {
 export const CROPS = [
   { id: 'watermelon', name: 'Watermelon', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSGbELbnV8HdsslJ8hy2mq0a_hvzZrr4cwUKHrze-GEeDpv0Z0VAvA62LryAUopIvuvGVeMWJJbVbRbtq1vKgcoaC4k3njelp3OPJb4_vjrijsdG-_1eEve_PojVdVNedf02IxptPKFjsUkGRH1oiP1H0007UHuQJ18mVTW7N6Vr0wdS7106fBV-qwwwXtBDWxaYcfvkouSyItxhdz24OL3GaUYJVj1YAyxMbObWYCQ7RpC1_QTpxN-wK8fDzDpx5JjUPaRwkLJq3m' },
   { id: 'cotton', name: 'Cotton', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAi13WleIFmuHicYHUY0W-rwufSddyMDo6kb2AcbrntT8BejZDYLjTxaKtV_Y7mnIsnnZJB27-jLhcDJJ-INGrThJKx-ezn-v1eICtCBg9KvmrOIjxCzqye2mi_tIn2fzO64bWu8QByBgH2JQTivKMjxsEsgphoj0fCIMsFB7enUvlyLg-6IkDTTWxfnEszM37GZrGUGaIDzJCwiztMcbaYmVPS8EIuSqQY0ewtQb8oZbCMTLeltwk9U7G9_lPwLTyFLt5WcDAd8f1r' },
-  { id: 'mangoes', name: 'Mango', image: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&q=80' },
-  { id: 'pomegranate', name: 'Pomegranate', image: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&q=80' },
-  { id: 'grapes', name: 'Grapes', image: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&q=80' },
-  { id: 'banana', name: 'Banana', image: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&q=80' },
-  { id: 'sugarcane', name: 'Sugarcane', image: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&q=80' },
-  { id: 'onion', name: 'Onion', image: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&q=80' },
-  { id: 'cherry', name: 'Cherry', image: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&q=80' },
-  { id: 'orange', name: 'Orange', image: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&q=80' },
+  { id: 'mangoes', name: 'Mango', image: 'https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=400&q=70' },
+  { id: 'pomegranate', name: 'Pomegranate', image: 'https://images.unsplash.com/photo-1615486511484-92e172054c04?auto=format&fit=crop&w=400&q=70' },
+  { id: 'grapes', name: 'Grapes', image: 'https://images.unsplash.com/photo-1596334139886-c5e3f16960cc?auto=format&fit=crop&w=400&q=70' },
+  { id: 'banana', name: 'Banana', image: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=400&q=70' },
+  { id: 'sugarcane', name: 'Sugarcane', image: 'https://images.unsplash.com/photo-1528183429150-455634e9012f?auto=format&fit=crop&w=400&q=70' },
+  { id: 'onion', name: 'Onion', image: 'https://images.unsplash.com/photo-1518977676601-b53f02ac6d31?auto=format&fit=crop&w=400&q=70' },
+  { id: 'cherry', name: 'Cherry', image: 'https://images.unsplash.com/photo-1464960350295-995e5331002f?auto=format&fit=crop&w=400&q=70' },
+  { id: 'orange', name: 'Orange', image: 'https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&w=400&q=70' },
 ];
 
 export const STORES = [

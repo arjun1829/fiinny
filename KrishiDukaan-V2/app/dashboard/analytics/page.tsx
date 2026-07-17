@@ -11,30 +11,29 @@ import { MetricTile } from "../_components/metric-tile";
 import { SimpleBarChart } from "../_components/simple-bar-chart";
 import { InsightCard } from "../_components/insight-card";
 import { fetchRetailerAnalytics } from "../_lib/analytics-firestore";
-import { auth } from "../../firebase";
+import { useEffectiveUser } from "../_context/effective-user-context";
 import { HelperIcon } from "../../../components/helpers";
 import { useI18n } from "../../i18n/I18nContext";
 
 export default function AnalyticsPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid } = useEffectiveUser();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadStats() {
-      if (auth.currentUser) {
-        try {
-          const realStats = await fetchRetailerAnalytics(auth.currentUser.uid);
-          setStats(realStats);
-        } catch (error) {
-          console.error("Failed to load analytics:", error);
-        } finally {
-          setLoading(false);
-        }
+    if (!effectiveUid) return;
+    (async () => {
+      try {
+        const realStats = await fetchRetailerAnalytics(effectiveUid);
+        setStats(realStats);
+      } catch (error) {
+        console.error("Failed to load analytics:", error);
+      } finally {
+        setLoading(false);
       }
-    }
-    loadStats();
-  }, []);
+    })();
+  }, [effectiveUid]);
 
   if (loading) {
     return (

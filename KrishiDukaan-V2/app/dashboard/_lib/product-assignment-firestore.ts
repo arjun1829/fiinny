@@ -13,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
-import { syncRetailerMirror, activateRetailerOnProductAssignment } from "./manufacturer-retailers-firestore";
+import { syncRetailerMirror, activateRetailerOnProductAssignment, deactivateRetailerOnLastSeatRelease } from "./manufacturer-retailers-firestore";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
   addSeatListingToBatch,
@@ -109,11 +109,27 @@ export async function assignProductToRetailer(
   batch.set(retailerProductRef, {
     id: retailerProductRef.id,
     name: String(src.name ?? ""),
+    fullName: src.fullName ? String(src.fullName) : null,
     category: String(src.category ?? ""),
     description: String(src.description ?? ""),
     image: String(src.image ?? ""),
+    images: Array.isArray(src.images) ? src.images : null,
     unit: String(src.unit ?? ""),
     price: typeof src.price === "number" ? src.price : 0,
+    variants: Array.isArray(src.variants) ? src.variants : null,
+    categoryInfo: (src.categoryInfo && typeof src.categoryInfo === "object" && !Array.isArray(src.categoryInfo))
+      ? src.categoryInfo : null,
+    gstApplicable: src.gstApplicable === true,
+    gstRate: typeof src.gstRate === "number" ? src.gstRate : 0,
+    composition: Array.isArray(src.composition) ? src.composition : null,
+    benefits: Array.isArray(src.benefits) ? src.benefits : null,
+    application: src.application ? String(src.application) : null,
+    nitrogen: src.nitrogen ? String(src.nitrogen) : null,
+    phosphorus: src.phosphorus ? String(src.phosphorus) : null,
+    potassium: src.potassium ? String(src.potassium) : null,
+    applicationDesc: src.applicationDesc ? String(src.applicationDesc) : null,
+    dosage: src.dosage ? String(src.dosage) : null,
+    bestForCrops: Array.isArray(src.bestForCrops) ? src.bestForCrops : null,
     isActive: true,
     ownerId: retailerOwnerId,
     ownerPhone: retailerPhone ?? null,
@@ -228,7 +244,7 @@ export async function assignProductToRetailer(
       });
     }
 
-    // Flip onboardingStatus → "active" on the invite link doc now that a product is assigned.
+    // Mark seat as assigned on the invite doc and restore store visibility.
     await activateRetailerOnProductAssignment(
       input.manufacturerId,
       input.retailerDocId,
@@ -242,7 +258,9 @@ export async function assignProductToRetailer(
 
 /**
  * Releases a product assignment.
- * Sets the seat listing to "released" and deactivates the retailer's product copy.
+ * Sets the seat listing to "released" and deactivates the retailer's product copy (if it
+ * still exists — the retailer may have already deleted it, in which case we skip that step
+ * so the batch doesn't fail with a NOT_FOUND error and leave the seat unreleased).
  */
 export async function removeProductAssignment(seatListingId: string): Promise<void> {
   const listingSnap = await getDoc(doc(db, SEAT_LISTINGS, seatListingId));
@@ -251,13 +269,33 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
 
   const now = serverTimestamp();
   const batch = writeBatch(db);
+  // Release the seat — this MUST succeed regardless of product copy state.
   batch.update(doc(db, SEAT_LISTINGS, seatListingId), { status: "released", releasedAt: now });
 
-  const retailerProductId  = String(data.productId ?? "");
-  const retailerDocId      = String(data.retailerDocId ?? "");
-  const retailerId         = String(data.retailerId ?? "");
+  const retailerProductId  = String(data.productId      ?? "");
+  const retailerDocId      = String(data.retailerDocId  ?? "");
+  const manufacturerId     = String(data.ownerId        ?? "");
+  const manufacturerPhone  = data.manufacturerPhone != null ? String(data.manufacturerPhone) : null;
+  const retailerPhone      = data.retailerPhone     != null ? String(data.retailerPhone)     : null;
+
+  // Deactivate the retailer's product copy only if it still exists.
+  // If the retailer already removed it via their inventory, the doc is gone and
+  // batch.update would throw NOT_FOUND, aborting the entire batch and leaving
+  // the seat permanently locked.
   if (retailerProductId) {
-    batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
+    try {
+      const copySnap = await getDoc(doc(db, "products", retailerProductId));
+      if (copySnap.exists()) {
+        batch.update(doc(db, "products", retailerProductId), { isActive: false, updatedAt: now });
+      }
+      // Also deactivate the inventory record for the copy when present.
+      const invSnap = await getDocs(
+        query(collection(db, "inventory"), where("productId", "==", retailerProductId))
+      );
+      invSnap.docs.forEach((d) => {
+        batch.update(d.ref, { isAvailable: false, updatedAt: now });
+      });
+    } catch { /* product already gone — seat release still proceeds */ }
   }
 
   await batch.commit();
@@ -284,6 +322,29 @@ export async function removeProductAssignment(seatListingId: string): Promise<vo
         }
       }
     } catch { /* non-critical — product may already be deleted */ }
+  }
+
+  // If this was the last active seat listing for this retailer, clear their active/assignedSeat state.
+  if (retailerDocId && manufacturerId) {
+    try {
+      const remainingSnap = await getDocs(
+        query(
+          collection(db, SEAT_LISTINGS),
+          where("retailerDocId", "==", retailerDocId),
+          where("ownerId",       "==", manufacturerId),
+          where("listingType",   "==", "assigned"),
+          where("status",        "==", "active"),
+        ),
+      );
+      if (remainingSnap.empty) {
+        await deactivateRetailerOnLastSeatRelease(
+          manufacturerId,
+          retailerDocId,
+          manufacturerPhone,
+          retailerPhone,
+        );
+      }
+    } catch { /* non-critical */ }
   }
 }
 
@@ -399,11 +460,27 @@ export async function bulkAssignProductsToRetailer(
     batch.set(retailerProductRef, {
       id: retailerProductRef.id,
       name: String(src.name ?? ""),
+      fullName: src.fullName ? String(src.fullName) : null,
       category: String(src.category ?? ""),
       description: String(src.description ?? ""),
       image: String(src.image ?? ""),
+      images: Array.isArray(src.images) ? src.images : null,
       unit: String(src.unit ?? ""),
       price: typeof src.price === "number" ? src.price : 0,
+      variants: Array.isArray(src.variants) ? src.variants : null,
+      categoryInfo: (src.categoryInfo && typeof src.categoryInfo === "object" && !Array.isArray(src.categoryInfo))
+        ? src.categoryInfo : null,
+      gstApplicable: src.gstApplicable === true,
+      gstRate: typeof src.gstRate === "number" ? src.gstRate : 0,
+      composition: Array.isArray(src.composition) ? src.composition : null,
+      benefits: Array.isArray(src.benefits) ? src.benefits : null,
+      application: src.application ? String(src.application) : null,
+      nitrogen: src.nitrogen ? String(src.nitrogen) : null,
+      phosphorus: src.phosphorus ? String(src.phosphorus) : null,
+      potassium: src.potassium ? String(src.potassium) : null,
+      applicationDesc: src.applicationDesc ? String(src.applicationDesc) : null,
+      dosage: src.dosage ? String(src.dosage) : null,
+      bestForCrops: Array.isArray(src.bestForCrops) ? src.bestForCrops : null,
       isActive: true,
       ownerId: retailerOwnerId,
       ownerPhone: retailerPhone ?? null,
@@ -540,7 +617,7 @@ export async function bulkAssignProductsToRetailer(
         });
       }
 
-      // Flip onboardingStatus → "active" now that at least one product is assigned.
+      // Mark seat as assigned on the invite doc and restore store visibility.
       await activateRetailerOnProductAssignment(
         manufacturerId,
         retailerDocId,
@@ -556,24 +633,46 @@ export async function bulkAssignProductsToRetailer(
 /** All assignment listings received by a retailer (assigned to them by manufacturers). */
 export async function fetchAssignmentsForRetailer(
   retailerId: string,
+  retailerDocId?: string | null,
 ): Promise<RetailerSeatListing[]> {
-  const q = query(
-    collection(db, SEAT_LISTINGS),
-    where("retailerId", "==", retailerId),
-    where("listingType", "==", "assigned"),
-  );
-  const snap = await getDocs(q);
-  return snap.docs
-    .map((d) => {
+  // Query by Auth UID (post-signup assignments) and optionally also by phone/docId
+  // (pre-signup assignments where retailerId may be null or not yet backfilled).
+  const queries: Promise<import("firebase/firestore").QuerySnapshot>[] = [
+    getDocs(query(
+      collection(db, SEAT_LISTINGS),
+      where("retailerId", "==", retailerId),
+      where("listingType", "==", "assigned"),
+    )),
+  ];
+
+  if (retailerDocId && retailerDocId !== retailerId) {
+    queries.push(getDocs(query(
+      collection(db, SEAT_LISTINGS),
+      where("retailerDocId", "==", retailerDocId),
+      where("listingType", "==", "assigned"),
+    )));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set<string>();
+  const results: RetailerSeatListing[] = [];
+
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
       const raw = d.data() as Record<string, unknown>;
       const status = raw.status;
-      return {
+      results.push({
         id: d.id,
         ownerId: String(raw.ownerId ?? ""),
         ownerType: (raw.ownerType === "retailer" ? "retailer" : "manufacturer") as "manufacturer" | "retailer",
         manufacturerId: raw.manufacturerId ? String(raw.manufacturerId) : null,
+        manufacturerPhone: raw.manufacturerPhone ? String(raw.manufacturerPhone) : null,
+        ownerPhone: raw.ownerPhone ? String(raw.ownerPhone) : null,
         retailerDocId: raw.retailerDocId ? String(raw.retailerDocId) : null,
         retailerId: raw.retailerId ? String(raw.retailerId) : null,
+        retailerPhone: raw.retailerPhone ? String(raw.retailerPhone) : null,
         productId: String(raw.productId ?? ""),
         manufacturerProductId: raw.manufacturerProductId ? String(raw.manufacturerProductId) : null,
         listingType: "assigned" as const,
@@ -581,7 +680,9 @@ export async function fetchAssignmentsForRetailer(
         assignedAt: raw.assignedAt as RetailerSeatListing["assignedAt"],
         expiresAt: raw.expiresAt as RetailerSeatListing["expiresAt"],
         releasedAt: raw.releasedAt ? (raw.releasedAt as RetailerSeatListing["releasedAt"]) : null,
-      } satisfies RetailerSeatListing;
-    })
-    .sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
+      });
+    }
+  }
+
+  return results.sort((a, b) => (b.assignedAt?.toMillis?.() ?? 0) - (a.assignedAt?.toMillis?.() ?? 0));
 }

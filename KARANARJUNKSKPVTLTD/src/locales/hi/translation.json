@@ -246,6 +246,7 @@
     "inventory": {
         "title": "दर शीट",
         "description": "उत्पाद, मूल्य निर्धारण और स्टॉक स्तर प्रबंधित करें।",
+        "search_placeholder": "नाम या SKU से खोजें…",
         "add_product": "उत्पाद जोड़ें",
         "edit_product": "उत्पाद संपादित करें",
         "add_new_product": "नया उत्पाद जोड़ें",

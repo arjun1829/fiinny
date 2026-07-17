@@ -1,9 +1,38 @@
+import { useState } from 'react';
 import { ICONS } from '../constants';
 import { motion } from 'framer-motion';
 import { useI18n } from '../i18n/I18nContext';
+import { saveContactMessage } from '../firebase';
 
 export default function AboutView() {
   const { t } = useI18n();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !message.trim()) {
+      setStatus('error');
+      setErrorMessage('Please fill in all fields.');
+      return;
+    }
+    setStatus('sending');
+    setErrorMessage('');
+    try {
+      await saveContactMessage(name, email, message);
+      setStatus('success');
+      setName('');
+      setEmail('');
+      setMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Something went wrong.');
+    }
+  };
   const stats = [
     { value: '500+', label: t('aboutStatLocalStores') },
     { value: '10K+', label: t('aboutStatFarmersServed') },
@@ -149,7 +178,15 @@ export default function AboutView() {
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-widest text-white/60 mb-0.5">{t('aboutContactPhoneLabel')}</div>
-                    <div className="font-bold">+91 98765 43210</div>
+                    <a href="tel:+918658032751" className="font-bold hover:underline">
+                      +91 86580 32751
+                    </a>
+                    <a
+                      href="tel:+918658032751"
+                      className="mt-1 inline-flex text-xs font-black uppercase tracking-widest text-white/80 hover:text-white"
+                    >
+                      {t('aboutContactCallLabel')}
+                    </a>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-white">
@@ -158,7 +195,7 @@ export default function AboutView() {
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-widest text-white/60 mb-0.5">{t('aboutContactEmailLabel')}</div>
-                    <div className="font-bold">support@krishidukan.in</div>
+                    <div className="font-bold">arjun.tanpure@fiinny.com</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-white">
@@ -173,29 +210,58 @@ export default function AboutView() {
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl p-8 shadow-2xl">
+            <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-8 shadow-2xl">
               <h3 className="text-xl font-bold text-on-surface mb-6">{t('aboutContactFormTitle')}</h3>
               <div className="flex flex-col gap-4">
                 <input
                   type="text"
+                  required
+                  disabled={status === 'sending'}
                   placeholder={t('aboutContactNamePlaceholder')}
-                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
                 />
                 <input
                   type="email"
+                  required
+                  disabled={status === 'sending'}
                   placeholder={t('aboutContactEmailPlaceholder')}
-                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
                 />
                 <textarea
+                  required
+                  disabled={status === 'sending'}
                   placeholder={t('aboutContactMessagePlaceholder')}
                   rows={4}
-                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-none"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-surface-container-low border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-none disabled:opacity-50"
                 />
-                <button className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-primary/90 transition-colors flex items-center justify-center gap-2">
-                  <ICONS.ArrowRight className="w-4 h-4" /> {t('aboutContactSendLabel')}
+
+                {status === 'success' && (
+                  <div className="text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                    {t('aboutContactSuccess')}
+                  </div>
+                )}
+
+                {status === 'error' && (
+                  <div className="text-sm font-medium text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">
+                    {errorMessage || t('aboutContactError')}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={status === 'sending'}
+                  className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <ICONS.ArrowRight className="w-4 h-4" /> {status === 'sending' ? t('aboutContactSending') : t('aboutContactSendLabel')}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </section>

@@ -26,6 +26,7 @@ import {
 export type ProductVariant = {
   unit: string;
   price: number;
+  stock?: number;
 };
 
 export type ManufacturerProductInput = {
@@ -38,6 +39,26 @@ export type ManufacturerProductInput = {
   description: string;
   image?: string;
   images?: string[];
+  /** Category-specific structured info (new schema). */
+  categoryInfo?: Record<string, string | string[]>;
+  /** GST configuration for this product. */
+  gstApplicable?: boolean;
+  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Whether this product is available for online home delivery. Defaults to online_delivery. */
+  sellMode?: "online_delivery" | "offline_store_only";
+  /** Optional YouTube video URL for product demonstration. Stored as-is; never upload to Storage. */
+  videoUrl?: string;
+  /** Ingredient / nutrient composition (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
+  composition?: { name: string; value: string }[];
+  /** Free-form additional fields entered by the seller — stored as-is, displayed on the product detail page. */
+  customFields?: { title: string; value: string }[];
+  /** @deprecated Legacy fertilizer fields — still accepted for backward compat. */
+  nitrogen?: string;
+  phosphorus?: string;
+  potassium?: string;
+  applicationDesc?: string;
+  dosage?: string;
+  bestForCrops?: string[];
 };
 
 /**
@@ -89,6 +110,8 @@ export async function createManufacturerProduct(
     image: (input.image ?? "").trim(),
     images: input.images ?? [],
     isActive: true,
+    sellMode: input.sellMode ?? "offline_store_only",
+    isOnline: (input.sellMode ?? "offline_store_only") === "online_delivery",
     ownerId: manufacturerId,
     ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
@@ -99,6 +122,15 @@ export async function createManufacturerProduct(
     source: "manufacturer_inventory",
     createdAt: now,
     updatedAt: now,
+    categoryInfo: input.categoryInfo ?? null,
+    videoUrl: input.videoUrl?.trim() || null,
+    composition: input.composition?.length ? input.composition : null,
+    customFields: input.customFields?.length ? input.customFields : null,
+    // GST fields
+    gstApplicable: input.gstApplicable ?? false,
+    gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
+    // Note: legacy fertilizer flat fields (nitrogen, phosphorus, etc.) are no longer
+    // written here — category-specific data lives in categoryInfo only.
   });
 
   // Inventory record for the manufacturer's own stock
@@ -218,6 +250,13 @@ export async function updateManufacturerProduct(
   productId: string,
   input: Partial<ManufacturerProductInput>,
 ): Promise<void> {
+  // ── OWNERSHIP AUDIT ──────────────────────────────────────────────────────
+  console.log("[updateManufacturerProduct] Saving to products/" + productId, {
+    fields: Object.keys(input).filter(k => (input as any)[k] !== undefined),
+    price: input.price,
+    name: input.name,
+  });
+  // ────────────────────────────────────────────────────────────────────────
   const ref = doc(db, "products", productId);
   const patch: Record<string, unknown> = { updatedAt: serverTimestamp() };
   if (input.name !== undefined)        patch.name        = input.name.trim();
@@ -229,7 +268,61 @@ export async function updateManufacturerProduct(
   if (input.description !== undefined) patch.description = input.description.trim();
   if (input.image !== undefined)       patch.image       = (input.image ?? "").trim();
   if (input.images !== undefined)      patch.images      = input.images;
+  if (input.categoryInfo !== undefined)    patch.categoryInfo    = input.categoryInfo ?? null;
+  if (input.videoUrl !== undefined)        patch.videoUrl        = input.videoUrl.trim() || null;
+  if (input.composition !== undefined)  patch.composition  = input.composition?.length ? input.composition : null;
+  if (input.customFields !== undefined) patch.customFields = input.customFields?.length ? input.customFields : null;
+  if (input.gstApplicable !== undefined) {
+    patch.gstApplicable = input.gstApplicable;
+    patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;
+  }
+  // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   await updateDoc(ref, patch);
+}
+
+/**
+ * Syncs the manufacturer's updated price/variants to all active retailer product
+ * copies. Skips any copy that has `hasCustomPrice: true` (retailer opted into
+ * their own pricing). The `syncSellerProductToCanonical` Firebase Function
+ * automatically cascades each copy update to the manufacturer product's
+ * availability[] entry.
+ */
+export async function syncPriceToRetailers(
+  manufacturerProductId: string,
+  price: number,
+  variants: { unit: string; price: number; stock?: number }[],
+): Promise<{ updated: number; skipped: number }> {
+  const listingsSnap = await getDocs(
+    query(
+      collection(db, "retailerSeatListings"),
+      where("manufacturerProductId", "==", manufacturerProductId),
+      where("status", "==", "active"),
+    ),
+  );
+
+  if (listingsSnap.empty) return { updated: 0, skipped: 0 };
+
+  const copyIds = listingsSnap.docs
+    .map((d) => String(d.data().productId ?? ""))
+    .filter(Boolean);
+
+  const copySnaps = await Promise.all(
+    copyIds.map((id) => getDoc(doc(db, "products", id))),
+  );
+
+  const batch = writeBatch(db);
+  let updated = 0;
+  let skipped = 0;
+
+  for (const snap of copySnaps) {
+    if (!snap.exists()) continue;
+    if (snap.data().hasCustomPrice === true) { skipped++; continue; }
+    batch.update(snap.ref, { price, variants, updatedAt: serverTimestamp() });
+    updated++;
+  }
+
+  if (updated > 0) await batch.commit();
+  return { updated, skipped };
 }
 
 /** Toggle a product's isActive flag. */
@@ -244,6 +337,7 @@ export async function toggleProductActive(productId: string, isActive: boolean):
 export async function searchProductsByName(term: string): Promise<Array<{
   id: string; name: string; category: string; unit: string; price: number;
   description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
+  nitrogen?: string; phosphorus?: string; potassium?: string; applicationDesc?: string; dosage?: string; bestForCrops?: string[];
 }>> {
   if (!term.trim()) return [];
   const snap = await getDocs(query(collection(db, "products"), orderBy("name")));
@@ -275,6 +369,15 @@ export async function searchProductsByName(term: string): Promise<Array<{
         manufacturerProductId: String(r.manufacturerProductId ?? ""),
         originalProductId: String(r.originalProductId ?? ""),
         score: rankProduct(r),
+        categoryInfo: (r.categoryInfo && typeof r.categoryInfo === "object" && !Array.isArray(r.categoryInfo))
+          ? r.categoryInfo as Record<string, string | string[]>
+          : undefined,
+        nitrogen: r.nitrogen ? String(r.nitrogen) : "",
+        phosphorus: r.phosphorus ? String(r.phosphorus) : "",
+        potassium: r.potassium ? String(r.potassium) : "",
+        applicationDesc: r.applicationDesc ? String(r.applicationDesc) : "",
+        dosage: r.dosage ? String(r.dosage) : "",
+        bestForCrops: Array.isArray(r.bestForCrops) ? r.bestForCrops : [],
       };
     })
     .filter((p) => p.name.toLowerCase().includes(lower))

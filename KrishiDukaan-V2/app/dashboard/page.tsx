@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { auth, getUserProfile, fetchRetailerProducts, fetchManufacturerProducts } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
-import { MapPin, Pencil } from "lucide-react";
+import { fetchRetailerProducts, fetchManufacturerProducts } from "../firebase";
+import { MapPin, Pencil, ExternalLink } from "lucide-react";
+import { useEffectiveUser } from "./_context/effective-user-context";
 import { PageHeader } from "./_components/page-header";
 import { StatCard } from "./_components/stat-card";
 import { QuickActions } from "./_components/quick-actions";
@@ -21,6 +21,8 @@ type ProfileSummary = {
   state: string;
   role: string;
   productCount: number;
+  slug?: string;
+  logo?: string;
 };
 
 function initials(name: string): string {
@@ -29,6 +31,7 @@ function initials(name: string): string {
 
 export default function DashboardPage() {
   const { t } = useI18n();
+  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<StatMetric[]>([]);
   const [inventoryHealth, setInventoryHealth] = useState<any>(null);
@@ -36,75 +39,116 @@ export default function DashboardPage() {
   const [profileSummary, setProfileSummary] = useState<ProfileSummary | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const profile = await getUserProfile(user.uid);
+    console.debug('[DashboardPage] effect — effectiveUid:', effectiveUid, '| effectiveProfile:', effectiveProfile?.role ?? null);
+    if (!effectiveUid || !effectiveProfile) {
+      console.debug('[DashboardPage] skipping — uid or profile is null/empty');
+      return;
+    }
+    const profile = effectiveProfile;
+    const uid = effectiveUid;
 
-          // Profile summary card
-          if (profile) {
-            setProfileSummary({
-              businessName: (profile as any).businessName || (profile as any).shopName || profile.name || "",
-              ownerName: (profile as any).ownerName || profile.name || "",
-              city: (profile as any).city || "",
-              state: (profile as any).state || "",
-              role: profile.role || "",
-              productCount: (profile as any).productCount || 0,
-            });
-          }
-          if (profile) {
-            let products: any[] = [];
-            if (profile.role === 'retailer') {
-              products = await fetchRetailerProducts(user.uid);
-            } else if (profile.role === 'manufacturer') {
-              products = await fetchManufacturerProducts(user.uid);
+    (async () => {
+      try {
+        // Profile summary card
+        let slug = "";
+        let logo = "";
+        let businessName = "";
+        let ownerName = (profile as any).ownerName || profile.name || "";
+        let city = (profile as any).city || "";
+        let state = (profile as any).state || "";
+
+        if (profile.role === "manufacturer") {
+          try {
+            const { resolveManufacturerDocId } = await import("./_lib/profile-persistence");
+            const { fetchManufacturerProfile, fetchBrandPageCustomization } = await import("./_lib/brand-page-firestore");
+            const phone = await resolveManufacturerDocId(uid);
+            const [mfrDoc, custom] = await Promise.all([
+              fetchManufacturerProfile(phone),
+              fetchBrandPageCustomization(phone),
+            ]);
+            if (mfrDoc) {
+              slug = String(mfrDoc.slug ?? "");
+              businessName = String(mfrDoc.businessName ?? "");
+              ownerName = String(mfrDoc.ownerName ?? ownerName);
+              const addr = (mfrDoc.address ?? {}) as Record<string, unknown>;
+              city = String(addr.city ?? city);
+              state = String(addr.state ?? state);
             }
-
-            const analytics = await fetchRetailerAnalytics(user.uid);
-
-            // Calculate stats from real data
-            const productCount = products.length;
-            const inStock = products.filter(p => p.stock !== 'Out of Stock' && p.stock !== '0').length;
-            const lowStock = products.filter(p => p.stock === 'Low Stock').length;
-            const outOfStock = productCount - inStock;
-
-            setStats([
-              { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
-              { id: "directions", label: t('directionsLabel'), value: "0", change: "0.0%", trend: "neutral" },
-              { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
-            ]);
-
-            setInventoryHealth({
-              inStock,
-              lowStock,
-              outOfStock,
-              score: productCount > 0 ? Math.round((inStock / productCount) * 100) : 100,
-              label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
-            });
-
-            // Mock reviews for now as we don't have a reviews collection yet
-            setReviews([
-              {
-                id: "r1",
-                author: "Priya S.",
-                rating: 5,
-                excerpt: "Fresh stock and fair prices. Will visit again.",
-                date: "2026-05-10",
-                product: products[0]?.name || "Organic Seeds",
-              },
-            ]);
+            if (custom) logo = String(custom.logo ?? "");
+          } catch (e) {
+            console.error("Error loading brand details in dashboard:", e);
           }
-        } catch (error) {
-          console.error("Error fetching dashboard data:", error);
-        } finally {
-          setLoading(false);
+        } else if (profile.role === "retailer") {
+          try {
+            const { getDoc, doc } = await import("firebase/firestore");
+            const { db } = await import("../firebase");
+            const phone = (profile as any).phone || "";
+            const retailerDocId = (profile as any).retailerDocId || phone;
+            if (retailerDocId) {
+              const snap = await getDoc(doc(db, "retailers", retailerDocId));
+              if (snap.exists()) {
+                const r = snap.data() as Record<string, unknown>;
+                businessName = String(r.shopName ?? r.businessName ?? "");
+                ownerName = String(r.ownerName ?? ownerName);
+                const addr = (r.address ?? {}) as Record<string, unknown>;
+                city = String(addr.city ?? city);
+                state = String(addr.state ?? state);
+              }
+            }
+          } catch (e) {
+            console.error("Error loading retailer details in dashboard:", e);
+          }
         }
-      }
-    });
 
-    return () => unsubscribe();
-  }, []);
+        setProfileSummary({
+          businessName,
+          ownerName,
+          city,
+          state,
+          role: profile.role || "",
+          productCount: (profile as any).productCount || 0,
+          slug,
+          logo,
+        });
+
+        let products: any[] = [];
+        if (profile.role === 'retailer') {
+          products = await fetchRetailerProducts(uid);
+        } else if (profile.role === 'manufacturer') {
+          products = await fetchManufacturerProducts(uid);
+        }
+
+        const analytics = await fetchRetailerAnalytics(uid);
+
+        const productCount = products.length;
+        const inStock = products.filter(p => p.stock !== 'Out of Stock' && p.stock !== '0').length;
+        const lowStock = products.filter(p => p.stock === 'Low Stock').length;
+        const outOfStock = productCount - inStock;
+        const totalDirections = analytics.directionRequests.reduce((sum, d) => sum + d.value, 0);
+
+        setStats([
+          { id: "views", label: t('totalViews'), value: analytics.totalImpressions.toLocaleString(), change: "+0.0%", trend: "neutral" },
+          { id: "calls", label: t('interactionsLabel'), value: analytics.totalClicks.toLocaleString(), change: "+0.0%", trend: "neutral" },
+          { id: "directions", label: t('directionsLabel'), value: totalDirections.toLocaleString(), change: "0.0%", trend: "neutral" },
+          { id: "products", label: t('productsListedLabel'), value: productCount.toString(), change: "0", trend: "neutral" },
+        ]);
+
+        setInventoryHealth({
+          inStock,
+          lowStock,
+          outOfStock,
+          score: productCount > 0 ? Math.round((inStock / productCount) * 100) : 100,
+          label: productCount > 0 ? (inStock / productCount > 0.8 ? t('healthyLabel') : t('attentionNeeded')) : t('noDataLabel'),
+        });
+
+        setReviews([]);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [effectiveUid, effectiveProfile]);
 
   if (loading) {
     return (
@@ -118,28 +162,50 @@ export default function DashboardPage() {
     <>
       {/* Profile summary card */}
       {profileSummary && (
-        <div className="mb-6 flex items-center gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4 shadow-ambient">
-          <div className="h-14 w-14 shrink-0 rounded-full bg-primary flex items-center justify-center shadow">
-            <span className="text-lg font-bold text-white">
-              {initials(profileSummary.businessName || profileSummary.ownerName || "?")}
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-base font-bold text-on-surface truncate">{profileSummary.businessName || "—"}</p>
-            {profileSummary.ownerName && <p className="text-sm text-on-surface-variant">{profileSummary.ownerName}</p>}
-            {(profileSummary.city || profileSummary.state) && (
-              <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-on-surface-variant">
-                <MapPin className="h-3 w-3" />
-                {[profileSummary.city, profileSummary.state].filter(Boolean).join(", ")}
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-3 shadow-ambient sm:mb-6 sm:gap-4 sm:px-5 sm:py-4">
+          <div className="h-11 w-11 shrink-0 rounded-full bg-white border border-outline-variant/30 flex items-center justify-center shadow overflow-hidden sm:h-14 sm:w-14">
+            {profileSummary.logo ? (
+              <img src={profileSummary.logo} alt="Logo" className="w-full h-full object-contain p-1" />
+            ) : (
+              <div className="w-full h-full bg-primary flex items-center justify-center">
+                <span className="text-base font-bold text-white sm:text-lg">
+                  {initials(profileSummary.businessName || profileSummary.ownerName || "?")}
+                </span>
               </div>
             )}
           </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-on-surface truncate sm:text-base">{profileSummary.businessName || "—"}</p>
+            {profileSummary.ownerName && <p className="text-xs text-on-surface-variant sm:text-sm">{profileSummary.ownerName}</p>}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+              {(profileSummary.city || profileSummary.state) && (
+                <div className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                  <MapPin className="h-3 w-3" />
+                  {[profileSummary.city, profileSummary.state].filter(Boolean).join(", ")}
+                </div>
+              )}
+              {profileSummary.role === "manufacturer" && profileSummary.slug && (
+                <>
+                  <span className="text-on-surface-variant/30 text-xs hidden sm:inline">·</span>
+                  <a href={`/brand/${profileSummary.slug}`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                    <ExternalLink className="h-3 w-3" /> View Brand Page
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
           <Link href="/dashboard/profile"
-            className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
-            <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
+            className="shrink-0 inline-flex items-center gap-1 rounded-xl border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors sm:gap-1.5 sm:px-3">
+            <Pencil className="h-3.5 w-3.5" /> <span className="hidden sm:inline">{t('editProfileBtn')}</span><span className="sm:hidden">Edit</span>
           </Link>
         </div>
       )}
+
+      {/* Quick Actions — above metrics on mobile */}
+      <div className="mb-4">
+        <QuickActions />
+      </div>
 
       <PageHeader
         title={t('overviewTitle')}
@@ -147,7 +213,7 @@ export default function DashboardPage() {
         helperKey="dashOverview"
       />
 
-      <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {stats.map((m) => {
           const helperKey =
             m.id === "views"
@@ -163,12 +229,11 @@ export default function DashboardPage() {
         })}
       </section>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 sm:mt-6">
         <DashboardInventoryHealth data={inventoryHealth} />
-        <QuickActions />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4 sm:mt-6">
         <RecentReviews reviews={reviews} />
       </div>
     </>

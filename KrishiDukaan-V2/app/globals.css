@@ -1,11 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+/* Plus Jakarta Sans is now loaded via next/font in app/layout.tsx (self-hosted,
+   exposed as --font-jakarta and consumed by Tailwind's font-sans). The previous
+   render-blocking Google Fonts @import was removed for performance. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  html {
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-surface text-on-surface font-sans antialiased;
+    overflow-x: clip;
   }
 }
 
@@ -19,6 +26,27 @@
 .hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Visible, clean custom scrollbar for the product-detail store list (desktop).
+   Thin track, rounded always-visible thumb that darkens on hover. */
+.store-scrollbar {
+  scrollbar-width: thin;                                   /* Firefox */
+  scrollbar-color: rgba(61, 43, 31, 0.35) transparent;     /* thumb / track */
+}
+.store-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.store-scrollbar::-webkit-scrollbar-track {
+  background: rgba(61, 43, 31, 0.06);
+  border-radius: 9999px;
+}
+.store-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(61, 43, 31, 0.35);
+  border-radius: 9999px;
+}
+.store-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(61, 43, 31, 0.55);
 }
 
 /* Leaflet map overrides */

@@ -4,3 +4,18 @@ export const PRODUCTS = [
     { id: 3, name: "KaranArjun Power Plus (250ml)", mrp: 350, ptr: 240, margin: "31%" },
     { id: 4, name: "KaranArjun Sample Kit", mrp: 0, ptr: 0, margin: "N/A" }
 ];
+
+// Agri-input product categories for a Krishi Seva Kendra / agri shop. Stored on
+// each product's `type` field, which the POS already filters on. Used by the
+// Inventory and POS add/edit forms as the category options.
+export const AGRI_CATEGORIES = [
+    'Insecticide',
+    'Fungicide',
+    'Herbicide',
+    'Fertilizer',
+    'Micronutrient',
+    'PGR',
+    'Seeds',
+    'Bio Product',
+    'Others',
+];
