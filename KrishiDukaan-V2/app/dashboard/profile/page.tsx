@@ -3,6 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GeoPoint, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { signOut } from "firebase/auth";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -161,7 +162,7 @@ async function uploadImageToStorage(file: File, pathPrefix: string): Promise<str
 function ProfilePageInner() {
   const router = useRouter();
   const { t } = useI18n();
-  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
+  const { uid: effectiveUid, profile: effectiveProfile, isAdminView } = useEffectiveUser();
 
   const [uid,       setUid]       = useState<string | null>(null);
   const [mfrDocId,  setMfrDocId]  = useState<string | null>(null);
@@ -183,6 +184,35 @@ function ProfilePageInner() {
   const [editMode,  setEditMode]  = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [status,    setStatus]    = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Delete-account flow
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletingAccount,   setDeletingAccount]   = useState(false);
+  const [deleteError,       setDeleteError]       = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (!auth.currentUser) {
+      setDeleteError("Please log in again to delete your account.");
+      return;
+    }
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to delete account.");
+      await signOut(auth);
+      window.location.href = "/";
+    } catch (e: unknown) {
+      setDeletingAccount(false);
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete account.");
+    }
+  };
 
   // GST inline flow state
   const [gstFlowMode,       setGstFlowMode]       = useState<"pending-enable" | "update" | null>(null);
@@ -1118,6 +1148,57 @@ function ProfilePageInner() {
               </div>
             )}
           </section>
+        )}
+
+        {/* Danger zone — hidden while an admin is viewing another user's dashboard */}
+        {!isAdminView && (
+          <section className="mt-8 rounded-2xl border border-red-200 bg-white p-5 shadow-ambient">
+            <h2 className="mb-1 text-sm font-semibold text-red-700 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" /> Delete Account
+            </h2>
+            <p className="mb-4 text-xs text-on-surface-variant">
+              Permanently deletes your profile, listings, subscriptions, reels, reviews, and other account
+              data. Past orders and payments are kept for records. This cannot be undone.
+            </p>
+            <button type="button" onClick={() => setShowDeleteConfirm(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors">
+              Delete My Account
+            </button>
+          </section>
+        )}
+
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl md:p-8">
+              <div className="mb-3 flex items-center gap-2">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+                <h3 className="text-xl font-bold text-on-surface">Delete Account</h3>
+              </div>
+              <p className="mb-4 text-sm text-on-surface-variant">
+                This will permanently delete your account and cannot be undone. Type DELETE below to confirm.
+              </p>
+              <input type="text" value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE" disabled={deletingAccount}
+                className="mb-4 w-full rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+              {deleteError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {deleteError}
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button type="button" disabled={deletingAccount}
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); setDeleteError(null); }}
+                  className="flex-1 rounded-xl bg-surface-container-low px-5 py-3 font-semibold text-on-surface transition-colors hover:bg-surface-container disabled:opacity-60">
+                  Cancel
+                </button>
+                <button type="button" onClick={handleDeleteAccount}
+                  disabled={deleteConfirmText !== "DELETE" || deletingAccount}
+                  className="flex-1 rounded-xl bg-red-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-40">
+                  {deletingAccount ? "Deleting…" : "Confirm Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </>
     );

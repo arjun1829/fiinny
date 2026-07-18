@@ -44,6 +44,22 @@ service cloud.firestore {
       return isDirectAdmin() || (isAuthed() && myRole() == 'admin');
     }
 
+    // Direct sales-exec check for email-based field-team accounts whose doc
+    // lives at users/{uid} (created via the admin "create user" flow, same
+    // shape as email admins). Mirrors isDirectAdmin().
+    function isDirectSalesExec() {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'salesExecutive';
+    }
+
+    // isSalesExec() works for email-based execs (users/{uid}) and any
+    // phone-based exec (users/{phone} via myRole). Used to gate the shared
+    // dealer master + sales writes so ordinary customers cannot read/pollute them.
+    function isSalesExec() {
+      return isDirectSalesExec() || (isAuthed() && myRole() == 'salesExecutive');
+    }
+
     // Compares a stored phone value against the caller's phone (myPhone()),
     // handling both E164 (+919876543210) and 10-digit (9876543210) formats.
     // This is the fix for the invite-acceptance "Missing or insufficient permissions" error:
@@ -266,7 +282,7 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
-    // Public list/count — needed for brand page retailer count (unauthenticated visitors).
+      // Public list/count — needed for brand page retailer count (unauthenticated visitors).
       // Individual doc reads still restricted to the manufacturer or the retailer themselves.
       allow list: if true;
       allow get: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
@@ -374,8 +390,8 @@ service cloud.firestore {
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
       ));
     }
-    
-       // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
+
+    // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
     // Optional brand-page customization — public read, manufacturer owner write.
     // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
     match /brandPages/{manufacturerPhone} {
@@ -383,7 +399,7 @@ service cloud.firestore {
       allow create, update: if isAuthed() && (myPhone() == manufacturerPhone || isAdmin());
       allow delete: if isAdmin();
     }
-    
+
     // ─── Discount field validation helper ───────────────────────────────────
     // Returns true when the incoming write does not set invalid discount values.
     // discountPct must be 0–99; dates must be absent or timestamps.
@@ -521,8 +537,31 @@ service cloud.firestore {
       allow create: if true;
       allow read, write: if isAdmin();
     }
-    
-       // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
+
+    // ─── WhatsApp inbox ──────────────────────────────────────────────────────
+    // Written by Cloud Functions / webhook (admin SDK, bypasses rules).
+    // Read and write restricted to admins only from the client.
+    match /waIncomingMessages/{msgId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waNotifications/{notifId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /waConversations/{phone} {
+      allow read, write: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /notes/{noteId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
     // Seller-level delivery config (online toggle, weight slabs, coverage).
     // Public read so customers/checkout can verify delivery area.
     // Write restricted to the owning seller (phone match) or admin.
@@ -680,7 +719,7 @@ service cloud.firestore {
     // totalDistanceKm + calculatedAt back — admin SDK bypasses client rules.
     match /daySessions/{sessionId} {
       allow read:   if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
-      allow create: if isAuthed()
+      allow create: if isSalesExec()
                        && request.resource.data.salesExecutiveId == request.auth.uid
                        && request.resource.data.status == 'ACTIVE';
       allow update: if isAuthed() && resource.data.salesExecutiveId == request.auth.uid;
@@ -688,32 +727,40 @@ service cloud.firestore {
     }
 
     // ─── dealers ─────────────────────────────────────────────────────────────
-    // Created by Sales Executives via /sales/dealers.
-    // Only authenticated users can read. A sales exec may only create docs that
-    // carry their own UID as createdBy, and may only update their own records.
-    // Soft-delete (active=false) goes through update. Hard-delete is admin-only.
+    // Shared dealer master, created by Sales Executives via /sales/dealers and
+    // read by the whole field team. Read/write is restricted to sales execs (or
+    // admins) — previously ANY authenticated user (incl. customers) could read
+    // the entire dealer master (shop name, owner, phone, address, geo). A sales
+    // exec may only create docs carrying their own UID as createdBy, and may
+    // only update their own records. Soft-delete (active=false) goes through
+    // update. Hard-delete is admin-only.
     match /dealers/{dealerId} {
-      allow read:   if isAuthed();
-      allow create: if isAuthed()
+      allow read:   if isSalesExec() || isAdmin();
+      allow create: if isSalesExec()
                        && request.resource.data.createdBy == request.auth.uid
                        && request.resource.data.active    == true;
-      allow update: if isAuthed() && resource.data.createdBy == request.auth.uid;
+      allow update: if (isSalesExec() && resource.data.createdBy == request.auth.uid)
+                       || isAdmin();
       allow delete: if isAdmin();
     }
 
     // ─── dealerVisits ─────────────────────────────────────────────────────────
     // One document per dealer visit logged by a sales executive.
-    // A sales exec can only create visits tagged with their own UID.
-    // Reads are restricted to authenticated users (no public exposure).
-    // Updates allowed only by the creating exec (e.g. notes correction).
+    // A sales exec can only create/read/update visits tagged with their own UID.
+    // Reads are OWNER-SCOPED: an exec sees only their own visits; admins see all
+    // (admin SDK bypasses rules anyway, but isAdmin() covers admin client reads).
+    // Every client query already filters where('salesExecutiveId','==',uid), so
+    // owner-scoping breaks no existing read path while closing the prior hole
+    // where ANY authenticated user (incl. customers) could read all visit data.
     // Hard-delete is admin-only.
     match /dealerVisits/{visitId} {
-      allow read:   if isAuthed();
-      allow create: if isAuthed()
+      allow read:   if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
+      allow create: if isSalesExec()
                        && request.resource.data.salesExecutiveId == request.auth.uid;
       allow update: if isAuthed()
                        && resource.data.salesExecutiveId == request.auth.uid;
       allow delete: if isAdmin();
     }
   }
-  }
+}

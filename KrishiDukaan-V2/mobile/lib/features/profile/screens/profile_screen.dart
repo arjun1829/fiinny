@@ -399,7 +399,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       if (mounted) {
         setState(() {
           _deleting = false;
-          _error = 'Failed to delete account. Please try again.';
+          final msg = e.toString().replaceAll('Exception: ', '');
+          _error = msg.isNotEmpty ? msg : 'Failed to delete account. Please try again.';
         });
       }
     }

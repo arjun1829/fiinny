@@ -39,7 +39,8 @@ import {
   KeyRound,
   Share2,
   ClipboardList,
-  CircleUser
+  CircleUser,
+  Clapperboard
 } from 'lucide-react';
 import { MarketplaceProduct } from '../types/product';
 
@@ -84,7 +85,8 @@ export const ICONS = {
   Auth: KeyRound,
   Share: Share2,
   Clipboard: ClipboardList,
-  Account: CircleUser
+  Account: CircleUser,
+  Reels: Clapperboard
 };
 
 export const COLORS = {
