@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, doc as fsDoc } from 'firebase/firestore';
+import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc } from 'firebase/firestore';
 import { generatePaymentId } from '../utils/paymentIdGenerator';
 import { uploadPaymentProof } from '../utils/uploadPaymentProof';
 import PaymentAttachmentField from '../components/PaymentAttachmentField';
@@ -168,6 +168,16 @@ export default function WorklistDetailsPage() {
     const [linkAllocations, setLinkAllocations] = useState<Record<string, number>>({});
     const [savingLinkPayment, setSavingLinkPayment] = useState(false);
 
+    // Unlink payment modal
+    const [unlinkOrder, setUnlinkOrder] = useState<any | null>(null);
+    const [unlinkAllocations, setUnlinkAllocations] = useState<any[]>([]);
+    const [loadingUnlinkAllocations, setLoadingUnlinkAllocations] = useState(false);
+    const [unlinkingPmtId, setUnlinkingPmtId] = useState<string | null>(null);
+
+    // Delete payment with linked allocations
+    const [deletePaymentTarget, setDeletePaymentTarget] = useState<Payment | null>(null);
+    const [deletingLinkedPayment, setDeletingLinkedPayment] = useState(false);
+
     // Proof attachment state for each payment modal
     const [pmtProofFile, setPmtProofFile] = useState<File | null>(null);
     const [pmtProofCleared, setPmtProofCleared] = useState(false);
@@ -266,9 +276,17 @@ export default function WorklistDetailsPage() {
         const unsubSalesOrders = onSnapshot(
             salesOrdersQuery,
             (snap) => {
-                type SODoc = { id: string; createdAt?: { seconds?: number }; [key: string]: unknown };
+                type SODoc = { id: string; invoiceDate?: string; createdAt?: { seconds?: number }; [key: string]: unknown };
                 const docs: SODoc[] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SODoc));
-                docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+                docs.sort((a, b) => {
+                    // Primary: invoiceDate (yyyy-mm-dd string); fallback to createdAt timestamp
+                    const aVal = a.invoiceDate ? a.invoiceDate : '';
+                    const bVal = b.invoiceDate ? b.invoiceDate : '';
+                    if (aVal && bVal) return bVal.localeCompare(aVal);
+                    if (aVal) return -1;
+                    if (bVal) return 1;
+                    return (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0);
+                });
                 setSalesOrders(docs);
             },
             (err) => console.error('SalesOrders listener error:', err)
@@ -719,6 +737,13 @@ export default function WorklistDetailsPage() {
 
     const handleDeletePayment = async (p: Payment) => {
         if (!id || !tenantId) return;
+
+        // If payment has linked order allocations, route through the confirmation modal
+        if ((p.linkedOrderIds?.length ?? 0) > 0) {
+            setDeletePaymentTarget(p);
+            return;
+        }
+
         if (!window.confirm(`Delete this payment of ₹${Number(p.amount || 0).toLocaleString()}? Totals will be adjusted.`)) return;
         try {
             // Reverse its effect (delta = -amount), then remove the ledger entry.
@@ -782,8 +807,15 @@ export default function WorklistDetailsPage() {
     };
 
 
-    // Payments with remaining unallocated balance — used for Link Payment modal
-    const availablePayments = payments.filter(p => (p.unallocatedAmount ?? 0) > 0);
+    // Payments with remaining unallocated balance — used for Link Payment modal.
+    // Old payments (recorded before unallocatedAmount was introduced) don't have the field.
+    // A payment without orderId was a general Record-Payment entry — treat its full amount as unallocated.
+    // A payment with orderId was already applied directly to one invoice — treat as 0.
+    const getEffectiveUnallocated = (p: Payment): number => {
+        if (p.unallocatedAmount !== undefined) return Number(p.unallocatedAmount) || 0;
+        return p.orderId ? 0 : Number(p.amount) || 0;
+    };
+    const availablePayments = payments.filter(p => getEffectiveUnallocated(p) > 0);
 
     // Derived financials — order-level, matches list page formula exactly.
     // Source of truth: salesOrder.amountPaid (updated by every payment operation).
@@ -834,10 +866,10 @@ export default function WorklistDetailsPage() {
                     allocatedAt: serverTimestamp(),
                 });
 
-                // Reduce payment's unallocated balance
+                // Reduce payment's unallocated balance (handle old payments that lack the field)
                 const pmtRef = getTenantDoc(db, tenantId, 'retailers', id, 'payments', pmtId);
                 batch.update(pmtRef, {
-                    unallocatedAmount: Math.max(0, (pmt.unallocatedAmount ?? 0) - amt),
+                    unallocatedAmount: Math.max(0, getEffectiveUnallocated(pmt) - amt),
                     linkedOrderIds: arrayUnion(linkPaymentOrder.id),
                 });
 
@@ -866,6 +898,117 @@ export default function WorklistDetailsPage() {
             alert('Error linking payment. Please try again.');
         } finally {
             setSavingLinkPayment(false);
+        }
+    };
+
+    // ─── Open Unlink Payments modal for a sales order ───
+    const handleOpenUnlinkModal = async (so: any) => {
+        if (!tenantId || !id) return;
+        setUnlinkOrder(so);
+        setLoadingUnlinkAllocations(true);
+        try {
+            const allocQuery = query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations'),
+                where('orderId', '==', so.id)
+            );
+            const snap = await getDocs(allocQuery);
+            setUnlinkAllocations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (e) {
+            console.error('Error fetching allocations:', e);
+        } finally {
+            setLoadingUnlinkAllocations(false);
+        }
+    };
+
+    // ─── Unlink a single payment allocation from a sales order ───
+    const handleUnlinkPayment = async (allocation: any) => {
+        if (!tenantId || !id || !unlinkOrder) return;
+        setUnlinkingPmtId(allocation.id);
+        try {
+            const batch = writeBatch(db);
+
+            // Delete the allocation record
+            const allocRef = getTenantDoc(db, tenantId, 'retailers', id, 'paymentAllocations', allocation.id);
+            batch.delete(allocRef);
+
+            // Restore payment's unallocated balance
+            const pmtRef = getTenantDoc(db, tenantId, 'retailers', id, 'payments', allocation.paymentId);
+            const pmtSnap = await getDoc(pmtRef);
+            if (pmtSnap.exists()) {
+                batch.update(pmtRef, {
+                    unallocatedAmount: (Number(pmtSnap.data().unallocatedAmount) || 0) + allocation.allocatedAmount,
+                    linkedOrderIds: arrayRemove(unlinkOrder.id),
+                });
+            }
+
+            // Reverse allocation on the sales order
+            const grandTotal = Number(unlinkOrder.grandTotal ?? unlinkOrder.netAmount ?? unlinkOrder.totalAmount ?? 0);
+            const newPaid = Math.max(0, (Number(unlinkOrder.amountPaid) || 0) - allocation.allocatedAmount);
+            const newStatus = newPaid <= 0 ? 'Pending' : (newPaid >= grandTotal ? 'Paid' : 'Partial');
+            const orderRef = getTenantDoc(db, tenantId, 'salesOrders', unlinkOrder.id);
+            batch.update(orderRef, {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+                linkedPaymentIds: arrayRemove(allocation.paymentId),
+            });
+
+            await batch.commit();
+
+            // Update local modal state so changes are visible immediately
+            setUnlinkAllocations(prev => prev.filter(a => a.id !== allocation.id));
+            setUnlinkOrder((prev: any) => ({ ...prev, amountPaid: newPaid, paymentStatus: newStatus }));
+        } catch (e) {
+            console.error('Error unlinking payment:', e);
+            alert('Error unlinking payment. Please try again.');
+        } finally {
+            setUnlinkingPmtId(null);
+        }
+    };
+
+    // ─── Delete a payment that has linked order allocations ───
+    // Reverses every allocation, then deletes the payment and adjusts retailer totals.
+    const handleDeletePaymentConfirmed = async () => {
+        if (!id || !tenantId || !deletePaymentTarget) return;
+        const p = deletePaymentTarget;
+        setDeletingLinkedPayment(true);
+        try {
+            const allocQuery = query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations'),
+                where('paymentId', '==', p.id)
+            );
+            const allocSnap = await getDocs(allocQuery);
+
+            const batch = writeBatch(db);
+
+            for (const allocDoc of allocSnap.docs) {
+                const alloc = allocDoc.data();
+                // Reverse amountPaid on each affected sales order
+                const orderRef = getTenantDoc(db, tenantId, 'salesOrders', alloc.orderId);
+                const orderSnap = await getDoc(orderRef);
+                if (orderSnap.exists()) {
+                    const od = orderSnap.data();
+                    const gt = Number(od.grandTotal ?? od.netAmount ?? od.totalAmount ?? 0);
+                    const np = Math.max(0, (Number(od.amountPaid) || 0) - alloc.allocatedAmount);
+                    const ns = np <= 0 ? 'Pending' : (np >= gt ? 'Paid' : 'Partial');
+                    batch.update(orderRef, { amountPaid: np, paymentStatus: ns, linkedPaymentIds: arrayRemove(p.id) });
+                }
+                batch.delete(allocDoc.ref);
+            }
+
+            // Delete the payment doc
+            batch.delete(getTenantDoc(db, tenantId, 'retailers', id, 'payments', p.id));
+
+            await batch.commit();
+
+            // Adjust retailer-level totals for the payment amount
+            await applyPaymentDelta(-(Number(p.amount) || 0), undefined);
+
+            setDeletePaymentTarget(null);
+        } catch (e) {
+            console.error('Error deleting linked payment:', e);
+            alert(t('worklist_details.update_error'));
+        } finally {
+            setDeletingLinkedPayment(false);
         }
     };
 
@@ -1262,9 +1405,14 @@ export default function WorklistDetailsPage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
                             <div>
                                 <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Payments &amp; Credits ({payments.length})</h3>
-                                <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-                                    Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
-                                </span>
+                                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                                        Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                                        Total available: <b style={{ color: '#f59e0b' }}>₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()}</b>
+                                    </span>
+                                </div>
                             </div>
                             {!isSales && (
                                 <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
@@ -1289,7 +1437,7 @@ export default function WorklistDetailsPage() {
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Method</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notes</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'center', whiteSpace: 'nowrap' }}>Linked Orders</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Status</th>
                                             {!isSales && <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}></th>}
                                         </tr>
                                     </thead>
@@ -1300,6 +1448,9 @@ export default function WorklistDetailsPage() {
                                                 : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'));
                                             const paymentIdDisplay = p.paymentId || `#${p.id.slice(-6).toUpperCase()}`;
                                             const linkedCount = p.linkedOrderIds?.length ?? (p.orderId ? 1 : 0);
+                                            const unallocated = Number(p.unallocatedAmount) || 0;
+                                            const isLinked = linkedCount > 0;
+                                            const isAvailable = unallocated > 0;
                                             return (
                                                 <tr key={p.id} style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
                                                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
@@ -1330,10 +1481,22 @@ export default function WorklistDetailsPage() {
                                                             </a>
                                                         )}
                                                     </td>
-                                                    <td style={{ padding: '0.7rem 0.75rem', textAlign: 'center' }}>
-                                                        {linkedCount > 0 ? (
-                                                            <span style={{ background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600 }}>{linkedCount}</span>
-                                                        ) : <span style={{ color: 'var(--text-tertiary)' }}>0</span>}
+                                                    <td style={{ padding: '0.7rem 0.75rem' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                                                            {isLinked && (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    🔗 Linked to {linkedCount} Order{linkedCount !== 1 ? 's' : ''}
+                                                                </span>
+                                                            )}
+                                                            {isAvailable && (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    🟡 ₹{unallocated.toLocaleString()} Available
+                                                                </span>
+                                                            )}
+                                                            {!isLinked && !isAvailable && (
+                                                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     {!isSales && (
                                                         <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
@@ -1359,7 +1522,13 @@ export default function WorklistDetailsPage() {
                                             <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
                                                 ₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
                                             </td>
-                                            <td colSpan={!isSales ? 4 : 3} />
+                                            <td colSpan={2} />
+                                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                    🟡 ₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()} available
+                                                </span>
+                                            </td>
+                                            {!isSales && <td />}
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -1463,7 +1632,9 @@ export default function WorklistDetailsPage() {
                             ) : salesOrders.map((so: any) => {
                                 const statusColor: Record<string, string> = { confirmed: '#10b981', draft: '#f59e0b', dispatched: '#38bdf8', cancelled: '#ef4444' };
                                 const color = statusColor[so.status?.toLowerCase()] || '#94a3b8';
-                                const date = so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
+                                const date = so.invoiceDate
+                                    ? new Date(so.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                                    : (so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—');
                                 // Use the same total-field fallback as everything else (GST invoices
                                 // store the total in netAmount/totalAmount, not grandTotal) so outstanding
                                 // can't wrongly compute to 0 and show a false "Fully Paid".
@@ -1629,6 +1800,14 @@ export default function WorklistDetailsPage() {
                                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
                                                 <Printer size={14} /> View / Print Invoice
                                             </button>
+                                            {!isSales && (so.linkedPaymentIds?.length ?? 0) > 0 && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => handleOpenUnlinkModal(so)}
+                                                    title="View and unlink payments from this order"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Link2 size={14} /> Unlink Payments ({so.linkedPaymentIds.length})
+                                                </button>
+                                            )}
                                             {userRole === 'admin' && (
                                                 <button className="btn" onClick={() => setSoToDelete(so)}
                                                     title="Delete this sales order"
@@ -1921,7 +2100,7 @@ export default function WorklistDetailsPage() {
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
                                                 {availablePayments.map(pmt => {
                                                     const alloc = Number(linkAllocations[pmt.id] ?? 0);
-                                                    const maxAlloc = Math.min(pmt.unallocatedAmount ?? 0, remaining);
+                                                    const maxAlloc = Math.min(getEffectiveUnallocated(pmt), remaining);
                                                     const pmtDate = pmt.paymentDate || (pmt.createdAt?.toDate ? pmt.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
                                                     return (
                                                         <div key={pmt.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.85rem', background: alloc > 0 ? 'hsla(142,69%,58%,0.07)' : 'var(--surface-raised)', borderRadius: '8px', border: `1px solid ${alloc > 0 ? '#10b98130' : 'var(--surface-border)'}`, flexWrap: 'wrap', transition: 'all 0.15s' }}>
@@ -1932,7 +2111,7 @@ export default function WorklistDetailsPage() {
                                                                     <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{pmtDate}</span>
                                                                 </div>
                                                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                                                                    Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{Number(pmt.unallocatedAmount || 0).toLocaleString()}</strong>
+                                                                    Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{getEffectiveUnallocated(pmt).toLocaleString()}</strong>
                                                                 </div>
                                                             </div>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
@@ -2065,6 +2244,94 @@ export default function WorklistDetailsPage() {
                                 <button type="button" className="btn" onClick={() => handleDeleteSalesOrder(soToDelete)} disabled={deletingSO}
                                     style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none', cursor: deletingSO ? 'not-allowed' : 'pointer' }}>
                                     {deletingSO ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />} Delete Sales Order
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Unlink Payments Modal */}
+                {unlinkOrder && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => { setUnlinkOrder(null); setUnlinkAllocations([]); }} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <Link2 size={22} color="var(--primary-light)" /> Linked Payments
+                                </h2>
+                                <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                    Order: <strong style={{ color: 'var(--primary-light)' }}>{unlinkOrder.orderNumber || unlinkOrder.invoiceNumber || unlinkOrder.id.slice(-8).toUpperCase()}</strong>
+                                </p>
+
+                                {loadingUnlinkAllocations ? (
+                                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                        <Loader2 className="animate-spin" size={24} style={{ margin: '0 auto', display: 'block' }} />
+                                    </div>
+                                ) : unlinkAllocations.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                        <p style={{ margin: 0 }}>No linked payment allocations found.</p>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                        {unlinkAllocations.map(alloc => {
+                                            const pmt = payments.find(p => p.id === alloc.paymentId);
+                                            const pmtDisplay = alloc.paymentIdDisplay || (pmt?.paymentId) || `#${alloc.paymentId?.slice(-6).toUpperCase()}`;
+                                            return (
+                                                <div key={alloc.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--surface-raised)', borderRadius: '10px', border: '1px solid var(--surface-border)', flexWrap: 'wrap' }}>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--primary-light)', fontWeight: 700, marginBottom: '0.2rem' }}>{pmtDisplay}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                            Allocated: <strong style={{ color: '#10b981' }}>₹{Number(alloc.allocatedAmount || 0).toLocaleString()}</strong>
+                                                            {pmt?.paymentMethod && <span style={{ marginLeft: '0.5rem', background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleUnlinkPayment(alloc)}
+                                                        disabled={unlinkingPmtId === alloc.id}
+                                                        className="btn"
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(38,92%,50%,0.1)', color: 'var(--warning)', border: '1px solid hsla(38,92%,50%,0.3)', flexShrink: 0 }}
+                                                    >
+                                                        {unlinkingPmtId === alloc.id ? <Loader2 className="animate-spin" size={12} /> : <X size={12} />}
+                                                        Unlink
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '0.25rem 0 0' }}>
+                                            Unlinking restores the payment's available balance and reduces the order's paid amount.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Payment with Linked Allocations — Confirmation Modal */}
+                {deletePaymentTarget && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(4px)' }}>
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                            <button onClick={() => !deletingLinkedPayment && setDeletePaymentTarget(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                            <h2 style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger)', fontSize: '1.15rem' }}>
+                                <AlertTriangle size={22} /> Delete Payment?
+                            </h2>
+                            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+                                This payment (<strong style={{ color: 'var(--primary-light)' }}>{deletePaymentTarget.paymentId || `#${deletePaymentTarget.id.slice(-6).toUpperCase()}`}</strong> — <strong style={{ color: '#10b981' }}>₹{Number(deletePaymentTarget.amount || 0).toLocaleString()}</strong>) is linked with <strong>{deletePaymentTarget.linkedOrderIds?.length}</strong> sales order{(deletePaymentTarget.linkedOrderIds?.length ?? 0) !== 1 ? 's' : ''}.
+                                <br /><br />
+                                Deleting it will first unlink all allocations and then permanently delete the payment.
+                            </p>
+                            <ul style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', margin: '0 0 1.25rem', paddingLeft: '1.25rem', lineHeight: 1.7 }}>
+                                <li>All linked payment allocations removed</li>
+                                <li>Affected order balances recalculated</li>
+                                <li>Retailer totals adjusted</li>
+                            </ul>
+                            <p style={{ color: 'var(--danger)', fontSize: '0.82rem', fontWeight: 600, marginBottom: '1.25rem' }}>This action cannot be undone.</p>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button type="button" className="btn btn-secondary" onClick={() => setDeletePaymentTarget(null)} disabled={deletingLinkedPayment} style={{ flex: 1 }}>Cancel</button>
+                                <button type="button" className="btn" onClick={handleDeletePaymentConfirmed} disabled={deletingLinkedPayment}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none' }}>
+                                    {deletingLinkedPayment ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+                                    {deletingLinkedPayment ? 'Deleting…' : 'Delete Payment'}
                                 </button>
                             </div>
                         </div>
