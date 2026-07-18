@@ -70,8 +70,9 @@ interface AuthContextType {
     permissions: RolePermissions;
     loading: boolean;
     logout: () => Promise<void>;
-    // District-based access for sales role
+    // District-based and retailer-based access for sales role
     assignedDistricts: string[];
+    assignedRetailers: string[];
     // Module system
     enabledModules: string[];
     tenantPlan: string;
@@ -90,6 +91,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     logout: async () => { },
     assignedDistricts: [],
+    assignedRetailers: [],
     enabledModules: [],
     tenantPlan: 'free',
     modulesLoading: true,
@@ -110,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [permissions, setPermissions] = useState<RolePermissions>(defaultPermissions);
     const [loading, setLoading] = useState(true);
     const [assignedDistricts, setAssignedDistricts] = useState<string[]>([]);
+    const [assignedRetailers, setAssignedRetailers] = useState<string[]>([]);
     const [enabledModules, setEnabledModules] = useState<string[]>([]);
     const [tenantPlan, setTenantPlan] = useState<string>('free');
     const [modulesLoading, setModulesLoading] = useState(true);
@@ -158,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setTenantId(tId);
                     setLinkedId(lId);
                     setAssignedDistricts(userDoc.exists() ? (userDoc.data().assignedDistricts || []) : []);
+                    setAssignedRetailers(userDoc.exists() ? (userDoc.data().assignedRetailers || []) : []);
 
                     // Priority: Firestore name -> Auth displayName -> Email prefix
                     const resolvedName = userDoc.exists() 
@@ -260,6 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         setTenantData(null);
                     }
                     setAssignedDistricts([]);
+                    setAssignedRetailers([]);
                     setPermissions(defaultPermissions);
                 }
             } else {
@@ -268,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setTenantData(null);
                 setLinkedId(null);
                 setAssignedDistricts([]);
+                setAssignedRetailers([]);
                 setPermissions(defaultPermissions);
             }
             setCurrentUser(user);
@@ -298,6 +304,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         logout,
         assignedDistricts,
+        assignedRetailers,
         enabledModules,
         tenantPlan,
         modulesLoading,

@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil } from 'lucide-react';
-import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2 } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where } from 'firebase/firestore';
+import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, doc as fsDoc } from 'firebase/firestore';
+import { generatePaymentId } from '../utils/paymentIdGenerator';
+import { uploadPaymentProof } from '../utils/uploadPaymentProof';
+import PaymentAttachmentField from '../components/PaymentAttachmentField';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantDoc, getTenantCollection } from '../utils/tenantPath';
@@ -81,10 +84,19 @@ interface Note {
 /** A recorded payment / credit against this retailer (optionally tied to an invoice). */
 interface Payment {
     id: string;
+    paymentId?: string;
     amount: number;
+    paymentDate?: string;
+    paymentMethod?: string;
+    accountDetails?: { accountName?: string; transactionRef?: string };
     notes?: string;
     orderId?: string;
     orderNumber?: string;
+    linkedOrderIds?: string[];
+    unallocatedAmount?: number;
+    attachmentUrl?: string;
+    attachmentName?: string;
+    attachmentType?: string;
     createdAt?: any;
 }
 
@@ -111,6 +123,10 @@ export default function WorklistDetailsPage() {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
     const [paymentNotes, setPaymentNotes] = useState('');
+    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
+    const [paymentAccountName, setPaymentAccountName] = useState('');
+    const [paymentTransactionRef, setPaymentTransactionRef] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
     // Sales Order delete confirmation
@@ -133,6 +149,10 @@ export default function WorklistDetailsPage() {
     const [payOrder, setPayOrder] = useState<any | null>(null);
     const [payOrderAmount, setPayOrderAmount] = useState<number>(0);
     const [payOrderNote, setPayOrderNote] = useState('');
+    const [payOrderDate, setPayOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [payOrderMethod, setPayOrderMethod] = useState('Cash');
+    const [payOrderAccountName, setPayOrderAccountName] = useState('');
+    const [payOrderTransactionRef, setPayOrderTransactionRef] = useState('');
     const [isSavingOrderPayment, setIsSavingOrderPayment] = useState(false);
 
     // Edit an existing payment/credit entry
@@ -140,7 +160,21 @@ export default function WorklistDetailsPage() {
     const [editPayAmount, setEditPayAmount] = useState<number>(0);
     const [editPayNote, setEditPayNote] = useState('');
     const [editPayDate, setEditPayDate] = useState(''); // yyyy-mm-dd
+    const [editPayMethod, setEditPayMethod] = useState('Cash');
     const [savingEditPayment, setSavingEditPayment] = useState(false);
+
+    // Link payment to order state
+    const [linkPaymentOrder, setLinkPaymentOrder] = useState<any | null>(null);
+    const [linkAllocations, setLinkAllocations] = useState<Record<string, number>>({});
+    const [savingLinkPayment, setSavingLinkPayment] = useState(false);
+
+    // Proof attachment state for each payment modal
+    const [pmtProofFile, setPmtProofFile] = useState<File | null>(null);
+    const [pmtProofCleared, setPmtProofCleared] = useState(false);
+    const [orderPmtProofFile, setOrderPmtProofFile] = useState<File | null>(null);
+    const [orderPmtProofCleared, setOrderPmtProofCleared] = useState(false);
+    const [editProofFile, setEditProofFile] = useState<File | null>(null);
+    const [editProofCleared, setEditProofCleared] = useState(false);
 
     // Form States
     const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -527,33 +561,53 @@ export default function WorklistDetailsPage() {
 
     const handleRecordPayment = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!id || paymentAmount <= 0) return;
+        if (!id || !tenantId || paymentAmount <= 0) return;
         setIsRecordingPayment(true);
 
         try {
-            // Log the payment in a subcollection
-            await addDoc(getTenantCollection(db, tenantId!, 'retailers', id, 'payments'), {
+            const pmtId = await generatePaymentId(tenantId);
+            const accountDetails = { accountName: paymentAccountName.trim(), transactionRef: paymentTransactionRef.trim() };
+            const proofData: Record<string, string> = {};
+            if (pmtProofFile) {
+                const meta = await uploadPaymentProof(tenantId, pmtId, pmtProofFile);
+                proofData.attachmentUrl = meta.url;
+                proofData.attachmentName = meta.name;
+                proofData.attachmentType = meta.type;
+            }
+
+            await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
+                paymentId: pmtId,
                 amount: paymentAmount,
+                paymentDate,
+                paymentMethod,
+                accountDetails,
                 notes: paymentNotes,
-                createdAt: serverTimestamp()
+                linkedOrderIds: [],
+                unallocatedAmount: paymentAmount,
+                ...proofData,
+                createdAt: serverTimestamp(),
             });
 
-            // Update retailer totals
             const currentPaid = Number(retailer?.totalPaid || 0);
             const currentOutstanding = Number(retailer?.outstandingAmount || 0);
 
-            await updateDoc(getTenantDoc(db, tenantId!, 'retailers', id), {
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
                 totalPaid: currentPaid + paymentAmount,
-                outstandingAmount: Math.max(0, currentOutstanding - paymentAmount)
+                outstandingAmount: Math.max(0, currentOutstanding - paymentAmount),
             });
 
-            // Re-fetch retailer
-            const updatedSnap = await getDoc(getTenantDoc(db, tenantId!, 'retailers', id));
+            const updatedSnap = await getDoc(getTenantDoc(db, tenantId, 'retailers', id));
             setRetailer({ id: updatedSnap.id, ...updatedSnap.data() } as Retailer);
 
             setShowPaymentModal(false);
             setPaymentAmount(0);
             setPaymentNotes('');
+            setPaymentDate(new Date().toISOString().slice(0, 10));
+            setPaymentMethod('Cash');
+            setPaymentAccountName('');
+            setPaymentTransactionRef('');
+            setPmtProofFile(null);
+            setPmtProofCleared(false);
             alert(t('worklist_details.payment_success'));
         } catch (error) {
             console.error("Error recording payment:", error);
@@ -591,11 +645,26 @@ export default function WorklistDetailsPage() {
             });
 
             // 2. Log a ledger entry (the "credit entry") tied to this invoice
+            const pmtId = await generatePaymentId(tenantId);
+            const orderProofData: Record<string, string> = {};
+            if (orderPmtProofFile) {
+                const meta = await uploadPaymentProof(tenantId, pmtId, orderPmtProofFile);
+                orderProofData.attachmentUrl = meta.url;
+                orderProofData.attachmentName = meta.name;
+                orderProofData.attachmentType = meta.type;
+            }
             await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
+                paymentId: pmtId,
                 amount: applied,
+                paymentDate: payOrderDate,
+                paymentMethod: payOrderMethod,
+                accountDetails: { accountName: payOrderAccountName.trim(), transactionRef: payOrderTransactionRef.trim() },
+                notes: payOrderNote,
                 orderId: payOrder.id,
                 orderNumber: orderLabel,
-                notes: payOrderNote,
+                linkedOrderIds: [payOrder.id],
+                unallocatedAmount: 0,
+                ...orderProofData,
                 createdAt: serverTimestamp(),
             });
 
@@ -608,6 +677,12 @@ export default function WorklistDetailsPage() {
             setPayOrder(null);
             setPayOrderAmount(0);
             setPayOrderNote('');
+            setPayOrderDate(new Date().toISOString().slice(0, 10));
+            setPayOrderMethod('Cash');
+            setPayOrderAccountName('');
+            setPayOrderTransactionRef('');
+            setOrderPmtProofFile(null);
+            setOrderPmtProofCleared(false);
             alert(`₹${applied.toLocaleString()} recorded against ${orderLabel}` + (newStatus === 'Paid' ? ' — fully paid.' : ' — partially paid.'));
         } catch (error) {
             console.error("Error recording invoice payment:", error);
@@ -659,8 +734,15 @@ export default function WorklistDetailsPage() {
         setEditingPayment(p);
         setEditPayAmount(Number(p.amount) || 0);
         setEditPayNote(p.notes || '');
-        const d = p.createdAt?.toDate ? p.createdAt.toDate() : null;
-        setEditPayDate(d ? d.toISOString().slice(0, 10) : '');
+        setEditPayMethod(p.paymentMethod || 'Cash');
+        setEditProofFile(null);
+        setEditProofCleared(false);
+        if (p.paymentDate) {
+            setEditPayDate(p.paymentDate);
+        } else {
+            const d = p.createdAt?.toDate ? p.createdAt.toDate() : null;
+            setEditPayDate(d ? d.toISOString().slice(0, 10) : '');
+        }
     };
 
     const handleUpdatePayment = async (e: React.FormEvent) => {
@@ -673,11 +755,24 @@ export default function WorklistDetailsPage() {
             const delta = newAmount - (Number(editingPayment.amount) || 0);
             if (delta !== 0) await applyPaymentDelta(delta, editingPayment.orderId);
 
-            const update: Record<string, any> = { amount: newAmount, notes: editPayNote };
-            if (editPayDate) update.createdAt = new Date(editPayDate);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const update: Record<string, any> = { amount: newAmount, notes: editPayNote, paymentMethod: editPayMethod };
+            if (editPayDate) { update.paymentDate = editPayDate; update.createdAt = new Date(editPayDate); }
+            if (editProofFile) {
+                const meta = await uploadPaymentProof(tenantId, editingPayment.id, editProofFile);
+                update.attachmentUrl = meta.url;
+                update.attachmentName = meta.name;
+                update.attachmentType = meta.type;
+            } else if (editProofCleared) {
+                update.attachmentUrl = null;
+                update.attachmentName = null;
+                update.attachmentType = null;
+            }
 
             await updateDoc(getTenantDoc(db, tenantId, 'retailers', id, 'payments', editingPayment.id), update);
             setEditingPayment(null);
+            setEditProofFile(null);
+            setEditProofCleared(false);
         } catch (error) {
             console.error("Error updating payment:", error);
             alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
@@ -686,6 +781,93 @@ export default function WorklistDetailsPage() {
         }
     };
 
+
+    // Payments with remaining unallocated balance — used for Link Payment modal
+    const availablePayments = payments.filter(p => (p.unallocatedAmount ?? 0) > 0);
+
+    // Derived financials — order-level, matches list page formula exactly.
+    // Source of truth: salesOrder.amountPaid (updated by every payment operation).
+    const computedTotalSales = salesOrders.reduce((s: number, so: any) =>
+        s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
+    const computedTotalPaid = salesOrders.reduce((s: number, so: any) =>
+        s + Number(so.amountPaid ?? 0), 0);
+    const computedOutstanding = Math.max(0, computedTotalSales - computedTotalPaid);
+
+    // Link an existing unallocated payment to a sales order
+    const handleLinkPayments = async () => {
+        if (!linkPaymentOrder || !tenantId || !id) return;
+
+        const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
+        const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
+        const remaining = Math.max(0, grandTotal - alreadyPaid);
+
+        const entries = Object.entries(linkAllocations)
+            .map(([pmtId, amt]) => ({ pmtId, amt: Math.min(Number(amt) || 0, availablePayments.find(p => p.id === pmtId)?.unallocatedAmount ?? 0) }))
+            .filter(({ amt }) => amt > 0);
+
+        if (entries.length === 0) return;
+
+        const totalToAllocate = entries.reduce((s, { amt }) => s + amt, 0);
+        if (totalToAllocate > remaining + 0.01) {
+            alert(`Total allocation (₹${totalToAllocate.toLocaleString()}) exceeds outstanding (₹${remaining.toLocaleString()}).`);
+            return;
+        }
+
+        setSavingLinkPayment(true);
+        try {
+            const batch = writeBatch(db);
+            const linkedPmtIds: string[] = [];
+
+            for (const { pmtId, amt } of entries) {
+                const pmt = payments.find(p => p.id === pmtId);
+                if (!pmt) continue;
+
+                // Allocation record
+                const allocColRef = getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations');
+                const allocRef = fsDoc(allocColRef);
+                batch.set(allocRef, {
+                    orderId: linkPaymentOrder.id,
+                    orderNumber: linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-6),
+                    paymentId: pmt.id,
+                    paymentIdDisplay: pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`,
+                    allocatedAmount: amt,
+                    allocatedAt: serverTimestamp(),
+                });
+
+                // Reduce payment's unallocated balance
+                const pmtRef = getTenantDoc(db, tenantId, 'retailers', id, 'payments', pmtId);
+                batch.update(pmtRef, {
+                    unallocatedAmount: Math.max(0, (pmt.unallocatedAmount ?? 0) - amt),
+                    linkedOrderIds: arrayUnion(linkPaymentOrder.id),
+                });
+
+                linkedPmtIds.push(pmtId);
+            }
+
+            // Update order amountPaid + status
+            const newPaid = alreadyPaid + totalToAllocate;
+            const newOutstanding = Math.max(0, grandTotal - newPaid);
+            const newStatus = newOutstanding <= 0 ? 'Paid' : newPaid > 0 ? 'Partial' : 'Pending';
+
+            const orderRef = getTenantDoc(db, tenantId, 'salesOrders', linkPaymentOrder.id);
+            batch.update(orderRef, {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+                linkedPaymentIds: arrayUnion(...linkedPmtIds),
+            });
+
+            await batch.commit();
+
+            setLinkPaymentOrder(null);
+            setLinkAllocations({});
+            alert(`₹${totalToAllocate.toLocaleString()} linked — ${newStatus === 'Paid' ? 'Order fully paid! ✅' : `₹${newOutstanding.toLocaleString()} still outstanding.`}`);
+        } catch (error) {
+            console.error('Error linking payment:', error);
+            alert('Error linking payment. Please try again.');
+        } finally {
+            setSavingLinkPayment(false);
+        }
+    };
 
     // Invoice helpers using new engine removed for legacy orders
 
@@ -787,107 +969,103 @@ export default function WorklistDetailsPage() {
                 </div>
             </div>
 
-            {/* Financial Overview Cards */}
+            {/* Financial Overview Cards — derived from live snapshots */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--secondary)' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>Total Sales</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>₹{Number(retailer.totalSales || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>₹{computedTotalSales.toLocaleString()}</div>
                 </div>
                 <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--primary)' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{t('worklist_details.amount_paid')}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary-light)' }}>₹{Number(retailer.totalPaid || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary-light)' }}>₹{computedTotalPaid.toLocaleString()}</div>
                 </div>
-                <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--danger)', background: Number(retailer.outstandingAmount || 0) > 0 ? 'hsla(0, 84%, 60%, 0.05)' : 'transparent' }}>
+                <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: `4px solid ${computedOutstanding > 0 ? 'var(--danger)' : '#10b981'}`, background: computedOutstanding > 0 ? 'hsla(0, 84%, 60%, 0.05)' : 'transparent' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{t('worklist_details.outstanding_dues')}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: Number(retailer.outstandingAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>₹{Number(retailer.outstandingAmount || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: computedOutstanding > 0 ? 'var(--danger)' : '#10b981' }}>
+                        ₹{computedOutstanding.toLocaleString()}
+                        {computedOutstanding <= 0 && computedTotalSales > 0 && <span style={{ fontSize: '0.9rem', marginLeft: '0.4rem' }}>✅</span>}
+                    </div>
                 </div>
             </div>
 
             {/* ── Partner Analytics ── */}
             {salesOrders.length > 0 && (() => {
-                const totalSales = Number(retailer.totalSales || 0);
-                const totalPaid  = Number(retailer.totalPaid  || 0);
-                const outstanding = Number(retailer.outstandingAmount || 0);
-                const paidPct = totalSales > 0 ? Math.round((totalPaid / totalSales) * 100) : 0;
+                const paidPct = computedTotalSales > 0
+                    ? Math.min(100, Math.round((computedTotalPaid / computedTotalSales) * 100))
+                    : 0;
+                const pctColor = paidPct >= 100 ? '#10b981' : paidPct >= 60 ? '#f59e0b' : '#ef4444';
 
-                const radialData = [
-                    { name: 'Paid', value: paidPct, fill: '#10b981' },
-                    { name: 'Outstanding', value: 100 - paidPct, fill: '#ef4444' },
-                ];
-
-                // Order trend: group salesOrders by month
+                // Order trend: group salesOrders by month (last 6)
                 const monthMap: Record<string, number> = {};
                 salesOrders.forEach((so: any) => {
                     const d = so.createdAt?.toDate ? so.createdAt.toDate() : null;
                     if (!d) return;
                     const key = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
-                    monthMap[key] = (monthMap[key] || 0) + Number(so.grandTotal || so.netAmount || 0);
+                    monthMap[key] = (monthMap[key] || 0) + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
                 });
                 const trendData = Object.entries(monthMap)
                     .map(([month, value]) => ({ month, value }))
-                    .slice(-6); // last 6 months
+                    .slice(-6);
 
                 return (
                     <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Partner Analytics</h3>
-                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <h3 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Partner Analytics</h3>
 
-                            {/* Radial payment circle */}
-                            <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 140 }}>
-                                <div style={{ position: 'relative', width: 130, height: 130, margin: '0 auto' }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%"
-                                            startAngle={90} endAngle={-270} data={radialData} barSize={14}>
-                                            <RadialBar dataKey="value" cornerRadius={8} />
-                                        </RadialBarChart>
-                                    </ResponsiveContainer>
-                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                        <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{paidPct}%</span>
-                                        <span style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>PAID</span>
-                                    </div>
-                                </div>
-                                <div style={{ marginTop: '0.5rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                                    <span style={{ color: '#10b981', fontWeight: 600 }}>₹{totalPaid.toLocaleString()}</span> paid · <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{outstanding.toLocaleString()}</span> due
-                                </div>
+                        {/* Payment completion progress bar */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Payment Completion</span>
+                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: pctColor }}>{paidPct}% Paid</span>
                             </div>
-
-                            {/* Vertical divider (hidden on mobile) */}
-                            <div style={{ width: '1px', background: 'var(--surface-border)', alignSelf: 'stretch', minHeight: 80 }} />
-
-                            {/* Bar trend chart */}
-                            <div style={{ flex: 1, minWidth: 200, minHeight: 120 }}>
-                                <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Value Trend</p>
-                                {trendData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height={110}>
-                                        <BarChart data={trendData} barSize={22}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.05)" />
-                                            <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-                                            <YAxis hide />
-                                            <Tooltip
-                                                contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Order Value']}
-                                            />
-                                            <Bar dataKey="value" fill="var(--primary-light)" radius={[4,4,0,0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Not enough data for trend.</p>}
+                            <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-raised)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                                <div style={{ height: '100%', width: `${paidPct}%`, minWidth: paidPct > 0 ? '4px' : '0', borderRadius: '999px', background: pctColor, transition: 'width 0.5s ease' }} />
                             </div>
-
-                            {/* Quick stats column */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: 120 }}>
-                                {[
-                                    { label: 'Total Orders', value: salesOrders.length },
-                                    { label: 'Avg Order', value: `₹${salesOrders.length > 0 ? Math.round(totalSales / salesOrders.length).toLocaleString() : 0}` },
-                                    { label: 'Paid Orders', value: salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length },
-                                    { label: 'Delivered', value: salesOrders.filter((s: any) => s.status === 'delivered').length },
-                                ].map(stat => (
-                                    <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.5rem 0.85rem' }}>
-                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</div>
-                                        <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{stat.value}</div>
-                                    </div>
-                                ))}
+                            <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.75rem' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                                    <span style={{ color: '#10b981', fontWeight: 600 }}>₹{computedTotalPaid.toLocaleString()} paid</span>
+                                </span>
+                                {computedOutstanding > 0
+                                    ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                                        <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{computedOutstanding.toLocaleString()} outstanding</span>
+                                      </span>
+                                    : <span style={{ color: '#10b981', fontWeight: 600 }}>Fully settled ✅</span>
+                                }
                             </div>
                         </div>
+
+                        {/* Stats grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '0.6rem', marginBottom: trendData.length > 0 ? '1.5rem' : 0 }}>
+                            {[
+                                { label: 'Total Orders', value: String(salesOrders.length), color: 'var(--text-primary)' },
+                                { label: 'Avg Order Value', value: `₹${salesOrders.length > 0 ? Math.round(computedTotalSales / salesOrders.length).toLocaleString() : 0}`, color: 'var(--secondary)' },
+                                { label: 'Paid Amount', value: `₹${computedTotalPaid.toLocaleString()}`, color: '#10b981' },
+                                { label: 'Outstanding', value: `₹${computedOutstanding.toLocaleString()}`, color: computedOutstanding > 0 ? '#ef4444' : 'var(--text-tertiary)' },
+                                { label: 'Paid Orders', value: String(salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length), color: '#10b981' },
+                            ].map(stat => (
+                                <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.55rem 0.75rem' }}>
+                                    <div style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>{stat.label}</div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: stat.color }}>{stat.value}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Order value trend bar chart */}
+                        {trendData.length > 0 && (
+                            <div>
+                                <p style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Order Value Trend</p>
+                                <ResponsiveContainer width="100%" height={90}>
+                                    <BarChart data={trendData} barSize={22}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.05)" />
+                                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+                                        <YAxis hide />
+                                        <Tooltip contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: 8, fontSize: '0.78rem' }} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Order Value']} />
+                                        <Bar dataKey="value" fill="var(--primary-light)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
                     </div>
                 );
             })()}
@@ -1090,46 +1268,101 @@ export default function WorklistDetailsPage() {
                             </div>
                             {!isSales && (
                                 <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                                    <PlusCircle size={16} /> Add Credit / Payment
+                                    <PlusCircle size={16} /> Add Payment
                                 </button>
                             )}
                         </div>
 
                         {payments.length === 0 ? (
-                            <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                 <Wallet size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
                                 <p style={{ margin: 0 }}>No payments recorded yet.</p>
-                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use “Add Credit / Payment”, or “Add Payment” on any invoice.</p>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use "Add Payment" above, or "Add Payment" on any invoice.</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {payments.map(p => {
-                                    const d = p.createdAt?.toDate ? p.createdAt.toDate() : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000) : null);
-                                    return (
-                                        <div key={p.id} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
-                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: '#10b981', whiteSpace: 'nowrap' }}>₹{Number(p.amount || 0).toLocaleString()}</div>
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                        {p.orderNumber && <span style={{ background: '#8b5cf622', color: '#8b5cf6', padding: '0.1rem 0.5rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>Invoice {p.orderNumber}</span>}
-                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{d ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
-                                                    </div>
-                                                    {p.notes && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.notes}</div>}
-                                                </div>
-                                            </div>
-                                            {!isSales && (
-                                                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-                                                    <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}>
-                                                        <Pencil size={13} /> Edit
-                                                    </button>
-                                                    <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Payment ID</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Date</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Method</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notes</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'center', whiteSpace: 'nowrap' }}>Linked Orders</th>
+                                            {!isSales && <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}></th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payments.map(p => {
+                                            const displayDate = p.paymentDate || (p.createdAt?.toDate
+                                                ? p.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'));
+                                            const paymentIdDisplay = p.paymentId || `#${p.id.slice(-6).toUpperCase()}`;
+                                            const linkedCount = p.linkedOrderIds?.length ?? (p.orderId ? 1 : 0);
+                                            return (
+                                                <tr key={p.id} style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 600 }}>{paymentIdDisplay}</span>
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                                                        {typeof displayDate === 'string' ? displayDate : '—'}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981', whiteSpace: 'nowrap' }}>
+                                                        ₹{Number(p.amount || 0).toLocaleString()}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                        {p.paymentMethod ? (
+                                                            <span style={{ background: '#10b98122', color: '#10b981', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                                {p.paymentMethod}
+                                                            </span>
+                                                        ) : '—'}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-tertiary)', maxWidth: '200px' }}>
+                                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {p.notes || (p.orderNumber ? `Invoice ${p.orderNumber}` : '—')}
+                                                        </div>
+                                                        {p.attachmentUrl && (
+                                                            <a href={p.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.2rem', textDecoration: 'none' }}>
+                                                                <Paperclip size={11} /> View proof
+                                                            </a>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', textAlign: 'center' }}>
+                                                        {linkedCount > 0 ? (
+                                                            <span style={{ background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600 }}>{linkedCount}</span>
+                                                        ) : <span style={{ color: 'var(--text-tertiary)' }}>0</span>}
+                                                    </td>
+                                                    {!isSales && (
+                                                        <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                            <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                                                <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>
+                                                                    <Pencil size={12} /> Edit
+                                                                </button>
+                                                                <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', padding: '0.3rem 0.55rem', fontSize: '0.75rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr style={{ borderTop: '2px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+                                            <td colSpan={2} style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                Total ({payments.length} payments)
+                                            </td>
+                                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
+                                                ₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
+                                            </td>
+                                            <td colSpan={!isSales ? 4 : 3} />
+                                        </tr>
+                                    </tfoot>
+                                </table>
                             </div>
                         )}
                     </div>
@@ -1283,6 +1516,11 @@ export default function WorklistDetailsPage() {
                                                 {fullyPaid && (
                                                     <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>✅ Fully Paid</div>
                                                 )}
+                                                {(so.linkedPaymentIds?.length ?? 0) > 0 && (
+                                                    <div style={{ fontSize: '0.7rem', color: '#8b5cf6', fontWeight: 600, marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                                                        <Link2 size={10} /> {so.linkedPaymentIds.length} linked
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         {/* Order status — interactive for editors, read-only for sales */}
@@ -1365,9 +1603,17 @@ export default function WorklistDetailsPage() {
                                             {!isSales && outstanding > 0 && (
                                                 <button className="btn btn-primary"
                                                     onClick={() => { setPayOrder(so); setPayOrderAmount(outstanding); setPayOrderNote(''); }}
-                                                    title="Record a payment (partial or full) against this invoice"
+                                                    title="Record a new payment against this invoice"
                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
                                                     <PlusCircle size={14} /> Add Payment
+                                                </button>
+                                            )}
+                                            {!isSales && outstanding > 0 && availablePayments.length > 0 && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => { setLinkPaymentOrder(so); setLinkAllocations({}); }}
+                                                    title="Link an existing unallocated payment to this invoice"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Link2 size={14} /> Link Payment
                                                 </button>
                                             )}
                                             {!isSales && (
@@ -1443,29 +1689,63 @@ export default function WorklistDetailsPage() {
                     </div>
                 )}
 
-                {/* Payment Modal */}
+                {/* Record Payment Modal */}
                 {showPaymentModal && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-                        <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '2rem', position: 'relative' }}>
-                            <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
-                            <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <TrendingUp size={24} color="var(--primary-light)" /> {t('worklist_details.record_payment')}
-                            </h2>
-                            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                                <div>
-                                    <label className="input-label">{t('worklist_details.amount_paid')} (₹)</label>
-                                    <input required type="number" className="input-field" value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} autoFocus />
-                                </div>
-                                <div>
-                                    <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
-                                    <textarea className="input-field" style={{ minHeight: '80px', paddingTop: '0.75rem' }} value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
-                                </div>
-                                <div style={{ marginTop: '1rem' }}>
-                                    <button type="submit" className="btn btn-primary" disabled={isRecordingPayment || paymentAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                        {isRecordingPayment ? <Loader2 className="animate-spin" size={18} /> : t('worklist_details.confirm_payment')}
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => !isRecordingPayment && setShowPaymentModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <TrendingUp size={22} color="var(--primary-light)" /> Record Payment
+                                </h2>
+                                <p style={{ margin: '0 0 1.5rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                    For: <strong style={{ color: 'var(--text-primary)' }}>{retailer.name}</strong>
+                                    {' · '}Outstanding: <strong style={{ color: '#ef4444' }}>₹{Number(retailer.outstandingAmount || 0).toLocaleString()}</strong>
+                                </p>
+                                <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label className="input-label">Amount (₹) *</label>
+                                            <input required type="number" min={1} step="0.01" className="input-field" value={paymentAmount || ''} onChange={e => setPaymentAmount(Number(e.target.value))} autoFocus />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Payment Date *</label>
+                                            <input type="date" className="input-field" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Payment Method</label>
+                                        <select className="input-field" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                                            {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    {['UPI', 'Bank Transfer', 'Other'].includes(paymentMethod) && (
+                                        <>
+                                            <div>
+                                                <label className="input-label">Account Name</label>
+                                                <input type="text" className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={paymentAccountName} onChange={e => setPaymentAccountName(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="input-label">Transaction Reference Number</label>
+                                                <input type="text" className="input-field" placeholder="UTR / Transaction ID" value={paymentTransactionRef} onChange={e => setPaymentTransactionRef(e.target.value)} />
+                                            </div>
+                                        </>
+                                    )}
+                                    <div>
+                                        <label className="input-label">Notes (optional)</label>
+                                        <textarea className="input-field" style={{ minHeight: '70px', paddingTop: '0.75rem', resize: 'vertical' }} value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder="Optional remarks" />
+                                    </div>
+                                    <PaymentAttachmentField
+                                        pendingFile={pmtProofFile}
+                                        attachmentCleared={pmtProofCleared}
+                                        onFileSelect={setPmtProofFile}
+                                        onClear={() => { setPmtProofFile(null); setPmtProofCleared(true); }}
+                                    />
+                                    <button type="submit" className="btn btn-primary" disabled={isRecordingPayment || paymentAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                        {isRecordingPayment ? <Loader2 className="animate-spin" size={18} /> : 'Record Payment'}
                                     </button>
-                                </div>
-                            </form>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1479,39 +1759,71 @@ export default function WorklistDetailsPage() {
                     const amt = Number(payOrderAmount) || 0;
                     const over = amt > remaining;
                     return (
-                        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-                            <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
-                                <button onClick={() => !isSavingOrderPayment && setPayOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
-                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
-                                    <PlusCircle size={22} color="var(--primary-light)" /> Add Payment
-                                </h2>
-                                <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {orderLabel}</p>
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                                <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                    <button onClick={() => !isSavingOrderPayment && setPayOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                        <PlusCircle size={22} color="var(--primary-light)" /> Add Payment
+                                    </h2>
+                                    <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {orderLabel}</p>
 
-                                {/* Order money summary */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
-                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
-                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
-                                    <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
-                                </div>
+                                    {/* Order money summary */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                                    </div>
 
-                                <form onSubmit={handleAddOrderPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div>
-                                        <label className="input-label">Payment Amount (₹)</label>
-                                        <input required type="number" min={1} max={remaining} step="0.01" className="input-field" value={payOrderAmount || ''} onChange={e => setPayOrderAmount(Number(e.target.value))} autoFocus />
-                                        <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                                            <button type="button" onClick={() => setPayOrderAmount(Math.round(remaining / 2))} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Half</button>
-                                            <button type="button" onClick={() => setPayOrderAmount(remaining)} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Full (₹{remaining.toLocaleString()})</button>
+                                    <form onSubmit={handleAddOrderPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                            <div>
+                                                <label className="input-label">Amount (₹) *</label>
+                                                <input required type="number" min={1} max={remaining} step="0.01" className="input-field" value={payOrderAmount || ''} onChange={e => setPayOrderAmount(Number(e.target.value))} autoFocus />
+                                                <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <button type="button" onClick={() => setPayOrderAmount(Math.round(remaining / 2))} style={{ fontSize: '0.7rem', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Half</button>
+                                                    <button type="button" onClick={() => setPayOrderAmount(remaining)} style={{ fontSize: '0.7rem', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Full</button>
+                                                </div>
+                                                {over && <div style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '0.4rem' }}>Max outstanding is ₹{remaining.toLocaleString()} — extra will be ignored.</div>}
+                                            </div>
+                                            <div>
+                                                <label className="input-label">Payment Date *</label>
+                                                <input type="date" className="input-field" value={payOrderDate} onChange={e => setPayOrderDate(e.target.value)} />
+                                            </div>
                                         </div>
-                                        {over && <div style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '0.4rem' }}>Only ₹{remaining.toLocaleString()} is outstanding — the extra will be ignored.</div>}
-                                    </div>
-                                    <div>
-                                        <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
-                                        <input type="text" className="input-field" value={payOrderNote} onChange={e => setPayOrderNote(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
-                                    </div>
-                                    <button type="submit" className="btn btn-primary" disabled={isSavingOrderPayment || amt <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                        {isSavingOrderPayment ? <Loader2 className="animate-spin" size={18} /> : `Record ₹${Math.min(amt, remaining).toLocaleString()}`}
-                                    </button>
-                                </form>
+                                        <div>
+                                            <label className="input-label">Payment Method</label>
+                                            <select className="input-field" value={payOrderMethod} onChange={e => setPayOrderMethod(e.target.value)}>
+                                                {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                            </select>
+                                        </div>
+                                        {['UPI', 'Bank Transfer', 'Other'].includes(payOrderMethod) && (
+                                            <>
+                                                <div>
+                                                    <label className="input-label">Account Name</label>
+                                                    <input type="text" className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={payOrderAccountName} onChange={e => setPayOrderAccountName(e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label className="input-label">Transaction Reference Number</label>
+                                                    <input type="text" className="input-field" placeholder="UTR / Transaction ID" value={payOrderTransactionRef} onChange={e => setPayOrderTransactionRef(e.target.value)} />
+                                                </div>
+                                            </>
+                                        )}
+                                        <div>
+                                            <label className="input-label">Notes (optional)</label>
+                                            <input type="text" className="input-field" value={payOrderNote} onChange={e => setPayOrderNote(e.target.value)} placeholder="Optional remarks" />
+                                        </div>
+                                        <PaymentAttachmentField
+                                            pendingFile={orderPmtProofFile}
+                                            attachmentCleared={orderPmtProofCleared}
+                                            onFileSelect={setOrderPmtProofFile}
+                                            onClear={() => { setOrderPmtProofFile(null); setOrderPmtProofCleared(true); }}
+                                        />
+                                        <button type="submit" className="btn btn-primary" disabled={isSavingOrderPayment || amt <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            {isSavingOrderPayment ? <Loader2 className="animate-spin" size={18} /> : `Record ₹${Math.min(amt, remaining).toLocaleString()}`}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     );
@@ -1519,33 +1831,159 @@ export default function WorklistDetailsPage() {
 
                 {/* Edit Payment Modal */}
                 {editingPayment && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-                        <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
-                            <button onClick={() => !savingEditPayment && setEditingPayment(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
-                            <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
-                                <Pencil size={20} color="var(--primary-light)" /> Edit Payment
-                            </h2>
-                            {editingPayment.orderNumber && <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {editingPayment.orderNumber} — totals adjust automatically</p>}
-                            <form onSubmit={handleUpdatePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div>
-                                    <label className="input-label">Amount (₹)</label>
-                                    <input required type="number" min={1} step="0.01" className="input-field" value={editPayAmount || ''} onChange={e => setEditPayAmount(Number(e.target.value))} autoFocus />
-                                </div>
-                                <div>
-                                    <label className="input-label">Date</label>
-                                    <input type="date" className="input-field" value={editPayDate} onChange={e => setEditPayDate(e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
-                                    <input type="text" className="input-field" value={editPayNote} onChange={e => setEditPayNote(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
-                                </div>
-                                <button type="submit" className="btn btn-primary" disabled={savingEditPayment || editPayAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                    {savingEditPayment ? <Loader2 className="animate-spin" size={18} /> : 'Save Changes'}
-                                </button>
-                            </form>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => !savingEditPayment && setEditingPayment(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <Pencil size={20} color="var(--primary-light)" /> Edit Payment
+                                </h2>
+                                {editingPayment.paymentId && <p style={{ margin: '0 0 0.2rem', fontSize: '0.78rem', color: 'var(--primary-light)', fontFamily: 'monospace', fontWeight: 600 }}>{editingPayment.paymentId}</p>}
+                                {editingPayment.orderNumber && <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {editingPayment.orderNumber} — totals adjust automatically</p>}
+                                {!editingPayment.orderNumber && <div style={{ marginBottom: '1.25rem' }} />}
+                                <form onSubmit={handleUpdatePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label className="input-label">Amount (₹) *</label>
+                                            <input required type="number" min={1} step="0.01" className="input-field" value={editPayAmount || ''} onChange={e => setEditPayAmount(Number(e.target.value))} autoFocus />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Payment Date</label>
+                                            <input type="date" className="input-field" value={editPayDate} onChange={e => setEditPayDate(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Payment Method</label>
+                                        <select className="input-field" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}>
+                                            {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Notes (optional)</label>
+                                        <input type="text" className="input-field" value={editPayNote} onChange={e => setEditPayNote(e.target.value)} placeholder="Optional remarks" />
+                                    </div>
+                                    <PaymentAttachmentField
+                                        pendingFile={editProofFile}
+                                        existingAttachment={editingPayment.attachmentUrl ? { url: editingPayment.attachmentUrl, name: editingPayment.attachmentName || '', type: editingPayment.attachmentType || '' } : null}
+                                        attachmentCleared={editProofCleared}
+                                        onFileSelect={setEditProofFile}
+                                        onClear={() => { setEditProofFile(null); setEditProofCleared(true); }}
+                                    />
+                                    <button type="submit" className="btn btn-primary" disabled={savingEditPayment || editPayAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                        {savingEditPayment ? <Loader2 className="animate-spin" size={18} /> : 'Save Changes'}
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 )}
+
+                {/* Link Payment Modal */}
+                {linkPaymentOrder && (() => {
+                    const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
+                    const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
+                    const remaining = Math.max(0, grandTotal - alreadyPaid);
+                    const orderLabel = linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-8).toUpperCase();
+                    const totalAllocated = Object.values(linkAllocations).reduce((s, v) => s + (Number(v) || 0), 0);
+                    const outstandingAfter = Math.max(0, remaining - totalAllocated);
+                    const over = totalAllocated > remaining + 0.01;
+                    return (
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                                <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                    <button onClick={() => !savingLinkPayment && setLinkPaymentOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+
+                                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                        <Link2 size={22} color="var(--primary-light)" /> Link Payment
+                                    </h2>
+                                    <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                        Order: <strong style={{ color: 'var(--primary-light)' }}>{orderLabel}</strong>
+                                    </p>
+
+                                    {/* Order summary */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Order Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Already Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                                    </div>
+
+                                    {availablePayments.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                            <Wallet size={32} color="var(--surface-border)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
+                                            <p style={{ margin: 0 }}>No unallocated payments available.</p>
+                                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem' }}>Record a payment first, then link it here.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div style={{ marginBottom: '0.75rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                Available payments — enter amount to allocate:
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                                                {availablePayments.map(pmt => {
+                                                    const alloc = Number(linkAllocations[pmt.id] ?? 0);
+                                                    const maxAlloc = Math.min(pmt.unallocatedAmount ?? 0, remaining);
+                                                    const pmtDate = pmt.paymentDate || (pmt.createdAt?.toDate ? pmt.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
+                                                    return (
+                                                        <div key={pmt.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.85rem', background: alloc > 0 ? 'hsla(142,69%,58%,0.07)' : 'var(--surface-raised)', borderRadius: '8px', border: `1px solid ${alloc > 0 ? '#10b98130' : 'var(--surface-border)'}`, flexWrap: 'wrap', transition: 'all 0.15s' }}>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 700 }}>{pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`}</span>
+                                                                    {pmt.paymentMethod && <span style={{ background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
+                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{pmtDate}</span>
+                                                                </div>
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                                                    Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{Number(pmt.unallocatedAmount || 0).toLocaleString()}</strong>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                                <input
+                                                                    type="number" min={0} max={maxAlloc} step="0.01"
+                                                                    value={alloc || ''}
+                                                                    placeholder="0.00"
+                                                                    onChange={e => setLinkAllocations(prev => ({ ...prev, [pmt.id]: Math.min(Number(e.target.value) || 0, maxAlloc) }))}
+                                                                    style={{ width: '110px', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', color: 'var(--text-primary)', fontSize: '0.85rem', textAlign: 'right' }}
+                                                                />
+                                                                <button type="button"
+                                                                    onClick={() => setLinkAllocations(prev => ({ ...prev, [pmt.id]: maxAlloc }))}
+                                                                    style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                                                                    Max
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Allocation summary */}
+                                            <div style={{ background: over ? 'hsla(0,84%,60%,0.08)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', border: `1px solid ${over ? 'hsla(0,84%,60%,0.3)' : 'var(--surface-border)'}` }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>Total linking:</span>
+                                                    <span style={{ fontWeight: 700, color: over ? '#ef4444' : '#10b981' }}>₹{totalAllocated.toLocaleString()}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>Outstanding after:</span>
+                                                    <span style={{ fontWeight: 700, color: outstandingAfter <= 0 ? '#10b981' : '#f59e0b' }}>
+                                                        ₹{outstandingAfter.toLocaleString()}{outstandingAfter <= 0 ? ' ✅' : ''}
+                                                    </span>
+                                                </div>
+                                                {over && <div style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '0.4rem' }}>Allocation exceeds outstanding — reduce amounts.</div>}
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                                <button type="button" className="btn btn-secondary" onClick={() => setLinkPaymentOrder(null)} disabled={savingLinkPayment} style={{ flex: 1 }}>Cancel</button>
+                                                <button type="button" className="btn btn-primary" onClick={handleLinkPayments}
+                                                    disabled={savingLinkPayment || totalAllocated <= 0 || over}
+                                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    {savingLinkPayment ? <Loader2 className="animate-spin" size={16} /> : <><Link2 size={15} /> Link Payments</>}
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Bulk Delete Confirmation Modal */}
                 {showBulkDeleteModal && (() => {

@@ -11,13 +11,15 @@ export interface SalesFilter {
 }
 
 /**
- * Resolves district-based access for the current user.
- * - Non-sales roles → allowedRetailerIds: null (no restriction, fetch all).
- * - Sales role with districts → resolves the matching retailer IDs from Firestore.
- * - Sales role with no districts assigned → empty Set (sees nothing).
+ * Resolves access for the current user.
+ * - Non-sales roles → allowedRetailerIds: null (unrestricted).
+ * - Sales with neither districts nor retailers assigned → empty Set (sees nothing).
+ * - Sales with districts only → resolves matching retailer IDs from Firestore.
+ * - Sales with retailers only → uses those IDs directly (no Firestore fetch).
+ * - Sales with both → union of district-resolved IDs and directly-assigned IDs.
  */
 export function useSalesFilter(): SalesFilter {
-  const { userRole, assignedDistricts, tenantId } = useAuth();
+  const { userRole, assignedDistricts, assignedRetailers, tenantId } = useAuth();
   const [allowedRetailerIds, setAllowedRetailerIds] = useState<Set<string> | null>(null);
   const [filterLoading, setFilterLoading] = useState(true);
 
@@ -28,35 +30,51 @@ export function useSalesFilter(): SalesFilter {
       return;
     }
 
-    if (!tenantId || assignedDistricts.length === 0) {
+    const hasDistricts = assignedDistricts.length > 0;
+    const hasRetailers = assignedRetailers.length > 0;
+
+    // No access configured at all
+    if (!hasDistricts && !hasRetailers) {
       setAllowedRetailerIds(new Set());
       setFilterLoading(false);
       return;
     }
 
+    // Only specific retailers — no Firestore fetch needed
+    if (!hasDistricts && hasRetailers) {
+      setAllowedRetailerIds(new Set(assignedRetailers));
+      setFilterLoading(false);
+      return;
+    }
+
+    // Need to resolve districts → retailer IDs
     const lowerDistricts = assignedDistricts.map(d => d.toLowerCase());
     setFilterLoading(true);
 
-    getDocs(getTenantCollection(db, tenantId, 'retailers'))
+    getDocs(getTenantCollection(db, tenantId!, 'retailers'))
       .then(snap => {
         const ids = new Set<string>(
           snap.docs
             .filter(d => lowerDistricts.includes((d.data().district || '').toLowerCase()))
             .map(d => d.id)
         );
+        // Union with directly-assigned retailer IDs
+        for (const id of assignedRetailers) ids.add(id);
         setAllowedRetailerIds(ids);
       })
-      .catch(() => setAllowedRetailerIds(new Set()))
+      .catch(() => {
+        // Fallback to just the explicitly assigned IDs
+        setAllowedRetailerIds(new Set(assignedRetailers));
+      })
       .finally(() => setFilterLoading(false));
 
-  // Use join() so the array content (not reference) drives re-runs
-  }, [userRole, tenantId, assignedDistricts.join('|')]);
+  }, [userRole, tenantId, assignedDistricts.join('|'), assignedRetailers.join('|')]);
 
   return { allowedRetailerIds, filterLoading };
 }
 
 /**
- * Fetches salesOrders documents restricted to the given retailer ID set.
+ * Fetches salesOrders restricted to the given retailer ID set.
  * Chunks the IDs to respect Firestore's 30-item `in` operator limit.
  * Returns an empty array immediately when the set is empty.
  */
