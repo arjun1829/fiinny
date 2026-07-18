@@ -4,7 +4,7 @@ import {
   ArrowLeft, Phone, Mail, MapPin, Pencil, CheckCircle2,
   X, Loader2, AlertCircle, IndianRupee, Package, ChevronDown, ChevronRight,
   MessageSquare, Plus, Truck, CreditCard, CalendarDays, Trash2, Search,
-  MessageCircle, Mic, Printer, CheckSquare, FileText, Square, Receipt,
+  MessageCircle, Mic, Printer, CheckSquare, FileText, Square, Receipt, Paperclip,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -49,13 +49,24 @@ interface PO {
 
 interface Payment {
   id: string;
+  paymentId?: string;
+  // legacy field names
   date?: Timestamp | string;
-  amount: number;
   mode?: string;
   paymentMode?: string;
   reference?: string;
   receiptNo?: string;
+  // new field names
+  paymentDate?: string;
+  paymentMethod?: string;
+  accountDetails?: { accountName?: string; transactionRef?: string };
   notes?: string;
+  linkedOrderIds?: string[];
+  unallocatedAmount?: number;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
+  amount: number;
   createdAt?: Timestamp;
 }
 
@@ -109,8 +120,9 @@ const sortVal = (v: any): number => {
 
 const poAmount = (po: PO): number => Number(po.totalAmount ?? po.amount ?? 0);
 const poDateVal = (po: PO) => po.poDate ?? po.date ?? po.createdAt;
-const pmtMode = (p: Payment) => p.mode || p.paymentMode || 'Payment';
-const pmtRef = (p: Payment) => p.reference || p.receiptNo || '';
+const pmtMode = (p: Payment) => p.paymentMethod || p.mode || p.paymentMode || 'Payment';
+const pmtRef = (p: Payment) => p.accountDetails?.transactionRef || p.reference || p.receiptNo || '';
+const pmtEffectiveDate = (p: Payment) => p.paymentDate ?? p.date ?? p.createdAt;
 
 const statusColor = (s?: string): string =>
   ({ received: '#10b981', pending: '#f59e0b', partial: '#38bdf8', cancelled: '#ef4444' } as Record<string, string>)[s ?? 'received'] || '#94a3b8';
@@ -386,7 +398,7 @@ export default function SupplierLedgerDetailPage() {
   const statementRows = useMemo(() => {
     const entries = [
       ...pos.map(po => ({ date: poDateVal(po), particulars: `PO ${po.poNumber ?? po.id.slice(0, 6)}${po.notes ? ' — ' + po.notes : ''}`, debit: poAmount(po), credit: 0 })),
-      ...payments.map(p => ({ date: (p.date ?? p.createdAt) as any, particulars: `Payment · ${pmtMode(p)}${pmtRef(p) ? ' ' + pmtRef(p) : ''}`, debit: 0, credit: Number(p.amount) || 0 })),
+      ...payments.map(p => ({ date: pmtEffectiveDate(p) as any, particulars: `Payment · ${pmtMode(p)}${pmtRef(p) ? ' ' + pmtRef(p) : ''}`, debit: 0, credit: Number(p.amount) || 0 })),
     ].sort((a, b) => sortVal(a.date) - sortVal(b.date));
     let bal = 0;
     return entries.map(e => { bal += e.debit - e.credit; return { ...e, balance: bal }; });
@@ -827,8 +839,13 @@ export default function SupplierLedgerDetailPage() {
                       {pmtRef(pmt) && <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>· {pmtRef(pmt)}</span>}
                     </div>
                     {pmt.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.15rem' }}>{pmt.notes}</div>}
+                    {pmt.attachmentUrl && (
+                      <a href={pmt.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem', textDecoration: 'none' }}>
+                        <Paperclip size={11} /> {pmt.attachmentName || 'View proof'}
+                      </a>
+                    )}
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem' }}>
-                      <CalendarDays size={12} /> {fmtDate(pmt.date as any)}
+                      <CalendarDays size={12} /> {fmtDate(pmtEffectiveDate(pmt) as any)}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

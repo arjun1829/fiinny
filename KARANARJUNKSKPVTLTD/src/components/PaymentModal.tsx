@@ -1,52 +1,65 @@
 import { useState, useEffect, useRef } from 'react';
-import {
-  IndianRupee, X, AlertCircle, Loader2, CheckCircle2,
-} from 'lucide-react';
+import { IndianRupee, X, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { addDoc, updateDoc, serverTimestamp, type Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { generatePaymentId } from '../utils/paymentIdGenerator';
+import { uploadPaymentProof } from '../utils/uploadPaymentProof';
+import PaymentAttachmentField from './PaymentAttachmentField';
 
-/** Minimal payment shape this modal needs to pre-fill in edit mode. */
 export interface PaymentForEdit {
   id: string;
+  paymentId?: string;
   amount?: number;
+  // legacy field names (read-only for backward compat)
   mode?: string;
   paymentMode?: string;
   reference?: string;
   receiptNo?: string;
-  notes?: string;
   date?: Timestamp | string;
+  // new field names
+  paymentMethod?: string;
+  paymentDate?: string;
+  transactionRef?: string;
+  accountName?: string;
+  accountDetails?: { accountName?: string; transactionRef?: string };
+  notes?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
   createdAt?: Timestamp;
 }
 
 interface PaymentModalProps {
   supplierId: string;
   supplierName: string;
-  /** Shown in the subtitle for context only — not part of the write. */
   outstandingBalance: number;
-  /** Pass a payment to edit, or null/undefined to record a new one. */
   editing?: PaymentForEdit | null;
   onClose: () => void;
-  /** Called after a successful save — parent runs its existing load(true) recompute. */
   onSaved: () => void;
 }
 
-const PAYMENT_MODES = ['Bank Transfer', 'NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'Credit Note', 'Sales Return', 'Other'];
+const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'];
+const ACCOUNT_DETAIL_METHODS = new Set(['UPI', 'Bank Transfer', 'Other']);
 
 const today = () => new Date().toISOString().slice(0, 10);
 const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-const pmtModeOf = (p: PaymentForEdit) => p.mode || p.paymentMode || 'Bank Transfer';
-const pmtRefOf = (p: PaymentForEdit) => p.reference || p.receiptNo || '';
-
-/** Millisecond value for a Timestamp|string date (mirrors the page's sortVal). */
-function dateMs(v?: Timestamp | string): number {
-  if (!v) return 0;
-  if (typeof v === 'string') { const t = new Date(v).getTime(); return isNaN(t) ? 0 : t; }
-  if (typeof (v as Timestamp).toMillis === 'function') return (v as Timestamp).toMillis();
-  return 0;
-}
+const pmtMethodOf = (p: PaymentForEdit) => p.paymentMethod || p.mode || p.paymentMode || 'Cash';
+const pmtDateOf = (p: PaymentForEdit): string => {
+  if (p.paymentDate) return p.paymentDate;
+  if (typeof p.date === 'string') return p.date;
+  if (p.date && typeof (p.date as Timestamp).toMillis === 'function') {
+    const ms = (p.date as Timestamp).toMillis();
+    if (!isNaN(ms)) return new Date(ms).toISOString().slice(0, 10);
+  }
+  return today();
+};
+const pmtRefOf = (p: PaymentForEdit) =>
+  p.transactionRef || p.accountDetails?.transactionRef || p.reference || p.receiptNo || '';
+const pmtAccountOf = (p: PaymentForEdit) =>
+  p.accountName || p.accountDetails?.accountName || '';
 
 const labelStyle: React.CSSProperties = {
   display: 'block', fontSize: '0.8rem', fontWeight: 600,
@@ -62,33 +75,35 @@ export default function PaymentModal({
   const [form, setForm] = useState(() => editing
     ? {
         amount: String(editing.amount ?? ''),
-        mode: pmtModeOf(editing),
-        reference: pmtRefOf(editing),
+        paymentMethod: pmtMethodOf(editing),
+        transactionRef: pmtRefOf(editing),
+        accountName: pmtAccountOf(editing),
         notes: editing.notes ?? '',
-        date: typeof editing.date === 'string'
-          ? editing.date
-          : (editing.date ? new Date(dateMs(editing.date)).toISOString().slice(0, 10) : today()),
+        paymentDate: pmtDateOf(editing),
       }
-    : { amount: '', mode: 'Bank Transfer', reference: '', notes: '', date: today() }
+    : { amount: '', paymentMethod: 'Cash', transactionRef: '', accountName: '', notes: '', paymentDate: today() }
   );
+
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofCleared, setProofCleared] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
-  // Autofocus first field. State is seeded once; parent remounts on open.
   useEffect(() => {
     const t = setTimeout(() => firstFieldRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, []);
 
-  // ESC to close
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [saving, onClose]);
+
+  const showAccountDetails = ACCOUNT_DETAIL_METHODS.has(form.paymentMethod);
 
   const handleSave = async () => {
     if (!tenantId) return;
@@ -96,16 +111,62 @@ export default function PaymentModal({
     if (isNaN(amt) || amt <= 0) { setError('Enter a valid amount'); return; }
     setSaving(true); setError(null);
     try {
+      const accountDetails = {
+        accountName: form.accountName.trim(),
+        transactionRef: form.transactionRef.trim(),
+      };
+
       if (editing) {
-        await updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', editing.id), {
-          amount: amt, mode: form.mode, reference: form.reference.trim(),
-          notes: form.notes.trim(), date: form.date, updatedAt: serverTimestamp(),
-        });
+        const updateData: Record<string, unknown> = {
+          amount: amt,
+          paymentMethod: form.paymentMethod,
+          paymentDate: form.paymentDate,
+          accountDetails,
+          notes: form.notes.trim(),
+          mode: form.paymentMethod,
+          date: form.paymentDate,
+          reference: form.transactionRef.trim(),
+          updatedAt: serverTimestamp(),
+        };
+        if (proofFile) {
+          const meta = await uploadPaymentProof(tenantId, editing.id, proofFile);
+          updateData.attachmentUrl = meta.url;
+          updateData.attachmentName = meta.name;
+          updateData.attachmentType = meta.type;
+        } else if (proofCleared) {
+          updateData.attachmentUrl = null;
+          updateData.attachmentName = null;
+          updateData.attachmentType = null;
+        }
+        await updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', editing.id), updateData);
       } else {
+        const paymentId = await generatePaymentId(tenantId);
+        const proofData: Record<string, string> = {};
+        if (proofFile) {
+          const meta = await uploadPaymentProof(tenantId, paymentId, proofFile);
+          proofData.attachmentUrl = meta.url;
+          proofData.attachmentName = meta.name;
+          proofData.attachmentType = meta.type;
+        }
         await addDoc(getTenantCollection(db, tenantId, 'supplierPayments'), {
-          supplierId, supplierName, amount: amt, mode: form.mode,
-          reference: form.reference.trim(), notes: form.notes.trim(), date: form.date,
-          createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
+          paymentId,
+          partnerId: supplierId,
+          supplierId,
+          supplierName,
+          amount: amt,
+          paymentMethod: form.paymentMethod,
+          paymentDate: form.paymentDate,
+          accountDetails,
+          notes: form.notes.trim(),
+          linkedOrderIds: [],
+          unallocatedAmount: amt,
+          ...proofData,
+          mode: form.paymentMethod,
+          date: form.paymentDate,
+          reference: form.transactionRef.trim(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdBy: currentUser?.email ?? '',
         });
       }
       onSaved();
@@ -115,14 +176,17 @@ export default function PaymentModal({
     setSaving(false);
   };
 
+  const existingAttachment = editing?.attachmentUrl
+    ? { url: editing.attachmentUrl, name: editing.attachmentName || '', type: editing.attachmentType || '' }
+    : null;
+
   return (
+    // Outer: fixed overlay, handles background + single scroll container
     <div
-      ref={overlayRef}
-      onMouseDown={e => { if (e.target === overlayRef.current && !saving) onClose(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '1rem', background: 'hsla(220, 30%, 4%, 0.72)',
+        overflowY: 'auto',
+        background: 'hsla(220, 30%, 4%, 0.72)',
         backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
         animation: 'fadeIn 0.18s ease-out',
       }}
@@ -130,68 +194,99 @@ export default function PaymentModal({
       aria-modal="true"
       aria-label={isEdit ? 'Edit Payment' : 'Record Payment'}
     >
+      {/* Centering wrapper — backdrop click closes the modal */}
       <div
-        className="glass-panel"
+        ref={overlayRef}
+        onMouseDown={e => { if (e.target === overlayRef.current && !saving) onClose(); }}
         style={{
-          width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto',
-          padding: '1.75rem', position: 'relative', borderRadius: '16px',
-          animation: 'scaleUp 0.22s ease-out',
+          minHeight: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '1.5rem 1rem',
         }}
       >
-        <button
-          onClick={() => !saving && onClose()}
-          className="btn-icon"
-          aria-label="Close"
-          style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}
+        {/* Panel — no maxHeight, no overflowY */}
+        <div
+          className="glass-panel"
+          style={{
+            width: '100%', maxWidth: '480px',
+            padding: '1.75rem', position: 'relative', borderRadius: '16px',
+            animation: 'scaleUp 0.22s ease-out',
+          }}
         >
-          <X size={20} />
-        </button>
-
-        <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <IndianRupee size={18} className="primary-gradient-text" /> {isEdit ? 'Edit Payment' : 'Record Payment'}
-        </h2>
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', marginBottom: '1.5rem' }}>
-          To: <strong>{supplierName}</strong> · Outstanding: <strong style={{ color: '#ff4d4f' }}>{inr(outstandingBalance)}</strong>
-        </div>
-
-        {error && (
-          <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <AlertCircle size={16} /> {error}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div>
-              <label style={labelStyle}>Amount (₹) *</label>
-              <input ref={firstFieldRef} className="input-field" type="number" min="1" placeholder="0.00" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={{ width: '100%', margin: 0 }} />
-            </div>
-            <div>
-              <label style={labelStyle}>Date *</label>
-              <input className="input-field" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', margin: 0 }} />
-            </div>
-          </div>
-          <div>
-            <label style={labelStyle}>Payment Mode</label>
-            <select className="input-field" value={form.mode} onChange={e => setForm(f => ({ ...f, mode: e.target.value }))} style={{ width: '100%', margin: 0 }}>
-              {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Reference / UTR / Receipt</label>
-            <input className="input-field" placeholder="Transaction ID, cheque or receipt no." value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} style={{ width: '100%', margin: 0 }} />
-          </div>
-          <div>
-            <label style={labelStyle}>Notes</label>
-            <textarea className="input-field" placeholder="Optional remarks" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', margin: 0, resize: 'vertical' }} />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.75rem' }}>
-          <button className="btn btn-secondary" onClick={() => !saving && onClose()} disabled={saving}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.amount} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> {isEdit ? 'Save Changes' : 'Record Payment'}</>}
+          <button
+            onClick={() => !saving && onClose()}
+            className="btn-icon"
+            aria-label="Close"
+            style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}
+          >
+            <X size={20} />
           </button>
+
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <IndianRupee size={18} className="primary-gradient-text" /> {isEdit ? 'Edit Payment' : 'Record Payment'}
+          </h2>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', marginBottom: '1.5rem' }}>
+            To: <strong>{supplierName}</strong> · Outstanding: <strong style={{ color: '#ff4d4f' }}>{inr(outstandingBalance)}</strong>
+          </div>
+
+          {error && (
+            <div style={{ padding: '0.75rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div>
+                <label style={labelStyle}>Amount (₹) *</label>
+                <input ref={firstFieldRef} className="input-field" type="number" min="1" placeholder="0.00" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+              </div>
+              <div>
+                <label style={labelStyle}>Payment Date *</label>
+                <input className="input-field" type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Payment Method</label>
+              <select className="input-field" value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={{ width: '100%', margin: 0 }}>
+                {PAYMENT_METHODS.map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+
+            {showAccountDetails && (
+              <>
+                <div>
+                  <label style={labelStyle}>Account Name</label>
+                  <input className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Transaction Reference Number</label>
+                  <input className="input-field" placeholder="UTR / Transaction ID" value={form.transactionRef} onChange={e => setForm(f => ({ ...f, transactionRef: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label style={labelStyle}>Notes</label>
+              <textarea className="input-field" placeholder="Optional remarks" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', margin: 0, resize: 'vertical' }} />
+            </div>
+
+            <PaymentAttachmentField
+              pendingFile={proofFile}
+              existingAttachment={existingAttachment}
+              attachmentCleared={proofCleared}
+              onFileSelect={setProofFile}
+              onClear={() => { setProofFile(null); setProofCleared(true); }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.75rem' }}>
+            <button className="btn btn-secondary" onClick={() => !saving && onClose()} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.amount} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> {isEdit ? 'Save Changes' : 'Record Payment'}</>}
+            </button>
+          </div>
         </div>
       </div>
     </div>
