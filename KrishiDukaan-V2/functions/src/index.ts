@@ -47,6 +47,34 @@ export const syncSellerProductToCanonical = onDocumentWritten(
 
     if (!ownerId && !ownerPhone) return;
 
+    // P8: Skip when only onboarding metadata changed (retailerId, retailerPhone,
+    // ownerId, updatedAt). Backfill writes exactly these fields without touching
+    // price/stock/discount, so cascading into availability + inventory is unnecessary
+    // and was the primary source of the ~2000-request burst during invite acceptance.
+    // Exception: let identity changes through so storePhone can be enriched below.
+    const before = event.data?.before?.exists
+      ? (event.data.before.data() as Record<string, unknown>)
+      : null;
+
+    if (before !== null) {
+      const priceChanged =
+        before.price !== d.price || before.sellingPrice !== d.sellingPrice;
+      const stockChanged =
+        before.stockQuantity !== d.stockQuantity ||
+        before.stock !== d.stock ||
+        before.isActive !== d.isActive;
+      const discountChanged =
+        before.discountEnabled !== d.discountEnabled ||
+        before.discountPct !== d.discountPct ||
+        before.effectiveDiscountPct !== d.effectiveDiscountPct;
+      const identityChanged =
+        before.retailerPhone !== d.retailerPhone ||
+        before.ownerPhone !== d.ownerPhone ||
+        before.ownerId !== d.ownerId ||
+        before.retailerId !== d.retailerId;
+      if (!priceChanged && !stockChanged && !discountChanged && !identityChanged) return;
+    }
+
     // Values to mirror
     const sellingPrice =
       typeof d.price === "number" ? d.price :
@@ -101,6 +129,10 @@ export const syncSellerProductToCanonical = onDocumentWritten(
           if (sellingPrice != null) patch.sellingPrice = sellingPrice;
           if (stockLabel != null) patch.stockLevel = stockLabel;
           patch.discountPct = effectivePct;
+          // P6: Enrich storePhone when it is missing in the availability entry.
+          // This replaces the per-product arrayRemove+arrayUnion loop that backfill
+          // used to run after the batch commit (which generated N extra HTTP requests).
+          if (!entry.storePhone && ownerPhone) patch.storePhone = ownerPhone;
           return patch;
         });
 
@@ -120,10 +152,7 @@ export const syncSellerProductToCanonical = onDocumentWritten(
 
     // ── 2. Update seller's inventory doc ─────────────────────────────────────
     // Only sync fields that actually changed to avoid unnecessary writes.
-    const before = event.data?.before?.exists
-      ? (event.data.before.data() as Record<string, unknown>)
-      : null;
-
+    // (before is already declared above for the P8 early-exit check)
     const priceChanged =
       before == null || before.price !== d.price ||
       before.sellingPrice !== d.sellingPrice;
@@ -815,6 +844,14 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
   async (event) => {
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d) return;
+
+    // Manual single-add flow sets this flag because product assignment is
+    // mandatory and product_assignment_pending_signup already serves as the
+    // onboarding message. Skip here to avoid duplicate WhatsApp messages.
+    if (d.skipOnboardingNotification === true) {
+      logger.info("[notifyRetailerOnNetworkAdd] skipping — skipOnboardingNotification=true", { docId: event.params.docId });
+      return;
+    }
 
     const retailerPhone = firstPhone(
       d.retailerPhone,
