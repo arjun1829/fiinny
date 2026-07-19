@@ -10,17 +10,29 @@ interface KhataEntry {
     id: string;
     customerName?: string;
     customerPhone?: string;
+    // POS bills (POSPage.handleCheckout) store the buyer as retailerName/phoneNumber
+    // and the settled amount as amountPaid. Older/other writers used
+    // customerName/customerPhone/paidAmount — both shapes are read below.
+    retailerName?: string;
+    phoneNumber?: string;
+    amountPaid?: number;
     grandTotal?: number;
     netAmount?: number;
     totalAmount?: number;
     amount?: number;
     paidAmount?: number;
     paymentStatus?: string;
+    paymentMethod?: string;
     createdAt?: any;
     invoiceNumber?: string;
+    orderNumber?: string;
     invoiceType?: string;
     items?: any[];
 }
+
+// Buyer identity + settled amount, tolerant of both field shapes.
+const entryName = (e: KhataEntry) => e.customerName || e.retailerName || '';
+const entryPhone = (e: KhataEntry) => e.customerPhone || e.phoneNumber || '';
 
 const fmtINR = (n: number) => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
@@ -63,7 +75,14 @@ export default function DigitalKhataPage() {
     // Compute per-entry outstanding
     const enriched = useMemo(() => entries.map(e => {
         const total = Number(e.grandTotal || e.netAmount || e.totalAmount || e.amount || 0);
-        const paid  = Number(e.paidAmount || 0);
+        // POS writes amountPaid; other writers used paidAmount. Reading only the
+        // latter made every settled cash bill look like unpaid udhari.
+        const rawPaid = e.amountPaid ?? e.paidAmount;
+        // If neither field is present, fall back to the explicit payment status so a
+        // settled bill is never counted as outstanding.
+        const paid = rawPaid !== undefined && rawPaid !== null
+            ? Number(rawPaid) || 0
+            : (String(e.paymentStatus || '').toLowerCase() === 'paid' ? total : 0);
         const outstanding = Math.max(0, total - paid);
         const status = outstanding <= 0 ? 'paid' : paid > 0 ? 'partial' : 'pending';
         const ts = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt || 0);
@@ -89,8 +108,8 @@ export default function DigitalKhataPage() {
         if (search) {
             const q = search.toLowerCase();
             list = list.filter(e =>
-                e.customerName?.toLowerCase().includes(q) ||
-                e.customerPhone?.includes(search) ||
+                entryName(e).toLowerCase().includes(q) ||
+                entryPhone(e).includes(search) ||
                 e.invoiceNumber?.toLowerCase().includes(q)
             );
         }
@@ -224,13 +243,13 @@ export default function DigitalKhataPage() {
                                                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--primary)22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                     <User size={14} color="var(--primary-light)" />
                                                 </div>
-                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{e.customerName || 'Walk-in'}</span>
+                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{entryName(e) || 'Walk-in'}</span>
                                             </div>
                                         </td>
                                         <td style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)' }}>
-                                            {e.customerPhone ? (
-                                                <a href={`tel:${e.customerPhone}`} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--primary-light)', textDecoration: 'none' }}>
-                                                    <Phone size={13} /> {e.customerPhone}
+                                            {entryPhone(e) ? (
+                                                <a href={`tel:${entryPhone(e)}`} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--primary-light)', textDecoration: 'none' }}>
+                                                    <Phone size={13} /> {entryPhone(e)}
                                                 </a>
                                             ) : '—'}
                                         </td>

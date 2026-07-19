@@ -42,6 +42,10 @@ interface B2BRow {
 
 const PAYMENT_MODES = ['Cash', '15 Days', '30 Days', '45 Days', 'Credit'];
 
+// Digits-only phone comparison — partner numbers are stored in inconsistent
+// shapes across imports and manual entry.
+const phoneKey = (v: unknown): string => String(v ?? '').replace(/\D/g, '');
+
 const DEFAULT_BANK_DETAILS = '';
 const EMPTY_ROW = (): B2BRow => ({
     productId: '',
@@ -173,6 +177,8 @@ export default function B2BInvoicePage() {
             buyerGstin: r.gstin || prev.buyerGstin,
             buyerState: r.state || prev.buyerState,
         }));
+        if (!searchParams.get('orderId')) setPreviousBalance(String(Number(r.outstandingAmount) || 0));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [prefilledRetailerId, retailers]);
 
     // ─── Load existing order by orderId query param ───
@@ -225,23 +231,35 @@ export default function B2BInvoicePage() {
         }).catch(e => console.error('Failed to load existing order:', e));
     }, [prefilledOrderId, tenantId]);
 
+    // Pull the partner's running dues (the same outstandingAmount the Worklist
+    // shows) into Previous Balance. Skipped while editing a saved invoice, whose
+    // own previousBalance is restored from the order and must not be overwritten.
+    const applyRetailerBalance = (r: any) => {
+        if (prefilledOrderId) return;
+        setPreviousBalance(String(Number(r?.outstandingAmount) || 0));
+    };
+
     // ─── Auto-fill buyer by phone ───
+    // Matches on digits only: numbers are stored inconsistently (numeric type,
+    // +91 prefix, spaces, dashes), so an exact string match missed most partners.
     const handleBuyerPhoneBlur = async () => {
-        if (!tenantId || !header.buyerContact || header.buyerContact.length < 5) return;
-        try {
-            const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', header.buyerContact), limit(1));
-            const snaps = await getDocs(q);
-            if (!snaps.empty) {
-                const d = snaps.docs[0].data();
-                setHeader(prev => ({
-                    ...prev,
-                    retailerId: snaps.docs[0].id,
-                    buyerName: d.name || prev.buyerName,
-                    buyerAddress: `${d.atPost || ''}, Tal. ${d.taluka || ''}, Dist. ${d.district || ''}`.trim(),
-                    buyerGstin: d.gstin || prev.buyerGstin,
-                }));
-            }
-        } catch (e) { console.error(e); }
+        if (!tenantId) return;
+        const key = phoneKey(header.buyerContact);
+        if (key.length < 6) return;
+        const match = retailers.find((r: any) => {
+            const stored = phoneKey(r.number ?? r.phone);
+            if (!stored) return false;
+            return stored === key || stored.slice(-10) === key.slice(-10);
+        });
+        if (!match) return;
+        setHeader(prev => ({
+            ...prev,
+            retailerId: match.id,
+            buyerName: match.name || prev.buyerName,
+            buyerAddress: `${match.atPost || ''}, Tal. ${match.taluka || ''}, Dist. ${match.district || ''}`.trim(),
+            buyerGstin: match.gstin || prev.buyerGstin,
+        }));
+        applyRetailerBalance(match);
     };
 
     // ─── Row calculations ───
@@ -645,6 +663,7 @@ ${styles}
                                                         buyerAddress: `${r.atPost || ''}, Tal. ${r.taluka || ''}, Dist. ${r.district || ''}`.trim(),
                                                         buyerGstin: r.gstin || prev.buyerGstin,
                                                     }));
+                                                    applyRetailerBalance(r);
                                                     setShowRetailerDropdown(false);
                                                 }}
                                             >
@@ -893,7 +912,7 @@ ${styles}
                     <div style={{ borderRight: '1px solid #222', padding: '8px', fontSize: '0.82rem' }}>
                         <div className="b2b-label" style={{ marginBottom: '6px' }}>Account Statement</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                            <span>Previous Balance</span>
+                            <span title="Pulled from the partner's outstanding dues; edit if needed">Previous Balance</span>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <input
                                     type="number"

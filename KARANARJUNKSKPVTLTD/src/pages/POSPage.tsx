@@ -75,8 +75,10 @@ interface PaymentSplit {
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Card', 'Wallet', 'Khata'];
 const DENOMINATIONS = [10, 20, 50, 100, 200, 500, 2000];
 
+// Buyer starts blank so the cashier types (or picks) a real farmer. Bills saved
+// without a name still fall back to "Walk-in Customer" at checkout.
 const defaultCustomer = (): CustomerState => ({
-    name: 'Walk-in Customer',
+    name: '',
     phone: '',
     address: '',
     pin: '',
@@ -122,6 +124,12 @@ type BillFormat = 'A4' | 'A5';
 // whenever a product had no selling price configured. MRP is the only fallback.
 const posSellingRate = (p: { sellingPrice?: number; maxRetailPrice?: number } | undefined): number =>
     Number(p?.sellingPrice) || Number(p?.maxRetailPrice) || 0;
+
+// Phone numbers reach Firestore in inconsistent shapes (numeric type, +91 prefix,
+// spaces, dashes) depending on whether the record came from an import, the B2B
+// onboarding form or POS itself. An exact string match on `number` therefore
+// missed most farmers, so compare digits-only.
+const phoneKey = (v: unknown): string => String(v ?? '').replace(/\D/g, '');
 
 // Number to Words (Indian system) — ported from B2BInvoicePage so the POS
 // GST invoice can print "Amount in Words" identically to the B2B invoice.
@@ -501,32 +509,45 @@ export default function POSPage() {
     const lastMatchedPhoneRef = useRef<string | null>(null);
 
     const handlePhoneLookup = async () => {
-        if (!tenantId || customer.phone.length < 5) return;
-        const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1));
-        const snaps = await getDocs(q);
-        if (!snaps.empty) {
-            const data = snaps.docs[0].data();
+        if (!tenantId) return;
+        const key = phoneKey(customer.phone);
+        // Only attempt once enough digits are in to identify someone.
+        if (key.length < 6) return;
+        // Match against the farmers already streamed in for the name dropdown —
+        // instant, and tolerant of how the number was stored.
+        const match = farmers.find(f => {
+            const stored = phoneKey(f.number ?? f.phone);
+            if (!stored) return false;
+            return stored === key || stored.slice(-10) === key.slice(-10);
+        });
+        if (match) {
             lastMatchedPhoneRef.current = customer.phone;
-            setCustomer({ ...customer, name: data.name ?? customer.name, address: data.atPost ?? '', pin: data.pin ?? '' });
-            setCustomerOutstanding(Number(data.outstandingAmount) || 0);
+            setCustomer({
+                ...customer,
+                name: match.name ?? customer.name,
+                address: match.atPost ?? customer.address ?? '',
+                pin: match.pin ?? customer.pin ?? '',
+            });
+            setCustomerOutstanding(Number(match.outstandingAmount) || 0);
         } else if (lastMatchedPhoneRef.current !== null && lastMatchedPhoneRef.current !== customer.phone) {
             // The number that produced this auto-fill no longer matches (edited/changed) —
             // revert to a clean walk-in state instead of leaving the stale match displayed.
             lastMatchedPhoneRef.current = null;
-            setCustomer({ ...customer, name: 'Walk-in Customer', address: '', pin: '' });
+            setCustomer({ ...customer, name: '', address: '', pin: '' });
             setCustomerOutstanding(0);
         }
     };
 
     // Real-time auto-lookup: mirrors handlePhoneLookup's onBlur trigger but fires
-    // while typing, debounced so we don't query on every keystroke. Same function,
-    // same tenant-scoped query, same 5-char minimum — no lookup logic duplicated.
+    // while typing, debounced so a half-typed number doesn't thrash. `farmers` is a
+    // dependency so the lookup retries once the farmer list finishes streaming in —
+    // otherwise a number typed before that arrived would never resolve.
     useEffect(() => {
-        if (!tenantId || customer.phone.length < 5) return;
+        if (!tenantId || phoneKey(customer.phone).length < 6) return;
         const timer = setTimeout(() => { handlePhoneLookup(); }, 300);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [customer.phone, tenantId]);
+    }, [customer.phone, tenantId, farmers]);
 
     const generateBillNumber = async (): Promise<string> => {
         if (!tenantId) return `POS-${Date.now().toString().slice(-6)}`;
@@ -710,6 +731,11 @@ export default function POSPage() {
                 // Clear the carried balance with the bill — re-entering the phone
                 // re-fetches the (now updated) outstanding for the next sale.
                 setCustomerOutstanding(0);
+                setRowMeta({});
+                // Advance the displayed bill number. generateBillNumber() already
+                // consumed this one from the counter, so without this the next bill
+                // kept showing the number just used until the page was reloaded.
+                setNextBillNumber(`KA-${(Number(billNumber.replace(/\D/g, '')) + 1).toString().padStart(4, '0')}`);
                 setIsProcessing(false);
             }, 500);
 
@@ -1138,8 +1164,10 @@ export default function POSPage() {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', alignItems: 'center' }}>
                                     <span className="pinv-label">{L('mode_of_payment')} :</span>
+                                    {/* Counter bills are settled either now (Cash — includes
+                                        UPI/card, all treated as paid) or on udhar (Credit). */}
                                     <select className="pinv-input" value={modeOfPayment} onChange={e => setModeOfPayment(e.target.value)}>
-                                        {['Cash', 'UPI', 'Card', 'Khata', 'Credit'].map(m => <option key={m} value={m}>{m}</option>)}
+                                        {['Cash', 'Credit'].map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
                                 </div>
                             </div>
