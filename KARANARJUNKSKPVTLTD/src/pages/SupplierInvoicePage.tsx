@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Save, Printer, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Printer, Loader2, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   getDoc, getDocs, addDoc, updateDoc, query, where, orderBy, runTransaction, serverTimestamp,
 } from 'firebase/firestore';
@@ -8,8 +8,10 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { syncSupplierTotals } from '../utils/supplierLedgerSync';
+import { postSupplierInvoiceToInventory, type PostedLine } from '../utils/inventoryPosting';
 import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { calcInvoiceGST, fmtINR, round2 } from '../utils/gstCalculator';
+import { AGRI_CATEGORIES } from '../utils/constants';
 import ProductAutocomplete, { type ProductLite } from '../components/ProductAutocomplete';
 
 // ── Amount-in-words (same logic as the B2B invoice) ──────────────────────────
@@ -38,12 +40,19 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Line = {
-  description: string; batchNo: string; mfgDate: string; expDate: string;
-  hsnCode: string; quantity: string; unit: string; rate: string; discount: string; gstPct: string;
+  description: string; mfgCompany: string; batchNo: string; mfgDate: string; expDate: string;
+  hsnCode: string; boxCount: string; piecesPerBox: string; quantity: string; unit: string;
+  rate: string; mrp: string; farmerRate: string; retailerRate: string; discount: string; gstPct: string;
+  // Remaining product-master fields, edited in the per-line details panel.
+  productNumber: string; type: string; unitSize: string; unitMeasure: string;
+  boxMrp: string; boxPtr: string; boxPurchase: string; boxSelling: string;
 };
 const emptyLine = (): Line => ({
-  description: '', batchNo: '', mfgDate: '', expDate: '',
-  hsnCode: '', quantity: '', unit: '', rate: '', discount: '', gstPct: '0',
+  description: '', mfgCompany: '', batchNo: '', mfgDate: '', expDate: '',
+  hsnCode: '', boxCount: '', piecesPerBox: '', quantity: '', unit: '',
+  rate: '', mrp: '', farmerRate: '', retailerRate: '', discount: '', gstPct: '0',
+  productNumber: '', type: '', unitSize: '', unitMeasure: 'pcs',
+  boxMrp: '', boxPtr: '', boxPurchase: '', boxSelling: '',
 });
 
 interface SupplierDoc {
@@ -58,8 +67,9 @@ interface SavedInvoiceData {
   deliveryNote?: string; buyerOrderNumber?: string; vehicleNumber?: string; termsOfDelivery?: string;
   dispatchedThrough?: string; destination?: string; linkedPurchaseOrderId?: string;
   taxMode?: string; notes?: string; declaration?: string; status?: string;
-  lines?: Array<{ description?: string; batchNo?: string; mfgDate?: string; expDate?: string; hsnCode?: string; quantity?: number; unit?: string; rate?: number; discount?: number; gstPct?: number }>;
+  lines?: Array<{ description?: string; mfgCompany?: string; batchNo?: string; mfgDate?: string; expDate?: string; hsnCode?: string; boxCount?: number; piecesPerBox?: number; quantity?: number; unit?: string; rate?: number; mrp?: number; farmerRate?: number; retailerRate?: number; discount?: number; gstPct?: number; productNumber?: string; type?: string; unitSize?: number; unitMeasure?: string; boxMrp?: number; boxPtr?: number; boxPurchase?: number; boxSelling?: number }>;
   charges?: { transportation?: number; loading?: number; unloading?: number; otherCharges?: number; discount?: number };
+  postedLines?: Array<{ productId: string; boxes: number; loose: number }>;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -77,12 +87,21 @@ export default function SupplierInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [branding, setBranding] = useState<{ businessName?: string; address?: string; gstin?: string; contact?: string; email?: string; signatureName?: string } | null>(null);
+  const [branding, setBranding] = useState<{ businessName?: string; address?: string; gstin?: string; contact?: string; email?: string; signatureName?: string; signatureUrl?: string } | null>(null);
   const [products, setProducts] = useState<ProductLite[]>([]);
+  // Full product docs keyed by id — used to prefill a line when an existing
+  // product is picked from the autocomplete. ProductAutocomplete itself only
+  // needs ProductLite, so we look the rich doc up by the selected id.
+  const [productsFull, setProductsFull] = useState<Record<string, any>>({});
+  // Which line rows have their product-details panel expanded.
+  const [expandedLines, setExpandedLines] = useState<Record<number, boolean>>({});
   const [purchaseOrders, setPurchaseOrders] = useState<{ id: string; label: string }[]>([]);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string>(invoiceIdParam);
 
   const autoGenIdRef = useRef<string>('');
+  // Stock already posted to inventory by a prior save — reversed before re-posting
+  // so editing an invoice never double-counts stock.
+  const prevPostedRef = useRef<PostedLine[]>([]);
 
   // ── Supplier (auto-filled, editable) ──
   const [supplier, setSupplier] = useState<SupplierDoc>({});
@@ -129,6 +148,7 @@ export default function SupplierInvoicePage() {
           const data = d.data() as { name?: string; baseUnit?: string; unit?: string };
           return { id: d.id, name: data.name ?? '', baseUnit: data.baseUnit, unit: data.unit };
         }));
+        setProductsFull(Object.fromEntries(prodSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }])));
 
         // Supplier auto-fill
         let supplierName = '';
@@ -213,11 +233,18 @@ export default function SupplierInvoicePage() {
       status: d.status ?? 'received',
     }));
     autoGenIdRef.current = d.internalPurchaseId ?? '';
+    prevPostedRef.current = Array.isArray(d.postedLines) ? d.postedLines : [];
     if (Array.isArray(d.lines) && d.lines.length) {
       setLines(d.lines.map(l => ({
-        description: l.description ?? '', batchNo: l.batchNo ?? '', mfgDate: l.mfgDate ?? '', expDate: l.expDate ?? '',
-        hsnCode: l.hsnCode ?? '', quantity: String(l.quantity ?? ''), unit: l.unit ?? '',
-        rate: String(l.rate ?? ''), discount: String(l.discount ?? ''), gstPct: String(l.gstPct ?? '0'),
+        description: l.description ?? '', mfgCompany: l.mfgCompany ?? '', batchNo: l.batchNo ?? '', mfgDate: l.mfgDate ?? '', expDate: l.expDate ?? '',
+        hsnCode: l.hsnCode ?? '', boxCount: String(l.boxCount ?? ''), piecesPerBox: String(l.piecesPerBox ?? ''),
+        quantity: String(l.quantity ?? ''), unit: l.unit ?? '',
+        rate: String(l.rate ?? ''), mrp: String(l.mrp ?? ''), farmerRate: String(l.farmerRate ?? ''), retailerRate: String(l.retailerRate ?? ''),
+        discount: String(l.discount ?? ''), gstPct: String(l.gstPct ?? '0'),
+        productNumber: l.productNumber ?? '', type: l.type ?? '',
+        unitSize: l.unitSize ? String(l.unitSize) : '', unitMeasure: l.unitMeasure ?? 'pcs',
+        boxMrp: l.boxMrp ? String(l.boxMrp) : '', boxPtr: l.boxPtr ? String(l.boxPtr) : '',
+        boxPurchase: l.boxPurchase ? String(l.boxPurchase) : '', boxSelling: l.boxSelling ? String(l.boxSelling) : '',
       })));
     }
     if (d.charges) {
@@ -234,12 +261,47 @@ export default function SupplierInvoicePage() {
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [key]: val } : l));
   const addLine = () => setLines(ls => [...ls, emptyLine()]);
   const removeLine = (i: number) => setLines(ls => ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls);
-  const selectProduct = (i: number, p: ProductLite) =>
-    setLines(ls => ls.map((l, idx) => idx === i ? { ...l, description: p.name, unit: l.unit || p.baseUnit || p.unit || '' } : l));
+  // Picking an existing product pulls its whole master record into the line —
+  // company, packing, GST, SKU and all eight prices — so a re-purchase only needs
+  // the batch/expiry/qty typed, and any rate the buyer changes here becomes the
+  // new source of truth on save. Values already typed on the line are kept.
+  const selectProduct = (i: number, p: ProductLite) => {
+    const full = productsFull[p.id] || {};
+    const s = (v: unknown) => (v === undefined || v === null || v === '' ? '' : String(v));
+    setLines(ls => ls.map((l, idx) => idx === i ? {
+      ...l,
+      description: p.name,
+      unit: l.unit || full.baseUnit || p.baseUnit || p.unit || '',
+      mfgCompany: l.mfgCompany || s(full.mfgCompany),
+      hsnCode: l.hsnCode || s(full.hsnCode),
+      piecesPerBox: l.piecesPerBox || s(full.boxCapacity),
+      gstPct: (l.gstPct && l.gstPct !== '0') ? l.gstPct : (s(full.gstPct) || '0'),
+      productNumber: l.productNumber || s(full.productNumber),
+      type: l.type || s(full.type),
+      unitSize: l.unitSize || s(full.unitSize),
+      unitMeasure: l.unitMeasure && l.unitMeasure !== 'pcs' ? l.unitMeasure : (s(full.unitMeasure) || 'pcs'),
+      rate: l.rate || s(full.purchasePrice),
+      mrp: l.mrp || s(full.maxRetailPrice),
+      farmerRate: l.farmerRate || s(full.sellingPrice),
+      retailerRate: l.retailerRate || s(full.retailerPrice),
+      boxPurchase: l.boxPurchase || s(full.boxPurchasePrice),
+      boxMrp: l.boxMrp || s(full.boxMaxRetailPrice),
+      boxSelling: l.boxSelling || s(full.boxSellingPrice),
+      boxPtr: l.boxPtr || s(full.boxRetailerPrice),
+    } : l));
+  };
+
+  // Effective units for a line: boxes×pcs-per-box when packing is given, else the
+  // flat quantity. Used for amount, totals and the stock posted to inventory.
+  const effQty = (l: Line): number => {
+    const boxes = parseFloat(l.boxCount) || 0;
+    const pcs = parseFloat(l.piecesPerBox) || 0;
+    return (boxes > 0 && pcs > 0) ? boxes * pcs : (parseFloat(l.quantity) || 0);
+  };
 
   // ── Computed line amount (qty × rate − discount) ──
   const lineAmount = (l: Line): number => {
-    const q = parseFloat(l.quantity) || 0;
+    const q = effQty(l);
     const r = parseFloat(l.rate) || 0;
     const disc = parseFloat(l.discount) || 0;
     return round2(Math.max(0, q * r - disc));
@@ -250,7 +312,7 @@ export default function SupplierInvoicePage() {
     const activeLines = lines.filter(l => l.description.trim() || l.rate);
     // taxable per line = qty*rate - discount (net rate basis for GST mode)
     const gstInput = activeLines.map(l => {
-      const q = parseFloat(l.quantity) || 0;
+      const q = effQty(l);
       const r = parseFloat(l.rate) || 0;
       const disc = parseFloat(l.discount) || 0;
       const netRate = q > 0 ? Math.max(0, (q * r - disc)) / q : 0; // discount-adjusted rate
@@ -300,10 +362,19 @@ export default function SupplierInvoicePage() {
     linkedPurchaseOrderId: meta.linkedPurchaseOrderId || null,
     taxMode: meta.taxMode,
     lines: lines.filter(l => l.description.trim() || l.rate).map(l => ({
-      description: l.description.trim(), batchNo: l.batchNo.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
-      hsnCode: l.hsnCode.trim(), quantity: parseFloat(l.quantity) || 0, unit: l.unit.trim(),
-      rate: parseFloat(l.rate) || 0, discount: parseFloat(l.discount) || 0,
+      description: l.description.trim(), mfgCompany: l.mfgCompany.trim(),
+      batchNo: l.batchNo.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
+      hsnCode: l.hsnCode.trim(),
+      boxCount: parseFloat(l.boxCount) || 0, piecesPerBox: parseFloat(l.piecesPerBox) || 0,
+      quantity: effQty(l), unit: l.unit.trim(),
+      rate: parseFloat(l.rate) || 0, mrp: parseFloat(l.mrp) || 0,
+      farmerRate: parseFloat(l.farmerRate) || 0, retailerRate: parseFloat(l.retailerRate) || 0,
+      discount: parseFloat(l.discount) || 0,
       gstPct: meta.taxMode === 'gst' ? (parseFloat(l.gstPct) || 0) : 0,
+      productNumber: l.productNumber.trim(), type: l.type.trim(),
+      unitSize: parseFloat(l.unitSize) || 0, unitMeasure: l.unitMeasure.trim(),
+      boxMrp: parseFloat(l.boxMrp) || 0, boxPtr: parseFloat(l.boxPtr) || 0,
+      boxPurchase: parseFloat(l.boxPurchase) || 0, boxSelling: parseFloat(l.boxSelling) || 0,
       amount: lineAmount(l),
     })),
     charges: {
@@ -359,6 +430,25 @@ export default function SupplierInvoicePage() {
         });
         setSavedInvoiceId(ref.id);
         id = ref.id;
+      }
+
+      // ── Post to inventory: create/update products + batch records, add stock.
+      // Idempotent — reverses the previously posted snapshot before re-applying,
+      // so editing an invoice reconciles stock instead of double-counting.
+      try {
+        const posted = await postSupplierInvoiceToInventory(
+          tenantId, id, payload.lines, payload.supplierName,
+          products.map(p => ({ id: p.id, name: p.name })),
+          prevPostedRef.current,
+        );
+        prevPostedRef.current = posted;
+        await updateDoc(getTenantDoc(db, tenantId, 'supplierInvoices', id), {
+          postedLines: posted, inventoryPostedAt: serverTimestamp(),
+        });
+      } catch (invErr) {
+        // The invoice itself saved; surface an inventory-sync warning but don't fail the save.
+        console.error('Inventory posting failed (invoice saved):', invErr);
+        setError('Invoice saved, but updating inventory stock failed. Re-save to retry.');
       }
       // Keep the Supplier Ledger list's cached totals in sync — the ledger list
       // reads suppliers/{id}.totalInvoiced/totalPaid/outstandingBalance directly
@@ -457,7 +547,7 @@ ${styles}
   if (loading) return <div style={{ textAlign: 'center', padding: '4rem' }}><Loader2 className="animate-spin" style={{ margin: '0 auto' }} /></div>;
 
   const companyName = branding?.businessName || (tenantData as { businessName?: string } | null)?.businessName || 'Your Business Name';
-  const totalQty = lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0), 0);
+  const totalQty = lines.reduce((s, l) => s + effQty(l), 0);
 
   // small input style for the table
   const tInput = (val: string, onChange: (v: string) => void, ph?: string, type = 'text', width?: string): React.ReactElement => (
@@ -505,11 +595,11 @@ ${styles}
         {(() => {
           const activeLines = lines.filter(l => l.description.trim() || l.rate);
           const cols = meta.taxMode === 'gst'
-            ? ['10mm', 'auto', '20mm', '14mm', '14mm', '16mm', '12mm', '12mm', '16mm', '12mm', '12mm', '22mm']
-            : ['10mm', 'auto', '24mm', '16mm', '16mm', '18mm', '14mm', '14mm', '18mm', '14mm', '24mm'];
+            ? ['9mm', 'auto', '22mm', '18mm', '13mm', '13mm', '15mm', '11mm', '11mm', '15mm', '11mm', '11mm', '20mm']
+            : ['9mm', 'auto', '24mm', '20mm', '15mm', '15mm', '17mm', '13mm', '13mm', '17mm', '13mm', '22mm'];
           const headers = meta.taxMode === 'gst'
-            ? ['#', 'Description', 'Batch', 'Mfg', 'Expiry', 'HSN', 'Qty', 'Unit', 'Rate', 'Disc', 'GST%', 'Amount']
-            : ['#', 'Description', 'Batch', 'Mfg', 'Expiry', 'HSN', 'Qty', 'Unit', 'Rate', 'Disc', 'Amount'];
+            ? ['#', 'Description', 'Company', 'Batch', 'Mfg', 'Expiry', 'HSN', 'Qty', 'Unit', 'Rate', 'Disc', 'GST%', 'Amount']
+            : ['#', 'Description', 'Company', 'Batch', 'Mfg', 'Expiry', 'HSN', 'Qty', 'Unit', 'Rate', 'Disc', 'Amount'];
           const numCol = (h: string) => ['Qty', 'Rate', 'Disc', 'GST%', 'Amount'].includes(h);
           return (
             <div className="si-print-only">
@@ -553,12 +643,13 @@ ${styles}
                   {activeLines.map((l, i) => (
                     <tr key={i}>
                       <td className="num">{i + 1}</td>
-                      <td>{l.description}{l.batchNo ? '' : ''}</td>
+                      <td>{l.description}</td>
+                      <td>{l.mfgCompany}</td>
                       <td>{l.batchNo}</td>
                       <td>{l.mfgDate}</td>
                       <td>{l.expDate}</td>
                       <td>{l.hsnCode}</td>
-                      <td className="num">{l.quantity}</td>
+                      <td className="num">{effQty(l) || l.quantity}</td>
                       <td>{l.unit}</td>
                       <td className="num">{l.rate}</td>
                       <td className="num">{l.discount}</td>
@@ -587,7 +678,13 @@ ${styles}
               {meta.notes && <div className="si-print-section"><strong>Remark:</strong> {meta.notes}</div>}
               <div className="si-footer">
                 <div style={{ maxWidth: '55%' }}><strong>Declaration:</strong><br /><em>{meta.declaration}</em></div>
-                <div className="si-sign">for {companyName}<br /><br /><br />{branding?.signatureName || 'Authorised Signatory'}</div>
+                <div className="si-sign">
+                  for {companyName}
+                  {branding?.signatureUrl
+                    ? <><br /><img src={branding.signatureUrl} alt="" style={{ height: '44px', maxWidth: '160px', objectFit: 'contain' }} /><br /></>
+                    : <><br /><br /><br /></>}
+                  {branding?.signatureName || 'Authorised Signatory'}
+                </div>
               </div>
             </div>
           );
@@ -662,41 +759,56 @@ ${styles}
 
         {/* Product table (on-screen editor) */}
         <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
-          <table className="si-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: meta.taxMode === 'gst' ? '1080px' : '1000px', tableLayout: 'fixed' }}>
+          <table className="si-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: meta.taxMode === 'gst' ? '1320px' : '1260px', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '40px' }} />
-              <col style={{ width: '260px' }} />
-              <col style={{ width: '130px' }} />
+              <col style={{ width: '34px' }} />
+              <col style={{ width: '30px' }} />
+              <col style={{ width: '230px' }} />
+              <col style={{ width: '150px' }} />
               <col style={{ width: '110px' }} />
-              <col style={{ width: '110px' }} />
-              <col style={{ width: '90px' }} />
+              <col style={{ width: '95px' }} />
+              <col style={{ width: '95px' }} />
+              <col style={{ width: '60px' }} />
               <col style={{ width: '70px' }} />
+              <col style={{ width: '65px' }} />
+              <col style={{ width: '60px' }} />
+              <col style={{ width: '85px' }} />
               <col style={{ width: '70px' }} />
-              <col style={{ width: '90px' }} />
-              <col style={{ width: '80px' }} />
-              {meta.taxMode === 'gst' && <col style={{ width: '70px' }} />}
-              <col style={{ width: '110px' }} />
-              <col style={{ width: '40px' }} />
+              {meta.taxMode === 'gst' && <col style={{ width: '60px' }} />}
+              <col style={{ width: '100px' }} />
+              <col style={{ width: '34px' }} />
             </colgroup>
             <thead>
               <tr>
-                {['#', 'Description', 'Batch', 'Mfg', 'Expiry', 'HSN', 'Qty', 'Unit', 'Rate', 'Disc', meta.taxMode === 'gst' ? 'GST%' : null, 'Amount', ''].filter(Boolean).map((h, i) => (
-                  <th key={i} style={{ ...cell, background: 'var(--surface-raised)', fontWeight: 700, fontSize: '0.75rem', whiteSpace: 'nowrap', textAlign: 'center' }}>{h}</th>
+                {['#', '', 'Product Name', 'Company', 'Batch', 'Mfg', 'Expiry', 'Boxes', 'Pcs/Box', 'Qty', 'Unit', 'Purchase', 'Disc', meta.taxMode === 'gst' ? 'GST%' : null, 'Amount', ''].filter(h => h !== null).map((h, i) => (
+                  <th key={i} style={{ ...cell, background: 'var(--surface-raised)', fontWeight: 700, fontSize: '0.72rem', whiteSpace: 'nowrap', textAlign: 'center' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {lines.map((l, i) => (
-                <tr key={i}>
+                <Fragment key={i}>
+                <tr>
                   <td style={{ ...cell, textAlign: 'center' }}>{i + 1}</td>
-                  <td style={cell}>
-                    <ProductAutocomplete value={l.description} onChange={v => setLine(i, 'description', v)} onSelect={p => selectProduct(i, p)} products={products} placeholder="Search product…" style={{ padding: '0.35rem 0.45rem', fontSize: '0.8rem' }} />
+                  <td style={{ ...cell, textAlign: 'center', padding: 0 }}>
+                    <button
+                      type="button"
+                      title="Product details, pricing & packing"
+                      onClick={() => setExpandedLines(e => ({ ...e, [i]: !e[i] }))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                      {expandedLines[i] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
                   </td>
+                  <td style={cell}>
+                    <ProductAutocomplete value={l.description} onChange={v => setLine(i, 'description', v)} onSelect={p => selectProduct(i, p)} products={products} placeholder="Product name…" style={{ padding: '0.35rem 0.45rem', fontSize: '0.8rem' }} />
+                  </td>
+                  <td style={cell}>{tInput(l.mfgCompany, v => setLine(i, 'mfgCompany', v), 'Company')}</td>
                   <td style={cell}>{tInput(l.batchNo, v => setLine(i, 'batchNo', v), 'Batch')}</td>
                   <td style={cell}>{tInput(l.mfgDate, v => setLine(i, 'mfgDate', v), '', 'month')}</td>
                   <td style={cell}>{tInput(l.expDate, v => setLine(i, 'expDate', v), '', 'month')}</td>
-                  <td style={cell}>{tInput(l.hsnCode, v => setLine(i, 'hsnCode', v), 'HSN')}</td>
-                  <td style={cell}>{tInput(l.quantity, v => setLine(i, 'quantity', v), '0', 'number')}</td>
+                  <td style={cell}>{tInput(l.boxCount, v => setLine(i, 'boxCount', v), '0', 'number')}</td>
+                  <td style={cell}>{tInput(l.piecesPerBox, v => setLine(i, 'piecesPerBox', v), '0', 'number')}</td>
+                  <td style={cell}>{tInput(l.quantity, v => setLine(i, 'quantity', v), String(effQty(l) || 0), 'number')}</td>
                   <td style={cell}>{tInput(l.unit, v => setLine(i, 'unit', v), 'Unit')}</td>
                   <td style={cell}>{tInput(l.rate, v => setLine(i, 'rate', v), '0', 'number')}</td>
                   <td style={cell}>{tInput(l.discount, v => setLine(i, 'discount', v), '0', 'number')}</td>
@@ -706,6 +818,78 @@ ${styles}
                     <button onClick={() => removeLine(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={14} /></button>
                   </td>
                 </tr>
+
+                {/* Full product master for this line — everything the Inventory
+                    "Add Product" form has. Saving the invoice writes these to the
+                    product, making the supplier ledger the source of truth. */}
+                {expandedLines[i] && (
+                  <tr>
+                    <td colSpan={meta.taxMode === 'gst' ? 16 : 15} style={{ ...cell, background: 'var(--surface-raised)', padding: '1rem 1.25rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
+
+                        {/* Product Basics */}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem', color: 'var(--primary-light)' }}>Product Basics</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                            <div><label style={labelStyle}>Product No. (SKU)</label>{tInput(l.productNumber, v => setLine(i, 'productNumber', v), 'KA-001')}</div>
+                            <div><label style={labelStyle}>HSN / SAC</label>{tInput(l.hsnCode, v => setLine(i, 'hsnCode', v), 'HSN')}</div>
+                            <div><label style={labelStyle}>GST %</label>{tInput(l.gstPct, v => setLine(i, 'gstPct', v), '0', 'number')}</div>
+                            <div>
+                              <label style={labelStyle}>Category</label>
+                              <select className="input-field" value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                                style={{ width: '100%', margin: 0, padding: '0.3rem 0.4rem', fontSize: '0.8rem' }}>
+                                <option value="">— Select —</option>
+                                {AGRI_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div><label style={labelStyle}>Pieces / Box</label>{tInput(l.piecesPerBox, v => setLine(i, 'piecesPerBox', v), '1', 'number')}</div>
+                            <div>
+                              <label style={labelStyle}>Base Unit</label>
+                              <select className="input-field" value={l.unit} onChange={e => setLine(i, 'unit', e.target.value)}
+                                style={{ width: '100%', margin: 0, padding: '0.3rem 0.4rem', fontSize: '0.8rem' }}>
+                                {['pcs', 'ltr', 'kg', 'g', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                            <div><label style={labelStyle}>Unit Size (qty/pc)</label>{tInput(l.unitSize, v => setLine(i, 'unitSize', v), '1', 'number')}</div>
+                            <div>
+                              <label style={labelStyle}>Unit Measure</label>
+                              <select className="input-field" value={l.unitMeasure} onChange={e => setLine(i, 'unitMeasure', e.target.value)}
+                                style={{ width: '100%', margin: 0, padding: '0.3rem 0.4rem', fontSize: '0.8rem' }}>
+                                {['pcs', 'ltr', 'kg', 'g', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Piece-Level Pricing */}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem', color: 'var(--primary-light)' }}>Piece-Level Pricing</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                            <div><label style={labelStyle}>MRP (printed on pack)</label>{tInput(l.mrp, v => setLine(i, 'mrp', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>PTR (price to retailer)</label>{tInput(l.retailerRate, v => setLine(i, 'retailerRate', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>Rate (your purchase cost)</label>{tInput(l.rate, v => setLine(i, 'rate', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>Selling price to farmer</label>{tInput(l.farmerRate, v => setLine(i, 'farmerRate', v), '0.00', 'number')}</div>
+                          </div>
+                        </div>
+
+                        {/* Box-Level Pricing */}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem', color: 'var(--secondary)' }}>Box-Level Pricing <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span></div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                            <div><label style={labelStyle}>Box MRP</label>{tInput(l.boxMrp, v => setLine(i, 'boxMrp', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>Box PTR</label>{tInput(l.boxPtr, v => setLine(i, 'boxPtr', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>Box Rate (purchase)</label>{tInput(l.boxPurchase, v => setLine(i, 'boxPurchase', v), '0.00', 'number')}</div>
+                            <div><label style={labelStyle}>Box Selling</label>{tInput(l.boxSelling, v => setLine(i, 'boxSelling', v), '0.00', 'number')}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '0.85rem', marginBottom: 0 }}>
+                        Saving this invoice writes these values to the product master. Fields left blank keep the product's existing value.
+                      </p>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -751,7 +935,13 @@ ${styles}
 
         <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
           <div style={{ maxWidth: '50%' }}><em>{meta.declaration}</em></div>
-          <div style={{ textAlign: 'right' }}>for {companyName}<br /><br /><br />{branding?.signatureName || 'Authorised Signatory'}</div>
+          <div style={{ textAlign: 'right' }}>
+            for {companyName}
+            {branding?.signatureUrl
+              ? <><br /><img src={branding.signatureUrl} alt="" style={{ height: '44px', maxWidth: '160px', objectFit: 'contain' }} /><br /></>
+              : <><br /><br /><br /></>}
+            {branding?.signatureName || 'Authorised Signatory'}
+          </div>
         </div>
 
         </div>{/* end on-screen editor (.no-print) */}

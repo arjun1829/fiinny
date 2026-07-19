@@ -173,6 +173,7 @@ export default function SupplierLedgerDetailPage() {
   // Filters
   const [poSearch, setPoSearch] = useState('');
   const [pmtSearch, setPmtSearch] = useState('');
+  const [invSearch, setInvSearch] = useState('');
 
   // Expanded PO rows
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -373,6 +374,25 @@ export default function SupplierLedgerDetailPage() {
       pmtMode(p).toLowerCase().includes(q) || pmtRef(p).toLowerCase().includes(q) || (p.notes ?? '').toLowerCase().includes(q)
     );
   }, [payments, pmtSearch]);
+
+  const filteredInvoices = useMemo(() => {
+    const q = invSearch.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter(inv =>
+      (inv.internalPurchaseId ?? '').toLowerCase().includes(q) ||
+      (inv.supplierInvoiceNumber ?? '').toLowerCase().includes(q) ||
+      (inv.invoiceDate ?? '').toLowerCase().includes(q) ||
+      (inv.status ?? '').toLowerCase().includes(q) ||
+      (inv.taxMode ?? '').toLowerCase().includes(q) ||
+      String(inv.netAmount ?? '').includes(q) ||
+      // Match on what was actually bought — product name, company or batch.
+      (Array.isArray((inv as any).lines) ? (inv as any).lines.some((l: any) =>
+        (l?.description ?? '').toLowerCase().includes(q) ||
+        (l?.mfgCompany ?? '').toLowerCase().includes(q) ||
+        (l?.batchNo ?? '').toLowerCase().includes(q)
+      ) : false)
+    );
+  }, [invoices, invSearch]);
 
   const analytics = useMemo(() => {
     const invoiced = pos.reduce((s, p) => s + poAmount(p), 0);
@@ -869,18 +889,26 @@ export default function SupplierLedgerDetailPage() {
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Supplier Invoices</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({invoices.length})</span>
             </div>
-            <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
-              <Plus size={13} /> New Invoice
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                <input className="input-field" placeholder="Filter invoices / products…" value={invSearch} onChange={e => setInvSearch(e.target.value)} style={{ paddingLeft: '1.9rem', height: '32px', fontSize: '0.8rem', width: '200px', margin: 0 }} />
+              </div>
+              <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
+                <Plus size={13} /> New Invoice
+              </button>
+            </div>
           </div>
 
           <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {invoices.length === 0 && (
+            {filteredInvoices.length === 0 && (
               <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', padding: '0.75rem 0' }}>
-                No supplier invoices yet. Click “New Invoice” to create one.
+                {invoices.length === 0
+                  ? 'No supplier invoices yet. Click “New Invoice” to create one.'
+                  : 'No invoices match your filter.'}
               </div>
             )}
-            {invoices.map(inv => (
+            {filteredInvoices.map(inv => (
               <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)', gap: '1rem', flexWrap: 'wrap', borderLeft: '3px solid #8b5cf6' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>

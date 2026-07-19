@@ -958,7 +958,10 @@ ${styles}
                     {/* Signature */}
                     <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                         <div style={{ fontWeight: 700 }}>For {sellerName}</div>
-                        <div style={{ borderTop: '1px solid #555', paddingTop: '4px', minWidth: '140px', textAlign: 'center', marginTop: '28px' }}>
+                        {branding?.signatureUrl && (
+                            <img src={branding.signatureUrl} alt="" style={{ height: '46px', maxWidth: '160px', objectFit: 'contain', marginTop: '4px' }} />
+                        )}
+                        <div style={{ borderTop: '1px solid #555', paddingTop: '4px', minWidth: '140px', textAlign: 'center', marginTop: branding?.signatureUrl ? '4px' : '28px' }}>
                             {branding?.signatureName || 'Authorised Signatory'}
                         </div>
                     </div>

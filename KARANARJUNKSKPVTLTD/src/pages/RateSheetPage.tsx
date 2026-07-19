@@ -42,7 +42,6 @@ export default function RateSheetPage() {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-    const [viewMode, setViewMode] = useState<'B2B' | 'B2C'>('B2B');
     const [searchTerm, setSearchTerm] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,7 +119,7 @@ export default function RateSheetPage() {
                 unitSize: product.unitSize || 1,
                 unitMeasure: product.unitMeasure || 'pcs',
                 gstPct: product.gstPct || 5,
-                category: product.category || viewMode,
+                category: product.category || 'B2B',
                 imageUrl: product.imageUrl || ''
             });
             setImagePreview(product.imageUrl || null);
@@ -145,7 +144,7 @@ export default function RateSheetPage() {
                 unitSize: 1,
                 unitMeasure: 'pcs',
                 gstPct: 5,
-                category: viewMode,
+                category: 'B2B',
                 imageUrl: ''
             });
             setImagePreview(null);
@@ -293,13 +292,13 @@ export default function RateSheetPage() {
                             unitMeasure,
                             gstPct,
                             margin,
-                            category: viewMode,
+                            category: 'B2B',
                             updatedAt: serverTimestamp()
                         };
 
                         const existing = products.find(p =>
-                            (productNumber && p.productNumber === productNumber && (p.category === viewMode || !p.category)) ||
-                            (p.name.toLowerCase() === name.toLowerCase() && (p.category === viewMode || !p.category))
+                            (productNumber && p.productNumber === productNumber) ||
+                            (p.name.toLowerCase() === name.toLowerCase())
                         );
 
                         if (existing) {
@@ -362,9 +361,9 @@ export default function RateSheetPage() {
         return `₹${Math.round(ratePerUnit)} / ${canonicalUnit}`;
     };
 
+    // One unified catalog — the old B2B/B2C split has been removed. The `category`
+    // field is still written for backward compatibility but no longer filters.
     const visibleProducts = products.filter(p => {
-        const inCatalog = viewMode === 'B2B' ? (!p.category || p.category === 'B2B') : p.category === 'B2C';
-        if (!inCatalog) return false;
         if (!searchTerm.trim()) return true;
         const q = searchTerm.toLowerCase();
         return p.name.toLowerCase().includes(q) || (p.productNumber || '').toLowerCase().includes(q);
@@ -385,7 +384,7 @@ export default function RateSheetPage() {
                     <h1 className="primary-gradient-text" style={{ fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
                         <ReceiptText size={32} /> {t('inventory.title')}
                     </h1>
-                    <p style={{ color: 'var(--text-secondary)' }}>Manage stock, dual B2B/B2C pricing, and bulk uploads.</p>
+                    <p style={{ color: 'var(--text-secondary)' }}>One catalog — stock, MRP, retailer &amp; farmer pricing, and bulk uploads. Rates set from a supplier invoice land here automatically.</p>
                 </div>
                 {userRole === 'admin' && (
                     <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -410,23 +409,8 @@ export default function RateSheetPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', gap: '1rem', padding: '0.5rem', background: 'var(--surface-raised)', borderRadius: '12px', width: 'fit-content' }}>
-                    <button
-                        onClick={() => setViewMode('B2B')}
-                        className={`btn ${viewMode === 'B2B' ? 'btn-primary' : ''}`}
-                        style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2B' ? 'transparent' : '', color: viewMode !== 'B2B' ? 'var(--text-secondary)' : '', border: 'none' }}
-                    >
-                        <Store size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
-                        B2B (Retailers)
-                    </button>
-                    <button
-                        onClick={() => setViewMode('B2C')}
-                        className={`btn ${viewMode === 'B2C' ? 'btn-primary' : ''}`}
-                        style={{ padding: '0.5rem 1.5rem', borderRadius: '8px', background: viewMode !== 'B2C' ? 'transparent' : '', color: viewMode !== 'B2C' ? 'var(--text-secondary)' : '', border: 'none' }}
-                    >
-                        <Users size={18} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'text-bottom' }} />
-                        B2C (Consumers)
-                    </button>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600 }}>
+                    {visibleProducts.length} {visibleProducts.length === 1 ? 'product' : 'products'}
                 </div>
                 <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '360px', minWidth: '200px' }}>
                     <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
@@ -453,18 +437,10 @@ export default function RateSheetPage() {
                             <th style={{ padding: '1rem', fontWeight: 600, width: '60px' }}>Sr.</th>
                             <th style={{ padding: '1rem', fontWeight: 600 }}>{t('inventory.table_name')}</th>
 
-                            {viewMode === 'B2B' ? (
-                                <>
-                                    <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>PTR (Trade)</th>
-                                    <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>Rate (Purch)</th>
-                                    <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>Vol. Rate</th>
-                                </>
-                            ) : (
-                                <>
-                                    <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>MRP (Cust)</th>
-                                    <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>Offer (Sell)</th>
-                                </>
-                            )}
+                            <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>MRP</th>
+                            <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>PTR (Retailer)</th>
+                            <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>Selling (Farmer)</th>
+                            <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>Rate (Purch)</th>
 
                             <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>{t('inventory.stock')}</th>
                             <th style={{ padding: '1rem', fontWeight: 600, textAlign: 'right' }}>{t('inventory.pcs_box')}</th>
@@ -502,40 +478,27 @@ export default function RateSheetPage() {
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                                             {product.productNumber && <span style={{ marginRight: '8px', background: 'var(--surface-raised)', padding: '2px 6px', borderRadius: '4px' }}>{product.productNumber}</span>}
                                             {product.type && <span style={{ marginRight: '8px', background: 'hsla(152,60%,40%,0.12)', color: 'var(--primary-light)', padding: '2px 6px', borderRadius: '4px' }}>{product.type}</span>}
-                                            {viewMode === 'B2B' && <span>{t('inventory.margin')}: {product.margin}</span>}
+                                            <span>{t('inventory.margin')}: {product.margin}</span>
                                         </div>
                                     </div>
                                 </td>
 
-                                {viewMode === 'B2B' ? (
-                                    <>
-                                        <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--secondary-light)' }}>
-                                            <div style={{ fontWeight: 600 }}>₹{product.retailerPrice}</div>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxRetailerPrice || (product.retailerPrice * (product.boxCapacity || 1))}</div>
-                                        </td>
-                                        <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--warning)' }}>
-                                            <div style={{ fontWeight: 600 }}>₹{product.purchasePrice || 0}</div>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxPurchasePrice || ((product.purchasePrice || 0) * (product.boxCapacity || 1))}</div>
-                                        </td>
-                                        <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                            <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary-light)' }}>{getVolumePricing(product) || '-'}</div>
-                                            {product.unitSize && product.unitMeasure && product.unitMeasure !== 'pcs' && (
-                                                <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>{product.unitSize} {product.unitMeasure} per pc</div>
-                                            )}
-                                        </td>
-                                    </>
-                                ) : (
-                                    <>
-                                        <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--text-secondary)' }}>
-                                            <div style={{ fontWeight: 600 }}>₹{product.maxRetailPrice}</div>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxMaxRetailPrice || (product.maxRetailPrice * (product.boxCapacity || 1))}</div>
-                                        </td>
-                                        <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--primary-light)' }}>
-                                            <div style={{ fontWeight: 600 }}>₹{product.sellingPrice || 0}</div>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxSellingPrice || (product as any).boxPrice || ((product.sellingPrice || 0) * (product.boxCapacity || 1))}</div>
-                                        </td>
-                                    </>
-                                )}
+                                <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--text-secondary)' }}>
+                                    <div style={{ fontWeight: 600 }}>₹{product.maxRetailPrice}</div>
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxMaxRetailPrice || (product.maxRetailPrice * (product.boxCapacity || 1))}</div>
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--secondary-light)' }}>
+                                    <div style={{ fontWeight: 600 }}>₹{product.retailerPrice}</div>
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxRetailerPrice || (product.retailerPrice * (product.boxCapacity || 1))}</div>
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--primary-light)' }}>
+                                    <div style={{ fontWeight: 600 }}>₹{product.sellingPrice || 0}</div>
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxSellingPrice || (product as any).boxPrice || ((product.sellingPrice || 0) * (product.boxCapacity || 1))}</div>
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'right', color: 'var(--warning)' }}>
+                                    <div style={{ fontWeight: 600 }}>₹{product.purchasePrice || 0}</div>
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Box: ₹{product.boxPurchasePrice || ((product.purchasePrice || 0) * (product.boxCapacity || 1))}</div>
+                                </td>
                                 <td style={{ padding: '1rem', textAlign: 'right', color: (product.quantity || (product as any).stock || 0) < 5 ? 'var(--danger)' : 'var(--text-primary)' }}>
                                     <div style={{ fontWeight: 600 }}>{product.quantity || (product as any).stock || 0} {t('inventory.box')}s</div>
                                     <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>+ {product.loosePieces || 0} {t('inventory.loose')}</div>
@@ -559,8 +522,8 @@ export default function RateSheetPage() {
                                 <td colSpan={8} style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                     <Package size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.3, display: 'block' }} />
                                     {searchTerm
-                                        ? <div>No products match "<strong>{searchTerm}</strong>" in {viewMode}.</div>
-                                        : <div>No {viewMode} products yet.</div>}
+                                        ? <div>No products match "<strong>{searchTerm}</strong>".</div>
+                                        : <div>No products yet.</div>}
                                     {userRole === 'admin' && (
                                         <button onClick={() => handleOpenModal()} className="btn btn-primary" style={{ marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                                             <Plus size={16} /> {t('inventory.add_product')}
@@ -636,13 +599,6 @@ export default function RateSheetPage() {
                                             <input type="number" min="0" className="input-field" value={formData.gstPct} onChange={e => setFormData({ ...formData, gstPct: Number(e.target.value) })} />
                                         </div>
                                         <div>
-                                            <label className="input-label">Catalog Type</label>
-                                            <select className="input-field" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as 'B2B' | 'B2C' })}>
-                                                <option value="B2B">B2B (Retailers)</option>
-                                                <option value="B2C">B2C (Consumers)</option>
-                                            </select>
-                                        </div>
-                                        <div>
                                             <label className="input-label">Category</label>
                                             <select className="input-field" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
                                                 <option value="">— Select category —</option>
@@ -682,88 +638,57 @@ export default function RateSheetPage() {
                                 </div>
                             </div>
 
-                            {/* Section 2: Pricing — layout depends on B2B vs B2C */}
-                            {formData.category === 'B2C' ? (
-                                /* B2C: Single piece pricing only — MRP printed on pack vs actual selling price */
-                                <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(152, 60%, 40%, 0.03)', border: '1px solid hsla(152, 60%, 40%, 0.15)' }}>
+                            {/* Section 2: Pricing — piece level + box level (one unified catalog) */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                                <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(152, 60%, 40%, 0.03)', border: '1px solid hsla(152, 60%, 40%, 0.1)' }}>
                                     <h3 style={{ fontSize: '0.95rem', color: 'var(--primary-light)', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Calculator size={16} /> Pricing (Consumer)</div>
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-tertiary)', background: 'var(--surface-raised)', padding: '2px 8px', borderRadius: '4px' }}>Piece-level only</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Calculator size={16} /> {t('inventory.piece_level')}</div>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', background: 'var(--surface-raised)', padding: '2px 8px', borderRadius: '4px' }}>Per piece</span>
                                     </h3>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                         <div>
                                             <label className="input-label">MRP (Printed on pack)</label>
-                                            <input type="number" step="0.01" className="input-field" value={formData.maxRetailPrice || ''} onChange={e => setFormData({ ...formData, maxRetailPrice: Number(e.target.value) })} placeholder="e.g. 150.00" />
+                                            <input type="number" step="0.01" className="input-field" value={formData.maxRetailPrice || ''} onChange={e => setFormData({ ...formData, maxRetailPrice: Number(e.target.value) })} placeholder="0.00" />
                                         </div>
                                         <div>
-                                            <label className="input-label">Selling Price (Actual)</label>
-                                            <input type="number" step="0.01" className="input-field" value={formData.sellingPrice || ''} onChange={e => setFormData({ ...formData, sellingPrice: Number(e.target.value) })} placeholder="e.g. 120.00" />
+                                            <label className="input-label">PTR (Trade price to retailer)</label>
+                                            <input type="number" step="0.01" className="input-field" value={formData.retailerPrice || ''} onChange={e => setFormData({ ...formData, retailerPrice: Number(e.target.value) })} placeholder="0.00" />
                                         </div>
                                         <div>
-                                            <label className="input-label">Purchase / Rate (Your cost)</label>
-                                            <input type="number" step="0.01" className="input-field" value={formData.purchasePrice || ''} onChange={e => setFormData({ ...formData, purchasePrice: Number(e.target.value) })} placeholder="e.g. 90.00" />
+                                            <label className="input-label">Rate (Your purchase cost)</label>
+                                            <input type="number" step="0.01" className="input-field" value={formData.purchasePrice || ''} onChange={e => setFormData({ ...formData, purchasePrice: Number(e.target.value) })} placeholder="0.00" />
                                         </div>
-                                        <div style={{ padding: '1rem', background: 'var(--surface-raised)', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Est. Margin</div>
-                                            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary-light)' }}>
-                                                {formData.maxRetailPrice > 0 ? `${Math.round(((formData.maxRetailPrice - formData.purchasePrice) / formData.maxRetailPrice) * 100)}%` : '—'}
-                                            </div>
+                                        <div>
+                                            <label className="input-label">Offer / Selling Price</label>
+                                            <input type="number" step="0.01" className="input-field" value={formData.sellingPrice || ''} onChange={e => setFormData({ ...formData, sellingPrice: Number(e.target.value) })} placeholder="0.00" />
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
-                                /* B2B: Piece level + Box level side by side */
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
-                                    <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(152, 60%, 40%, 0.03)', border: '1px solid hsla(152, 60%, 40%, 0.1)' }}>
-                                        <h3 style={{ fontSize: '0.95rem', color: 'var(--primary-light)', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Calculator size={16} /> {t('inventory.piece_level')}</div>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', background: 'var(--surface-raised)', padding: '2px 8px', borderRadius: '4px' }}>Per piece</span>
-                                        </h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                            <div>
-                                                <label className="input-label">MRP (Printed on pack)</label>
-                                                <input type="number" step="0.01" className="input-field" value={formData.maxRetailPrice || ''} onChange={e => setFormData({ ...formData, maxRetailPrice: Number(e.target.value) })} placeholder="0.00" />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">PTR (Trade price to retailer)</label>
-                                                <input type="number" step="0.01" className="input-field" value={formData.retailerPrice || ''} onChange={e => setFormData({ ...formData, retailerPrice: Number(e.target.value) })} placeholder="0.00" />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">Rate (Your purchase cost)</label>
-                                                <input type="number" step="0.01" className="input-field" value={formData.purchasePrice || ''} onChange={e => setFormData({ ...formData, purchasePrice: Number(e.target.value) })} placeholder="0.00" />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">Offer / Selling Price</label>
-                                                <input type="number" step="0.01" className="input-field" value={formData.sellingPrice || ''} onChange={e => setFormData({ ...formData, sellingPrice: Number(e.target.value) })} placeholder="0.00" />
-                                            </div>
+                                <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(45, 93%, 47%, 0.03)', border: '1px solid hsla(45, 93%, 47%, 0.1)' }}>
+                                    <h3 style={{ fontSize: '0.95rem', color: 'var(--secondary-light)', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingCart size={16} /> {t('inventory.box_level')}</div>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', background: 'var(--surface-raised)', padding: '2px 8px', borderRadius: '4px' }}>{formData.boxCapacity} {formData.baseUnit}/box</span>
+                                    </h3>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label className="input-label">Box MRP</label>
+                                            <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxMaxRetailPrice || ''} onChange={e => setFormData({ ...formData, boxMaxRetailPrice: Number(e.target.value) })} placeholder={String(formData.maxRetailPrice * formData.boxCapacity || '')} />
                                         </div>
-                                    </div>
-                                    <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(45, 93%, 47%, 0.03)', border: '1px solid hsla(45, 93%, 47%, 0.1)' }}>
-                                        <h3 style={{ fontSize: '0.95rem', color: 'var(--secondary-light)', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ShoppingCart size={16} /> {t('inventory.box_level')}</div>
-                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', background: 'var(--surface-raised)', padding: '2px 8px', borderRadius: '4px' }}>{formData.boxCapacity} {formData.baseUnit}/box</span>
-                                        </h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                            <div>
-                                                <label className="input-label">Box MRP</label>
-                                                <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxMaxRetailPrice || ''} onChange={e => setFormData({ ...formData, boxMaxRetailPrice: Number(e.target.value) })} placeholder={String(formData.maxRetailPrice * formData.boxCapacity || '')} />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">Box PTR (Trade)</label>
-                                                <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxRetailerPrice || ''} onChange={e => setFormData({ ...formData, boxRetailerPrice: Number(e.target.value) })} placeholder={String(formData.retailerPrice * formData.boxCapacity || '')} />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">Box Rate (Purchase)</label>
-                                                <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxPurchasePrice || ''} onChange={e => setFormData({ ...formData, boxPurchasePrice: Number(e.target.value) })} placeholder={String(formData.purchasePrice * formData.boxCapacity || '')} />
-                                            </div>
-                                            <div>
-                                                <label className="input-label">Box Offer / Selling</label>
-                                                <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxSellingPrice || ''} onChange={e => setFormData({ ...formData, boxSellingPrice: Number(e.target.value) })} placeholder={String(formData.sellingPrice * formData.boxCapacity || '')} />
-                                            </div>
+                                        <div>
+                                            <label className="input-label">Box PTR (Trade)</label>
+                                            <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxRetailerPrice || ''} onChange={e => setFormData({ ...formData, boxRetailerPrice: Number(e.target.value) })} placeholder={String(formData.retailerPrice * formData.boxCapacity || '')} />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Box Rate (Purchase)</label>
+                                            <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxPurchasePrice || ''} onChange={e => setFormData({ ...formData, boxPurchasePrice: Number(e.target.value) })} placeholder={String(formData.purchasePrice * formData.boxCapacity || '')} />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Box Offer / Selling</label>
+                                            <input type="number" step="0.01" className="input-field" style={{ borderColor: 'hsla(45, 93%, 47%, 0.2)' }} value={formData.boxSellingPrice || ''} onChange={e => setFormData({ ...formData, boxSellingPrice: Number(e.target.value) })} placeholder={String(formData.sellingPrice * formData.boxCapacity || '')} />
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
                             {/* Section 3: Stock Management */}
                             <div className="glass-panel" style={{ padding: '1.25rem', background: 'hsla(0, 0%, 100%, 0.02)', border: '1px solid var(--surface-border)' }}>
@@ -772,7 +697,7 @@ export default function RateSheetPage() {
                                 </h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '1rem', alignItems: 'flex-end' }}>
                                     <div>
-                                        <label className="input-label">{formData.category === 'B2C' ? 'Units in Stock' : t('inventory.boxes_in_stock')}</label>
+                                        <label className="input-label">{t('inventory.boxes_in_stock')}</label>
                                         <input type="number" min="0" className="input-field" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })} />
                                     </div>
                                     <div>
