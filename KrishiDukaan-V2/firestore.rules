@@ -562,6 +562,8 @@ service cloud.firestore {
     }
 
     // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
+    
+       // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
     // Seller-level delivery config (online toggle, weight slabs, coverage).
     // Public read so customers/checkout can verify delivery area.
     // Write restricted to the owning seller (phone match) or admin.
@@ -712,7 +714,8 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAuthed();
     }
-
+    
+    
     // ─── daySessions ─────────────────────────────────────────────────────────
     // One document per sales executive per working day.
     // The exec owns their own sessions; the Cloud Function (admin SDK) writes

@@ -5,6 +5,8 @@ import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { queueWaNotification } from "./wa-notify";
 
+export { sendWaNotification, retryWaNotifications, webhookReceiver } from "./wa-dispatch";
+
 admin.initializeApp();
 const db = admin.firestore();
 
@@ -44,6 +46,34 @@ export const syncSellerProductToCanonical = onDocumentWritten(
     const ownerPhone = String(d.retailerPhone ?? d.ownerPhone ?? "");
 
     if (!ownerId && !ownerPhone) return;
+
+    // P8: Skip when only onboarding metadata changed (retailerId, retailerPhone,
+    // ownerId, updatedAt). Backfill writes exactly these fields without touching
+    // price/stock/discount, so cascading into availability + inventory is unnecessary
+    // and was the primary source of the ~2000-request burst during invite acceptance.
+    // Exception: let identity changes through so storePhone can be enriched below.
+    const before = event.data?.before?.exists
+      ? (event.data.before.data() as Record<string, unknown>)
+      : null;
+
+    if (before !== null) {
+      const priceChanged =
+        before.price !== d.price || before.sellingPrice !== d.sellingPrice;
+      const stockChanged =
+        before.stockQuantity !== d.stockQuantity ||
+        before.stock !== d.stock ||
+        before.isActive !== d.isActive;
+      const discountChanged =
+        before.discountEnabled !== d.discountEnabled ||
+        before.discountPct !== d.discountPct ||
+        before.effectiveDiscountPct !== d.effectiveDiscountPct;
+      const identityChanged =
+        before.retailerPhone !== d.retailerPhone ||
+        before.ownerPhone !== d.ownerPhone ||
+        before.ownerId !== d.ownerId ||
+        before.retailerId !== d.retailerId;
+      if (!priceChanged && !stockChanged && !discountChanged && !identityChanged) return;
+    }
 
     // Values to mirror
     const sellingPrice =
@@ -99,6 +129,10 @@ export const syncSellerProductToCanonical = onDocumentWritten(
           if (sellingPrice != null) patch.sellingPrice = sellingPrice;
           if (stockLabel != null) patch.stockLevel = stockLabel;
           patch.discountPct = effectivePct;
+          // P6: Enrich storePhone when it is missing in the availability entry.
+          // This replaces the per-product arrayRemove+arrayUnion loop that backfill
+          // used to run after the batch commit (which generated N extra HTTP requests).
+          if (!entry.storePhone && ownerPhone) patch.storePhone = ownerPhone;
           return patch;
         });
 
@@ -118,10 +152,7 @@ export const syncSellerProductToCanonical = onDocumentWritten(
 
     // ── 2. Update seller's inventory doc ─────────────────────────────────────
     // Only sync fields that actually changed to avoid unnecessary writes.
-    const before = event.data?.before?.exists
-      ? (event.data.before.data() as Record<string, unknown>)
-      : null;
-
+    // (before is already declared above for the P8 early-exit check)
     const priceChanged =
       before == null || before.price !== d.price ||
       before.sellingPrice !== d.sellingPrice;
@@ -784,7 +815,9 @@ export const notifyRetailerOnAssignment = onDocumentCreated(
       }
 
       const template = isOnboarded ? "product_assignment_onboarded" : "product_assignment_pending_signup";
-      const payload: Record<string, string> = { manufacturerName: mfr, productName, productId };
+      // Retailer name: prefer store name on the product copy, fall back to profile lookup
+      const retailerName = String(d.store ?? d.shopName ?? "").trim() || await displayName(retailerPhone, retailerPhone);
+      const payload: Record<string, string> = { retailerName, manufacturerName: mfr, productName, productId };
       if (!isOnboarded && inviteCode) payload.inviteCode = inviteCode;
 
       logger.info("[notifyRetailerOnAssignment] before queueWaNotification", { template, isOnboarded });
@@ -812,6 +845,14 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d) return;
 
+    // Manual single-add flow sets this flag because product assignment is
+    // mandatory and product_assignment_pending_signup already serves as the
+    // onboarding message. Skip here to avoid duplicate WhatsApp messages.
+    if (d.skipOnboardingNotification === true) {
+      logger.info("[notifyRetailerOnNetworkAdd] skipping — skipOnboardingNotification=true", { docId: event.params.docId });
+      return;
+    }
+
     const retailerPhone = firstPhone(
       d.retailerPhone,
       d.retailerDocId,
@@ -833,6 +874,8 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
     logger.info("[notifyRetailerOnNetworkAdd] resolved retailerPhone", { retailerPhone, docId: event.params.docId });
     if (retailerPhone) {
       const inviteCode = String(d.inviteCode ?? "").trim();
+      // Retailer name: prefer shopName stored on the invite doc, fall back to profile lookup
+      const retailerName = String(d.shopName ?? "").trim() || await displayName(retailerPhone, retailerPhone);
       logger.info("[notifyRetailerOnNetworkAdd] before queueWaNotification", { inviteCode: !!inviteCode });
       await queueWaNotification(
         retailerPhone,
@@ -840,7 +883,7 @@ export const notifyRetailerOnNetworkAdd = onDocumentCreated(
         {
           template: "retailer_onboarding",
           type: "onboarding",
-          payload: { manufacturerName: mfr, inviteCode },
+          payload: { retailerName, manufacturerName: mfr, inviteCode },
           source: { event: "retailer_network_add", entityType: "manufacturerRetailer", entityId: event.params.docId },
         }
       );

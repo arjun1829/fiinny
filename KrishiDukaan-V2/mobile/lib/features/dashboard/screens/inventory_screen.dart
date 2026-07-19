@@ -646,6 +646,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
   double _gstRate = 18.0;
   String _sellMode = 'online_delivery';
 
+  bool _gstApplicable = false;
+  double _gstRate = 18.0;
+  String _sellMode = 'online_delivery';
+
   bool _saving = false;
   final _catalogRepo = CatalogRepository();
   List<CatalogModel> _catalogOptions = [];
@@ -1449,7 +1453,7 @@ class _EditListingSheet extends StatefulWidget {
 class _EditListingSheetState extends State<_EditListingSheet> {
   late final TextEditingController _priceCtrl;
   late final TextEditingController _stockCtrl;
-  final List<File?> _imageFiles = List.filled(5, null);
+  File? _imageFile;
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;

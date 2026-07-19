@@ -63,28 +63,28 @@ export function resolveTemplateComponents(
       ];
 
     case "product_assignment_onboarded":
-      // Body: {{1}} = manufacturerName   {{2}} = productName
-      // Button 0 (Dynamic URL): {{1}} = productId (Meta appends to base URL)
+      // Body: {{1}} = retailerName  {{2}} = manufacturerName  {{3}} = productName
+      // Button 0 (Dynamic URL): {{1}} = productId
       return [
-        body(p("manufacturerName"), p("productName")),
+        body(p("retailerName"), p("manufacturerName"), p("productName")),
         { type: "button", sub_type: "url", index: 0, parameters: [t(p("productId"))] },
       ];
 
     case "product_assignment_pending_signup":
-      // Body: {{1}} = manufacturerName   {{2}} = productName
+      // Body: {{1}} = retailerName  {{2}} = manufacturerName  {{3}} = productName
       // Button 0 (Dynamic URL): {{1}} = inviteCode (signup URL)
       // Button 1 (Dynamic URL): {{1}} = productId (product URL)
       return [
-        body(p("manufacturerName"), p("productName")),
+        body(p("retailerName"), p("manufacturerName"), p("productName")),
         { type: "button", sub_type: "url", index: 0, parameters: [t(p("inviteCode"))] },
         { type: "button", sub_type: "url", index: 1, parameters: [t(p("productId"))] },
       ];
 
     case "retailer_onboarding":
-      // Body: {{1}} = manufacturerName
-      // Button 0 (Dynamic URL): {{1}} = inviteCode (Meta appends to base URL)
+      // Body: {{1}} = retailerName  {{2}} = manufacturerName
+      // Button 0 (Dynamic URL): {{1}} = inviteCode
       return [
-        body(p("manufacturerName")),
+        body(p("retailerName"), p("manufacturerName")),
         { type: "button", sub_type: "url", index: 0, parameters: [t(p("inviteCode"))] },
       ];
 

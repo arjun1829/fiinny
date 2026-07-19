@@ -7,6 +7,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { syncSupplierTotals } from '../utils/supplierLedgerSync';
 import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { calcInvoiceGST, fmtINR, round2 } from '../utils/gstCalculator';
 import ProductAutocomplete, { type ProductLite } from '../components/ProductAutocomplete';
@@ -348,15 +349,25 @@ export default function SupplierInvoicePage() {
     setSaving(true);
     try {
       const payload = buildPayload();
+      let id: string;
       if (savedInvoiceId) {
         await updateDoc(getTenantDoc(db, tenantId, 'supplierInvoices', savedInvoiceId), { ...payload, updatedAt: serverTimestamp() });
-        return savedInvoiceId;
+        id = savedInvoiceId;
+      } else {
+        const ref = await addDoc(getTenantCollection(db, tenantId, 'supplierInvoices'), {
+          ...payload, createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
+        });
+        setSavedInvoiceId(ref.id);
+        id = ref.id;
       }
-      const ref = await addDoc(getTenantCollection(db, tenantId, 'supplierInvoices'), {
-        ...payload, createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
-      });
-      setSavedInvoiceId(ref.id);
-      return ref.id;
+      // Keep the Supplier Ledger list's cached totals in sync — the ledger list
+      // reads suppliers/{id}.totalInvoiced/totalPaid/outstandingBalance directly
+      // rather than recomputing them, so this write must happen here too.
+      if (payload.supplierId) {
+        syncSupplierTotals(db, tenantId, payload.supplierId).catch(err =>
+          console.error('Failed to sync supplier ledger totals (invoice already saved):', err));
+      }
+      return id;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save invoice');
       return null;

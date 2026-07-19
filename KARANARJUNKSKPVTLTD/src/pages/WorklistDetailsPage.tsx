@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square } from 'lucide-react';
-import { RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2 } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { getDoc, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where } from 'firebase/firestore';
+import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc } from 'firebase/firestore';
+import { generatePaymentId } from '../utils/paymentIdGenerator';
+import { uploadPaymentProof } from '../utils/uploadPaymentProof';
+import PaymentAttachmentField from '../components/PaymentAttachmentField';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantDoc, getTenantCollection } from '../utils/tenantPath';
@@ -78,27 +81,52 @@ interface Note {
     createdAt: any;
 }
 
+/** A recorded payment / credit against this retailer (optionally tied to an invoice). */
+interface Payment {
+    id: string;
+    paymentId?: string;
+    amount: number;
+    paymentDate?: string;
+    paymentMethod?: string;
+    accountDetails?: { accountName?: string; transactionRef?: string };
+    notes?: string;
+    orderId?: string;
+    orderNumber?: string;
+    linkedOrderIds?: string[];
+    unallocatedAmount?: number;
+    attachmentUrl?: string;
+    attachmentName?: string;
+    attachmentType?: string;
+    createdAt?: any;
+}
+
 export default function WorklistDetailsPage() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { userRole, tenantId } = useAuth();
+    const isSales = userRole === 'sales';
     const { t } = useTranslation();
     const { getSchema: _getSchema } = useSchema(); // kept for schema referencing
 
     const [retailer, setRetailer] = useState<Retailer | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders'>('orders');
+    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders' | 'payments'>('orders');
     const [tasks, setTasks] = useState<Task[]>([]);
     const [notes, setNoteData] = useState<Note[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [salesOrders, setSalesOrders] = useState<any[]>([]);
+    const [payments, setPayments] = useState<Payment[]>([]);
 
 
     // Financial Modal States
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
     const [paymentNotes, setPaymentNotes] = useState('');
+    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
+    const [paymentAccountName, setPaymentAccountName] = useState('');
+    const [paymentTransactionRef, setPaymentTransactionRef] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
     // Sales Order delete confirmation
@@ -115,6 +143,48 @@ export default function WorklistDetailsPage() {
     // Outstanding Invoice Modal
     const [showOutstandingModal, setShowOutstandingModal] = useState(false);
     const [quickPaidRemark, setQuickPaidRemark] = useState('');
+
+    // Per-invoice payment (supports partial) — records an amount against a
+    // specific sales order, updates its paid/outstanding, and logs a ledger entry.
+    const [payOrder, setPayOrder] = useState<any | null>(null);
+    const [payOrderAmount, setPayOrderAmount] = useState<number>(0);
+    const [payOrderNote, setPayOrderNote] = useState('');
+    const [payOrderDate, setPayOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [payOrderMethod, setPayOrderMethod] = useState('Cash');
+    const [payOrderAccountName, setPayOrderAccountName] = useState('');
+    const [payOrderTransactionRef, setPayOrderTransactionRef] = useState('');
+    const [isSavingOrderPayment, setIsSavingOrderPayment] = useState(false);
+
+    // Edit an existing payment/credit entry
+    const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+    const [editPayAmount, setEditPayAmount] = useState<number>(0);
+    const [editPayNote, setEditPayNote] = useState('');
+    const [editPayDate, setEditPayDate] = useState(''); // yyyy-mm-dd
+    const [editPayMethod, setEditPayMethod] = useState('Cash');
+    const [savingEditPayment, setSavingEditPayment] = useState(false);
+
+    // Link payment to order state
+    const [linkPaymentOrder, setLinkPaymentOrder] = useState<any | null>(null);
+    const [linkAllocations, setLinkAllocations] = useState<Record<string, number>>({});
+    const [savingLinkPayment, setSavingLinkPayment] = useState(false);
+
+    // Unlink payment modal
+    const [unlinkOrder, setUnlinkOrder] = useState<any | null>(null);
+    const [unlinkAllocations, setUnlinkAllocations] = useState<any[]>([]);
+    const [loadingUnlinkAllocations, setLoadingUnlinkAllocations] = useState(false);
+    const [unlinkingPmtId, setUnlinkingPmtId] = useState<string | null>(null);
+
+    // Delete payment with linked allocations
+    const [deletePaymentTarget, setDeletePaymentTarget] = useState<Payment | null>(null);
+    const [deletingLinkedPayment, setDeletingLinkedPayment] = useState(false);
+
+    // Proof attachment state for each payment modal
+    const [pmtProofFile, setPmtProofFile] = useState<File | null>(null);
+    const [pmtProofCleared, setPmtProofCleared] = useState(false);
+    const [orderPmtProofFile, setOrderPmtProofFile] = useState<File | null>(null);
+    const [orderPmtProofCleared, setOrderPmtProofCleared] = useState(false);
+    const [editProofFile, setEditProofFile] = useState<File | null>(null);
+    const [editProofCleared, setEditProofCleared] = useState(false);
 
     // Form States
     const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -134,22 +204,22 @@ export default function WorklistDetailsPage() {
         if (!id || !tenantId) return;
         const tid = tenantId!; // For easier use in listeners
 
-        // Fetch Retailer Data
-        const fetchRetailer = async () => {
-            try {
-                const docRef = getTenantDoc(db, tid, 'retailers', id);
-                const docSnap = await getDoc(docRef);
+        // Retailer data — real-time listener so the financial cards & Partner
+        // Analytics reflect writes (e.g. Record Payment) the instant they land,
+        // instead of relying on manual re-fetches that can read stale data.
+        const unsubRetailer = onSnapshot(
+            getTenantDoc(db, tid, 'retailers', id),
+            (docSnap) => {
                 if (docSnap.exists()) {
                     setRetailer({ id: docSnap.id, ...docSnap.data() } as Retailer);
                 }
-            } catch (error) {
+                setLoading(false);
+            },
+            (error) => {
                 console.error("Error fetching retailer: ", error);
-            } finally {
                 setLoading(false);
             }
-        };
-
-        fetchRetailer();
+        );
 
         // Fetch Products
         const unsubProducts = onSnapshot(
@@ -171,6 +241,17 @@ export default function WorklistDetailsPage() {
             notesQuery,
             (snap) => { setNoteData(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Note))); },
             (err) => console.error('Notes listener error:', err)
+        );
+
+        // Payments / credits ledger (sorted client-side to avoid an index requirement)
+        const unsubPayments = onSnapshot(
+            getTenantCollection(db, tenantId!, 'retailers', id, 'payments'),
+            (snap) => {
+                const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment));
+                docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+                setPayments(docs);
+            },
+            (err) => console.error('Payments listener error:', err)
         );
 
         // orderBy removed — composite index not available; sort client-side instead
@@ -195,17 +276,27 @@ export default function WorklistDetailsPage() {
         const unsubSalesOrders = onSnapshot(
             salesOrdersQuery,
             (snap) => {
-                type SODoc = { id: string; createdAt?: { seconds?: number }; [key: string]: unknown };
+                type SODoc = { id: string; invoiceDate?: string; createdAt?: { seconds?: number }; [key: string]: unknown };
                 const docs: SODoc[] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SODoc));
-                docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+                docs.sort((a, b) => {
+                    // Primary: invoiceDate (yyyy-mm-dd string); fallback to createdAt timestamp
+                    const aVal = a.invoiceDate ? a.invoiceDate : '';
+                    const bVal = b.invoiceDate ? b.invoiceDate : '';
+                    if (aVal && bVal) return bVal.localeCompare(aVal);
+                    if (aVal) return -1;
+                    if (bVal) return 1;
+                    return (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0);
+                });
                 setSalesOrders(docs);
             },
             (err) => console.error('SalesOrders listener error:', err)
         );
 
         return () => {
+            unsubRetailer();
             unsubTasks();
             unsubNotes();
+            unsubPayments();
             unsubOrders();
             unsubSalesOrders();
             unsubProducts();
@@ -488,42 +579,438 @@ export default function WorklistDetailsPage() {
 
     const handleRecordPayment = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!id || paymentAmount <= 0) return;
+        if (!id || !tenantId || paymentAmount <= 0) return;
         setIsRecordingPayment(true);
 
         try {
-            // Log the payment in a subcollection
-            await addDoc(getTenantCollection(db, tenantId!, 'retailers', id, 'payments'), {
+            const pmtId = await generatePaymentId(tenantId);
+            const accountDetails = { accountName: paymentAccountName.trim(), transactionRef: paymentTransactionRef.trim() };
+            const proofData: Record<string, string> = {};
+            if (pmtProofFile) {
+                const meta = await uploadPaymentProof(tenantId, pmtId, pmtProofFile);
+                proofData.attachmentUrl = meta.url;
+                proofData.attachmentName = meta.name;
+                proofData.attachmentType = meta.type;
+            }
+
+            await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
+                paymentId: pmtId,
                 amount: paymentAmount,
+                paymentDate,
+                paymentMethod,
+                accountDetails,
                 notes: paymentNotes,
-                createdAt: serverTimestamp()
+                linkedOrderIds: [],
+                unallocatedAmount: paymentAmount,
+                ...proofData,
+                createdAt: serverTimestamp(),
             });
 
-            // Update retailer totals
             const currentPaid = Number(retailer?.totalPaid || 0);
             const currentOutstanding = Number(retailer?.outstandingAmount || 0);
 
-            await updateDoc(getTenantDoc(db, tenantId!, 'retailers', id), {
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
                 totalPaid: currentPaid + paymentAmount,
-                outstandingAmount: Math.max(0, currentOutstanding - paymentAmount)
+                outstandingAmount: Math.max(0, currentOutstanding - paymentAmount),
             });
 
-            // Re-fetch retailer
-            const updatedSnap = await getDoc(getTenantDoc(db, tenantId!, 'retailers', id));
+            const updatedSnap = await getDoc(getTenantDoc(db, tenantId, 'retailers', id));
             setRetailer({ id: updatedSnap.id, ...updatedSnap.data() } as Retailer);
 
             setShowPaymentModal(false);
             setPaymentAmount(0);
             setPaymentNotes('');
+            setPaymentDate(new Date().toISOString().slice(0, 10));
+            setPaymentMethod('Cash');
+            setPaymentAccountName('');
+            setPaymentTransactionRef('');
+            setPmtProofFile(null);
+            setPmtProofCleared(false);
             alert(t('worklist_details.payment_success'));
         } catch (error) {
             console.error("Error recording payment:", error);
-            alert(t('worklist_details.update_error'));
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
         } finally {
             setIsRecordingPayment(false);
         }
     };
 
+    // ─── Record a payment against a single sales order (partial or full) ───
+    // Applies the amount to that order's amountPaid, recomputes its paymentStatus
+    // (Paid when fully settled, else Partial), logs a ledger entry under the
+    // retailer's payments subcollection, and rolls the amount up to retailer totals.
+    const handleAddOrderPayment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!id || !tenantId || !payOrder) return;
+
+        const grandTotal = Number(payOrder.grandTotal ?? payOrder.netAmount ?? payOrder.totalAmount ?? 0);
+        const alreadyPaid = Number(payOrder.amountPaid ?? 0);
+        const remaining = Math.max(0, grandTotal - alreadyPaid);
+        // Never over-apply beyond what's outstanding on this invoice.
+        const applied = Math.min(Number(payOrderAmount) || 0, remaining);
+        if (applied <= 0) return;
+
+        setIsSavingOrderPayment(true);
+        try {
+            const newPaid = alreadyPaid + applied;
+            const newStatus = newPaid >= grandTotal ? 'Paid' : 'Partial';
+            const orderLabel = payOrder.orderNumber || payOrder.invoiceNumber || payOrder.id.slice(-6);
+
+            // 1. Update the sales order's paid amount + status
+            await updateDoc(getTenantDoc(db, tenantId, 'salesOrders', payOrder.id), {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+            });
+
+            // 2. Log a ledger entry (the "credit entry") tied to this invoice
+            const pmtId = await generatePaymentId(tenantId);
+            const orderProofData: Record<string, string> = {};
+            if (orderPmtProofFile) {
+                const meta = await uploadPaymentProof(tenantId, pmtId, orderPmtProofFile);
+                orderProofData.attachmentUrl = meta.url;
+                orderProofData.attachmentName = meta.name;
+                orderProofData.attachmentType = meta.type;
+            }
+            await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
+                paymentId: pmtId,
+                amount: applied,
+                paymentDate: payOrderDate,
+                paymentMethod: payOrderMethod,
+                accountDetails: { accountName: payOrderAccountName.trim(), transactionRef: payOrderTransactionRef.trim() },
+                notes: payOrderNote,
+                orderId: payOrder.id,
+                orderNumber: orderLabel,
+                linkedOrderIds: [payOrder.id],
+                unallocatedAmount: 0,
+                ...orderProofData,
+                createdAt: serverTimestamp(),
+            });
+
+            // 3. Roll up to retailer totals (cards refresh via the retailer listener)
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+                totalPaid: (Number(retailer?.totalPaid) || 0) + applied,
+                outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - applied),
+            });
+
+            setPayOrder(null);
+            setPayOrderAmount(0);
+            setPayOrderNote('');
+            setPayOrderDate(new Date().toISOString().slice(0, 10));
+            setPayOrderMethod('Cash');
+            setPayOrderAccountName('');
+            setPayOrderTransactionRef('');
+            setOrderPmtProofFile(null);
+            setOrderPmtProofCleared(false);
+            alert(`₹${applied.toLocaleString()} recorded against ${orderLabel}` + (newStatus === 'Paid' ? ' — fully paid.' : ' — partially paid.'));
+        } catch (error) {
+            console.error("Error recording invoice payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        } finally {
+            setIsSavingOrderPayment(false);
+        }
+    };
+
+    // Apply a change of `delta` in paid-amount to the retailer totals and, if the
+    // payment was tied to an invoice, to that invoice's amountPaid + status.
+    // delta > 0 means more was paid; delta < 0 means a payment shrank / was removed.
+    const applyPaymentDelta = async (delta: number, orderId?: string) => {
+        if (!id || !tenantId || delta === 0) return;
+
+        await updateDoc(getTenantDoc(db, tenantId, 'retailers', id), {
+            totalPaid: Math.max(0, (Number(retailer?.totalPaid) || 0) + delta),
+            outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - delta),
+        });
+
+        if (orderId) {
+            const so = salesOrders.find((o: any) => o.id === orderId);
+            if (so) {
+                const grandTotal = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                const newPaid = Math.min(grandTotal, Math.max(0, (Number(so.amountPaid) || 0) + delta));
+                const newStatus = newPaid <= 0 ? 'Pending' : (newPaid >= grandTotal ? 'Paid' : 'Partial');
+                await updateDoc(getTenantDoc(db, tenantId, 'salesOrders', orderId), {
+                    amountPaid: newPaid,
+                    paymentStatus: newStatus,
+                });
+            }
+        }
+    };
+
+    const handleDeletePayment = async (p: Payment) => {
+        if (!id || !tenantId) return;
+
+        // If payment has linked order allocations, route through the confirmation modal
+        if ((p.linkedOrderIds?.length ?? 0) > 0) {
+            setDeletePaymentTarget(p);
+            return;
+        }
+
+        if (!window.confirm(`Delete this payment of ₹${Number(p.amount || 0).toLocaleString()}? Totals will be adjusted.`)) return;
+        try {
+            // Reverse its effect (delta = -amount), then remove the ledger entry.
+            await applyPaymentDelta(-(Number(p.amount) || 0), p.orderId);
+            await deleteDoc(getTenantDoc(db, tenantId, 'retailers', id, 'payments', p.id));
+        } catch (error) {
+            console.error("Error deleting payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        }
+    };
+
+    const openEditPayment = (p: Payment) => {
+        setEditingPayment(p);
+        setEditPayAmount(Number(p.amount) || 0);
+        setEditPayNote(p.notes || '');
+        setEditPayMethod(p.paymentMethod || 'Cash');
+        setEditProofFile(null);
+        setEditProofCleared(false);
+        if (p.paymentDate) {
+            setEditPayDate(p.paymentDate);
+        } else {
+            const d = p.createdAt?.toDate ? p.createdAt.toDate() : null;
+            setEditPayDate(d ? d.toISOString().slice(0, 10) : '');
+        }
+    };
+
+    const handleUpdatePayment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!id || !tenantId || !editingPayment) return;
+        const newAmount = Number(editPayAmount) || 0;
+        if (newAmount <= 0) return;
+        setSavingEditPayment(true);
+        try {
+            const delta = newAmount - (Number(editingPayment.amount) || 0);
+            if (delta !== 0) await applyPaymentDelta(delta, editingPayment.orderId);
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const update: Record<string, any> = { amount: newAmount, notes: editPayNote, paymentMethod: editPayMethod };
+            if (editPayDate) { update.paymentDate = editPayDate; update.createdAt = new Date(editPayDate); }
+            if (editProofFile) {
+                const meta = await uploadPaymentProof(tenantId, editingPayment.id, editProofFile);
+                update.attachmentUrl = meta.url;
+                update.attachmentName = meta.name;
+                update.attachmentType = meta.type;
+            } else if (editProofCleared) {
+                update.attachmentUrl = null;
+                update.attachmentName = null;
+                update.attachmentType = null;
+            }
+
+            await updateDoc(getTenantDoc(db, tenantId, 'retailers', id, 'payments', editingPayment.id), update);
+            setEditingPayment(null);
+            setEditProofFile(null);
+            setEditProofCleared(false);
+        } catch (error) {
+            console.error("Error updating payment:", error);
+            alert(t('worklist_details.update_error') + ': ' + ((error as { message?: string })?.message || String(error)));
+        } finally {
+            setSavingEditPayment(false);
+        }
+    };
+
+
+    // Payments with remaining unallocated balance — used for Link Payment modal.
+    // Old payments (recorded before unallocatedAmount was introduced) don't have the field.
+    // A payment without orderId was a general Record-Payment entry — treat its full amount as unallocated.
+    // A payment with orderId was already applied directly to one invoice — treat as 0.
+    const getEffectiveUnallocated = (p: Payment): number => {
+        if (p.unallocatedAmount !== undefined) return Number(p.unallocatedAmount) || 0;
+        return p.orderId ? 0 : Number(p.amount) || 0;
+    };
+    const availablePayments = payments.filter(p => getEffectiveUnallocated(p) > 0);
+
+    // Derived financials — order-level, matches list page formula exactly.
+    // Source of truth: salesOrder.amountPaid (updated by every payment operation).
+    const computedTotalSales = salesOrders.reduce((s: number, so: any) =>
+        s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
+    const computedTotalPaid = salesOrders.reduce((s: number, so: any) =>
+        s + Number(so.amountPaid ?? 0), 0);
+    const computedOutstanding = Math.max(0, computedTotalSales - computedTotalPaid);
+
+    // Link an existing unallocated payment to a sales order
+    const handleLinkPayments = async () => {
+        if (!linkPaymentOrder || !tenantId || !id) return;
+
+        const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
+        const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
+        const remaining = Math.max(0, grandTotal - alreadyPaid);
+
+        const entries = Object.entries(linkAllocations)
+            .map(([pmtId, amt]) => ({ pmtId, amt: Math.min(Number(amt) || 0, availablePayments.find(p => p.id === pmtId)?.unallocatedAmount ?? 0) }))
+            .filter(({ amt }) => amt > 0);
+
+        if (entries.length === 0) return;
+
+        const totalToAllocate = entries.reduce((s, { amt }) => s + amt, 0);
+        if (totalToAllocate > remaining + 0.01) {
+            alert(`Total allocation (₹${totalToAllocate.toLocaleString()}) exceeds outstanding (₹${remaining.toLocaleString()}).`);
+            return;
+        }
+
+        setSavingLinkPayment(true);
+        try {
+            const batch = writeBatch(db);
+            const linkedPmtIds: string[] = [];
+
+            for (const { pmtId, amt } of entries) {
+                const pmt = payments.find(p => p.id === pmtId);
+                if (!pmt) continue;
+
+                // Allocation record
+                const allocColRef = getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations');
+                const allocRef = fsDoc(allocColRef);
+                batch.set(allocRef, {
+                    orderId: linkPaymentOrder.id,
+                    orderNumber: linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-6),
+                    paymentId: pmt.id,
+                    paymentIdDisplay: pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`,
+                    allocatedAmount: amt,
+                    allocatedAt: serverTimestamp(),
+                });
+
+                // Reduce payment's unallocated balance (handle old payments that lack the field)
+                const pmtRef = getTenantDoc(db, tenantId, 'retailers', id, 'payments', pmtId);
+                batch.update(pmtRef, {
+                    unallocatedAmount: Math.max(0, getEffectiveUnallocated(pmt) - amt),
+                    linkedOrderIds: arrayUnion(linkPaymentOrder.id),
+                });
+
+                linkedPmtIds.push(pmtId);
+            }
+
+            // Update order amountPaid + status
+            const newPaid = alreadyPaid + totalToAllocate;
+            const newOutstanding = Math.max(0, grandTotal - newPaid);
+            const newStatus = newOutstanding <= 0 ? 'Paid' : newPaid > 0 ? 'Partial' : 'Pending';
+
+            const orderRef = getTenantDoc(db, tenantId, 'salesOrders', linkPaymentOrder.id);
+            batch.update(orderRef, {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+                linkedPaymentIds: arrayUnion(...linkedPmtIds),
+            });
+
+            await batch.commit();
+
+            setLinkPaymentOrder(null);
+            setLinkAllocations({});
+            alert(`₹${totalToAllocate.toLocaleString()} linked — ${newStatus === 'Paid' ? 'Order fully paid! ✅' : `₹${newOutstanding.toLocaleString()} still outstanding.`}`);
+        } catch (error) {
+            console.error('Error linking payment:', error);
+            alert('Error linking payment. Please try again.');
+        } finally {
+            setSavingLinkPayment(false);
+        }
+    };
+
+    // ─── Open Unlink Payments modal for a sales order ───
+    const handleOpenUnlinkModal = async (so: any) => {
+        if (!tenantId || !id) return;
+        setUnlinkOrder(so);
+        setLoadingUnlinkAllocations(true);
+        try {
+            const allocQuery = query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations'),
+                where('orderId', '==', so.id)
+            );
+            const snap = await getDocs(allocQuery);
+            setUnlinkAllocations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (e) {
+            console.error('Error fetching allocations:', e);
+        } finally {
+            setLoadingUnlinkAllocations(false);
+        }
+    };
+
+    // ─── Unlink a single payment allocation from a sales order ───
+    const handleUnlinkPayment = async (allocation: any) => {
+        if (!tenantId || !id || !unlinkOrder) return;
+        setUnlinkingPmtId(allocation.id);
+        try {
+            const batch = writeBatch(db);
+
+            // Delete the allocation record
+            const allocRef = getTenantDoc(db, tenantId, 'retailers', id, 'paymentAllocations', allocation.id);
+            batch.delete(allocRef);
+
+            // Restore payment's unallocated balance
+            const pmtRef = getTenantDoc(db, tenantId, 'retailers', id, 'payments', allocation.paymentId);
+            const pmtSnap = await getDoc(pmtRef);
+            if (pmtSnap.exists()) {
+                batch.update(pmtRef, {
+                    unallocatedAmount: (Number(pmtSnap.data().unallocatedAmount) || 0) + allocation.allocatedAmount,
+                    linkedOrderIds: arrayRemove(unlinkOrder.id),
+                });
+            }
+
+            // Reverse allocation on the sales order
+            const grandTotal = Number(unlinkOrder.grandTotal ?? unlinkOrder.netAmount ?? unlinkOrder.totalAmount ?? 0);
+            const newPaid = Math.max(0, (Number(unlinkOrder.amountPaid) || 0) - allocation.allocatedAmount);
+            const newStatus = newPaid <= 0 ? 'Pending' : (newPaid >= grandTotal ? 'Paid' : 'Partial');
+            const orderRef = getTenantDoc(db, tenantId, 'salesOrders', unlinkOrder.id);
+            batch.update(orderRef, {
+                amountPaid: newPaid,
+                paymentStatus: newStatus,
+                linkedPaymentIds: arrayRemove(allocation.paymentId),
+            });
+
+            await batch.commit();
+
+            // Update local modal state so changes are visible immediately
+            setUnlinkAllocations(prev => prev.filter(a => a.id !== allocation.id));
+            setUnlinkOrder((prev: any) => ({ ...prev, amountPaid: newPaid, paymentStatus: newStatus }));
+        } catch (e) {
+            console.error('Error unlinking payment:', e);
+            alert('Error unlinking payment. Please try again.');
+        } finally {
+            setUnlinkingPmtId(null);
+        }
+    };
+
+    // ─── Delete a payment that has linked order allocations ───
+    // Reverses every allocation, then deletes the payment and adjusts retailer totals.
+    const handleDeletePaymentConfirmed = async () => {
+        if (!id || !tenantId || !deletePaymentTarget) return;
+        const p = deletePaymentTarget;
+        setDeletingLinkedPayment(true);
+        try {
+            const allocQuery = query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations'),
+                where('paymentId', '==', p.id)
+            );
+            const allocSnap = await getDocs(allocQuery);
+
+            const batch = writeBatch(db);
+
+            for (const allocDoc of allocSnap.docs) {
+                const alloc = allocDoc.data();
+                // Reverse amountPaid on each affected sales order
+                const orderRef = getTenantDoc(db, tenantId, 'salesOrders', alloc.orderId);
+                const orderSnap = await getDoc(orderRef);
+                if (orderSnap.exists()) {
+                    const od = orderSnap.data();
+                    const gt = Number(od.grandTotal ?? od.netAmount ?? od.totalAmount ?? 0);
+                    const np = Math.max(0, (Number(od.amountPaid) || 0) - alloc.allocatedAmount);
+                    const ns = np <= 0 ? 'Pending' : (np >= gt ? 'Paid' : 'Partial');
+                    batch.update(orderRef, { amountPaid: np, paymentStatus: ns, linkedPaymentIds: arrayRemove(p.id) });
+                }
+                batch.delete(allocDoc.ref);
+            }
+
+            // Delete the payment doc
+            batch.delete(getTenantDoc(db, tenantId, 'retailers', id, 'payments', p.id));
+
+            await batch.commit();
+
+            // Adjust retailer-level totals for the payment amount
+            await applyPaymentDelta(-(Number(p.amount) || 0), undefined);
+
+            setDeletePaymentTarget(null);
+        } catch (e) {
+            console.error('Error deleting linked payment:', e);
+            alert(t('worklist_details.update_error'));
+        } finally {
+            setDeletingLinkedPayment(false);
+        }
+    };
 
     // Invoice helpers using new engine removed for legacy orders
 
@@ -575,6 +1062,13 @@ export default function WorklistDetailsPage() {
                 <ArrowLeft size={16} /> {t('worklist_details.back_to_worklist')}
             </button>
 
+            {/* View-only notice for sales users */}
+            {isSales && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1rem', marginBottom: '1rem', background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.25)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--secondary-dark)' }}>
+                    👁 View-only mode — you can inspect all data but cannot modify orders, payments or notes.
+                </div>
+            )}
+
             {/* Header Profile Card */}
             <div className="glass-panel" style={{ padding: '2rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
@@ -597,9 +1091,11 @@ export default function WorklistDetailsPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary animate-pulse" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                        ₹ {t('worklist_details.record_payment')}
-                    </button>
+                    {!isSales && (
+                        <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary animate-pulse" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                            ₹ {t('worklist_details.record_payment')}
+                        </button>
+                    )}
                     {retailer?.number && (
                         <a href={`tel:${retailer.number}`} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem', textDecoration: 'none' }}>
                             <Phone size={16} /> {t('worklist_details.call')}
@@ -616,107 +1112,103 @@ export default function WorklistDetailsPage() {
                 </div>
             </div>
 
-            {/* Financial Overview Cards */}
+            {/* Financial Overview Cards — derived from live snapshots */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--secondary)' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>Total Sales</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>₹{Number(retailer.totalSales || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>₹{computedTotalSales.toLocaleString()}</div>
                 </div>
                 <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--primary)' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{t('worklist_details.amount_paid')}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary-light)' }}>₹{Number(retailer.totalPaid || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary-light)' }}>₹{computedTotalPaid.toLocaleString()}</div>
                 </div>
-                <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: '4px solid var(--danger)', background: Number(retailer.outstandingAmount || 0) > 0 ? 'hsla(0, 84%, 60%, 0.05)' : 'transparent' }}>
+                <div className="glass-panel" style={{ padding: '1.5rem', borderLeft: `4px solid ${computedOutstanding > 0 ? 'var(--danger)' : '#10b981'}`, background: computedOutstanding > 0 ? 'hsla(0, 84%, 60%, 0.05)' : 'transparent' }}>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{t('worklist_details.outstanding_dues')}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: Number(retailer.outstandingAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>₹{Number(retailer.outstandingAmount || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: computedOutstanding > 0 ? 'var(--danger)' : '#10b981' }}>
+                        ₹{computedOutstanding.toLocaleString()}
+                        {computedOutstanding <= 0 && computedTotalSales > 0 && <span style={{ fontSize: '0.9rem', marginLeft: '0.4rem' }}>✅</span>}
+                    </div>
                 </div>
             </div>
 
             {/* ── Partner Analytics ── */}
             {salesOrders.length > 0 && (() => {
-                const totalSales = Number(retailer.totalSales || 0);
-                const totalPaid  = Number(retailer.totalPaid  || 0);
-                const outstanding = Number(retailer.outstandingAmount || 0);
-                const paidPct = totalSales > 0 ? Math.round((totalPaid / totalSales) * 100) : 0;
+                const paidPct = computedTotalSales > 0
+                    ? Math.min(100, Math.round((computedTotalPaid / computedTotalSales) * 100))
+                    : 0;
+                const pctColor = paidPct >= 100 ? '#10b981' : paidPct >= 60 ? '#f59e0b' : '#ef4444';
 
-                const radialData = [
-                    { name: 'Paid', value: paidPct, fill: '#10b981' },
-                    { name: 'Outstanding', value: 100 - paidPct, fill: '#ef4444' },
-                ];
-
-                // Order trend: group salesOrders by month
+                // Order trend: group salesOrders by month (last 6)
                 const monthMap: Record<string, number> = {};
                 salesOrders.forEach((so: any) => {
                     const d = so.createdAt?.toDate ? so.createdAt.toDate() : null;
                     if (!d) return;
                     const key = d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
-                    monthMap[key] = (monthMap[key] || 0) + Number(so.grandTotal || so.netAmount || 0);
+                    monthMap[key] = (monthMap[key] || 0) + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
                 });
                 const trendData = Object.entries(monthMap)
                     .map(([month, value]) => ({ month, value }))
-                    .slice(-6); // last 6 months
+                    .slice(-6);
 
                 return (
                     <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Partner Analytics</h3>
-                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <h3 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Partner Analytics</h3>
 
-                            {/* Radial payment circle */}
-                            <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 140 }}>
-                                <div style={{ position: 'relative', width: 130, height: 130, margin: '0 auto' }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%"
-                                            startAngle={90} endAngle={-270} data={radialData} barSize={14}>
-                                            <RadialBar dataKey="value" cornerRadius={8} />
-                                        </RadialBarChart>
-                                    </ResponsiveContainer>
-                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                        <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{paidPct}%</span>
-                                        <span style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>PAID</span>
-                                    </div>
-                                </div>
-                                <div style={{ marginTop: '0.5rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                                    <span style={{ color: '#10b981', fontWeight: 600 }}>₹{totalPaid.toLocaleString()}</span> paid · <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{outstanding.toLocaleString()}</span> due
-                                </div>
+                        {/* Payment completion progress bar */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Payment Completion</span>
+                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: pctColor }}>{paidPct}% Paid</span>
                             </div>
-
-                            {/* Vertical divider (hidden on mobile) */}
-                            <div style={{ width: '1px', background: 'var(--surface-border)', alignSelf: 'stretch', minHeight: 80 }} />
-
-                            {/* Bar trend chart */}
-                            <div style={{ flex: 1, minWidth: 200, minHeight: 120 }}>
-                                <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order Value Trend</p>
-                                {trendData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height={110}>
-                                        <BarChart data={trendData} barSize={22}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.05)" />
-                                            <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-                                            <YAxis hide />
-                                            <Tooltip
-                                                contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: 8, fontSize: '0.78rem' }}
-                                                formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Order Value']}
-                                            />
-                                            <Bar dataKey="value" fill="var(--primary-light)" radius={[4,4,0,0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Not enough data for trend.</p>}
+                            <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-raised)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                                <div style={{ height: '100%', width: `${paidPct}%`, minWidth: paidPct > 0 ? '4px' : '0', borderRadius: '999px', background: pctColor, transition: 'width 0.5s ease' }} />
                             </div>
-
-                            {/* Quick stats column */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: 120 }}>
-                                {[
-                                    { label: 'Total Orders', value: salesOrders.length },
-                                    { label: 'Avg Order', value: `₹${salesOrders.length > 0 ? Math.round(totalSales / salesOrders.length).toLocaleString() : 0}` },
-                                    { label: 'Paid Orders', value: salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length },
-                                    { label: 'Delivered', value: salesOrders.filter((s: any) => s.status === 'delivered').length },
-                                ].map(stat => (
-                                    <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.5rem 0.85rem' }}>
-                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</div>
-                                        <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{stat.value}</div>
-                                    </div>
-                                ))}
+                            <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.75rem' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                                    <span style={{ color: '#10b981', fontWeight: 600 }}>₹{computedTotalPaid.toLocaleString()} paid</span>
+                                </span>
+                                {computedOutstanding > 0
+                                    ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                                        <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{computedOutstanding.toLocaleString()} outstanding</span>
+                                      </span>
+                                    : <span style={{ color: '#10b981', fontWeight: 600 }}>Fully settled ✅</span>
+                                }
                             </div>
                         </div>
+
+                        {/* Stats grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '0.6rem', marginBottom: trendData.length > 0 ? '1.5rem' : 0 }}>
+                            {[
+                                { label: 'Total Orders', value: String(salesOrders.length), color: 'var(--text-primary)' },
+                                { label: 'Avg Order Value', value: `₹${salesOrders.length > 0 ? Math.round(computedTotalSales / salesOrders.length).toLocaleString() : 0}`, color: 'var(--secondary)' },
+                                { label: 'Paid Amount', value: `₹${computedTotalPaid.toLocaleString()}`, color: '#10b981' },
+                                { label: 'Outstanding', value: `₹${computedOutstanding.toLocaleString()}`, color: computedOutstanding > 0 ? '#ef4444' : 'var(--text-tertiary)' },
+                                { label: 'Paid Orders', value: String(salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length), color: '#10b981' },
+                            ].map(stat => (
+                                <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.55rem 0.75rem' }}>
+                                    <div style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>{stat.label}</div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: stat.color }}>{stat.value}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Order value trend bar chart */}
+                        {trendData.length > 0 && (
+                            <div>
+                                <p style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Order Value Trend</p>
+                                <ResponsiveContainer width="100%" height={90}>
+                                    <BarChart data={trendData} barSize={22}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.05)" />
+                                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+                                        <YAxis hide />
+                                        <Tooltip contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: 8, fontSize: '0.78rem' }} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Order Value']} />
+                                        <Bar dataKey="value" fill="var(--primary-light)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
                     </div>
                 );
             })()}
@@ -725,6 +1217,7 @@ export default function WorklistDetailsPage() {
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--surface-border)', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
                 {[
                     { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: salesOrders.length },
+                    { id: 'payments', label: 'Payments', icon: Wallet, count: payments.length },
                     { id: 'overview', label: 'Overview', icon: User },
                     { id: 'tasks', label: t('worklist_details.tasks'), icon: CheckSquare, count: tasks.length },
                     { id: 'notes', label: t('worklist_details.notes'), icon: FileText, count: notes.length }
@@ -826,13 +1319,15 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'tasks' && (
                     <div className="animate-fade-in">
-                        <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-                            <input
-                                required type="text" placeholder={t('worklist_details.add_task_placeholder')}
-                                className="input-field" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
-                            />
-                            <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>+ {t('common.add_new')}</button>
-                        </form>
+                        {!isSales && (
+                            <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+                                <input
+                                    required type="text" placeholder={t('worklist_details.add_task_placeholder')}
+                                    className="input-field" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                                />
+                                <button type="submit" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>+ {t('common.add_new')}</button>
+                            </form>
+                        )}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {tasks.length === 0 ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem' }}>{t('worklist_details.no_tasks')}</p> :
@@ -854,7 +1349,7 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'notes' && (
                     <div className="animate-fade-in">
-                        <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
+                        {!isSales && <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ flex: '1 1 300px', position: 'relative' }}>
                                 <textarea
                                     required placeholder={t('worklist_details.add_note_placeholder')}
@@ -884,7 +1379,7 @@ export default function WorklistDetailsPage() {
                                 />
                                 <button type="submit" className="btn btn-secondary" style={{ width: '100%', marginTop: '0.5rem' }}>{t('common.save')}</button>
                             </div>
-                        </form>
+                        </form>}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {notes.length === 0 ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem' }}>{t('worklist_details.no_notes')}</p> :
@@ -904,6 +1399,144 @@ export default function WorklistDetailsPage() {
                     </div>
                 )}
 
+                {activeTab === 'payments' && (
+                    <div className="animate-fade-in">
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+                            <div>
+                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Payments &amp; Credits ({payments.length})</h3>
+                                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                                        Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                                        Total available: <b style={{ color: '#f59e0b' }}>₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()}</b>
+                                    </span>
+                                </div>
+                            </div>
+                            {!isSales && (
+                                <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+                                    <PlusCircle size={16} /> Add Payment
+                                </button>
+                            )}
+                        </div>
+
+                        {payments.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <Wallet size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
+                                <p style={{ margin: 0 }}>No payments recorded yet.</p>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use "Add Payment" above, or "Add Payment" on any invoice.</p>
+                            </div>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Payment ID</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Date</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Method</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notes</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Status</th>
+                                            {!isSales && <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}></th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payments.map(p => {
+                                            const displayDate = p.paymentDate || (p.createdAt?.toDate
+                                                ? p.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'));
+                                            const paymentIdDisplay = p.paymentId || `#${p.id.slice(-6).toUpperCase()}`;
+                                            const linkedCount = p.linkedOrderIds?.length ?? (p.orderId ? 1 : 0);
+                                            const unallocated = Number(p.unallocatedAmount) || 0;
+                                            const isLinked = linkedCount > 0;
+                                            const isAvailable = unallocated > 0;
+                                            return (
+                                                <tr key={p.id} style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 600 }}>{paymentIdDisplay}</span>
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                                                        {typeof displayDate === 'string' ? displayDate : '—'}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981', whiteSpace: 'nowrap' }}>
+                                                        ₹{Number(p.amount || 0).toLocaleString()}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                        {p.paymentMethod ? (
+                                                            <span style={{ background: '#10b98122', color: '#10b981', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                                {p.paymentMethod}
+                                                            </span>
+                                                        ) : '—'}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-tertiary)', maxWidth: '200px' }}>
+                                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {p.notes || (p.orderNumber ? `Invoice ${p.orderNumber}` : '—')}
+                                                        </div>
+                                                        {p.attachmentUrl && (
+                                                            <a href={p.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.2rem', textDecoration: 'none' }}>
+                                                                <Paperclip size={11} /> View proof
+                                                            </a>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ padding: '0.7rem 0.75rem' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                                                            {isLinked && (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    🔗 Linked to {linkedCount} Order{linkedCount !== 1 ? 's' : ''}
+                                                                </span>
+                                                            )}
+                                                            {isAvailable && (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    🟡 ₹{unallocated.toLocaleString()} Available
+                                                                </span>
+                                                            )}
+                                                            {!isLinked && !isAvailable && (
+                                                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    {!isSales && (
+                                                        <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
+                                                            <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                                                <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>
+                                                                    <Pencil size={12} /> Edit
+                                                                </button>
+                                                                <button onClick={() => handleDeletePayment(p)} title="Delete" className="btn" style={{ display: 'flex', alignItems: 'center', padding: '0.3rem 0.55rem', fontSize: '0.75rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', border: '1px solid hsla(0, 84%, 60%, 0.3)' }}>
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr style={{ borderTop: '2px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+                                            <td colSpan={2} style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                Total ({payments.length} payments)
+                                            </td>
+                                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
+                                                ₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
+                                            </td>
+                                            <td colSpan={2} />
+                                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                    🟡 ₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()} available
+                                                </span>
+                                            </td>
+                                            {!isSales && <td />}
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {activeTab === 'orders' && (
                     <div className="animate-fade-in">
                         {/* Action toolbar */}
@@ -915,22 +1548,24 @@ export default function WorklistDetailsPage() {
                             >
                                 <AlertTriangle size={16} /> Outstanding Statement
                             </button>
-                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => navigate(`/sales-order/new?retailerId=${id}`)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
-                                >
-                                    <PlusCircle size={16} /> + New Sales Order
-                                </button>
-                                <button
-                                    className="btn btn-primary animate-pulse"
-                                    onClick={() => navigate(`/b2b-invoice?retailerId=${id}`)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
-                                >
-                                    <FilePen size={16} /> + New B2B GST Invoice
-                                </button>
-                            </div>
+                            {!isSales && (
+                                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => navigate(`/sales-order/new?retailerId=${id}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
+                                    >
+                                        <PlusCircle size={16} /> + New Sales Order
+                                    </button>
+                                    <button
+                                        className="btn btn-primary animate-pulse"
+                                        onClick={() => navigate(`/b2b-invoice?retailerId=${id}`)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', padding: '0.55rem 1.25rem' }}
+                                    >
+                                        <FilePen size={16} /> + New B2B GST Invoice
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Outstanding Invoice Modal */}
@@ -997,8 +1632,16 @@ export default function WorklistDetailsPage() {
                             ) : salesOrders.map((so: any) => {
                                 const statusColor: Record<string, string> = { confirmed: '#10b981', draft: '#f59e0b', dispatched: '#38bdf8', cancelled: '#ef4444' };
                                 const color = statusColor[so.status?.toLowerCase()] || '#94a3b8';
-                                const date = so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—';
-                                const outstanding = Math.max(0, (Number(so.grandTotal) || 0) - (Number(so.amountPaid) || 0));
+                                const date = so.invoiceDate
+                                    ? new Date(so.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                                    : (so.createdAt?.toDate ? new Date(so.createdAt.toDate()).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' }) : '—');
+                                // Use the same total-field fallback as everything else (GST invoices
+                                // store the total in netAmount/totalAmount, not grandTotal) so outstanding
+                                // can't wrongly compute to 0 and show a false "Fully Paid".
+                                const invoiceTotal = Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                                const amountPaid = Number(so.amountPaid) || 0;
+                                const outstanding = Math.max(0, invoiceTotal - amountPaid);
+                                const fullyPaid = invoiceTotal > 0 && outstanding === 0 && amountPaid > 0;
                                 const isSelected = selectedSoIds.has(so.id);
                                 return (
                                     <div key={so.id} className="glass-panel" style={{ padding: '1.25rem', borderLeft: `4px solid ${isSelected ? 'var(--primary-light)' : color}`, transition: 'box-shadow 0.15s', outline: isSelected ? '2px solid var(--primary-light)' : 'none', outlineOffset: '-2px' }}
@@ -1008,14 +1651,16 @@ export default function WorklistDetailsPage() {
                                             {/* Left: checkbox + order info */}
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem' }}>
-                                                    {/* Selection checkbox */}
-                                                    <button
-                                                        onClick={() => toggleSoSelection(so.id)}
-                                                        title={isSelected ? 'Deselect order' : 'Select order'}
-                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, color: isSelected ? 'var(--primary-light)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}
-                                                    >
-                                                        {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
-                                                    </button>
+                                                    {/* Selection checkbox — hidden in sales view-only mode */}
+                                                    {!isSales && (
+                                                        <button
+                                                            onClick={() => toggleSoSelection(so.id)}
+                                                            title={isSelected ? 'Deselect order' : 'Select order'}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, color: isSelected ? 'var(--primary-light)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }}
+                                                        >
+                                                            {isSelected ? <CheckSquare size={17} /> : <Square size={17} />}
+                                                        </button>
+                                                    )}
                                                     <span style={{ fontWeight: 700, color: 'var(--primary-light)', fontSize: '1rem' }}>{so.orderNumber || so.invoiceNumber || so.id.slice(-8).toUpperCase()}</span>
                                                     <span style={{ background: `${color}22`, color, padding: '0.15rem 0.6rem', borderRadius: '99px', fontSize: '0.72rem', fontWeight: 700 }}>
                                                         {so.status?.toUpperCase() || 'DRAFT'}
@@ -1032,80 +1677,137 @@ export default function WorklistDetailsPage() {
                                             </div>
                                             {/* Right: amounts */}
                                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--secondary)' }}>₹{Number(so.grandTotal || so.netAmount || so.totalAmount || 0).toLocaleString()}</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--secondary)' }}>₹{invoiceTotal.toLocaleString()}</div>
+                                                {amountPaid > 0 && outstanding > 0 && (
+                                                    <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Paid: ₹{amountPaid.toLocaleString()}</div>
+                                                )}
                                                 {outstanding > 0 && (
                                                     <div style={{ fontSize: '0.78rem', color: '#ef4444', fontWeight: 600 }}>Outstanding: ₹{outstanding.toLocaleString()}</div>
                                                 )}
-                                                {outstanding === 0 && (so.amountPaid > 0) && (
+                                                {fullyPaid && (
                                                     <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>✅ Fully Paid</div>
+                                                )}
+                                                {(so.linkedPaymentIds?.length ?? 0) > 0 && (
+                                                    <div style={{ fontSize: '0.7rem', color: '#8b5cf6', fontWeight: 600, marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                                                        <Link2 size={10} /> {so.linkedPaymentIds.length} linked
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
-                                        {/* Quick-update status dropdowns + payment date + notes */}
-                                        <div style={{ marginTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, whiteSpace: 'nowrap' }}>Quick update:</label>
-                                                <select value={so.status || 'pending'} onChange={e => updateOrderStatus(so.id, 'status', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                                                    <option value="draft">📋 Draft</option>
-                                                    <option value="confirmed">✅ Confirmed</option>
-                                                    <option value="in_transit">🚛 In Transit</option>
-                                                    <option value="dispatched">📦 Dispatched</option>
-                                                    <option value="delivered">🏠 Delivered</option>
-                                                    <option value="cancelled">❌ Cancelled</option>
-                                                    <option value="pending">⏳ Pending</option>
-                                                </select>
-                                                <select value={so.paymentStatus || 'Pending'} onChange={e => updateOrderStatus(so.id, 'paymentStatus', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', cursor: 'pointer' }}>
-                                                    <option value="Pending">💳 Payment Pending</option>
-                                                    <option value="Paid">✅ Payment Done</option>
-                                                    <option value="Partial">🔶 Partial</option>
-                                                </select>
-                                                <select value={so.modeOfPayment || ''} onChange={e => updateOrderStatus(so.id, 'modeOfPayment', e.target.value, so)}
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                                                    <option value="">-- Mode --</option>
-                                                    <option value="Cash">💵 Cash</option>
-                                                    <option value="UPI">📱 UPI</option>
-                                                    <option value="Cheque">🏦 Cheque</option>
-                                                    <option value="15 Days">⏱ 15 Days</option>
-                                                    <option value="30 Days">⏱ 30 Days</option>
-                                                    <option value="45 Days">⏱ 45 Days</option>
-                                                    <option value="Credit">💳 Credit</option>
-                                                </select>
-                                                {/* Payment Date */}
-                                                <input type="date" value={orderPayDates[so.id] ?? (so.paymentDate || '')}
-                                                    onChange={e => setOrderPayDates(prev => ({ ...prev, [so.id]: e.target.value }))}
-                                                    title="Payment Date"
-                                                    style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }} />
+                                        {/* Order status — interactive for editors, read-only for sales */}
+                                        {isSales ? (
+                                            <div style={{ marginTop: '0.65rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                {so.status && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)', fontWeight: 600 }}>
+                                                        📦 {so.status.charAt(0).toUpperCase() + so.status.slice(1)}
+                                                    </span>
+                                                )}
+                                                {so.paymentStatus && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', border: `1px solid ${so.paymentStatus === 'Paid' ? '#10b98140' : '#ef444440'}`, fontWeight: 600 }}>
+                                                        💳 {so.paymentStatus}
+                                                    </span>
+                                                )}
+                                                {so.modeOfPayment && (
+                                                    <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)' }}>
+                                                        {so.modeOfPayment}
+                                                    </span>
+                                                )}
+                                                {so.paymentNotes && (
+                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{so.paymentNotes}</span>
+                                                )}
                                             </div>
-                                            {/* Notes */}
-                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                <input type="text" placeholder="Payment notes / remarks…" value={orderNotes[so.id] ?? (so.paymentNotes || '')}
-                                                    onChange={e => setOrderNotes(prev => ({ ...prev, [so.id]: e.target.value }))}
-                                                    style={{ flex: 1, fontSize: '0.78rem', padding: '0.3rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
-                                                <button className="btn btn-secondary"
-                                                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', whiteSpace: 'nowrap' }}
-                                                    onClick={async () => {
-                                                        await updateDoc(getTenantDoc(db, tenantId!, 'salesOrders', so.id), {
-                                                            paymentDate: orderPayDates[so.id] ?? so.paymentDate ?? '',
-                                                            paymentNotes: orderNotes[so.id] ?? so.paymentNotes ?? '',
-                                                        });
-                                                    }}>💾 Save</button>
+                                        ) : (
+                                            <div style={{ marginTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                                <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                    <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, whiteSpace: 'nowrap' }}>Quick update:</label>
+                                                    <select value={so.status || 'pending'} onChange={e => updateOrderStatus(so.id, 'status', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                        <option value="draft">📋 Draft</option>
+                                                        <option value="confirmed">✅ Confirmed</option>
+                                                        <option value="in_transit">🚛 In Transit</option>
+                                                        <option value="dispatched">📦 Dispatched</option>
+                                                        <option value="delivered">🏠 Delivered</option>
+                                                        <option value="cancelled">❌ Cancelled</option>
+                                                        <option value="pending">⏳ Pending</option>
+                                                    </select>
+                                                    <select value={so.paymentStatus || 'Pending'} onChange={e => updateOrderStatus(so.id, 'paymentStatus', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: so.paymentStatus === 'Paid' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: so.paymentStatus === 'Paid' ? '#10b981' : '#ef4444', cursor: 'pointer' }}>
+                                                        <option value="Pending">💳 Payment Pending</option>
+                                                        <option value="Paid">✅ Payment Done</option>
+                                                        <option value="Partial">🔶 Partial</option>
+                                                    </select>
+                                                    <select value={so.modeOfPayment || ''} onChange={e => updateOrderStatus(so.id, 'modeOfPayment', e.target.value, so)}
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                                                        <option value="">-- Mode --</option>
+                                                        <option value="Cash">💵 Cash</option>
+                                                        <option value="UPI">📱 UPI</option>
+                                                        <option value="Cheque">🏦 Cheque</option>
+                                                        <option value="15 Days">⏱ 15 Days</option>
+                                                        <option value="30 Days">⏱ 30 Days</option>
+                                                        <option value="45 Days">⏱ 45 Days</option>
+                                                        <option value="Credit">💳 Credit</option>
+                                                    </select>
+                                                    {/* Payment Date */}
+                                                    <input type="date" value={orderPayDates[so.id] ?? (so.paymentDate || '')}
+                                                        onChange={e => setOrderPayDates(prev => ({ ...prev, [so.id]: e.target.value }))}
+                                                        title="Payment Date"
+                                                        style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', cursor: 'pointer' }} />
+                                                </div>
+                                                {/* Notes */}
+                                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                    <input type="text" placeholder="Payment notes / remarks…" value={orderNotes[so.id] ?? (so.paymentNotes || '')}
+                                                        onChange={e => setOrderNotes(prev => ({ ...prev, [so.id]: e.target.value }))}
+                                                        style={{ flex: 1, fontSize: '0.78rem', padding: '0.3rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
+                                                    <button className="btn btn-secondary"
+                                                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem', whiteSpace: 'nowrap' }}
+                                                        onClick={async () => {
+                                                            await updateDoc(getTenantDoc(db, tenantId!, 'salesOrders', so.id), {
+                                                                paymentDate: orderPayDates[so.id] ?? so.paymentDate ?? '',
+                                                                paymentNotes: orderNotes[so.id] ?? so.paymentNotes ?? '',
+                                                            });
+                                                        }}>💾 Save</button>
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                         {/* Action buttons */}
                                         <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--surface-border)', flexWrap: 'wrap' }}>
-                                            <button className="btn btn-secondary"
-                                                onClick={() => so.invoiceType === 'B2B_GST'
-                                                    ? navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)
-                                                    : navigate(`/sales-order/${so.id}`)}
-                                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-                                                <FilePen size={14} /> Edit Order
-                                            </button>
+                                            {!isSales && outstanding > 0 && (
+                                                <button className="btn btn-primary"
+                                                    onClick={() => { setPayOrder(so); setPayOrderAmount(outstanding); setPayOrderNote(''); }}
+                                                    title="Record a new payment against this invoice"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <PlusCircle size={14} /> Add Payment
+                                                </button>
+                                            )}
+                                            {!isSales && outstanding > 0 && availablePayments.length > 0 && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => { setLinkPaymentOrder(so); setLinkAllocations({}); }}
+                                                    title="Link an existing unallocated payment to this invoice"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Link2 size={14} /> Link Payment
+                                                </button>
+                                            )}
+                                            {!isSales && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => so.invoiceType === 'B2B_GST'
+                                                        ? navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)
+                                                        : navigate(`/sales-order/${so.id}`)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <FilePen size={14} /> Edit Order
+                                                </button>
+                                            )}
                                             <button className="btn btn-secondary" onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
                                                 <Printer size={14} /> View / Print Invoice
                                             </button>
+                                            {!isSales && (so.linkedPaymentIds?.length ?? 0) > 0 && (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => handleOpenUnlinkModal(so)}
+                                                    title="View and unlink payments from this order"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Link2 size={14} /> Unlink Payments ({so.linkedPaymentIds.length})
+                                                </button>
+                                            )}
                                             {userRole === 'admin' && (
                                                 <button className="btn" onClick={() => setSoToDelete(so)}
                                                     title="Delete this sales order"
@@ -1166,32 +1868,301 @@ export default function WorklistDetailsPage() {
                     </div>
                 )}
 
-                {/* Payment Modal */}
+                {/* Record Payment Modal */}
                 {showPaymentModal && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-                        <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '2rem', position: 'relative' }}>
-                            <button onClick={() => setShowPaymentModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
-                            <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <TrendingUp size={24} color="var(--primary-light)" /> {t('worklist_details.record_payment')}
-                            </h2>
-                            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                                <div>
-                                    <label className="input-label">{t('worklist_details.amount_paid')} (₹)</label>
-                                    <input required type="number" className="input-field" value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} autoFocus />
-                                </div>
-                                <div>
-                                    <label className="input-label">{t('common.notes')} ({t('common.optional')})</label>
-                                    <textarea className="input-field" style={{ minHeight: '80px', paddingTop: '0.75rem' }} value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder={t('worklist_details.payment_notes_placeholder')} />
-                                </div>
-                                <div style={{ marginTop: '1rem' }}>
-                                    <button type="submit" className="btn btn-primary" disabled={isRecordingPayment || paymentAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                        {isRecordingPayment ? <Loader2 className="animate-spin" size={18} /> : t('worklist_details.confirm_payment')}
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => !isRecordingPayment && setShowPaymentModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <TrendingUp size={22} color="var(--primary-light)" /> Record Payment
+                                </h2>
+                                <p style={{ margin: '0 0 1.5rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                    For: <strong style={{ color: 'var(--text-primary)' }}>{retailer.name}</strong>
+                                    {' · '}Outstanding: <strong style={{ color: '#ef4444' }}>₹{Number(retailer.outstandingAmount || 0).toLocaleString()}</strong>
+                                </p>
+                                <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label className="input-label">Amount (₹) *</label>
+                                            <input required type="number" min={1} step="0.01" className="input-field" value={paymentAmount || ''} onChange={e => setPaymentAmount(Number(e.target.value))} autoFocus />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Payment Date *</label>
+                                            <input type="date" className="input-field" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Payment Method</label>
+                                        <select className="input-field" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                                            {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    {['UPI', 'Bank Transfer', 'Other'].includes(paymentMethod) && (
+                                        <>
+                                            <div>
+                                                <label className="input-label">Account Name</label>
+                                                <input type="text" className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={paymentAccountName} onChange={e => setPaymentAccountName(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="input-label">Transaction Reference Number</label>
+                                                <input type="text" className="input-field" placeholder="UTR / Transaction ID" value={paymentTransactionRef} onChange={e => setPaymentTransactionRef(e.target.value)} />
+                                            </div>
+                                        </>
+                                    )}
+                                    <div>
+                                        <label className="input-label">Notes (optional)</label>
+                                        <textarea className="input-field" style={{ minHeight: '70px', paddingTop: '0.75rem', resize: 'vertical' }} value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder="Optional remarks" />
+                                    </div>
+                                    <PaymentAttachmentField
+                                        pendingFile={pmtProofFile}
+                                        attachmentCleared={pmtProofCleared}
+                                        onFileSelect={setPmtProofFile}
+                                        onClear={() => { setPmtProofFile(null); setPmtProofCleared(true); }}
+                                    />
+                                    <button type="submit" className="btn btn-primary" disabled={isRecordingPayment || paymentAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                        {isRecordingPayment ? <Loader2 className="animate-spin" size={18} /> : 'Record Payment'}
                                     </button>
-                                </div>
-                            </form>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 )}
+
+                {/* Per-Invoice Add Payment Modal (partial supported) */}
+                {payOrder && (() => {
+                    const grandTotal = Number(payOrder.grandTotal ?? payOrder.netAmount ?? payOrder.totalAmount ?? 0);
+                    const alreadyPaid = Number(payOrder.amountPaid ?? 0);
+                    const remaining = Math.max(0, grandTotal - alreadyPaid);
+                    const orderLabel = payOrder.orderNumber || payOrder.invoiceNumber || payOrder.id.slice(-6);
+                    const amt = Number(payOrderAmount) || 0;
+                    const over = amt > remaining;
+                    return (
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                                <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                    <button onClick={() => !isSavingOrderPayment && setPayOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                        <PlusCircle size={22} color="var(--primary-light)" /> Add Payment
+                                    </h2>
+                                    <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {orderLabel}</p>
+
+                                    {/* Order money summary */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                                    </div>
+
+                                    <form onSubmit={handleAddOrderPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                            <div>
+                                                <label className="input-label">Amount (₹) *</label>
+                                                <input required type="number" min={1} max={remaining} step="0.01" className="input-field" value={payOrderAmount || ''} onChange={e => setPayOrderAmount(Number(e.target.value))} autoFocus />
+                                                <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <button type="button" onClick={() => setPayOrderAmount(Math.round(remaining / 2))} style={{ fontSize: '0.7rem', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Half</button>
+                                                    <button type="button" onClick={() => setPayOrderAmount(remaining)} style={{ fontSize: '0.7rem', padding: '0.15rem 0.55rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer' }}>Full</button>
+                                                </div>
+                                                {over && <div style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '0.4rem' }}>Max outstanding is ₹{remaining.toLocaleString()} — extra will be ignored.</div>}
+                                            </div>
+                                            <div>
+                                                <label className="input-label">Payment Date *</label>
+                                                <input type="date" className="input-field" value={payOrderDate} onChange={e => setPayOrderDate(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Payment Method</label>
+                                            <select className="input-field" value={payOrderMethod} onChange={e => setPayOrderMethod(e.target.value)}>
+                                                {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                            </select>
+                                        </div>
+                                        {['UPI', 'Bank Transfer', 'Other'].includes(payOrderMethod) && (
+                                            <>
+                                                <div>
+                                                    <label className="input-label">Account Name</label>
+                                                    <input type="text" className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={payOrderAccountName} onChange={e => setPayOrderAccountName(e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label className="input-label">Transaction Reference Number</label>
+                                                    <input type="text" className="input-field" placeholder="UTR / Transaction ID" value={payOrderTransactionRef} onChange={e => setPayOrderTransactionRef(e.target.value)} />
+                                                </div>
+                                            </>
+                                        )}
+                                        <div>
+                                            <label className="input-label">Notes (optional)</label>
+                                            <input type="text" className="input-field" value={payOrderNote} onChange={e => setPayOrderNote(e.target.value)} placeholder="Optional remarks" />
+                                        </div>
+                                        <PaymentAttachmentField
+                                            pendingFile={orderPmtProofFile}
+                                            attachmentCleared={orderPmtProofCleared}
+                                            onFileSelect={setOrderPmtProofFile}
+                                            onClear={() => { setOrderPmtProofFile(null); setOrderPmtProofCleared(true); }}
+                                        />
+                                        <button type="submit" className="btn btn-primary" disabled={isSavingOrderPayment || amt <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            {isSavingOrderPayment ? <Loader2 className="animate-spin" size={18} /> : `Record ₹${Math.min(amt, remaining).toLocaleString()}`}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Edit Payment Modal */}
+                {editingPayment && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => !savingEditPayment && setEditingPayment(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <Pencil size={20} color="var(--primary-light)" /> Edit Payment
+                                </h2>
+                                {editingPayment.paymentId && <p style={{ margin: '0 0 0.2rem', fontSize: '0.78rem', color: 'var(--primary-light)', fontFamily: 'monospace', fontWeight: 600 }}>{editingPayment.paymentId}</p>}
+                                {editingPayment.orderNumber && <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Invoice {editingPayment.orderNumber} — totals adjust automatically</p>}
+                                {!editingPayment.orderNumber && <div style={{ marginBottom: '1.25rem' }} />}
+                                <form onSubmit={handleUpdatePayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label className="input-label">Amount (₹) *</label>
+                                            <input required type="number" min={1} step="0.01" className="input-field" value={editPayAmount || ''} onChange={e => setEditPayAmount(Number(e.target.value))} autoFocus />
+                                        </div>
+                                        <div>
+                                            <label className="input-label">Payment Date</label>
+                                            <input type="date" className="input-field" value={editPayDate} onChange={e => setEditPayDate(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Payment Method</label>
+                                        <select className="input-field" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}>
+                                            {['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'].map(m => <option key={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">Notes (optional)</label>
+                                        <input type="text" className="input-field" value={editPayNote} onChange={e => setEditPayNote(e.target.value)} placeholder="Optional remarks" />
+                                    </div>
+                                    <PaymentAttachmentField
+                                        pendingFile={editProofFile}
+                                        existingAttachment={editingPayment.attachmentUrl ? { url: editingPayment.attachmentUrl, name: editingPayment.attachmentName || '', type: editingPayment.attachmentType || '' } : null}
+                                        attachmentCleared={editProofCleared}
+                                        onFileSelect={setEditProofFile}
+                                        onClear={() => { setEditProofFile(null); setEditProofCleared(true); }}
+                                    />
+                                    <button type="submit" className="btn btn-primary" disabled={savingEditPayment || editPayAmount <= 0} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                        {savingEditPayment ? <Loader2 className="animate-spin" size={18} /> : 'Save Changes'}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Link Payment Modal */}
+                {linkPaymentOrder && (() => {
+                    const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
+                    const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
+                    const remaining = Math.max(0, grandTotal - alreadyPaid);
+                    const orderLabel = linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-8).toUpperCase();
+                    const totalAllocated = Object.values(linkAllocations).reduce((s, v) => s + (Number(v) || 0), 0);
+                    const outstandingAfter = Math.max(0, remaining - totalAllocated);
+                    const over = totalAllocated > remaining + 0.01;
+                    return (
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                                <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                    <button onClick={() => !savingLinkPayment && setLinkPaymentOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+
+                                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                        <Link2 size={22} color="var(--primary-light)" /> Link Payment
+                                    </h2>
+                                    <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                        Order: <strong style={{ color: 'var(--primary-light)' }}>{orderLabel}</strong>
+                                    </p>
+
+                                    {/* Order summary */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Order Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Already Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                                    </div>
+
+                                    {availablePayments.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                            <Wallet size={32} color="var(--surface-border)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
+                                            <p style={{ margin: 0 }}>No unallocated payments available.</p>
+                                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem' }}>Record a payment first, then link it here.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div style={{ marginBottom: '0.75rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                Available payments — enter amount to allocate:
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                                                {availablePayments.map(pmt => {
+                                                    const alloc = Number(linkAllocations[pmt.id] ?? 0);
+                                                    const maxAlloc = Math.min(getEffectiveUnallocated(pmt), remaining);
+                                                    const pmtDate = pmt.paymentDate || (pmt.createdAt?.toDate ? pmt.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
+                                                    return (
+                                                        <div key={pmt.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.85rem', background: alloc > 0 ? 'hsla(142,69%,58%,0.07)' : 'var(--surface-raised)', borderRadius: '8px', border: `1px solid ${alloc > 0 ? '#10b98130' : 'var(--surface-border)'}`, flexWrap: 'wrap', transition: 'all 0.15s' }}>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 700 }}>{pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`}</span>
+                                                                    {pmt.paymentMethod && <span style={{ background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
+                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{pmtDate}</span>
+                                                                </div>
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                                                    Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{getEffectiveUnallocated(pmt).toLocaleString()}</strong>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                                <input
+                                                                    type="number" min={0} max={maxAlloc} step="0.01"
+                                                                    value={alloc || ''}
+                                                                    placeholder="0.00"
+                                                                    onChange={e => setLinkAllocations(prev => ({ ...prev, [pmt.id]: Math.min(Number(e.target.value) || 0, maxAlloc) }))}
+                                                                    style={{ width: '110px', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', color: 'var(--text-primary)', fontSize: '0.85rem', textAlign: 'right' }}
+                                                                />
+                                                                <button type="button"
+                                                                    onClick={() => setLinkAllocations(prev => ({ ...prev, [pmt.id]: maxAlloc }))}
+                                                                    style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                                                                    Max
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Allocation summary */}
+                                            <div style={{ background: over ? 'hsla(0,84%,60%,0.08)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', border: `1px solid ${over ? 'hsla(0,84%,60%,0.3)' : 'var(--surface-border)'}` }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>Total linking:</span>
+                                                    <span style={{ fontWeight: 700, color: over ? '#ef4444' : '#10b981' }}>₹{totalAllocated.toLocaleString()}</span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>Outstanding after:</span>
+                                                    <span style={{ fontWeight: 700, color: outstandingAfter <= 0 ? '#10b981' : '#f59e0b' }}>
+                                                        ₹{outstandingAfter.toLocaleString()}{outstandingAfter <= 0 ? ' ✅' : ''}
+                                                    </span>
+                                                </div>
+                                                {over && <div style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '0.4rem' }}>Allocation exceeds outstanding — reduce amounts.</div>}
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                                <button type="button" className="btn btn-secondary" onClick={() => setLinkPaymentOrder(null)} disabled={savingLinkPayment} style={{ flex: 1 }}>Cancel</button>
+                                                <button type="button" className="btn btn-primary" onClick={handleLinkPayments}
+                                                    disabled={savingLinkPayment || totalAllocated <= 0 || over}
+                                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    {savingLinkPayment ? <Loader2 className="animate-spin" size={16} /> : <><Link2 size={15} /> Link Payments</>}
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Bulk Delete Confirmation Modal */}
                 {showBulkDeleteModal && (() => {
@@ -1273,6 +2244,94 @@ export default function WorklistDetailsPage() {
                                 <button type="button" className="btn" onClick={() => handleDeleteSalesOrder(soToDelete)} disabled={deletingSO}
                                     style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none', cursor: deletingSO ? 'not-allowed' : 'pointer' }}>
                                     {deletingSO ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />} Delete Sales Order
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Unlink Payments Modal */}
+                {unlinkOrder && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                                <button onClick={() => { setUnlinkOrder(null); setUnlinkAllocations([]); }} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                                <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                    <Link2 size={22} color="var(--primary-light)" /> Linked Payments
+                                </h2>
+                                <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                    Order: <strong style={{ color: 'var(--primary-light)' }}>{unlinkOrder.orderNumber || unlinkOrder.invoiceNumber || unlinkOrder.id.slice(-8).toUpperCase()}</strong>
+                                </p>
+
+                                {loadingUnlinkAllocations ? (
+                                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                        <Loader2 className="animate-spin" size={24} style={{ margin: '0 auto', display: 'block' }} />
+                                    </div>
+                                ) : unlinkAllocations.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                        <p style={{ margin: 0 }}>No linked payment allocations found.</p>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                        {unlinkAllocations.map(alloc => {
+                                            const pmt = payments.find(p => p.id === alloc.paymentId);
+                                            const pmtDisplay = alloc.paymentIdDisplay || (pmt?.paymentId) || `#${alloc.paymentId?.slice(-6).toUpperCase()}`;
+                                            return (
+                                                <div key={alloc.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--surface-raised)', borderRadius: '10px', border: '1px solid var(--surface-border)', flexWrap: 'wrap' }}>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--primary-light)', fontWeight: 700, marginBottom: '0.2rem' }}>{pmtDisplay}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                            Allocated: <strong style={{ color: '#10b981' }}>₹{Number(alloc.allocatedAmount || 0).toLocaleString()}</strong>
+                                                            {pmt?.paymentMethod && <span style={{ marginLeft: '0.5rem', background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleUnlinkPayment(alloc)}
+                                                        disabled={unlinkingPmtId === alloc.id}
+                                                        className="btn"
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', fontSize: '0.78rem', background: 'hsla(38,92%,50%,0.1)', color: 'var(--warning)', border: '1px solid hsla(38,92%,50%,0.3)', flexShrink: 0 }}
+                                                    >
+                                                        {unlinkingPmtId === alloc.id ? <Loader2 className="animate-spin" size={12} /> : <X size={12} />}
+                                                        Unlink
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '0.25rem 0 0' }}>
+                                            Unlinking restores the payment's available balance and reduces the order's paid amount.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Delete Payment with Linked Allocations — Confirmation Modal */}
+                {deletePaymentTarget && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(4px)' }}>
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                            <button onClick={() => !deletingLinkedPayment && setDeletePaymentTarget(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+                            <h2 style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger)', fontSize: '1.15rem' }}>
+                                <AlertTriangle size={22} /> Delete Payment?
+                            </h2>
+                            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+                                This payment (<strong style={{ color: 'var(--primary-light)' }}>{deletePaymentTarget.paymentId || `#${deletePaymentTarget.id.slice(-6).toUpperCase()}`}</strong> — <strong style={{ color: '#10b981' }}>₹{Number(deletePaymentTarget.amount || 0).toLocaleString()}</strong>) is linked with <strong>{deletePaymentTarget.linkedOrderIds?.length}</strong> sales order{(deletePaymentTarget.linkedOrderIds?.length ?? 0) !== 1 ? 's' : ''}.
+                                <br /><br />
+                                Deleting it will first unlink all allocations and then permanently delete the payment.
+                            </p>
+                            <ul style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', margin: '0 0 1.25rem', paddingLeft: '1.25rem', lineHeight: 1.7 }}>
+                                <li>All linked payment allocations removed</li>
+                                <li>Affected order balances recalculated</li>
+                                <li>Retailer totals adjusted</li>
+                            </ul>
+                            <p style={{ color: 'var(--danger)', fontSize: '0.82rem', fontWeight: 600, marginBottom: '1.25rem' }}>This action cannot be undone.</p>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button type="button" className="btn btn-secondary" onClick={() => setDeletePaymentTarget(null)} disabled={deletingLinkedPayment} style={{ flex: 1 }}>Cancel</button>
+                                <button type="button" className="btn" onClick={handleDeletePaymentConfirmed} disabled={deletingLinkedPayment}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--danger)', color: 'white', border: 'none' }}>
+                                    {deletingLinkedPayment ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
+                                    {deletingLinkedPayment ? 'Deleting…' : 'Delete Payment'}
                                 </button>
                             </div>
                         </div>

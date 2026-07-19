@@ -64,7 +64,6 @@ class _RootBackFallback extends StatelessWidget {
     );
   }
 }
-
 final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
 final _marketKey = GlobalKey<NavigatorState>(debugLabel: 'market');
 final _hubsKey = GlobalKey<NavigatorState>(debugLabel: 'hubs');
@@ -199,15 +198,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (isLoggedIn && isAuthPath) {
-        final currentUserAsync = ref.read(currentUserProvider);
-        // Right after OTP verification the auth state flips to logged-in while
-        // the users/{phone} doc is still streaming in. Guessing here briefly
-        // flashed the onboarding (role picker) screen at every RETURNING user
-        // before re-redirecting home. Hold position until the profile resolves;
-        // the refresh notifier listens to currentUserProvider and re-runs this
-        // redirect the moment it does.
-        if (currentUserAsync.isLoading) return null;
-        final currentUser = currentUserAsync.value;
+        final currentUser = ref.read(currentUserProvider).value;
         // Keep the post-login destination (?redirect=/checkout etc.) alive
         // across every hop of the auth flow: login → OTP → onboarding → there.
         final pendingRedirect = state.uri.queryParameters['redirect'];
@@ -314,8 +305,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/orders',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: CustomerOrdersScreen()),
+        builder: (_, _) => const _RootBackFallback(child: CustomerOrdersScreen()),
         routes: [
           GoRoute(
             path: ':orderId',
@@ -336,8 +326,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/notifications',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: NotificationsScreen()),
+        builder: (_, _) => const _RootBackFallback(child: NotificationsScreen()),
       ),
       GoRoute(
         path: '/support',
@@ -355,7 +344,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/profile/edit',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => _RootBackFallback(
-          child: ProfileEditScreen(reason: state.uri.queryParameters['reason']),
+          child: ProfileEditScreen(
+            reason: state.uri.queryParameters['reason'],
+          ),
         ),
       ),
       // ── Reels upload + shop profile (outside shell) ───────────────────
@@ -364,28 +355,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const _RootBackFallback(child: ReelUploadScreen()),
       ),
-      // Single-reel deep link — landing spot for shared reel links (see the
-      // web-URL → app-route translation at the top of `redirect` below).
-      GoRoute(
-        path: '/reel/:reelId',
-        parentNavigatorKey: _rootKey,
-        builder: (_, state) => _RootBackFallback(
-          child: ReelDeepLinkScreen(reelId: state.pathParameters['reelId']!),
-        ),
-      ),
       GoRoute(
         path: '/shop/:phone',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => _RootBackFallback(
-          child: ShopProfileScreen(shopPhone: state.pathParameters['phone']!),
+          child: ShopProfileScreen(
+            shopPhone: state.pathParameters['phone']!,
+          ),
         ),
       ),
       // ── Dashboard routes ─────────────────────────────────────────────────
       GoRoute(
         path: '/dashboard',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: DashboardHomeScreen()),
+        builder: (_, _) => const _RootBackFallback(child: DashboardHomeScreen()),
       ),
       GoRoute(
         path: '/dashboard/inventory',
@@ -400,27 +383,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/delivery',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: DeliverySettingsScreen()),
+        builder: (_, _) => const _RootBackFallback(child: DeliverySettingsScreen()),
       ),
       // ── Manufacturer routes ───────────────────────────────────────────────
       GoRoute(
         path: '/dashboard/manufacturer',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: ManufacturerDashboardScreen()),
+        builder: (_, _) => const _RootBackFallback(child: ManufacturerDashboardScreen()),
       ),
       GoRoute(
         path: '/dashboard/manufacturer/retailers',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: RetailerNetworkScreen()),
+        builder: (_, _) => const _RootBackFallback(child: RetailerNetworkScreen()),
       ),
       GoRoute(
         path: '/dashboard/manufacturer/catalog',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) =>
-            const _RootBackFallback(child: ManufacturerCatalogScreen()),
+        builder: (_, _) => const _RootBackFallback(child: ManufacturerCatalogScreen()),
       ),
       GoRoute(
         path: '/dashboard/manufacturer/assign',
@@ -428,8 +407,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) {
           final phone = state.uri.queryParameters['retailerPhone'];
           return _RootBackFallback(
-            child: AssignProductScreen(initialRetailerPhone: phone),
-          );
+              child: AssignProductScreen(initialRetailerPhone: phone));
         },
       ),
       GoRoute(
@@ -441,14 +419,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/hubs/:postId',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => _RootBackFallback(
-          child: HubDetailScreen(postId: state.pathParameters['postId']!),
+          child: HubDetailScreen(
+            postId: state.pathParameters['postId']!,
+          ),
         ),
       ),
       GoRoute(
         path: '/brand/:phone',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => _RootBackFallback(
-          child: BrandScreen(manufacturerPhone: state.pathParameters['phone']!),
+          child: BrandScreen(
+            manufacturerPhone: state.pathParameters['phone']!,
+          ),
         ),
       ),
 

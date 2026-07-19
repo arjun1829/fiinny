@@ -123,7 +123,6 @@ class ReelsRepository {
     batch.update(_db.collection('reels').doc(reelId), {
       'commentsCount': FieldValue.increment(1),
     });
-
     await batch.commit();
   }
 

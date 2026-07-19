@@ -193,6 +193,27 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     _previewController?.play();
   }
 
+  Future<void> _openEditor() async {
+    if (_pickedFile == null || kIsWeb) return;
+    _previewController?.pause();
+    final result = await Navigator.of(context, rootNavigator: true)
+        .push<ReelEditResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ReelEditScreen(
+          videoPath: _pickedFile!.path,
+          initial: _edit,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() => _edit = result);
+      // Preview from the trim start so what you see is what gets posted.
+      await _previewController?.seekTo(result.trimStart);
+    }
+    _previewController?.play();
+  }
+
   Future<void> _upload() async {
     if (_pickedFile == null) return;
     final user = ref.read(currentUserProvider).value;
@@ -226,9 +247,8 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             totalDuration != null &&
             edit.trimsVideo(totalDuration)) {
           trimStartSec = edit.trimStart.inSeconds;
-          trimDurationSec = (edit.trimEnd - edit.trimStart)
-              .inSeconds
-              .clamp(1, _maxReelDuration.inSeconds);
+          trimDurationSec =
+              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, 90);
         }
 
         final info = await VideoCompress.compressVideo(

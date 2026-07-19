@@ -19,6 +19,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { resolveDateRange, DATE_RANGE_PERIODS, type DateRangePeriod } from '../utils/dateRanges';
 import { AGRI_CATEGORIES } from '../utils/constants';
 import { fetchInvoiceTemplate, fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -94,6 +95,16 @@ function getTierMultiplier(points: number, tiers: { name: string; minPoints: num
     const match = sorted.find(t => points >= (t.minPoints || 0));
     const multiplier = match?.multiplier;
     return typeof multiplier === 'number' && multiplier > 0 ? multiplier : 1;
+}
+
+// salesOrders is shared by several modules (B2B Invoice, Quotations, Sales
+// Order, Retailer Portal self-serve, POS). Only POS's generateBillNumber()
+// (and the legacy pre-writeBatch POS form it replaced) ever produces the
+// "KA-####" orderNumber format — every other writer uses its own counter and
+// prefix (SIPL/…, SO-YYYY-####, ORD-######). This is the one reliable,
+// already-existing signal for "this salesOrders doc came from POS Billing."
+function isPosOrder(order: any): boolean {
+    return typeof order?.orderNumber === 'string' && /^KA-\d+$/i.test(order.orderNumber.trim());
 }
 
 export default function POSPage() {
@@ -180,6 +191,20 @@ export default function POSPage() {
     // ── Loyalty display ──────────────────────────────────────────────────────
     const [customerLoyalty, setCustomerLoyalty] = useState<any>(null);
     const [redeemPoints, setRedeemPoints] = useState(0);
+
+    // ── Insights panel (read-only; does not affect billing/checkout) ────────
+    const [showInsightsPanel, setShowInsightsPanel] = useState(false);
+    const [insightsTab, setInsightsTab] = useState<'bills' | 'customer' | 'today'>('bills');
+    const [recentOrders, setRecentOrders] = useState<any[]>([]);
+    const [customerRetailerDoc, setCustomerRetailerDoc] = useState<any>(null);
+    const [reprintOrder, setReprintOrder] = useState<any>(null);
+
+    // Operations Analytics ("Today" tab) — period selector + the orders it resolves to.
+    const [analyticsPeriod, setAnalyticsPeriod] = useState<DateRangePeriod>('today');
+    const [analyticsCustomDate, setAnalyticsCustomDate] = useState('');
+    const [analyticsCustomFrom, setAnalyticsCustomFrom] = useState('');
+    const [analyticsCustomTo, setAnalyticsCustomTo] = useState('');
+    const [periodOrders, setPeriodOrders] = useState<any[]>([]);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -280,6 +305,51 @@ export default function POSPage() {
             .catch(() => {});
     }, [customer.phone, tenantId, hasModule, loyaltyConfig]);
 
+    // ── Insights panel data — read-only listeners, isolated from checkout ───
+    // Recent Bills: latest 50 orders, reused for both the bill list and (client-
+    // filtered) the selected customer's purchase history/favourites.
+    useEffect(() => {
+        if (!tenantId || !showInsightsPanel) return;
+        const unsub = onSnapshot(
+            query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc'), limit(50)),
+            (snap) => setRecentOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isPosOrder)),
+            () => setRecentOrders([]),
+        );
+        return () => unsub();
+    }, [tenantId, showInsightsPanel]);
+
+    // Operations Analytics ("Today" tab): date-scoped query so totals stay
+    // accurate even past the 50-doc window the Recent Bills list uses. Scope
+    // follows the selected period (defaults to today, preserving prior behavior).
+    useEffect(() => {
+        if (!tenantId || !showInsightsPanel) return;
+        const { start, end } = resolveDateRange(analyticsPeriod, analyticsCustomDate, analyticsCustomFrom, analyticsCustomTo);
+        const col = getTenantCollection(db, tenantId, 'salesOrders');
+        const q = start
+            ? query(col, where('createdAt', '>=', start), where('createdAt', '<=', end))
+            : query(col, where('createdAt', '<=', end));
+        const unsub = onSnapshot(
+            q,
+            (snap) => setPeriodOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isPosOrder)),
+            () => setPeriodOrders([]),
+        );
+        return () => unsub();
+    }, [tenantId, showInsightsPanel, analyticsPeriod, analyticsCustomDate, analyticsCustomFrom, analyticsCustomTo]);
+
+    // Selected customer's retailer record (outstanding balance) for the panel only —
+    // independent of handlePhoneLookup, which drives autofill at checkout time.
+    useEffect(() => {
+        if (!tenantId || !showInsightsPanel || customer.phone.length < 5) {
+            setCustomerRetailerDoc(null);
+            return;
+        }
+        let cancelled = false;
+        getDocs(query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1)))
+            .then(snap => { if (!cancelled) setCustomerRetailerDoc(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }); })
+            .catch(() => { if (!cancelled) setCustomerRetailerDoc(null); });
+        return () => { cancelled = true; };
+    }, [tenantId, showInsightsPanel, customer.phone]);
+
     // ── Cart operations ─────────────────────────────────────────────────────
     const addToCart = (product: Product) => {
         setCart(prev => {
@@ -314,15 +384,36 @@ export default function POSPage() {
     const loyaltyDiscount = effectiveRedeemPoints * ((loyaltyConfig?.pointsValue) || 0.1);
     const grandTotal = Math.max(0, cartSubtotal - loyaltyDiscount);
 
+    // Tracks which phone number (if any) the currently-displayed name/address/pin
+    // were auto-populated from, so a lookup miss only clears fields *we* set —
+    // never text the cashier typed in manually for a genuine new walk-in.
+    const lastMatchedPhoneRef = useRef<string | null>(null);
+
     const handlePhoneLookup = async () => {
         if (!tenantId || customer.phone.length < 5) return;
         const q = query(getTenantCollection(db, tenantId, 'retailers'), where('number', '==', customer.phone), limit(1));
         const snaps = await getDocs(q);
         if (!snaps.empty) {
             const data = snaps.docs[0].data();
-            setCustomer({ ...customer, name: data.name, address: data.atPost, pin: data.pin });
+            lastMatchedPhoneRef.current = customer.phone;
+            setCustomer({ ...customer, name: data.name ?? customer.name, address: data.atPost ?? '', pin: data.pin ?? '' });
+        } else if (lastMatchedPhoneRef.current !== null && lastMatchedPhoneRef.current !== customer.phone) {
+            // The number that produced this auto-fill no longer matches (edited/changed) —
+            // revert to a clean walk-in state instead of leaving the stale match displayed.
+            lastMatchedPhoneRef.current = null;
+            setCustomer({ ...customer, name: 'Walk-in Customer', address: '', pin: '' });
         }
     };
+
+    // Real-time auto-lookup: mirrors handlePhoneLookup's onBlur trigger but fires
+    // while typing, debounced so we don't query on every keystroke. Same function,
+    // same tenant-scoped query, same 5-char minimum — no lookup logic duplicated.
+    useEffect(() => {
+        if (!tenantId || customer.phone.length < 5) return;
+        const timer = setTimeout(() => { handlePhoneLookup(); }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customer.phone, tenantId]);
 
     const generateBillNumber = async (): Promise<string> => {
         if (!tenantId) return `POS-${Date.now().toString().slice(-6)}`;
@@ -370,7 +461,7 @@ export default function POSPage() {
                 paymentStatus: paymentMethod === 'Khata' ? 'Pending' : 'Paid',
                 paymentMethod,
                 paymentSplits: options?.splits ?? [],
-                cashReceived: options?.cashReceived,
+                cashReceived: options?.cashReceived ?? null,
                 changeGiven: options?.cashReceived ? Math.max(0, options.cashReceived - grandTotal) : 0,
                 loyaltyPointsRedeemed: options?.loyaltyPointsRedeemed ?? effectiveRedeemPoints,
                 amountPaid: paymentMethod === 'Khata' ? 0 : grandTotal,
@@ -538,6 +629,133 @@ export default function POSPage() {
     const splitTotal = splits.reduce((s, sp) => s + (Number(sp.amount) || 0), 0);
     const splitRemaining = grandTotal - splitTotal;
 
+    // ── Insights panel — derived values (read-only, no writes except Duplicate,
+    // which only stages a new bill tab the same way V-Checkout accept does) ──
+    const customerOrders = customer.phone.length >= 5
+        ? recentOrders.filter(o => o.phoneNumber === customer.phone)
+        : [];
+    const lastOrder = customerOrders[0]; // recentOrders is already createdAt desc
+    const favouriteProducts = (() => {
+        const counts = new Map<string, { name: string; qty: number }>();
+        customerOrders.forEach(o => (o.lineItems || []).forEach((li: any) => {
+            const key = li.productId || li.productName;
+            if (!key) return;
+            const cur = counts.get(key) || { name: li.productName || 'Unknown', qty: 0 };
+            cur.qty += Number(li.quantity) || 0;
+            counts.set(key, cur);
+        }));
+        return Array.from(counts.values()).sort((a, b) => b.qty - a.qty).slice(0, 3);
+    })();
+
+    // Every KPI below is derived from this single filtered dataset (periodOrders,
+    // already POS-only via isPosOrder and date-scoped by the effect above), so
+    // changing the period recomputes every card from the exact same records.
+    const periodSummary = (() => {
+        const validOrders = periodOrders.filter(o => o.status !== 'cancelled');
+        const cancelledCount = periodOrders.filter(o => o.status === 'cancelled').length;
+        const totalSales = validOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0);
+        const billCount = validOrders.length;
+        const sumByMethod = (method: string) => validOrders
+            .filter(o => (o.paymentMethod || '') === method)
+            .reduce((s, o) => s + (Number(o.amountPaid ?? o.grandTotal) || 0), 0);
+        // Split-payment bills contribute their per-method portions instead of the whole total.
+        const splitContribution = (method: string) => validOrders
+            .filter(o => o.paymentMethod === 'Split')
+            .reduce((s, o) => s + (Array.isArray(o.paymentSplits) ? o.paymentSplits
+                .filter((sp: any) => sp.method === method)
+                .reduce((s2: number, sp: any) => s2 + (Number(sp.amount) || 0), 0) : 0), 0);
+        const splitOrders = validOrders.filter(o => o.paymentMethod === 'Split');
+        const cashChangeOrders = validOrders.filter(o => Number(o.changeGiven) > 0);
+
+        const allLineItems = validOrders.flatMap(o => Array.isArray(o.lineItems) ? o.lineItems : []);
+        const totalItemsSold = allLineItems.reduce((s, li: any) => s + (Number(li.quantity) || 0), 0);
+        const taxCollected = allLineItems.reduce((s, li: any) => {
+            const amount = Number(li.amount) || 0;
+            const gstPct = Number(li.gstPct) || 0;
+            // amount is GST-inclusive line total; back out the tax portion.
+            return s + (gstPct > 0 ? amount - (amount / (1 + gstPct / 100)) : 0);
+        }, 0);
+
+        // Most Sold Product / Top Selling Category — category comes from a live
+        // join against the already-loaded `products` list (no extra query); a
+        // product no longer in inventory simply won't contribute a category.
+        const productQty = new Map<string, { name: string; qty: number }>();
+        const categoryQty = new Map<string, number>();
+        allLineItems.forEach((li: any) => {
+            const key = li.productId || li.productName;
+            if (key) {
+                const cur = productQty.get(key) || { name: li.productName || 'Unknown', qty: 0 };
+                cur.qty += Number(li.quantity) || 0;
+                productQty.set(key, cur);
+            }
+            const prod = products.find(p => p.id === li.productId);
+            const cat = (prod?.type || '').trim();
+            if (cat) categoryQty.set(cat, (categoryQty.get(cat) || 0) + (Number(li.quantity) || 0));
+        });
+        const mostSoldProduct = Array.from(productQty.values()).sort((a, b) => b.qty - a.qty)[0]?.name || null;
+        const topCategory = Array.from(categoryQty.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+        // Peak Billing Hour — hour (0-23) with the most bills.
+        const hourCounts = new Map<number, number>();
+        validOrders.forEach(o => {
+            const d = o.createdAt?.toDate?.();
+            if (!d) return;
+            hourCounts.set(d.getHours(), (hourCounts.get(d.getHours()) || 0) + 1);
+        });
+        const peakHourEntry = Array.from(hourCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+        const peakHour = peakHourEntry
+            ? new Date(2000, 0, 1, peakHourEntry[0]).toLocaleTimeString('en-IN', { hour: 'numeric', hour12: true })
+            : null;
+
+        const billTotals = validOrders.map(o => Number(o.grandTotal) || 0);
+
+        return {
+            totalSales,
+            billCount,
+            avgBillValue: billCount > 0 ? totalSales / billCount : 0,
+            cashCollection: sumByMethod('Cash') + splitContribution('Cash'),
+            upiCollection: sumByMethod('UPI') + splitContribution('UPI'),
+            khataCollection: validOrders.filter(o => o.paymentMethod === 'Khata').reduce((s, o) => s + (Number(o.grandTotal) || 0), 0),
+            cancelledCount,
+            cashChangeCollection: cashChangeOrders.reduce((s, o) => s + (Number(o.changeGiven) || 0), 0),
+            splitPaymentCollection: splitOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0),
+            loyaltyRedemptions: validOrders.reduce((s, o) => s + (Number(o.loyaltyPointsRedeemed) || 0), 0),
+            discountGiven: validOrders.reduce((s, o) => s + (Number(o.discount) || 0), 0),
+            taxCollected,
+            avgItemsPerBill: billCount > 0 ? totalItemsSold / billCount : 0,
+            highestBill: billTotals.length > 0 ? Math.max(...billTotals) : 0,
+            lowestBill: billTotals.length > 0 ? Math.min(...billTotals) : 0,
+            peakHour,
+            mostSoldProduct,
+            topCategory,
+        };
+    })();
+
+    const openReprint = (order: any) => {
+        setReprintOrder(order);
+        setTimeout(() => { window.print(); setReprintOrder(null); }, 100);
+    };
+
+    const duplicateBill = (order: any) => {
+        if (billTabs.length >= 5) { showToast('Close a bill tab first — max 5 open at once.', 'error'); return; }
+        const items: CartItem[] = (order.lineItems || []).map((li: any) => {
+            const prod = products.find(p => p.id === li.productId);
+            if (!prod) return null;
+            const rate = Number(li.mrp) || prod.sellingPrice || prod.maxRetailPrice || 0;
+            const qty = Number(li.quantity) || 1;
+            return { ...prod, cartQuantity: qty, cartTotal: qty * rate };
+        }).filter(Boolean) as CartItem[];
+        if (items.length === 0) { showToast('Could not duplicate — none of these products are in inventory anymore.', 'error'); return; }
+        const newId = `tab${Date.now()}`;
+        setBillTabs(prev => [...prev, {
+            id: newId, label: `Bill ${prev.length + 1}`, cart: items,
+            customer: { name: order.retailerName || 'Walk-in Customer', phone: order.phoneNumber || '', address: order.address || '', pin: order.pin || '' },
+        }]);
+        setActiveTabId(newId);
+        setShowInsightsPanel(false);
+        showToast('Bill duplicated into a new tab', 'success');
+    };
+
     if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-600" size={48} /></div>;
 
     return (
@@ -596,6 +814,12 @@ export default function POSPage() {
                 <button onClick={openAddProduct} title="Add a new product to inventory"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
                     <PlusCircle size={16} /> New Product
+                </button>
+
+                {/* Insights panel — recent bills, customer snapshot, today's summary */}
+                <button onClick={() => setShowInsightsPanel(v => !v)} title="POS Insights"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', borderRadius: '10px', border: '1px solid var(--surface-border)', background: showInsightsPanel ? 'var(--primary)' : 'var(--surface-base)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: showInsightsPanel ? 'white' : 'var(--text-secondary)', transition: 'all var(--transition-fast)' }}>
+                    <History size={16} /> Insights
                 </button>
             </header>
 
@@ -856,6 +1080,232 @@ export default function POSPage() {
                 </aside>
             </div>
 
+            {/* ── POS Insights Panel — read-only, does not touch billing state ────────── */}
+            {showInsightsPanel && (
+                <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.5)', zIndex: 900, display: 'flex', justifyContent: 'flex-end', animation: 'fadeIn 0.18s ease-out' }}
+                    onClick={() => setShowInsightsPanel(false)}>
+                    <div className="themed-scroll" style={{ width: '420px', maxWidth: '100%', background: 'var(--surface-base)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderLeft: '1px solid var(--surface-border)', height: '100%', overflowY: 'auto', padding: '1.5rem', animation: 'slideInRight 0.22s ease-out' }}
+                        onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                            <h3 style={{ margin: 0, display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <History size={20} /> POS Insights
+                            </h3>
+                            <button onClick={() => setShowInsightsPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+                        </div>
+
+                        {/* Tabs */}
+                        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.25rem' }}>
+                            {([['bills', 'Recent Bills'], ['customer', 'Customer'], ['today', 'Analytics']] as const).map(([key, label]) => (
+                                <button key={key} onClick={() => setInsightsTab(key)}
+                                    style={{ flex: 1, padding: '0.4rem 0.5rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.8rem', border: '1px solid', cursor: 'pointer',
+                                        background: insightsTab === key ? 'var(--primary)' : 'var(--surface-raised)',
+                                        color: insightsTab === key ? 'white' : 'var(--text-secondary)',
+                                        borderColor: insightsTab === key ? 'var(--primary)' : 'var(--surface-border)' }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* ── Recent Bills ─────────────────────────────────────────────── */}
+                        {insightsTab === 'bills' && (
+                            recentOrders.length === 0
+                                ? <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem 0' }}>No bills yet today or recently.</p>
+                                : recentOrders.map(order => (
+                                    <div key={order.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '0.9rem', marginBottom: '0.75rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                                            <div>
+                                                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{order.orderNumber || 'N/A'}</span>
+                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginLeft: '0.5rem' }}>{order.retailerName || 'Walk-in Customer'}</span>
+                                            </div>
+                                            <span style={{ fontWeight: 800, color: 'var(--primary)' }}>₹{Math.round(order.grandTotal || 0).toLocaleString('en-IN')}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.6rem' }}>
+                                            <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '99px', background: order.paymentStatus === 'Pending' ? 'hsla(38,92%,50%,0.15)' : 'hsla(142,60%,40%,0.15)', color: order.paymentStatus === 'Pending' ? '#f59e0b' : '#22c55e', fontWeight: 700 }}>
+                                                {order.paymentStatus || '—'}
+                                            </span>
+                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{order.paymentMethod || '—'}</span>
+                                            {order.status === 'cancelled' && (
+                                                <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '99px', background: 'hsla(0,84%,55%,0.15)', color: '#ef4444', fontWeight: 700 }}>Cancelled</span>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                            <button onClick={() => openReprint(order)} title="Reprint this bill"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', background: 'hsla(152,60%,40%,0.12)', color: 'var(--primary)', border: '1px solid hsla(152,60%,40%,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                                                <Printer size={12} /> Reprint
+                                            </button>
+                                            <button onClick={() => duplicateBill(order)} title="Duplicate into a new bill tab"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', background: 'hsla(220,70%,55%,0.12)', color: '#3b82f6', border: '1px solid hsla(220,70%,55%,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                                                <Columns size={12} /> Duplicate
+                                            </button>
+                                            {/* Refund — temporarily disabled system-wide (Returns module is unfinished).
+                                                Re-enable this button once Returns/Refund is ready; logic below is untouched.
+                                            <button onClick={() => showToast('Refunds are handled from the Returns module.', 'info')} title="Refund"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', background: 'hsla(0,84%,55%,0.1)', color: '#f87171', border: '1px solid hsla(0,84%,55%,0.2)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                                                <ExternalLink size={12} /> Refund
+                                            </button>
+                                            */}
+                                        </div>
+                                    </div>
+                                ))
+                        )}
+
+                        {/* ── Customer Experience ──────────────────────────────────────── */}
+                        {insightsTab === 'customer' && (
+                            customer.phone.length < 5 ? (
+                                <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '2rem 0' }}>
+                                    <User size={32} style={{ margin: '0 auto 0.75rem', opacity: 0.2, display: 'block' }} />
+                                    Enter a customer phone number on the bill to see their history here.
+                                </p>
+                            ) : (
+                                <div>
+                                    <h4 style={{ margin: '0 0 1rem', color: 'var(--text-primary)' }}>{customer.name || 'Customer'}</h4>
+
+                                    <div className="glass-panel" style={{ padding: '0.875rem', marginBottom: '0.9rem' }}>
+                                        <p style={{ margin: '0 0 0.3rem', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Last Purchase</p>
+                                        <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            {lastOrder ? `₹${Math.round(lastOrder.grandTotal || 0).toLocaleString('en-IN')} · ${lastOrder.orderNumber || ''}` : 'No prior purchases found'}
+                                        </p>
+                                        {lastOrder?.createdAt?.toDate && (
+                                            <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                                                Last visit: {lastOrder.createdAt.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {customerRetailerDoc && Number(customerRetailerDoc.outstandingAmount) > 0 && (
+                                        <div className="glass-panel" style={{ padding: '0.875rem', marginBottom: '0.9rem', borderColor: 'hsla(0,84%,55%,0.3)' }}>
+                                            <p style={{ margin: '0 0 0.3rem', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Outstanding Amount</p>
+                                            <p style={{ margin: 0, fontWeight: 800, color: '#ef4444', fontSize: '1.1rem' }}>
+                                                ₹{Math.round(customerRetailerDoc.outstandingAmount).toLocaleString('en-IN')}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {loyaltyIsActive && (
+                                        <div className="glass-panel" style={{ padding: '0.875rem', marginBottom: '0.9rem' }}>
+                                            <p style={{ margin: '0 0 0.3rem', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Loyalty Status</p>
+                                            {customerLoyalty ? (
+                                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--secondary-dark)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <Star size={15} /> {customerLoyalty.points || 0} points
+                                                </p>
+                                            ) : (
+                                                <p style={{ margin: 0, color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>Not enrolled yet</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="glass-panel" style={{ padding: '0.875rem' }}>
+                                        <p style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Favourite Products</p>
+                                        {favouriteProducts.length === 0 ? (
+                                            <p style={{ margin: 0, color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>Not enough purchase history yet</p>
+                                        ) : favouriteProducts.map((fp, i) => (
+                                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '0.25rem 0', color: 'var(--text-primary)' }}>
+                                                <span>{fp.name}</span>
+                                                <span style={{ color: 'var(--text-tertiary)' }}>×{fp.qty}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '0.75rem' }}>
+                                        Based on the last {recentOrders.length} bills recorded for this store.
+                                    </p>
+                                </div>
+                            )
+                        )}
+
+                        {/* ── POS Operations Analytics (default: Today) ───────────────────── */}
+                        {insightsTab === 'today' && (
+                            <div>
+                                {/* Period selector */}
+                                <select
+                                    value={analyticsPeriod}
+                                    onChange={e => setAnalyticsPeriod(e.target.value as DateRangePeriod)}
+                                    style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+                                    {DATE_RANGE_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                                </select>
+
+                                {analyticsPeriod === 'customDate' && (
+                                    <input type="date" value={analyticsCustomDate} onChange={e => setAnalyticsCustomDate(e.target.value)}
+                                        className="input-field" style={{ width: '100%', marginBottom: '0.75rem', fontSize: '0.85rem' }} />
+                                )}
+                                {analyticsPeriod === 'customRange' && (
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                        <input type="date" value={analyticsCustomFrom} onChange={e => setAnalyticsCustomFrom(e.target.value)}
+                                            className="input-field" style={{ flex: 1, fontSize: '0.85rem' }} placeholder="From" />
+                                        <input type="date" value={analyticsCustomTo} onChange={e => setAnalyticsCustomTo(e.target.value)}
+                                            className="input-field" style={{ flex: 1, fontSize: '0.85rem' }} placeholder="To" />
+                                    </div>
+                                )}
+
+                                {/* Core KPIs */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    {[
+                                        ['Total Sales', `₹${Math.round(periodSummary.totalSales).toLocaleString('en-IN')}`],
+                                        ['Total Bills', periodSummary.billCount.toString()],
+                                        ['Avg Bill Value', `₹${Math.round(periodSummary.avgBillValue).toLocaleString('en-IN')}`],
+                                        ['Cash Collection', `₹${Math.round(periodSummary.cashCollection).toLocaleString('en-IN')}`],
+                                        ['UPI Collection', `₹${Math.round(periodSummary.upiCollection).toLocaleString('en-IN')}`],
+                                        ['Khata Collection', `₹${Math.round(periodSummary.khataCollection).toLocaleString('en-IN')}`],
+                                        ['Cancelled Bills', periodSummary.cancelledCount.toString()],
+                                    ].map(([label, value]) => (
+                                        <div key={label} className="glass-panel" style={{ padding: '0.9rem' }}>
+                                            <p style={{ margin: '0 0 0.3rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</p>
+                                            <p style={{ margin: 0, fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>{value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Additional operational KPIs — only shown when there's data to back them */}
+                                {periodSummary.billCount > 0 && (
+                                    <>
+                                        <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '1.1rem 0 0.6rem' }}>
+                                            More Details
+                                        </p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                            {([
+                                                ['Cash+Change Collection', periodSummary.cashChangeCollection > 0 ? `₹${Math.round(periodSummary.cashChangeCollection).toLocaleString('en-IN')}` : null],
+                                                ['Split Payment Collection', periodSummary.splitPaymentCollection > 0 ? `₹${Math.round(periodSummary.splitPaymentCollection).toLocaleString('en-IN')}` : null],
+                                                ['Loyalty Redemptions', periodSummary.loyaltyRedemptions > 0 ? `${periodSummary.loyaltyRedemptions.toLocaleString('en-IN')} pts` : null],
+                                                ['Discount Given', periodSummary.discountGiven > 0 ? `₹${Math.round(periodSummary.discountGiven).toLocaleString('en-IN')}` : null],
+                                                ['Tax Collected', periodSummary.taxCollected > 0 ? `₹${Math.round(periodSummary.taxCollected).toLocaleString('en-IN')}` : null],
+                                                ['Avg Items / Bill', periodSummary.avgItemsPerBill.toFixed(1)],
+                                                ['Highest Bill', `₹${Math.round(periodSummary.highestBill).toLocaleString('en-IN')}`],
+                                                ['Lowest Bill', `₹${Math.round(periodSummary.lowestBill).toLocaleString('en-IN')}`],
+                                                ['Peak Billing Hour', periodSummary.peakHour],
+                                                ['Most Sold Product', periodSummary.mostSoldProduct],
+                                                ['Top Selling Category', periodSummary.topCategory],
+                                            ] as [string, string | null][]).filter(([, value]) => value !== null).map(([label, value]) => (
+                                                <div key={label} className="glass-panel" style={{ padding: '0.9rem' }}>
+                                                    <p style={{ margin: '0 0 0.3rem', fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</p>
+                                                    <p style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Hidden reprint layout — separate from the live checkout print layout below */}
+            {reprintOrder && (
+                <div className="print-only">
+                    <TraditionalPrintLayout
+                        cart={(reprintOrder.lineItems || []).map((li: any) => ({
+                            name: li.productName, cartQuantity: li.quantity, baseUnit: li.unit,
+                            sellingPrice: li.mrp, maxRetailPrice: li.mrp, cartTotal: li.amount,
+                        }))}
+                        customer={{ name: reprintOrder.retailerName, phone: reprintOrder.phoneNumber, address: reprintOrder.address }}
+                        branding={branding}
+                        billNumber={reprintOrder.orderNumber}
+                        subtotal={reprintOrder.subtotal || 0}
+                        discount={reprintOrder.discount || 0}
+                        grandTotal={reprintOrder.grandTotal || 0}
+                    />
+                </div>
+            )}
+
             {/* ── V-Pay Dialog ──────────────────────────────────────────────────────── */}
             {showVPayDialog && (
                 <div style={{ position: 'fixed', inset: 0, background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.18s ease-out' }}
@@ -1074,18 +1524,21 @@ export default function POSPage() {
                 />
             )}
 
-            {/* Hidden print layout */}
-            <div className="print-only">
-                <TraditionalPrintLayout
-                    cart={cart}
-                    customer={customer}
-                    branding={branding}
-                    billNumber={nextBillNumber}
-                    subtotal={cartSubtotal}
-                    discount={loyaltyDiscount}
-                    grandTotal={grandTotal}
-                />
-            </div>
+            {/* Hidden print layout — suppressed while a reprint (below) is in flight,
+                so window.print() never renders both layouts at once. */}
+            {!reprintOrder && (
+                <div className="print-only">
+                    <TraditionalPrintLayout
+                        cart={cart}
+                        customer={customer}
+                        branding={branding}
+                        billNumber={nextBillNumber}
+                        subtotal={cartSubtotal}
+                        discount={loyaltyDiscount}
+                        grandTotal={grandTotal}
+                    />
+                </div>
+            )}
         </div>
     );
 }

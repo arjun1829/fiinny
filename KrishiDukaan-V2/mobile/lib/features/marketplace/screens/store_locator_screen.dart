@@ -416,17 +416,8 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                   userLng: userLng,
                   selectedStoreId: _selectedStoreId,
                   focusedStore: hasSelected ? selected : null,
-                  onMarkerTap: (s) {
-                    setState(() => _selectedStoreId = s.id);
-                    if (s.hasLocation) {
-                      _animateTo(_overlayMapController, s.lat!, s.lng!, 15);
-                    }
-                  },
-                  onClose: () {
-                    _overlayMapController?.dispose();
-                    _overlayMapController = null;
-                    setState(() => _mapExpanded = false);
-                  },
+                  onMarkerTap: (s) => setState(() => _selectedStoreId = s.id),
+                  onClose: () => setState(() => _mapExpanded = false),
                   onNavigate: (s) => _navigate(
                     s,
                     allStores: allStores,

@@ -137,70 +137,48 @@ class AppShell extends ConsumerWidget {
         body: navigationShell,
         floatingActionButton: fab,
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        bottomNavigationBar: isReelsTab
-            ? null
-            : Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFFFFFFFF), Color(0xFFF5F8FF)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x16000000),
-                      blurRadius: 16,
-                      offset: Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        height: 2,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0x1A3C4DB7),
-                              Color(0x803C4DB7),
-                              Color(0x1A3C4DB7),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
-                        child: Row(
-                          children: List.generate(_destinations.length, (
-                            index,
-                          ) {
-                            return Expanded(
-                              child: _ShellNavItem(
-                                destination: _destinations[index],
-                                isSelected:
-                                    navigationShell.currentIndex == index,
-                                onTap: () {
-                                  ref
-                                      .read(activeShellIndexProvider.notifier)
-                                      .setIndex(index);
-                                  navigationShell.goBranch(
-                                    index,
-                                    initialLocation:
-                                        index == navigationShell.currentIndex,
-                                  );
-                                },
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: AppColors.divider.withValues(alpha: 0.7),
               ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                children: List.generate(_destinations.length, (index) {
+                  return Expanded(
+                    child: _ShellNavItem(
+                      destination: _destinations[index],
+                      isSelected: navigationShell.currentIndex == index,
+                      onTap: () {
+                        ref
+                            .read(activeShellIndexProvider.notifier)
+                            .setIndex(index);
+                        navigationShell.goBranch(
+                          index,
+                          initialLocation:
+                              index == navigationShell.currentIndex,
+                        );
+                      },
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

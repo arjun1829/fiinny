@@ -11,7 +11,6 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
-import '../../../core/utils/format_count.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -1016,8 +1015,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                       const SizedBox(width: 8),
                       Flexible(
                         child: GestureDetector(
-                          onTap: () =>
-                              context.push('/shop/${widget.reel.shopOwnerId}'),
+                          onTap: () => context
+                              .push('/shop/${widget.reel.shopOwnerId}'),
                           child: Text(
                             '@${widget.reel.shopName}',
                             maxLines: 1,

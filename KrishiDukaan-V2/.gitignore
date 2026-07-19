@@ -38,3 +38,7 @@ next-env.d.ts
 
 # Windows metadata
 *:Zone.Identifier
+
+# Firebase CLI debug logs
+firebase-debug.log
+firebase-debug.*.log

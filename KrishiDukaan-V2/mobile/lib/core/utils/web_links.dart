@@ -25,8 +25,9 @@ class WebLinks {
     return base.isEmpty ? id : '$base-$id';
   }
 
+  /// SEO product page (has a "View sellers & buy" button into the store).
   static String product(String name, String id) =>
-      '$_base/?view=product&product=$id';
+      '$_base/products/${_slug(name, id)}';
 
   /// Reel page with title/thumbnail link preview.
   static String reel(String title, String id) =>

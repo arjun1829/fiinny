@@ -200,13 +200,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final appBar = AppBar(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      foregroundColor: AppColors.onSurface,
-      systemOverlayStyle: topBarOverlayStyle,
-      flexibleSpace: const TopBarBackdrop(),
+      foregroundColor: Colors.white,
+      flexibleSpace: Container(
+        decoration: BoxDecoration(gradient: topBarGradient()),
+      ),
       titleSpacing: 0,
       title: Text('Checkout',
-          style: AppTextStyles.heading2.copyWith(
-              color: AppColors.onSurface, fontWeight: FontWeight.w800)),
+          style: AppTextStyles.heading2.copyWith(color: Colors.white)),
     );
 
     if (items.isEmpty) {

@@ -20,6 +20,14 @@ if (sentryDsn) {
   });
 }
 
+// Dev only: purge any previously-registered service worker + its caches so the
+// browser never serves a stale bundle or intercepts live Firestore reads.
+// Production keeps the PWA service worker.
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

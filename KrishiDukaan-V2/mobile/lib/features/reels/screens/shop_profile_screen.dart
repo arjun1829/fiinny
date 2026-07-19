@@ -542,7 +542,7 @@ class _ReelGridCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 2),
                       Text(
-                        formatCount(reel.likesCount),
+                        '${reel.likesCount}',
                         style: const TextStyle(
                           color: Colors.white60,
                           fontSize: 10,
@@ -556,7 +556,7 @@ class _ReelGridCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 2),
                       Text(
-                        formatCount(reel.viewsCount),
+                        '${reel.viewsCount}',
                         style: const TextStyle(
                           color: Colors.white60,
                           fontSize: 10,
@@ -1454,7 +1454,7 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          formatCount(_likesCount),
+                          '$_likesCount',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -1476,7 +1476,7 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        formatCount(_commentsCount),
+                        '$_commentsCount',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
