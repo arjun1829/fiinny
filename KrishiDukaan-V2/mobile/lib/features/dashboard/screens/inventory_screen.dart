@@ -640,7 +640,11 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
   final List<VariantModel> _variants = [];
   List<TextEditingController> _imageUrlCtrls = [];
-  File? _imageFile;
+  final List<File?> _imageFiles = List.filled(5, null);
+
+  bool _gstApplicable = false;
+  double _gstRate = 18.0;
+  String _sellMode = 'online_delivery';
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;
@@ -711,7 +715,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     });
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage(int index) async {
     final picker = ImagePicker();
     final source = await showDialog<ImageSource>(
       context: context,
@@ -736,8 +740,65 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       imageQuality: 85,
     );
     if (xFile != null && mounted) {
-      setState(() => _imageFile = File(xFile.path));
+      final file = File(xFile.path);
+      final bytes = await file.length();
+      if (bytes > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image must be less than 5MB')),
+          );
+        }
+        return;
+      }
+      setState(() => _imageFiles[index] = file);
     }
+  }
+
+  Widget _buildImageRow(int index) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _imageUrlCtrls[index],
+              decoration: InputDecoration(
+                labelText: index == 0 ? 'Main image URL' : 'Image ${index + 1} URL',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => _pickImage(index),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: _imageFiles[index] != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _imageFiles[index]!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 24,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1078,63 +1139,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 ),
                 const SizedBox(height: 12),
 
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _imageUrlCtrls[0],
-                        decoration: InputDecoration(
-                          labelText: 'Main image URL',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: _pickImage,
-                      child: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.divider),
-                        ),
-                        child: _imageFile != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.file(
-                                  _imageFile!,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.add_photo_alternate_outlined,
-                                size: 24,
-                                color: AppColors.onSurfaceVariant,
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ...List.generate(
-                  4,
-                  (i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextField(
-                      controller: _imageUrlCtrls[i + 1],
-                      decoration: InputDecoration(
-                        labelText: 'Image ${i + 2} URL',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                ...List.generate(5, (i) => _buildImageRow(i)),
                 const SizedBox(height: 16),
 
                 // Store Address
@@ -1374,17 +1379,17 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
     setState(() => _saving = true);
     try {
-      final imageUrls = _imageUrlCtrls
-          .map((c) => c.text.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-
-      if (_imageFile != null) {
-        final url = await DashboardRepository().uploadListingImage(
-          _imageFile!,
-          widget.sellerPhone,
-        );
-        imageUrls.insert(0, url);
+      final imageUrls = <String>[];
+      for (int i = 0; i < 5; i++) {
+        if (_imageFiles[i] != null) {
+          final url = await DashboardRepository().uploadListingImage(
+            _imageFiles[i]!,
+            widget.sellerPhone,
+          );
+          imageUrls.add(url);
+        } else if (_imageUrlCtrls[i].text.trim().isNotEmpty) {
+          imageUrls.add(_imageUrlCtrls[i].text.trim());
+        }
       }
 
       final catalogId =
@@ -1787,62 +1792,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
             ),
             const SizedBox(height: 12),
             // Main image — file picker or URL
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _imageUrlCtrls[0],
-                    decoration: InputDecoration(
-                      labelText: 'Main image URL',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.divider),
-                    ),
-                    child: _imageFile != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(_imageFile!, fit: BoxFit.cover),
-                          )
-                        : const Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 24,
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ...List.generate(
-              4,
-              (i) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TextField(
-                  controller: _imageUrlCtrls[i + 1],
-                  decoration: InputDecoration(
-                    labelText: 'Image ${i + 2} URL',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ),
+            ...List.generate(5, (i) => _buildImageRow(i)),
             const SizedBox(height: 16),
 
             // ── Discount ───────────────────────────────────────────────────
@@ -1896,7 +1846,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     );
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage(int index) async {
     final picker = ImagePicker();
     final source = await showDialog<ImageSource>(
       context: context,
@@ -1921,38 +1871,89 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       imageQuality: 85,
     );
     if (xFile != null && mounted) {
-      setState(() => _imageFile = File(xFile.path));
+      final file = File(xFile.path);
+      final bytes = await file.length();
+      if (bytes > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image must be less than 5MB')),
+          );
+        }
+        return;
+      }
+      setState(() => _imageFiles[index] = file);
     }
+  }
+
+  Widget _buildImageRow(int index) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _imageUrlCtrls[index],
+              decoration: InputDecoration(
+                labelText: index == 0 ? 'Main image URL' : 'Image ${index + 1} URL',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => _pickImage(index),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: _imageFiles[index] != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _imageFiles[index]!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 24,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _save() async {
     final price = double.tryParse(_priceCtrl.text.trim());
     final stock = int.tryParse(_stockCtrl.text.trim());
-    if (price == null || stock == null) return;
+    if (price == null || stock == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid price and stock quantity.')),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
     try {
-      // Collect image URLs (non-empty)
-      final imageUrls = _imageUrlCtrls
-          .map((c) => c.text.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-
-      // Upload picked file if any, replace or prepend to URLs
-      if (_imageFile != null) {
-        final url = await DashboardRepository().uploadListingImage(
-          _imageFile!,
-          widget.listing.sellerPhone,
-        );
-        if (imageUrls.isEmpty || imageUrls.first.isEmpty) {
-          if (imageUrls.isEmpty) {
-            imageUrls.insert(0, url);
-          } else {
-            imageUrls[0] = url;
-          }
-        } else {
-          imageUrls.insert(0, url);
-          if (imageUrls.length > 5) imageUrls.removeLast();
+      final imageUrls = <String>[];
+      for (int i = 0; i < 5; i++) {
+        if (_imageFiles[i] != null) {
+          final url = await DashboardRepository().uploadListingImage(
+            _imageFiles[i]!,
+            widget.listing.sellerPhone,
+          );
+          imageUrls.add(url);
+        } else if (_imageUrlCtrls[i].text.trim().isNotEmpty) {
+          imageUrls.add(_imageUrlCtrls[i].text.trim());
         }
       }
 

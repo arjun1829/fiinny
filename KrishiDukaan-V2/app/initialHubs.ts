@@ -14,6 +14,7 @@ export type Hub = {
   soilType?: string;
   waterNeeds?: string;
   bestSeason?: string;
+  videos?: { id: string; title: string; url: string; thumbnail: string; description: string }[];
 };
 
 export const INITIAL_HUBS: Hub[] = [

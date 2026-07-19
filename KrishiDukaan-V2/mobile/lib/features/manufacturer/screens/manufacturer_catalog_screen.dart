@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -574,6 +577,7 @@ class _ProductSheetState extends State<_ProductSheet> {
 
   final List<VariantModel> _variants = [];
   late List<TextEditingController> _imageUrlCtrls;
+  final List<File?> _imageFiles = List.filled(5, null);
 
   static const _categories = [
     'Fertilizers',
@@ -645,6 +649,92 @@ class _ProductSheetState extends State<_ProductSheet> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _pickImage(int index) async {
+    final picker = ImagePicker();
+    final source = await showDialog<ImageSource>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select image source'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
+            child: const Text('Camera'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
+            child: const Text('Gallery'),
+          ),
+        ],
+      ),
+    );
+    if (source == null) return;
+    final xFile = await picker.pickImage(
+      source: source,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (xFile != null && mounted) {
+      final file = File(xFile.path);
+      final bytes = await file.length();
+      if (bytes > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image must be less than 5MB')),
+          );
+        }
+        return;
+      }
+      setState(() => _imageFiles[index] = file);
+    }
+  }
+
+  Widget _buildImageRow(int index) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _imageUrlCtrls[index],
+              decoration: InputDecoration(
+                labelText: index == 0 ? 'Main image URL' : 'Image ${index + 1} URL',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => _pickImage(index),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: _imageFiles[index] != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        _imageFiles[index]!,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 24,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addVariantSize() {
@@ -1138,23 +1228,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...List.generate(
-                  5,
-                  (i) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextField(
-                      controller: _imageUrlCtrls[i],
-                      decoration: InputDecoration(
-                        labelText: i == 0
-                            ? 'Main image URL'
-                            : 'Image ${i + 1} URL',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                ...List.generate(5, (i) => _buildImageRow(i)),
                 const SizedBox(height: 80),
               ],
             ),
@@ -1265,21 +1339,34 @@ class _ProductSheetState extends State<_ProductSheet> {
     setState(() => _saving = true);
     try {
       final repo = ManufacturerRepository();
-      final imageUrls = _imageUrlCtrls
-          .map((c) => c.text.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
+      final imageUrls = <String>[];
+      for (int i = 0; i < 5; i++) {
+        if (_imageFiles[i] != null) {
+          final url = await DashboardRepository().uploadListingImage(
+            _imageFiles[i]!,
+            widget.manufacturerPhone,
+          );
+          imageUrls.add(url);
+        } else if (_imageUrlCtrls[i].text.trim().isNotEmpty) {
+          imageUrls.add(_imageUrlCtrls[i].text.trim());
+        }
+      }
+
+      final nitrogen = double.tryParse(_nCtrl.text.trim());
+      final phosphorus = double.tryParse(_pCtrl.text.trim());
+      final potassium = double.tryParse(_kCtrl.text.trim());
 
       final data = <String, dynamic>{
         'name': name,
         'category': _category,
         'price': basePrice,
-        'description': _descCtrl.text.trim().isNotEmpty
-            ? _descCtrl.text.trim()
-            : null,
-        'nitrogen': double.tryParse(_nCtrl.text.trim()),
-        'phosphorus': double.tryParse(_pCtrl.text.trim()),
-        'potassium': double.tryParse(_kCtrl.text.trim()),
+        if (_descCtrl.text.trim().isNotEmpty)
+          'description': _descCtrl.text.trim(),
+        // Only write NPK if user entered a value — avoids overwriting
+        // previously-set values with null when the field is left blank on edit.
+        if (nitrogen != null) 'nitrogen': nitrogen,
+        if (phosphorus != null) 'phosphorus': phosphorus,
+        if (potassium != null) 'potassium': potassium,
         'images': imageUrls,
         if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
         if (imageUrls.isNotEmpty) 'image': imageUrls.first,
@@ -1302,13 +1389,16 @@ class _ProductSheetState extends State<_ProductSheet> {
           name: name,
           category: _category,
           price: basePrice,
-          description: data['description'] as String?,
-          nitrogen: data['nitrogen'] as double?,
-          phosphorus: data['phosphorus'] as double?,
-          potassium: data['potassium'] as double?,
+          description: _descCtrl.text.trim().isNotEmpty ? _descCtrl.text.trim() : null,
+          nitrogen: nitrogen,
+          phosphorus: phosphorus,
+          potassium: potassium,
           variants: _variants,
           images: imageUrls,
           isActive: _isActive,
+          sellMode: _sellMode,
+          gstApplicable: _gstApplicable,
+          gstRate: _gstRate,
         );
       }
       if (mounted) Navigator.pop(context);

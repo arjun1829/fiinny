@@ -78,6 +78,18 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentIndex = navigationShell.currentIndex;
+
+    // Keep the provider in sync with the REAL active branch. Setting it only
+    // in the nav bar's onTap misses tab changes that bypass the bar — the
+    // PopScope back-to-home goBranch(0) below, and any programmatic
+    // context.go — which left reels' pause/resume logic reading a stale tab.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      if (ref.read(activeShellIndexProvider) != currentIndex) {
+        ref.read(activeShellIndexProvider.notifier).setIndex(currentIndex);
+      }
+    });
+
     final cartCount = ref.watch(cartCountProvider);
     final userModel = ref.watch(currentUserProvider).value;
     final isSeller = userModel?.isSeller ?? false;
@@ -203,27 +215,49 @@ class _ShellNavItem extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(18),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primaryContainer.withValues(alpha: 0.34)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(22),
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: [
+                    AppColors.primaryContainer.withValues(alpha: 0.54),
+                    Colors.white.withValues(alpha: 0.95),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                )
+              : null,
+          color: isSelected ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          border: isSelected
+              ? Border.all(color: AppColors.primary.withValues(alpha: 0.22))
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              width: isSelected ? 26 : 0,
+              height: 3,
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               width: 34,
               height: 34,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.white.withValues(alpha: 0.9)
+                    ? AppColors.primary.withValues(alpha: 0.14)
                     : Colors.transparent,
                 shape: BoxShape.circle,
               ),

@@ -40,6 +40,7 @@ import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from '
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
+import AppPromoModal from '../components/shared/AppPromoModal';
 import { StatusToast } from './components/shared/status-toast';
 import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
@@ -116,8 +117,6 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
-  const hasDashboardShortcut = !!user && (userRole === 'admin' || userRole === 'retailer' || userRole === 'manufacturer');
-  const dashboardHref = userRole === 'admin' ? '/admin' : '/dashboard';
   // Views below (ProfileView, SubscriptionView, Footer) only accept the
   // consumer-facing roles; map 'admin' to 'customer' for them.
   const consumerRole: 'customer' | 'retailer' | 'manufacturer' =
@@ -1566,6 +1565,12 @@ export default function App() {
       case 'login':
         return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
       case 'signup':
+        // Signup is now unified into the login flow (phone → OTP → onboarding
+        // for new numbers). The standalone signup form remains ONLY for
+        // manufacturer invite links, which pre-fill and lock the phone number.
+        if (!signupInviteCode && !user) {
+          return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
+        }
         // Already-logged-in user arrived via an invite link — show accept result instead of signup form.
         // (Redirect for logged-in users with no invite is handled in the useEffect above.)
         if (user) {
@@ -1835,6 +1840,9 @@ export default function App() {
         <GuidedTour steps={tourSteps} />
       ) : null}
 
+      {/* "Get the app" popup — first-time visitors only, skippable, home view only */}
+      {currentView === 'home' && !loading && !errorMsg ? <AppPromoModal /> : null}
+
       <StatusToast
         message={toastMsg}
         type={toastType}
@@ -1849,22 +1857,12 @@ export default function App() {
             { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
             { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
             { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => { setProductSearch(''); navigate('map'); } },
-            // Last item is always "Account" — behaviour depends on auth state
-            {
-              key: 'account',
-              icon: ICONS.Account,
-              label: t('account'),
-              active: currentView === 'profile' || currentView === 'login' || currentView === 'signup',
-              onClick: () => {
-                if (!user) {
-                  navigate('login');
-                } else if (hasDashboardShortcut) {
-                  window.location.href = dashboardHref;
-                } else {
-                  navigate('profile');
-                }
-              },
-            },
+            // AgriReels lives on its own Next.js route (not an internal SPA
+            // view), so it navigates with a real page load, same as the
+            // desktop nav's <a href="/reels">. Account moved into the mobile
+            // "More" menu (navbar.tsx) to make room for this in the primary
+            // bottom tabs, matching the native app's bottom nav.
+            { key: 'reels', icon: ICONS.Reels, label: 'Reels', active: false, onClick: () => { window.location.href = '/reels'; } },
           ].map((item) => (
             <button
               key={item.key}

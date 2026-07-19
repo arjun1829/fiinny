@@ -1,4 +1,5 @@
 import 'dart:io' show File;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,7 +86,18 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
   // playback on rural networks, and low storage/bandwidth cost. image_picker's
   // maxDuration isn't enforced for gallery picks on most platforms, so we also
   // verify the real duration once the video loads (works on web + mobile).
-  static const _maxReelDuration = Duration(seconds: 90);
+  static const _maxReelDuration = Duration(minutes: 3);
+
+  // Raw (pre-compression) file-size guardrail. Videos exported from other
+  // apps (Instagram, WhatsApp forwards, etc.) can carry a much higher
+  // bitrate than the same duration recorded/exported from YouTube, so a
+  // clip well under the length cap can still be huge. Duration alone
+  // doesn't catch this — a large file can silently take minutes to
+  // compress + upload, long enough for the auth session to lapse mid-upload
+  // and surface as a confusing "not authorized" error instead of a clear
+  // size warning. Threshold is sized for a full 3-minute clip at a normal
+  // bitrate — only flags files that are unusually heavy for their length.
+  static const _largeFileWarningBytes = 300 * 1024 * 1024; // 300MB
 
   Future<void> _pickVideo() async {
     final picker = ImagePicker();
@@ -110,7 +122,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please choose a video under 90 seconds.'),
+            content: Text('Please choose a video under 3 minutes.'),
           ),
         );
       }
@@ -126,6 +138,59 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       _previewController = controller;
       _edit = null; // edits belong to the previous video
     });
+
+    // Warn (don't block) on large raw files, before compression/upload ever
+    // starts — trimming it down in the editor first shrinks the compressed
+    // output and avoids a long, fragile upload.
+    final sizeBytes = await picked.length();
+    if (sizeBytes > _largeFileWarningBytes && mounted) {
+      final sizeMb = (sizeBytes / (1024 * 1024)).round();
+      final trimNow = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('This video is quite large'),
+          content: Text(
+            'This video is about ${sizeMb}MB. Large files can take a long '
+            'time to upload and are more likely to fail partway through. '
+            'We recommend trimming it in the editor first.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Continue Anyway'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Trim Now'),
+            ),
+          ],
+        ),
+      );
+      if (trimNow == true && !kIsWeb && mounted) {
+        await _openEditor();
+      }
+    }
+  }
+
+  Future<void> _openEditor() async {
+    if (_pickedFile == null || kIsWeb) return;
+    _previewController?.pause();
+    final result = await Navigator.of(context, rootNavigator: true)
+        .push<ReelEditResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ReelEditScreen(
+          videoPath: _pickedFile!.path,
+          initial: _edit,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() => _edit = result);
+      // Preview from the trim start so what you see is what gets posted.
+      await _previewController?.seekTo(result.trimStart);
+    }
+    _previewController?.play();
   }
 
   Future<void> _openEditor() async {
@@ -214,6 +279,13 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       }
 
       // ── Phase 2: Upload ──────────────────────────────────────────────
+      // Force a fresh ID token before the upload + Firestore write. Large
+      // files (compression can itself take a minute or two on big Instagram
+      // exports) risk starting the upload on a token that's about to expire,
+      // which surfaces as a "not authorized" Storage/Firestore error rather
+      // than anything duration- or size-related.
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+
       final bytes = kIsWeb ? await _pickedFile!.readAsBytes() : null;
 
       await ref.read(reelsRepoProvider).uploadReel(
@@ -256,12 +328,37 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+          SnackBar(content: Text(_uploadErrorMessage(e))),
         );
       }
     } finally {
       if (mounted) setState(() { _processing = false; _compressing = false; });
     }
+  }
+
+  /// Translates the raw exception into something the seller can act on.
+  /// "not authorized" / permission-denied here almost never means the video
+  /// was too long or too big — that's already caught earlier (duration cap
+  /// in [_pickVideo], size warning above) with its own clear message. It
+  /// means the auth session lapsed during a slow compress+upload — most
+  /// often on a large file over a weak connection — so guide the seller
+  /// toward retrying (ideally after trimming) rather than showing the raw
+  /// Firebase exception text.
+  String _uploadErrorMessage(Object e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('permission-denied') ||
+        msg.contains('unauthorized') ||
+        msg.contains('not authorized') ||
+        msg.contains('user-token-expired')) {
+      return 'Upload failed — your session expired, likely because this '
+          'video took a while to upload. Please try posting again; trimming '
+          'it shorter first can help on a slow connection.';
+    }
+    if (msg.contains('network') || msg.contains('timeout')) {
+      return 'Upload failed due to a network issue. Please check your '
+          'connection and try again.';
+    }
+    return 'Failed to post reel: $e';
   }
 
   @override
@@ -276,14 +373,14 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: topBarGradient()),
-        ),
+        foregroundColor: AppColors.onSurface,
+        systemOverlayStyle: topBarOverlayStyle,
+        flexibleSpace: const TopBarBackdrop(),
         titleSpacing: 16,
         title: Text(
           'New Reel',
-          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+          style: AppTextStyles.heading2.copyWith(
+              color: AppColors.onSurface, fontWeight: FontWeight.w800),
         ),
         actions: [
           if (_pickedFile != null && !_processing)
@@ -452,7 +549,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Max 90 seconds',
+                                'Max 3 minutes',
                                 style: AppTextStyles.caption
                                     .copyWith(color: Colors.white38),
                               ),

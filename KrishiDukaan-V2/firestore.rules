@@ -282,7 +282,7 @@ service cloud.firestore {
     // Global collections remain the source of truth.
 
     match /manufacturers/{mPhone}/retailers/{rPhone} {
-    // Public list/count — needed for brand page retailer count (unauthenticated visitors).
+      // Public list/count — needed for brand page retailer count (unauthenticated visitors).
       // Individual doc reads still restricted to the manufacturer or the retailer themselves.
       allow list: if true;
       allow get: if isAuthed() && (isAdmin() || myPhone() == mPhone || myPhone() == rPhone);
@@ -390,8 +390,8 @@ service cloud.firestore {
         request.auth.uid == manufacturerId || myPhone() == manufacturerId
       ));
     }
-    
-       // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
+
+    // ─── brandPages/{manufacturerPhone} ─────────────────────────────────────
     // Optional brand-page customization — public read, manufacturer owner write.
     // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
     match /brandPages/{manufacturerPhone} {
@@ -399,7 +399,7 @@ service cloud.firestore {
       allow create, update: if isAuthed() && (myPhone() == manufacturerPhone || isAdmin());
       allow delete: if isAdmin();
     }
-    
+
     // ─── Discount field validation helper ───────────────────────────────────
     // Returns true when the incoming write does not set invalid discount values.
     // discountPct must be 0–99; dates must be absent or timestamps.
@@ -560,6 +560,8 @@ service cloud.firestore {
         allow read, write: if isAdmin();
       }
     }
+
+    // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
     
        // ─── deliverySettings/{sellerPhone} ──────────────────────────────────────
     // Seller-level delivery config (online toggle, weight slabs, coverage).
@@ -764,4 +766,4 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
   }
-  }
+}
