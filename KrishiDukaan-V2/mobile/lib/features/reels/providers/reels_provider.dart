@@ -21,11 +21,18 @@ class _CommentSheetNotifier extends Notifier<bool> {
 }
 
 final reelsFeedProvider = FutureProvider<List<ReelModel>>((ref) async {
-  final reels = await _repo.fetchFeed(limit: 50);
-  
-  final prefs = await SharedPreferences.getInstance();
+  // Firestore and SharedPreferences are independent — awaiting them in sequence
+  // added the disk read to the critical path before a single video byte was
+  // requested. The feed cannot start loading video until this future resolves,
+  // so everything here is directly in front of the user's first frame.
+  final results = await Future.wait([
+    _repo.fetchFeed(limit: 50),
+    SharedPreferences.getInstance(),
+  ]);
+  final reels = results[0] as List<ReelModel>;
+  final prefs = results[1] as SharedPreferences;
   final seenReelsIds = prefs.getStringList('seen_reels') ?? [];
-  
+
   final unseenReels = <ReelModel>[];
   final seenReels = <ReelModel>[];
   

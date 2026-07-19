@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +13,13 @@ import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
 import '../../../core/widgets/app_shell.dart';
+import '../data/reel_player_pool.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
+
+/// Position of the reels tab in the bottom-nav shell. Playback is gated on this
+/// so a reel never keeps playing audio over another tab.
+const int _reelsTabIndex = 4;
 
 class ReelsFeedScreen extends ConsumerStatefulWidget {
   const ReelsFeedScreen({super.key});
@@ -25,23 +31,34 @@ class ReelsFeedScreen extends ConsumerStatefulWidget {
 class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     with WidgetsBindingObserver {
   final _pageController = PageController();
-  final Map<String, VideoPlayerController> _controllers = {};
   final Set<String> _viewedReelIds = {};
-  int _currentPage = 0;
+
+  /// Video controller lifecycle — creation, prefetch, eviction — lives in the
+  /// pool rather than in this widget. See ReelPlayerPool for the warm/keep
+  /// radius policy it applies.
+  late final ReelPlayerPool _players;
+
   bool _initialized = false;
+
+  /// Index of the reel on screen. Mirrors the pool's own active index; kept
+  /// here because view-counting is a feed concern, not a playback one.
+  int _currentPage = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _players = ReelPlayerPool(
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
+    _players.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -49,59 +66,42 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
-      for (final c in _controllers.values) {
-        c.pause();
-      }
-    } else {
-      // Only resume if the reels tab is still active — otherwise the user
-      // foregrounded the app while on a different tab and the reel must stay silent.
-      const reelsTab = 4;
-      if (ref.read(activeShellIndexProvider) != reelsTab) return;
-      final reels = ref.read(reelsFeedProvider).value ?? [];
-      if (_currentPage < reels.length) {
-        _controllers[reels[_currentPage].id]?.play();
-      }
+      _players.pauseAll();
+      return;
     }
+    // Only resume if the reels tab is still active — otherwise the user
+    // foregrounded the app while on a different tab and the reel must stay silent.
+    if (ref.read(activeShellIndexProvider) != _reelsTabIndex) return;
+    _players.resumeActive(_reels);
   }
 
-  void _ensureController(int index, List<ReelModel> reels) {
-    if (index < 0 || index >= reels.length) return;
-    final reel = reels[index];
-    if (_controllers.containsKey(reel.id)) return;
-    final controller = VideoPlayerController.networkUrl(
-      Uri.parse(reel.videoUrl),
-    );
-    _controllers[reel.id] = controller;
-    controller.initialize().then((_) {
-      if (!mounted) return;
-      controller.setLooping(true);
-      if (index == _currentPage) controller.play();
-      setState(() {});
-    });
+  /// Current feed contents, or empty while loading.
+  List<ReelModel> get _reels => ref.read(reelsFeedProvider).value ?? const [];
+
+  /// Warms the opening reels as soon as the feed has data.
+  ///
+  /// Called from the build path rather than a `ref.listen` on the feed provider.
+  /// `ref.listen` only fires on a *change*, so when the provider already held
+  /// cached data at mount — deep link into /reels, or this screen being rebuilt
+  /// while the provider stayed alive — the callback never ran and no controller
+  /// was ever created, leaving the viewer on a poster indefinitely.
+  ///
+  /// Safe to call during build: the pool only reports back from async
+  /// completions, never synchronously.
+  void _bootstrap(List<ReelModel> reels) {
+    if (_initialized || reels.isEmpty) return;
+    _initialized = true;
+    _players.bootstrap(reels);
+    _markReelAsSeen(reels[0].id);
   }
 
   void _onPageChanged(int index) {
-    final reels = ref.read(reelsFeedProvider).value ?? [];
-    if (_currentPage < reels.length) {
-      _controllers[reels[_currentPage].id]?.pause();
-    }
+    final reels = _reels;
+    if (index >= reels.length) return;
+
     _currentPage = index;
-    if (index < reels.length) {
-      _controllers[reels[index].id]?.play();
-      _ensureController(index + 1, reels);
-      if (index > 0) _ensureController(index - 1, reels);
-      // Count a view once per reel per session
-      final reelId = reels[index].id;
-      _markReelAsSeen(reelId);
-    }
-    final toDispose = _controllers.keys.where((id) {
-      final idx = reels.indexWhere((r) => r.id == id);
-      return idx != -1 && (idx - index).abs() > 2;
-    }).toList();
-    for (final id in toDispose) {
-      _controllers[id]?.dispose();
-      _controllers.remove(id);
-    }
+    _players.setActive(index, reels);
+    _markReelAsSeen(reels[index].id); // counted once per reel per session
     setState(() {});
   }
 
@@ -112,31 +112,13 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
 
     // Pause/resume when the user switches away from / back to the reels tab.
     ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
-      const reelsTab = 4;
-      if (tabIndex != reelsTab) {
-        for (final c in _controllers.values) {
-          c.pause();
-        }
+      if (tabIndex != _reelsTabIndex) {
+        _players.pauseAll();
       } else {
-        final reels = ref.read(reelsFeedProvider).value ?? [];
-        if (_currentPage < reels.length) {
-          _controllers[reels[_currentPage].id]?.play();
-        }
+        _players.resumeActive(_reels);
       }
     });
 
-    ref.listen<AsyncValue<List<ReelModel>>>(reelsFeedProvider, (prev, next) {
-      if (!_initialized && next.value != null && next.value!.isNotEmpty) {
-        _initialized = true;
-        final reels = next.value!;
-        _ensureController(0, reels);
-        _ensureController(1, reels);
-        // First reel is shown immediately — count its view
-        if (reels.isNotEmpty) {
-          _markReelAsSeen(reels[0].id);
-        }
-      }
-    });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -201,6 +183,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                 ),
               );
             }
+            _bootstrap(reels);
             return Stack(
               children: [
                 PageView.builder(
@@ -211,7 +194,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                   itemBuilder: (context, index) {
                     return _ReelPage(
                       reel: reels[index],
-                      controller: _controllers[reels[index].id],
+                      controller: _players.controllerFor(reels[index].id),
                       currentUserId: currentUser?.phone,
                       currentUserName:
                           currentUser?.businessName ?? currentUser?.name ?? '',
@@ -266,10 +249,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                             ),
                             onPressed: () {
                               _initialized = false;
-                              for (final c in _controllers.values) {
-                                c.dispose();
-                              }
-                              _controllers.clear();
+                              _players.reset();
                               _currentPage = 0;
                               ref.invalidate(reelsFeedProvider);
                             },
@@ -307,6 +287,54 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
 }
 
 // ── Individual reel page ─────────────────────────────────────────────────────
+
+/// Shown while the video controller is still initialising.
+///
+/// Replaces a spinner on black, which made every reel feel broken for the whole
+/// buffering window. The poster is a cached JPEG that lands in ~100ms, so the
+/// feed looks alive immediately and the video swaps in underneath — the same
+/// trick Instagram uses. Falls back to a spinner only when the reel has no
+/// thumbnail at all (web-uploaded reels currently do not generate one; see
+/// ReelsRepository.uploadReel).
+class _ReelPoster extends StatelessWidget {
+  const _ReelPoster({required this.reel});
+
+  final ReelModel reel;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = reel.thumbnailUrl;
+    if (url == null || url.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white38, strokeWidth: 2),
+      );
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 120),
+          placeholder: (_, _) => const ColoredBox(color: Colors.black),
+          errorWidget: (_, _, _) => const ColoredBox(color: Colors.black),
+        ),
+        // Faint progress hint so a genuinely slow load still reads as loading
+        // rather than as a frozen still frame.
+        const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              color: Colors.white24,
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _ReelPage extends ConsumerStatefulWidget {
   final ReelModel reel;
@@ -741,12 +769,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                     valueListenable: controller,
                     builder: (_, value, _) {
                       if (!value.isInitialized) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.white38,
-                            strokeWidth: 2,
-                          ),
-                        );
+                        return _ReelPoster(reel: widget.reel);
                       }
                       return applyReelFilter(
                         widget.reel.filterId,
@@ -763,12 +786,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                       );
                     },
                   )
-                : const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white38,
-                      strokeWidth: 2,
-                    ),
-                  ),
+                : _ReelPoster(reel: widget.reel),
           ),
         ),
 

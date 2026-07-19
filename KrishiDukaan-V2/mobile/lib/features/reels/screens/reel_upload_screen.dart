@@ -1,5 +1,6 @@
 import 'dart:io' show File;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugPrint, debugPrintStack;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -183,8 +184,20 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             edit.trimsVideo(totalDuration)) {
           trimStartSec = edit.trimStart.inSeconds;
           trimDurationSec =
-              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, 90);
+              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, maxReelSeconds);
         }
+
+        // Always pass an explicit duration, even when the user never opened the
+        // editor.
+        //
+        // Previously `duration` stayed null on the untrimmed path, so a picked
+        // clip uploaded at its full length — a 3-minute video stayed 3 minutes
+        // and shipped tens of megabytes that every viewer then downloaded before
+        // the first frame could render. The cap was only ever applied to people
+        // who happened to trim.
+        trimDurationSec ??= totalDuration != null
+            ? totalDuration.inSeconds.clamp(1, maxReelSeconds)
+            : maxReelSeconds;
 
         final info = await VideoCompress.compressVideo(
           _pickedFile!.path,
@@ -201,14 +214,25 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
         fileToUpload =
             info?.file ?? File(_pickedFile!.path);
 
-        // Grab a poster frame so the reel shows a real thumbnail in lists
-        // (product page, shop grid). Best-effort — never block the upload.
+        // Grab a poster frame so the reel shows a real thumbnail in the feed
+        // and in lists (product page, shop grid). Best-effort — never block the
+        // upload.
+        //
+        // The failure is logged rather than swallowed. Every reel currently in
+        // production is missing `thumbnailUrl`, and a bare `catch (_) {}` here
+        // meant that whatever is going wrong on device left no trace at all.
+        // The server-side transcode function regenerates a poster when this
+        // field is absent, so a failure degrades quality rather than breaking
+        // the reel — but it should still be visible in logs.
         try {
           thumbnailFile = await VideoCompress.getFileThumbnail(
             fileToUpload.path,
             quality: 75,
           );
-        } catch (_) {}
+        } catch (err, stack) {
+          debugPrint('Reel thumbnail generation failed: $err');
+          debugPrintStack(stackTrace: stack);
+        }
 
         if (mounted) setState(() { _compressing = false; });
       }
