@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 // 'Link' was only used by the Returns quick-access link, now disabled below (2026-07-03).
 // import { Link } from 'react-router-dom';
 import {
@@ -157,6 +158,7 @@ function numberToWords(num: number): string {
 
 export default function POSPage() {
     const { t, i18n } = useTranslation();
+    const [searchParams] = useSearchParams();
     const { tenantId, hasModule } = useAuth();
     const { showToast } = useToast();
     const [products, setProducts] = useState<Product[]>([]);
@@ -251,6 +253,10 @@ export default function POSPage() {
     // Khata (credit) balance carried by the matched farmer, so this bill can show
     // what they already owe. Populated by the phone lookup / name dropdown.
     const [customerOutstanding, setCustomerOutstanding] = useState(0);
+    // Set when the Khata screen sent us here to correct a bill. Saving then issues
+    // a replacement bill and cancels this one (POS has no true in-place edit —
+    // checkout always consumes a new number and re-decrements stock).
+    const [editingOrder, setEditingOrder] = useState<any>(null);
 
     // ── Dialog states ────────────────────────────────────────────────────────
     const [showCashTenderDialog, setShowCashTenderDialog] = useState(false);
@@ -365,6 +371,77 @@ export default function POSPage() {
             if (unsubVCheckout) unsubVCheckout();
         };
     }, [tenantId, hasModule]);
+
+    // ── Hand-off from the Khata screen ──────────────────────────────────────
+    // ?name/phone/address/pin  → prefill the buyer for a new bill
+    // ?reprintOrderId=<id>     → reprint an existing bill
+    // ?orderId=<id>            → load a bill for correction
+    // Runs once products have loaded so line items can resolve to real products.
+    const handledParamsRef = useRef(false);
+    useEffect(() => {
+        if (!tenantId || handledParamsRef.current) return;
+
+        const name = searchParams.get('name');
+        const phone = searchParams.get('phone');
+        const reprintId = searchParams.get('reprintOrderId');
+        const editId = searchParams.get('orderId');
+
+        // Buyer prefill needs nothing else loaded.
+        if (!reprintId && !editId && (name || phone)) {
+            handledParamsRef.current = true;
+            setCustomer({
+                name: name || '',
+                phone: phone || '',
+                address: searchParams.get('address') || '',
+                pin: searchParams.get('pin') || '',
+            });
+            return;
+        }
+
+        if (!reprintId && !editId) return;
+        // Editing needs the catalog so saved line items map back onto products.
+        if (editId && products.length === 0) return;
+        handledParamsRef.current = true;
+
+        (async () => {
+            try {
+                const snap = await getDoc(getTenantDoc(db, tenantId, 'salesOrders', (reprintId || editId)!));
+                if (!snap.exists()) { showToast('That bill could not be found.', 'error'); return; }
+                const order = { id: snap.id, ...snap.data() } as any;
+
+                if (reprintId) { openReprint(order); return; }
+
+                // Edit: restore buyer + items into the active bill tab.
+                const items: CartItem[] = (order.lineItems || []).map((li: any) => {
+                    const prod = products.find(p => p.id === li.productId);
+                    if (!prod) return null;
+                    const rate = Number(li.mrp) || posSellingRate(prod);
+                    const qty = Number(li.quantity) || 1;
+                    return { ...prod, sellingPrice: rate, cartQuantity: qty, cartTotal: qty * rate };
+                }).filter(Boolean) as CartItem[];
+
+                if (items.length !== (order.lineItems || []).length) {
+                    showToast('Some products on this bill are no longer in inventory and were skipped.', 'error');
+                }
+
+                updateActiveTab({
+                    cart: items,
+                    customer: {
+                        name: order.retailerName || '',
+                        phone: order.phoneNumber || '',
+                        address: order.address || '',
+                        pin: order.pin || '',
+                    },
+                });
+                setModeOfPayment(order.paymentMethod === 'Khata' ? 'Credit' : 'Cash');
+                setEditingOrder(order);
+            } catch (err) {
+                console.error('Failed to load bill from Khata:', err);
+                showToast('Could not open that bill.', 'error');
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tenantId, products, searchParams]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -617,12 +694,32 @@ export default function POSPage() {
             const soRef = doc(getTenantCollection(db, tenantId, 'salesOrders'));
             batch.set(soRef, orderData);
 
+            // Correcting a bill returns the original's stock in this same batch, so
+            // the net movement is (new bill − old bill) rather than a second full
+            // decrement. Netted per product first: two updates to the same doc in
+            // one batch would silently drop the earlier one.
+            const returned = new Map<string, number>();
+            if (editingOrder) {
+                for (const li of (editingOrder.lineItems || [])) {
+                    if (!li.productId) continue;
+                    returned.set(li.productId, (returned.get(li.productId) || 0) + (Number(li.quantity) || 0));
+                }
+            }
+
             for (const item of cart) {
-                let newLoose = (item.loosePieces || 0) - item.cartQuantity;
+                const giveBack = returned.get(item.id) || 0;
+                returned.delete(item.id);
+                const cap = item.boxCapacity || 1;
+                let newLoose = (item.loosePieces || 0) - item.cartQuantity + giveBack;
                 let newBoxes = item.quantity || 0;
                 while (newLoose < 0 && newBoxes > 0) {
                     newBoxes -= 1;
-                    newLoose += (item.boxCapacity || 1);
+                    newLoose += cap;
+                }
+                // Roll any surplus loose pieces back up into whole boxes.
+                if (cap > 1 && newLoose >= cap) {
+                    newBoxes += Math.floor(newLoose / cap);
+                    newLoose = newLoose % cap;
                 }
                 // Never write negative stock — you can't sell what isn't there.
                 batch.update(getTenantDoc(db, tenantId, 'products', item.id), {
@@ -631,6 +728,35 @@ export default function POSPage() {
                     updatedAt: serverTimestamp(),
                 });
             }
+
+            // Anything on the original bill that isn't on the corrected one goes
+            // straight back to stock.
+            for (const [pid, qty] of returned.entries()) {
+                const prod = products.find(p => p.id === pid);
+                if (!prod || qty <= 0) continue;
+                const cap = prod.boxCapacity || 1;
+                let loose = (prod.loosePieces || 0) + qty;
+                let boxes = prod.quantity || 0;
+                if (cap > 1 && loose >= cap) {
+                    boxes += Math.floor(loose / cap);
+                    loose = loose % cap;
+                }
+                batch.update(getTenantDoc(db, tenantId, 'products', pid), {
+                    quantity: Math.max(0, boxes),
+                    loosePieces: Math.max(0, loose),
+                    updatedAt: serverTimestamp(),
+                });
+            }
+
+            // Retire the bill being corrected, pointing at its replacement.
+            if (editingOrder) {
+                batch.update(getTenantDoc(db, tenantId, 'salesOrders', editingOrder.id), {
+                    status: 'cancelled',
+                    cancelledAt: serverTimestamp(),
+                    supersededBy: soRef.id,
+                });
+            }
+
             await batch.commit();
 
             // Remember the walk-in customer for future lookup. Tagged channel:'pos'
@@ -654,10 +780,16 @@ export default function POSPage() {
                 } else {
                     const rDoc = snap.docs[0];
                     const rData = rDoc.data() as any;
+                    // When correcting a bill, back out the original's contribution
+                    // first so the balance reflects the delta, not a double count.
+                    const prevTotal = editingOrder ? Number(editingOrder.grandTotal || 0) : 0;
+                    const prevWasCredit = editingOrder ? editingOrder.paymentMethod === 'Khata' : false;
                     await updateDoc(rDoc.ref, {
-                        totalSales: Math.max(0, Number(rData.totalSales || 0) + grandTotal),
-                        outstandingAmount: Math.max(0, Number(rData.outstandingAmount || 0) + (isCredit ? grandTotal : 0)),
-                        totalPaid: Math.max(0, Number(rData.totalPaid || 0) + (isCredit ? 0 : grandTotal)),
+                        totalSales: Math.max(0, Number(rData.totalSales || 0) - prevTotal + grandTotal),
+                        outstandingAmount: Math.max(0, Number(rData.outstandingAmount || 0)
+                            - (prevWasCredit ? prevTotal : 0) + (isCredit ? grandTotal : 0)),
+                        totalPaid: Math.max(0, Number(rData.totalPaid || 0)
+                            - (prevWasCredit ? 0 : prevTotal) + (isCredit ? 0 : grandTotal)),
                         lastOrderedAt: serverTimestamp(),
                     });
                 }
@@ -732,6 +864,8 @@ export default function POSPage() {
                 // re-fetches the (now updated) outstanding for the next sale.
                 setCustomerOutstanding(0);
                 setRowMeta({});
+                // Correction complete — drop edit mode so the next bill is a fresh one.
+                setEditingOrder(null);
                 // Advance the displayed bill number. generateBillNumber() already
                 // consumed this one from the counter, so without this the next bill
                 // kept showing the number just used until the page was reloaded.
@@ -1049,6 +1183,19 @@ export default function POSPage() {
                         .pinv-fmt-btn { padding: 0.35rem 0.9rem; border-radius: 8px; font-weight: 700; font-size: 0.82rem; cursor: pointer; border: 1px solid var(--surface-border); background: var(--surface-base); color: var(--text-secondary); }
                         .pinv-fmt-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
                     `}</style>
+
+                    {/* Correction banner — this bill replaces an existing one */}
+                    {editingOrder && (
+                        <div style={{ maxWidth: billFormat === 'A5' ? '640px' : '1040px', margin: '0 auto 0.9rem', padding: '0.7rem 1rem', borderRadius: '10px', background: 'hsla(220,70%,55%,0.1)', border: '1px solid hsla(220,70%,55%,0.3)', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                            <Pencil size={15} color="#3b82f6" />
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                Correcting bill {editingOrder.orderNumber || editingOrder.id?.slice(-6)?.toUpperCase()}
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                — saving issues a new bill, cancels this one, and returns its stock.
+                            </span>
+                        </div>
+                    )}
 
                     {/* Bill-format selector — accountant can print A4 or A5 */}
                     <div style={{ maxWidth: billFormat === 'A5' ? '640px' : '1040px', margin: '0 auto 0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
