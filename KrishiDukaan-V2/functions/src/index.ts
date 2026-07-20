@@ -525,14 +525,78 @@ async function manufacturerDisplayName(phone: string, uid: string, fallback: str
   return fallback;
 }
 
-/** New order placed → notify the seller (store owner). */
+/** New order placed → notify the seller (store owner / manufacturer). */
 export const notifySellerOnOrder = onDocumentCreated(
   "orders/{orderId}",
   async (event) => {
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d) return;
 
-    const sellerPhone = firstPhone(d.sellerPhone, d.sellerId, d.storePhone);
+    const orderId   = event.params.orderId;
+    const sellerType = String(d.sellerType ?? "unknown");
+    const sellerId   = String(d.sellerId   ?? "");
+
+    logger.info("[notifySellerOnOrder] order created", {
+      orderId,
+      sellerType,
+      sellerId,
+      sellerPhoneInDoc: d.sellerPhone ?? null,
+      storePhoneInDoc:  d.storePhone  ?? null,
+    });
+
+    // Fast path: phone stored on the order doc (written since the sellerPhone fix).
+    // Fallback: UID → uidIndex → phone for legacy orders without sellerPhone.
+    let sellerPhone = firstPhone(d.sellerPhone, d.sellerId, d.storePhone);
+
+    if (!sellerPhone && sellerId) {
+      logger.info("[notifySellerOnOrder] sellerPhone not in order doc, attempting UID→phone lookup", {
+        orderId, sellerId,
+      });
+      try {
+        const idxSnap = await db.collection("uidIndex").doc(sellerId).get();
+        if (idxSnap.exists) {
+          const resolved = String(idxSnap.data()?.phone ?? "").trim();
+          if (looksLikePhone(resolved)) {
+            sellerPhone = resolved;
+            logger.info("[notifySellerOnOrder] resolved phone via uidIndex", {
+              orderId, sellerId, sellerPhone,
+            });
+          }
+        }
+
+        // Also check manufacturers/{sellerId} and users/{sellerId} directly
+        if (!sellerPhone) {
+          for (const col of ["manufacturers", "users"]) {
+            const snap = await db.collection(col).doc(sellerId).get();
+            if (!snap.exists) continue;
+            const phone = firstPhone(
+              snap.data()?.phone,
+              snap.data()?.ownerPhone,
+              snap.data()?.whatsapp,
+            );
+            if (phone) {
+              sellerPhone = phone;
+              logger.info(`[notifySellerOnOrder] resolved phone from ${col}/${sellerId}`, {
+                orderId, sellerPhone,
+              });
+              break;
+            }
+          }
+        }
+      } catch (lookupErr) {
+        logger.error("[notifySellerOnOrder] UID→phone lookup threw", {
+          orderId, sellerId, err: String(lookupErr),
+        });
+      }
+    }
+
+    logger.info("[notifySellerOnOrder] manufacturer identified", {
+      orderId,
+      sellerType,
+      sellerId,
+      sellerPhone: sellerPhone || "(not resolved)",
+    });
+
     const customer = String(d.customerName ?? "A customer");
     const total = typeof d.total === "number" ? d.total : null;
     const items = Array.isArray(d.items)
@@ -548,12 +612,13 @@ export const notifySellerOnOrder = onDocumentCreated(
       "order",
       "New order received 🛒",
       `${customer} ordered ${itemSummary}${total != null ? ` · ₹${total}` : ""}`,
-      { orderId: event.params.orderId }
+      { orderId }
     );
 
-    logger.info("[notifySellerOnOrder] resolved sellerPhone", { sellerPhone, orderId: event.params.orderId });
     if (sellerPhone) {
-      logger.info("[notifySellerOnOrder] before queueWaNotification");
+      logger.info("[notifySellerOnOrder] notification enqueue started", {
+        orderId, sellerType, sellerPhone,
+      });
       const shopName = String(d.sellerName ?? "");
       await queueWaNotification(
         sellerPhone,
@@ -564,12 +629,16 @@ export const notifySellerOnOrder = onDocumentCreated(
           // order_notification body {{1}} = shopName → businessName → "Retailer"
           // Static Orders Dashboard URL button — no button component needed.
           payload: { shopName, businessName: "" },
-          source: { event: "order_created", entityType: "order", entityId: event.params.orderId },
+          source: { event: "order_created", entityType: "order", entityId: orderId },
         }
       );
-      logger.info("[notifySellerOnOrder] after queueWaNotification");
+      logger.info("[notifySellerOnOrder] notification enqueue completed", {
+        orderId, sellerType, sellerPhone,
+      });
     } else {
-      logger.warn("[notifySellerOnOrder] skipping WA — sellerPhone is empty", { orderId: event.params.orderId });
+      logger.warn("[notifySellerOnOrder] skipping WA — sellerPhone could not be resolved", {
+        orderId, sellerType, sellerId,
+      });
     }
   }
 );
