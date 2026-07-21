@@ -132,6 +132,7 @@ export type RetailerProfile = {
 import { MarketplaceProduct } from '../types/product';
 import type { CartItem, OrderDoc, OrderItem, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
 import { generateAndStoreInvoice } from './utils/invoice-storage';
+import { getActiveDiscountPct } from './utils/discount';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -357,9 +358,19 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
         dosage: data.dosage ? String(data.dosage) : undefined,
         bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
-        // Discount fields — written by updateDiscountRecord when a seller sets a discount
-        effectiveDiscountPct: typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0,
-        maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
+        // Discount fields — written by updateDiscountRecord when a seller sets a discount.
+        // `effectiveDiscountPct`/`maxDiscountPct` are snapshots taken once at save time and
+        // never re-evaluated afterward, so once a discount's end date passes (or it's
+        // disabled) the stored number stays frozen at the old %, showing a phantom offer
+        // on marketplace cards after checkout/detail pages correctly show none. Recompute
+        // liveness from the raw discountEnabled/discountPct/date fields (same helper the
+        // dashboard uses) whenever they're present, instead of trusting the stale snapshot.
+        effectiveDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
+          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
+          : (typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0),
+        maxDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
+          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
+          : (typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0),
         variants: Array.isArray(data.variants) ? data.variants : undefined,
         images: Array.isArray(data.images) ? data.images : undefined,
         videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,

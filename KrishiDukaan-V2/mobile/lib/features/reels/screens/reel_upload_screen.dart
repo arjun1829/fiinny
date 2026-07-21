@@ -1,5 +1,7 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show File;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/listing_model.dart';
@@ -193,6 +196,24 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     _previewController?.play();
   }
 
+  /// Extracts a poster-frame JPEG from the video at [videoPath]. Returns null
+  /// (never throws) so callers can retry against a different source file or
+  /// give up and post without a thumbnail.
+  Future<File?> _generateThumbnail(String videoPath) async {
+    try {
+      final path = await vt.VideoThumbnail.thumbnailFile(
+        video: videoPath,
+        imageFormat: vt.ImageFormat.JPEG,
+        maxWidth: 480,
+        quality: 75,
+      );
+      if (path == null) return null;
+      final file = File(path);
+      return await file.exists() ? file : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> _upload() async {
     if (_pickedFile == null) return;
@@ -227,8 +248,9 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             totalDuration != null &&
             edit.trimsVideo(totalDuration)) {
           trimStartSec = edit.trimStart.inSeconds;
-          trimDurationSec =
-              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, 90);
+          trimDurationSec = (edit.trimEnd - edit.trimStart)
+              .inSeconds
+              .clamp(1, _maxReelDuration.inSeconds);
         }
 
         final info = await VideoCompress.compressVideo(
@@ -247,13 +269,26 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             info?.file ?? File(_pickedFile!.path);
 
         // Grab a poster frame so the reel shows a real thumbnail in lists
-        // (product page, shop grid). Best-effort — never block the upload.
-        try {
-          thumbnailFile = await VideoCompress.getFileThumbnail(
-            fileToUpload.path,
-            quality: 75,
-          );
-        } catch (_) {}
+        // (product page, shop grid) instead of a plain color card. Uses
+        // video_thumbnail (native MediaMetadataRetriever/AVAssetImageGenerator)
+        // rather than video_compress's own getFileThumbnail — that call was
+        // found to fail silently on every single upload in production (every
+        // live reel had a video.mp4 in Storage but zero had a thumb.jpg).
+        // One retry on the original picked file covers the case where the
+        // freshly-compressed output isn't fully flushed to disk yet. Still
+        // best-effort — a missing thumbnail must never block the reel post,
+        // but a real failure is now logged instead of silently swallowed so
+        // this can't regress back to invisible again.
+        thumbnailFile = await _generateThumbnail(fileToUpload.path);
+        thumbnailFile ??= await _generateThumbnail(_pickedFile!.path);
+        if (thumbnailFile == null) {
+          unawaited(FirebaseCrashlytics.instance.recordError(
+            'Reel thumbnail generation failed after retry',
+            null,
+            reason: 'reel_upload_thumbnail_missing',
+            fatal: false,
+          ));
+        }
 
         if (mounted) setState(() { _compressing = false; });
       }
