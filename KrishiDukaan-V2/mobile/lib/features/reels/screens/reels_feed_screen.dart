@@ -11,6 +11,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/utils/format_count.dart';
 import '../../../core/utils/web_links.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../data/reel_player_pool.dart';
@@ -78,14 +79,9 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     if (!mounted) return;
     final path = _router!.routerDelegate.currentConfiguration.uri.path;
     if (path != '/reels') {
-      for (final c in _controllers.values) {
-        c.pause();
-      }
+      _players.pauseAll();
     } else {
-      final reels = ref.read(reelsFeedProvider).value ?? [];
-      if (_currentPage < reels.length) {
-        _controllers[reels[_currentPage].id]?.play();
-      }
+      _players.resumeActive(ref.read(reelsFeedProvider).value ?? []);
     }
   }
 

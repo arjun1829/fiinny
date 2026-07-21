@@ -885,14 +885,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.18.0"
-  mgrs_dart:
-    dependency: transitive
-    description:
-      name: mgrs_dart
-      sha256: "385e7168ecc77eb545220223c49eef8ab249da7bf57f22781c40a04d23fb196f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.0"
   mime:
     dependency: transitive
     description:
