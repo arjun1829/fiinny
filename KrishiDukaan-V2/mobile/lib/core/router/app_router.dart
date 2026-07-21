@@ -37,8 +37,8 @@ import '../../features/welcome/screens/splash_screen.dart';
 import '../../features/welcome/screens/welcome_screen.dart';
 import '../../features/reels/screens/reels_feed_screen.dart';
 import '../../features/reels/screens/reel_upload_screen.dart';
-import '../../features/reels/screens/reel_deep_link_screen.dart';
 import '../../features/reels/screens/shop_profile_screen.dart';
+import '../../features/reels/providers/reels_provider.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -156,6 +156,9 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootKey,
     refreshListenable: notifier,
     initialLocation: '/splash',
+    observers: [
+      ReelsNavigatorObserver(ref),
+    ],
     redirect: (context, state) {
       // ── Shared web links (App Links / Universal Links) ─────────────────
       // A tap on a krishidukan.com link the OS handed straight to the app
@@ -553,3 +556,66 @@ class _RouterRefreshNotifier extends ChangeNotifier {
     super.dispose();
   }
 }
+
+class ReelsNavigatorObserver extends NavigatorObserver {
+  final Ref ref;
+  ReelsNavigatorObserver(this.ref);
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+
+  /// Returns true when [route] is the shell route that hosts the reels tab.
+  /// GoRouter represents the StatefulShellRoute with an anonymous MaterialRoute
+  /// whose settings.name is null, but the INDIVIDUAL tab branch routes have
+  /// the path in their name. We treat the reels feed as active only when the
+  /// top-most route's name starts with '/reels' (and is exactly '/reels').
+  bool _isReelsRoute(Route<dynamic>? route) {
+    if (route == null) return false;
+    final name = route.settings.name ?? '';
+    // GoRouter sets route name = full path, e.g. "/reels"
+    return name == '/reels';
+  }
+
+  void _setActive(bool active) {
+    try {
+      ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(active);
+    } catch (_) {}
+  }
+
+  // ── NavigatorObserver overrides ───────────────────────────────────────────
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    // A new screen appeared on top — always pause immediately.
+    // But if the pushed route IS the reels route itself (first load), resume.
+    if (_isReelsRoute(route)) {
+      _setActive(true);
+    } else {
+      _setActive(false);
+    }
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    // The screen that was on top is gone; previousRoute is now the new top.
+    _setActive(_isReelsRoute(previousRoute));
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didRemove(route, previousRoute);
+    _setActive(_isReelsRoute(previousRoute));
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    if (_isReelsRoute(newRoute)) {
+      _setActive(true);
+    } else {
+      _setActive(false);
+    }
+  }
+}
+

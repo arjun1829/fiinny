@@ -265,9 +265,42 @@ class CatalogModel {
               .cast<VariantModel>()
         : null;
 
-    // Max discount % — stored directly or derived from sellerDiscounts map
-    final rawMaxDiscount = d['maxDiscountPct'] ?? d['effectiveDiscountPct'];
-    double maxDiscountPct = (rawMaxDiscount as num?)?.toDouble() ?? 0.0;
+    // Max discount % for the card badge/price.
+    //
+    // `maxDiscountPct`/`effectiveDiscountPct` are snapshots written once at
+    // discount-save time (see DashboardRepository.setDiscount /
+    // web's updateDiscountRecord) — they are NEVER re-evaluated afterward.
+    // Once a discount's end date passes (or it's disabled), that stored
+    // number stays frozen at the old active %, so the marketplace card kept
+    // showing "X% OFF" / a discounted price forever while the product-detail
+    // seller tile (DiscountModel.fromProductData, which re-checks dates on
+    // every read) correctly showed no offer — exactly the mismatch reported.
+    //
+    // Fix: when the raw discount fields are present on this doc, recompute
+    // liveness the same way DiscountModel does, instead of trusting the
+    // stale snapshot. Only fall back to the stored field when the raw fields
+    // are absent (e.g. an older doc shape).
+    double maxDiscountPct;
+    final hasRawDiscountFields = d.containsKey('discountPct') ||
+        d.containsKey('discountEnabled') ||
+        d.containsKey('discountFixedAmt');
+    if (hasRawDiscountFields) {
+      final enabled = d['discountEnabled'] as bool? ?? false;
+      final discType = d['discountType'] as String? ?? 'percentage';
+      final now = DateTime.now();
+      final start = (d['discountStartDate'] as Timestamp?)?.toDate();
+      final end = (d['discountEndDate'] as Timestamp?)?.toDate();
+      final withinWindow =
+          !(start != null && now.isBefore(start)) &&
+          !(end != null && now.isAfter(end));
+      final isLiveNow = enabled && withinWindow;
+      maxDiscountPct = (isLiveNow && discType != 'fixed_amount')
+          ? ((d['discountPct'] as num?)?.toDouble() ?? 0.0)
+          : 0.0;
+    } else {
+      final rawMaxDiscount = d['maxDiscountPct'] ?? d['effectiveDiscountPct'];
+      maxDiscountPct = (rawMaxDiscount as num?)?.toDouble() ?? 0.0;
+    }
     if (maxDiscountPct == 0) {
       final sellerDiscounts = d['sellerDiscounts'] as Map?;
       if (sellerDiscounts != null && sellerDiscounts.isNotEmpty) {

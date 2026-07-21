@@ -291,7 +291,18 @@ class DashboardRepository {
       'effectiveDiscountPct': effective,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    await syncMarketMirror(listingId, discountPct: effective);
+    // Mirror the RAW percentage + validity fields (not the pre-collapsed
+    // `effective` value) so readers can re-check date validity live, the
+    // same way DiscountModel.fromProductData already does for the seller's
+    // own copy — a pre-collapsed value would freeze at whatever was true
+    // when this was saved and never reflect the discount expiring later.
+    await syncMarketMirror(
+      listingId,
+      discountPct: percentage,
+      discountEnabled: isActive,
+      discountStartDate: startDate,
+      discountEndDate: endDate,
+    );
     await syncInventoryDoc(
       listingId,
       discountEnabled: isActive,
@@ -332,6 +343,9 @@ class DashboardRepository {
     double? sellingPrice,
     String? stockLevel,
     double? discountPct,
+    bool? discountEnabled,
+    DateTime? discountStartDate,
+    DateTime? discountEndDate,
     bool? isProductActive,
   }) async {
     try {
@@ -377,6 +391,18 @@ class DashboardRepository {
             entry['stockLevel'] = stockLevel;
           }
           if (discountPct != null) entry['discountPct'] = discountPct;
+          if (discountEnabled != null) entry['discountEnabled'] = discountEnabled;
+          if (discountStartDate != null) {
+            entry['discountStartDate'] = Timestamp.fromDate(discountStartDate);
+          } else if (discountEnabled != null) {
+            // Discount saved with no start date — clear any previous one.
+            entry['discountStartDate'] = null;
+          }
+          if (discountEndDate != null) {
+            entry['discountEndDate'] = Timestamp.fromDate(discountEndDate);
+          } else if (discountEnabled != null) {
+            entry['discountEndDate'] = null;
+          }
           return entry;
         }).toList();
 
