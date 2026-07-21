@@ -1,6 +1,6 @@
 import * as admin from "firebase-admin";
 import { getDb } from "./firebase";
-import { sendTemplateMessage, sendTextMessage } from "./cloudApi";
+import { getProvider } from "./provider";
 import { resolveTemplateComponents } from "./templateResolver";
 import type { WaNotification } from "./types";
 
@@ -40,6 +40,8 @@ async function claimDoc(
  *  - generic: sendTextMessage using the stored message text
  */
 async function dispatchNotification(n: WaNotification): Promise<string> {
+  const provider = getProvider();
+
   if (n.template !== "generic") {
     // Use pre-built components when provided, otherwise resolve from payload.
     // Callers that pre-compute components can pass them in; the resolver is the
@@ -49,7 +51,7 @@ async function dispatchNotification(n: WaNotification): Promise<string> {
         ? n.templateComponents
         : resolveTemplateComponents(n.template, n.payload);
 
-    const result = await sendTemplateMessage(
+    const result = await provider.sendTemplateMessage(
       n.phone,
       n.template,
       TEMPLATE_LANGUAGE,
@@ -64,7 +66,7 @@ async function dispatchNotification(n: WaNotification): Promise<string> {
       `Notification ${n.id ?? "(no id)"} is type "generic" but has no message text`
     );
   }
-  const result = await sendTextMessage(n.phone, n.message);
+  const result = await provider.sendTextMessage(n.phone, n.message);
   return result.metaMessageId;
 }
 

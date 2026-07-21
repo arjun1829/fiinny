@@ -1463,6 +1463,7 @@ export async function createOrdersFromCart(params: {
       customerAddress: customerAddress.trim(),
       sellerId,
       sellerType,
+      ...(sellerPhoneHint ? { sellerPhone: sellerPhoneHint } : {}),
       ...(sellerName ? { sellerName } : {}),
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
