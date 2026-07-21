@@ -1848,6 +1848,30 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                if (listing.sellerType == 'manufacturer') ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.secondary.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'BRAND',
+                                      style: TextStyle(
+                                        color: AppColors.secondary,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                                 if (hasDiscount) ...[
                                   const SizedBox(width: 6),
                                   Container(
@@ -1873,7 +1897,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                             ),
                             const SizedBox(height: 6),
 
-                            // Distance + status + rating
+                            // Distance + status + delivery
                             Wrap(
                               spacing: 10,
                               runSpacing: 4,
@@ -1915,20 +1939,42 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                                     ),
                                   ],
                                 ),
+                                if (listing.isOnline)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.local_shipping_outlined,
+                                        size: 11,
+                                        color: AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        'Delivery',
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                               ],
                             ),
+                            if ((listing.sellerAddress ?? '')
+                                .trim()
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                listing.sellerAddress!.trim(),
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // Expand/collapse chevron
-                      Icon(
-                        _expanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        size: 22,
-                        color: AppColors.onSurfaceVariant,
                       ),
                     ],
                   ),
@@ -1986,29 +2032,6 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
               ),
             ),
 
-            // ── "Tap for details" hint (collapsed only) ───────────────────
-            if (!_expanded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Tap for store details & order',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 14,
-                      color: AppColors.primary,
-                    ),
-                  ],
-                ),
-              ),
-
             // ── Expanded details + actions (revealed on tap) ──────────────
             if (_expanded) ...[
               const Divider(height: 1, thickness: 1),
@@ -2060,70 +2083,8 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       ),
                     ],
 
-                    // ── Secondary actions: Map + Call ──────────────────────
-                    if (listing.hasLocation ||
-                        (listing.sellerAddress?.trim().isNotEmpty ?? false) ||
-                        _isDialable(listing.sellerPhone)) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          // Map — geo point or address search fallback
-                          if (listing.hasLocation ||
-                              (listing.sellerAddress?.trim().isNotEmpty ??
-                                  false)) ...[
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => _openMap(listing),
-                                icon: const Icon(Icons.map_outlined, size: 16),
-                                label: const Text('Map'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: const BorderSide(
-                                    color: AppColors.primary,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  textStyle: AppTextStyles.caption.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (_isDialable(listing.sellerPhone))
-                              const SizedBox(width: 8),
-                          ],
-                          // Call — only for dialable numbers (UIDs leak into
-                          // sellerPhone on some legacy docs)
-                          if (_isDialable(listing.sellerPhone))
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () =>
-                                    _callStore(listing.sellerPhone),
-                                icon: const Icon(
-                                  Icons.phone_outlined,
-                                  size: 16,
-                                ),
-                                label: const Text('Call'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: const BorderSide(
-                                    color: AppColors.primary,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  textStyle: AppTextStyles.caption.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
+                    // Map + Call live in the always-visible quick-action
+                    // strip at the bottom of the card — no duplicate here.
 
                     // ── Primary actions: Add to Cart + Buy Now (online) ────
                     if (listing.isInStock && listing.isOnline) ...[
@@ -2180,6 +2141,59 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                 ),
               ),
             ],
+
+            // ── Quick actions (always visible, even collapsed) ────────────
+            // Directions and Call are one tap away without expanding; the
+            // right side is the expand/collapse affordance. Buttons win the
+            // gesture arena over the card's tap-to-expand.
+            Container(
+              decoration: BoxDecoration(
+                color: _expanded
+                    ? AppColors.primary.withValues(alpha: 0.05)
+                    : AppColors.surfaceVariant.withValues(alpha: 0.55),
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(11),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Row(
+                children: [
+                  if (listing.hasLocation ||
+                      (listing.sellerAddress?.trim().isNotEmpty ?? false))
+                    _QuickPillAction(
+                      icon: Icons.directions_outlined,
+                      label: 'Directions',
+                      onTap: () => _openMap(listing),
+                    ),
+                  if ((listing.hasLocation ||
+                          (listing.sellerAddress?.trim().isNotEmpty ??
+                              false)) &&
+                      _isDialable(listing.sellerPhone))
+                    const SizedBox(width: 6),
+                  if (_isDialable(listing.sellerPhone))
+                    _QuickPillAction(
+                      icon: Icons.phone_outlined,
+                      label: 'Call',
+                      onTap: () => _callStore(listing.sellerPhone),
+                    ),
+                  const Spacer(),
+                  Text(
+                    _expanded ? 'Hide details' : 'Details & order',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -2198,22 +2212,20 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
     }
   }
 
-  void _openMap(ListingModel listing) async {
-    // Prefer exact coordinates; fall back to searching the store address/name.
-    final query = listing.hasLocation
-        ? '${listing.sellerLat},${listing.sellerLng}'
-        : Uri.encodeComponent(
-            [
-              listing.sellerName,
-              listing.sellerAddress ?? '',
-            ].where((s) => s.trim().isNotEmpty).join(' '),
-          );
-    final url = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$query',
+  /// Sends the buyer to the Store tab's own map, focused on this seller,
+  /// instead of jumping straight to the external Google Maps app — keeps
+  /// them inside KrishiDukan and reuses the single in-app map + directions
+  /// flow shared by product, brand, and search-suggestion "Directions" taps.
+  void _openMap(ListingModel listing) {
+    context.go(
+      storeFocusRoute(
+        name: listing.sellerName,
+        phone: listing.sellerPhone,
+        address: listing.sellerAddress,
+        lat: listing.sellerLat,
+        lng: listing.sellerLng,
+      ),
     );
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
   }
 
   void _addToCart(BuildContext context) {
@@ -2381,6 +2393,52 @@ class _RatingBar extends StatelessWidget {
 }
 
 // ─────────────────────────── Empty listings ────────────────────────────────
+
+/// Compact pill button used in the seller card's always-visible action strip
+/// (Directions / Call). GestureDetector (not InkWell) so its tap reliably
+/// wins over the parent card's tap-to-expand without needing a Material.
+class _QuickPillAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickPillAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppColors.primary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _EmptyListings extends StatelessWidget {
   const _EmptyListings();

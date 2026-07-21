@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.karanarjuntechnologies.KrishiDukan",
+      "sha256_cert_fingerprints": [
+        "A0:67:1C:33:0B:21:49:33:63:9B:3E:51:9F:08:62:12:5C:73:00:82:71:21:F5:09:82:6C:FC:2B:20:E8:C0:BA"
+      ]
+    }
+  }
+]

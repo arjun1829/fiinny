@@ -7,6 +7,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/utils/format_count.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -20,7 +21,7 @@ class ShopProfileScreen extends ConsumerWidget {
     final shopAsync = ref.watch(shopUserProvider(shopPhone));
     final reelsAsync = ref.watch(sellerReelsProvider(shopPhone));
     final followersAsync = ref.watch(followerCountProvider(shopPhone));
-    final productsAsync = ref.watch(myListingsProvider(shopPhone));
+    final productsAsync = ref.watch(shopListingsProvider(shopPhone));
     final currentUser = ref.watch(currentUserProvider).value;
     final isOwnShop = currentUser?.phone == shopPhone;
 
@@ -330,11 +331,7 @@ class ShopProfileScreen extends ConsumerWidget {
     );
   }
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
-  }
+  String _fmt(int n) => formatCount(n);
 }
 
 // ── Stat column ───────────────────────────────────────────────────────────────
@@ -810,7 +807,7 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).value;
     final listingsAsync = user != null
-        ? ref.watch(myListingsProvider(user.phone))
+        ? ref.watch(shopListingsProvider(user.phone))
         : const AsyncValue<List<ListingModel>>.data([]);
 
     return Container(

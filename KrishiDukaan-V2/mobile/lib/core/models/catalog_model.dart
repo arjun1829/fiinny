@@ -36,14 +36,14 @@ class AvailabilityEntry {
   }
 
   Map<String, dynamic> toMap() => {
-        'storeId': storeId,
-        'storePhone': storePhone,
-        'storeName': storeName,
-        'stockLevel': stockLevel,
-        'sellingPrice': sellingPrice,
-        'isOnline': isOnline,
-        'variants': variants?.map((v) => v.toMap()).toList(),
-      };
+    'storeId': storeId,
+    'storePhone': storePhone,
+    'storeName': storeName,
+    'stockLevel': stockLevel,
+    'sellingPrice': sellingPrice,
+    'isOnline': isOnline,
+    'variants': variants?.map((v) => v.toMap()).toList(),
+  };
 }
 
 class CatalogModel {
@@ -64,13 +64,16 @@ class CatalogModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final bool isActive;
+
   /// Package size variants (label + price), same as web's variants[].
   final List<VariantModel>? variants;
+
   /// Base pack size (e.g. "800ml", "1kg") — web's `ProductDoc.unit`. Present
   /// on every product; `variants` is only for products offering MULTIPLE
   /// selectable sizes on top of this. Drives the delivery weight estimate
   /// for the common single-size product.
   final String? unit;
+
   /// Highest discount % offered by any seller for this product.
   final double maxDiscountPct;
 
@@ -93,6 +96,7 @@ class CatalogModel {
   final double? gstRate;
   final List<AvailabilityEntry>? availability;
   final double? lowestPrice;
+  final double? nearestStoreDistanceKm;
 
   final String collectionPath;
 
@@ -131,14 +135,14 @@ class CatalogModel {
     this.gstRate,
     this.availability,
     this.lowestPrice,
+    this.nearestStoreDistanceKm,
     this.collectionPath = 'catalog',
   });
 
   // Platform-resolved image URLs (proxied on web so cross-origin hosts without
   // CORS still render — see resolveImageUrl). Use these in the UI, not the raw
   // `images` list.
-  String get imageUrl =>
-      images.isNotEmpty ? resolveImageUrl(images.first) : '';
+  String get imageUrl => images.isNotEmpty ? resolveImageUrl(images.first) : '';
   List<String> get displayImages =>
       images.map(resolveImageUrl).toList(growable: false);
   bool get hasImages => images.isNotEmpty;
@@ -180,6 +184,7 @@ class CatalogModel {
     double? gstRate,
     List<AvailabilityEntry>? availability,
     double? lowestPrice,
+    double? nearestStoreDistanceKm,
     String? collectionPath,
   }) {
     return CatalogModel(
@@ -217,6 +222,8 @@ class CatalogModel {
       gstRate: gstRate ?? this.gstRate,
       availability: availability ?? this.availability,
       lowestPrice: lowestPrice ?? this.lowestPrice,
+      nearestStoreDistanceKm:
+          nearestStoreDistanceKm ?? this.nearestStoreDistanceKm,
       collectionPath: collectionPath ?? this.collectionPath,
     );
   }
@@ -236,12 +243,12 @@ class CatalogModel {
 
     // Legacy products use availability array length as seller count
     final availabilityList = d['availability'] as List?;
-    final sellerCount = (d['sellerCount'] as num?)?.toInt() ??
-        (availabilityList?.length ?? 0);
+    final sellerCount =
+        (d['sellerCount'] as num?)?.toInt() ?? (availabilityList?.length ?? 0);
 
     // Legacy: retailerPhone or retailerId as owner
-    final createdByPhone = d['createdByPhone'] as String? ??
-        d['retailerPhone'] as String?;
+    final createdByPhone =
+        d['createdByPhone'] as String? ?? d['retailerPhone'] as String?;
 
     // Generate nameSearch tokens if not stored
     final storedSearch = d['nameSearch'];
@@ -253,9 +260,9 @@ class CatalogModel {
     final rawVariants = d['variants'] as List?;
     final parsedVariants = rawVariants != null && rawVariants.isNotEmpty
         ? rawVariants
-            .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
-            .toList()
-            .cast<VariantModel>()
+              .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
+              .toList()
+              .cast<VariantModel>()
         : null;
 
     // Max discount % — stored directly or derived from sellerDiscounts map
@@ -277,13 +284,16 @@ class CatalogModel {
     final retailerPhone = d['retailerPhone'] as String?;
     final store = d['store'] as String?;
     final stock = d['stock']?.toString();
-    final isOnline = d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only");
+    final isOnline =
+        d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only");
     final sellMode = d['sellMode'] as String? ?? "online_delivery";
     final gstApplicable = d['gstApplicable'] as bool?;
     final gstRate = (d['gstRate'] as num?)?.toDouble();
 
     final availability = availabilityList
-        ?.map((v) => AvailabilityEntry.fromMap(Map<String, dynamic>.from(v as Map)))
+        ?.map(
+          (v) => AvailabilityEntry.fromMap(Map<String, dynamic>.from(v as Map)),
+        )
         .toList();
 
     final rawUpdatedAt = d['updatedAt'] ?? d['createdAt'];
@@ -325,6 +335,7 @@ class CatalogModel {
       gstApplicable: gstApplicable,
       gstRate: gstRate,
       availability: availability,
+      nearestStoreDistanceKm: (d['nearestStoreDistanceKm'] as num?)?.toDouble(),
     );
   }
 

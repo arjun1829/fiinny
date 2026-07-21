@@ -3,11 +3,12 @@
 import { MarketplaceProduct } from "../../types/product";
 import { FormEvent, useState } from 'react';
 import { ICONS } from '../constants';
-import { saveManufacturerProduct, saveRetailerProduct, db } from '../firebase';
+import { saveManufacturerProduct, saveRetailerProduct, db, auth } from '../firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon } from '../../components/helpers';
-import { ChevronDown, Layers } from 'lucide-react';
+import { ChevronDown, Layers, AlertTriangle } from 'lucide-react';
 
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 
@@ -77,6 +78,38 @@ export default function ProfileView({
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [showAdditionalData, setShowAdditionalData] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (!auth.currentUser) {
+      setDeleteError(t('pvSignInToSaveProfile'));
+      return;
+    }
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to delete account.');
+      }
+      await signOut(auth);
+      // Full reload rather than client-side navigation — every piece of
+      // cached profile/role state across the app must be dropped, not just
+      // the router's view.
+      window.location.href = '/';
+    } catch (error) {
+      setDeletingAccount(false);
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete account.');
+    }
+  };
 
   const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -410,6 +443,74 @@ export default function ProfileView({
           }`}
         >
           {status.message}
+        </div>
+      )}
+
+      {/* Danger zone */}
+      <div className="bg-white rounded-3xl border border-red-200 p-6 md:p-8 shadow-ambient">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="w-5 h-5 text-red-600" />
+          <h2 className="text-lg font-bold text-red-700">Delete Account</h2>
+        </div>
+        <p className="text-on-surface-variant text-sm mb-4">
+          Permanently deletes your profile, listings, subscriptions, reels, reviews, and other account data.
+          Past orders and payments are kept for records. This cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm(true)}
+          className="bg-red-600 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl hover:bg-red-700 transition-colors"
+        >
+          Delete My Account
+        </button>
+      </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+              <h3 className="text-xl font-bold text-on-surface">Delete Account</h3>
+            </div>
+            <p className="text-sm text-on-surface-variant mb-4">
+              This will permanently delete your account and cannot be undone. Type DELETE below to confirm.
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETE"
+              disabled={deletingAccount}
+              className="w-full bg-surface-container-low border border-outline-variant rounded-xl px-4 py-3 text-sm mb-4 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            {deleteError && (
+              <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl px-4 py-3 text-sm mb-4">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteConfirmText('');
+                  setDeleteError(null);
+                }}
+                disabled={deletingAccount}
+                className="flex-1 bg-surface-container-low text-on-surface font-semibold px-5 py-3 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== 'DELETE' || deletingAccount}
+                className="flex-1 bg-red-600 text-white font-semibold px-5 py-3 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-40"
+              >
+                {deletingAccount ? 'Deleting…' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

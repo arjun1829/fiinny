@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required for Firebase Phone Auth silent verification (and FCM push).
+	     Without this the app never gets an APNs token, so every phone login
+	     was forced down the reCAPTCHA fallback path. Xcode rewrites the value
+	     to "production" automatically when signing for App Store/TestFlight. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:krishidukan.com</string>
+		<string>applinks:www.krishidukan.com</string>
+	</array>
+</dict>
+</plist>

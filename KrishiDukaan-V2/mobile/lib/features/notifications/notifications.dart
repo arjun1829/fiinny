@@ -82,18 +82,21 @@ class NotificationBell extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
-        color: Colors.white.withValues(alpha: 0.16),
-        shape: const CircleBorder(),
+        color: AppColors.topBarControl,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: AppColors.topBarControlBorder),
+        ),
         child: InkWell(
-          customBorder: const CircleBorder(),
+          borderRadius: BorderRadius.circular(14),
           onTap: () => context.push('/notifications'),
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(9),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.notifications_outlined,
-                    color: Colors.white, size: 20),
+                    color: AppColors.onSurface, size: 19),
                 if (unread > 0)
                   Positioned(
                     right: -4,

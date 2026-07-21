@@ -108,10 +108,9 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
         titleSpacing: 0,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(gradient: topBarGradient()),
-        ),
+        foregroundColor: AppColors.onSurface,
+        systemOverlayStyle: topBarOverlayStyle,
+        flexibleSpace: const TopBarBackdrop(),
         title: Row(
           children: [
             const AppBrandIcon(size: 28),
@@ -119,8 +118,9 @@ class _SupportScreenState extends ConsumerState<SupportScreen> {
             Text(
               'Help & Support',
               style: AppTextStyles.heading2.copyWith(
-                color: Colors.white,
+                color: AppColors.onSurface,
                 fontSize: 18,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ICONS } from '../../app/constants';
 import { useI18n } from '../../app/i18n/I18nContext';
+import { PLAY_STORE_URL, APP_STORE_URL, androidLive, iosLive } from '../../app/lib/store-links';
 
 type FooterProps = {
   onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer') => void;
@@ -141,13 +142,41 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
                 {t('footerMobileApp')}
               </p>
               <div className="flex gap-2">
-                <span className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg opacity-70">
-                  {t('footerAndroidSoon')}
-                </span>
-                <span className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg opacity-70">
-                  {t('footerIosSoon')}
-                </span>
+                {androidLive ? (
+                  <a
+                    href={PLAY_STORE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
+                  >
+                    Android
+                  </a>
+                ) : (
+                  <span className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg opacity-70">
+                    {t('footerAndroidSoon')}
+                  </span>
+                )}
+                {iosLive ? (
+                  <a
+                    href={APP_STORE_URL!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
+                  >
+                    iOS
+                  </a>
+                ) : (
+                  <span className="text-[10px] font-bold bg-on-surface text-white px-2.5 py-1.5 rounded-lg opacity-70">
+                    {t('footerIosSoon')}
+                  </span>
+                )}
               </div>
+              <button
+                onClick={() => onNavigate?.('about')}
+                className="mt-2 inline-block text-[10px] font-bold text-primary hover:underline"
+              >
+                {t('footerViewAppPage')} →
+              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 name: krishidukaan_app
 description: KrishiDukaan — Agri Commerce Platform
 publish_to: 'none'
-version: 2.0.9+109
+version: 2.4.0+116
 
 environment:
   sdk: ^3.11.5
@@ -33,8 +33,7 @@ dependencies:
 
   # Location & Maps
   geolocator: ^14.0.3
-  flutter_map: ^8.3.0
-  latlong2: ^0.9.1
+  google_maps_flutter: ^2.13.1
 
   # Networking
   http: ^1.2.2
@@ -68,3 +67,20 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+
+  # Bundled so 'Roboto' (AppTextStyles._fontFamily) resolves identically on
+  # both platforms. Android has Roboto built into the OS so it "just worked"
+  # there; iOS has no system Roboto, so unbundled it silently fell back to San
+  # Francisco — whose different line-height metrics broke the tuned spacing
+  # under headings like "Trending Near You" / "Shop by Category".
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto/Roboto-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto/Roboto-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Roboto/Roboto-Bold.ttf
+          weight: 700

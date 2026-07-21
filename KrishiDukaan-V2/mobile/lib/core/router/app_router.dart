@@ -11,6 +11,7 @@ import '../../features/marketplace/screens/home_screen.dart';
 import '../../features/marketplace/screens/marketplace_screen.dart';
 import '../../features/marketplace/screens/product_detail_screen.dart';
 import '../../features/marketplace/screens/store_locator_screen.dart';
+import '../models/store_model.dart';
 import '../../features/cart/screens/cart_screen.dart';
 import '../../features/cart/screens/checkout_screen.dart';
 import '../../features/orders/screens/customer_orders_screen.dart';
@@ -36,8 +37,8 @@ import '../../features/welcome/screens/splash_screen.dart';
 import '../../features/welcome/screens/welcome_screen.dart';
 import '../../features/reels/screens/reels_feed_screen.dart';
 import '../../features/reels/screens/reel_upload_screen.dart';
+import '../../features/reels/screens/reel_deep_link_screen.dart';
 import '../../features/reels/screens/shop_profile_screen.dart';
-
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -69,6 +70,84 @@ final _hubsKey = GlobalKey<NavigatorState>(debugLabel: 'hubs');
 final _storesKey = GlobalKey<NavigatorState>(debugLabel: 'stores');
 final _reelsKey = GlobalKey<NavigatorState>(debugLabel: 'reels');
 
+// ── Shared web link → in-app route translation ─────────────────────────────
+// The web and the app deliberately use different URL shapes for the same
+// content (WebLinks.product/.reel in web_links.dart) — the web needs SEO- and
+// SPA-friendly paths, the app needs its own go_router path table. Whenever an
+// https://krishidukan.com/... link is opened with the app installed (Android
+// App Links / iOS Universal Links hand it straight to the app instead of a
+// browser), this maps it onto the matching internal route so it opens the
+// actual product/reel screen instead of falling through to a 404.
+//
+// If the app is NOT installed, the OS never invokes this at all — the link
+// opens in the browser and the website serves it normally. That split is
+// exactly what App Links / Universal Links verification gives for free; nothing
+// else in this app decides "web vs app", the OS does.
+const _webHosts = {
+  'krishidukan.com',
+  'www.krishidukan.com',
+  'karan-arjun-uat.web.app',
+};
+
+/// Returns the trailing `-{id}` segment of a `{kebab-name}-{id}` slug (the
+/// convention shared by buildProductSlug/buildReelSlug on the web — see
+/// web_links.dart). Falls back to the whole segment if there's no dash, so a
+/// bare id still works.
+String? _trailingSlugId(String slug) {
+  if (slug.isEmpty) return null;
+  final idx = slug.lastIndexOf('-');
+  if (idx == -1) return slug;
+  final id = slug.substring(idx + 1);
+  return id.isEmpty ? null : id;
+}
+
+/// Translates an external https://krishidukan.com/... URI into an internal
+/// route path, or returns null when [uri] isn't one of our web links (i.e.
+/// every normal internal `context.go('/product/x')` call, whose relative URI
+/// has no host at all).
+String? _translateExternalLink(Uri uri) {
+  if (uri.host.isEmpty || !_webHosts.contains(uri.host)) return null;
+
+  final segments = uri.pathSegments;
+
+  // Product share link: WebLinks.product → /?view=product&product={id}
+  if (uri.queryParameters['view'] == 'product') {
+    final id = uri.queryParameters['product'];
+    if (id != null && id.isNotEmpty) return '/product/$id';
+  }
+
+  // Reel share link: WebLinks.reel → /reels/{slug}-{id}
+  if (segments.length == 2 && segments[0] == 'reels') {
+    final id = _trailingSlugId(segments[1]);
+    if (id != null) return '/reel/$id';
+  }
+
+  // SEO product page (indexed by Google, not shared directly by the app):
+  // /products/{slug}-{id}
+  if (segments.length == 2 && segments[0] == 'products') {
+    final id = _trailingSlugId(segments[1]);
+    if (id != null) return '/product/$id';
+  }
+
+  // Manufacturer invite link: WebLinks.invite → /?inviteCode={code}
+  final invite = uri.queryParameters['inviteCode'];
+  if (invite != null && invite.isNotEmpty) {
+    return '/login?inviteCode=${Uri.encodeComponent(invite)}';
+  }
+
+  // NOTE: brand links (web path /brand/{slug}) are deliberately NOT mapped
+  // here — the app's /brand/:phone route needs a phone number, but the web
+  // slug is name-based and only resolves to a phone via an async Firestore
+  // query. There's also no in-app "share brand" action yet to produce these
+  // links. Add slug resolution here if/when that's built.
+
+  // Bare domain (e.g. the app icon's own web link, or an unrecognised path
+  // under a known host) → land on Home rather than erroring.
+  if (segments.isEmpty) return '/';
+
+  return null;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final notifier = _RouterRefreshNotifier(ref);
   ref.onDispose(notifier.dispose);
@@ -78,6 +157,15 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: notifier,
     initialLocation: '/splash',
     redirect: (context, state) {
+      // ── Shared web links (App Links / Universal Links) ─────────────────
+      // A tap on a krishidukan.com link the OS handed straight to the app
+      // (see AndroidManifest.xml intent-filter + iOS Associated Domains)
+      // arrives here as a full https://... URI, not one of our internal
+      // route paths — translate it BEFORE any other logic runs so it lands
+      // on the matching in-app screen instead of 404ing.
+      final external = _translateExternalLink(state.uri);
+      if (external != null) return external;
+
       final path = state.matchedLocation;
 
       // Splash and first-install welcome run before any auth decisions.
@@ -99,9 +187,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final user = authState.value;
       final isLoggedIn = user != null;
 
-      final isAuthPath = path == '/login' ||
-          path == '/login/otp' ||
-          path == '/onboarding';
+      final isAuthPath =
+          path == '/login' || path == '/login/otp' || path == '/onboarding';
 
       const protectedPaths = ['/checkout', '/orders', '/dashboard'];
       final needsAuth = protectedPaths.any((p) => path.startsWith(p));
@@ -222,9 +309,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: ':orderId',
-            builder: (_, state) => OrderDetailScreen(
-              orderId: state.pathParameters['orderId']!,
-            ),
+            builder: (_, state) =>
+                OrderDetailScreen(orderId: state.pathParameters['orderId']!),
           ),
         ],
       ),
@@ -352,32 +438,90 @@ final routerProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (_, _, shell) => AppShell(navigationShell: shell),
         branches: [
-          StatefulShellBranch(navigatorKey: _homeKey, routes: [
-            GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
-          ]),
-          StatefulShellBranch(navigatorKey: _marketKey, routes: [
-            GoRoute(
+          StatefulShellBranch(
+            navigatorKey: _homeKey,
+            routes: [
+              GoRoute(
+                path: '/',
+                redirect: (context, state) {
+                  final view = state.uri.queryParameters['view'];
+                  if (view == 'product') {
+                    final productId = state.uri.queryParameters['product'];
+                    if (productId != null && productId.isNotEmpty) {
+                      return '/product/$productId';
+                    }
+                  }
+                  return null;
+                },
+                builder: (_, _) => const HomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _marketKey,
+            routes: [
+              GoRoute(
                 path: '/marketplace',
                 builder: (context, state) {
-                  final category = state.uri.queryParameters['category'];
+                  final q = state.uri.queryParameters;
                   return MarketplaceScreen(
-                    initialCategory: category,
-                    searchFocusToken: state.uri.queryParameters['focus'],
+                    initialCategory: q['category'],
+                    searchFocusToken: q['focus'],
+                    // Store-scoped browsing (from "View Store Products").
+                    sellerPhone: q['seller'],
+                    sellerStoreId: q['sellerId'],
+                    sellerUid: q['sellerUid'],
+                    sellerName: q['sellerName'],
                   );
-                }),
-          ]),
-          StatefulShellBranch(navigatorKey: _hubsKey, routes: [
-            GoRoute(path: '/hubs', builder: (_, _) => const HubsScreen()),
-          ]),
-          StatefulShellBranch(navigatorKey: _storesKey, routes: [
-            GoRoute(
+                },
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _hubsKey,
+            routes: [
+              GoRoute(path: '/hubs', builder: (_, _) => const HubsScreen()),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _storesKey,
+            routes: [
+              GoRoute(
                 path: '/stores',
-                builder: (_, _) => const StoreLocatorScreen()),
-          ]),
-          StatefulShellBranch(navigatorKey: _reelsKey, routes: [
-            GoRoute(
-                path: '/reels', builder: (_, _) => const ReelsFeedScreen()),
-          ]),
+                builder: (_, state) {
+                  final q = state.uri.queryParameters;
+                  final lat = double.tryParse(q['focusLat'] ?? '');
+                  final lng = double.tryParse(q['focusLng'] ?? '');
+                  final name = q['focusName'];
+                  StoreModel? focus;
+                  if ((lat != null && lng != null) ||
+                      (name != null && name.isNotEmpty)) {
+                    final phone = q['focusPhone'];
+                    focus = StoreModel(
+                      id: q['focusId']?.isNotEmpty == true
+                          ? q['focusId']!
+                          : (phone?.isNotEmpty == true ? phone! : (name ?? 'focus')),
+                      name: name ?? 'Store',
+                      phone: phone,
+                      address: q['focusAddress'],
+                      lat: lat,
+                      lng: lng,
+                    );
+                  }
+                  return StoreLocatorScreen(initialFocusStore: focus);
+                },
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _reelsKey,
+            routes: [
+              GoRoute(
+                path: '/reels',
+                builder: (_, _) => const ReelsFeedScreen(),
+              ),
+            ],
+          ),
         ],
       ),
     ],
@@ -395,15 +539,11 @@ class _RouterRefreshNotifier extends ChangeNotifier {
       fireImmediately: true,
     );
     // Re-evaluate redirects when user doc loads (fixes paywall race condition)
-    _userSub = ref.listen<AsyncValue>(
-      currentUserProvider,
-      (prev, next) {
-        if (prev?.value == null && next.value != null) {
-          notifyListeners();
-        }
-      },
-      fireImmediately: false,
-    );
+    _userSub = ref.listen<AsyncValue>(currentUserProvider, (prev, next) {
+      if (prev?.value == null && next.value != null) {
+        notifyListeners();
+      }
+    }, fireImmediately: false);
   }
 
   @override

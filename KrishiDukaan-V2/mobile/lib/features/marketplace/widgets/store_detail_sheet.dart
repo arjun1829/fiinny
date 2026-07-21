@@ -182,6 +182,42 @@ class _StoreDetailSheet extends StatelessWidget {
 
               const SizedBox(height: 8),
 
+              // Browse this seller's storefront — jumps to the Marketplace tab
+              // scoped to only their products (retailers AND manufacturers).
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      // Capture the router before popping — after pop this
+                      // sheet's context is on its way out.
+                      final router = GoRouter.of(context);
+                      Navigator.of(context).pop();
+                      final params = <String>[
+                        if (store.phone != null && store.phone!.isNotEmpty)
+                          'seller=${Uri.encodeComponent(store.phone!)}',
+                        if (store.id.isNotEmpty)
+                          'sellerId=${Uri.encodeComponent(store.id)}',
+                        if (store.userId != null && store.userId!.isNotEmpty)
+                          'sellerUid=${Uri.encodeComponent(store.userId!)}',
+                        'sellerName=${Uri.encodeComponent(store.name)}',
+                      ];
+                      router.go('/marketplace?${params.join('&')}');
+                    },
+                    icon: const Icon(Icons.storefront_outlined, size: 18),
+                    label: const Text('View Store Products'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               // Manufacturer → brand page
               if (store.isManufacturer &&
                   store.phone != null &&

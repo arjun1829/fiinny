@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb, getAdminAuth } from "../../../lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
-
-const GRAPH_API_VERSION = "v20.0";
+import { getWaProvider } from "../../../lib/wa/provider";
 
 function toE164(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -50,12 +49,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 });
   }
 
-  const accessToken = process.env.WA_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
-  if (!accessToken || !phoneNumberId) {
-    return NextResponse.json({ error: "WhatsApp not configured on server" }, { status: 500 });
-  }
-
   let body: { phone: string; text: string };
   try {
     body = (await req.json()) as { phone: string; text: string };
@@ -70,40 +63,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const to = toE164(phone);
 
-  // Call WhatsApp Cloud API
-  const waRes = await fetch(
-    `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { preview_url: false, body: text.trim() },
-      }),
-    }
-  );
-
-  if (!waRes.ok) {
-    const errText = await waRes.text();
-    console.error(`[WA Send] API error (${waRes.status}): ${errText}`);
-    return NextResponse.json(
-      { error: "WhatsApp API error", detail: errText },
-      { status: 502 }
-    );
+  let metaMessageId: string;
+  try {
+    const provider = getWaProvider();
+    const result = await provider.sendTextMessage(to, text.trim());
+    metaMessageId = result.metaMessageId;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[WA Send] provider error:", detail);
+    return NextResponse.json({ error: "WhatsApp send failed", detail }, { status: 502 });
   }
 
-  const waData = (await waRes.json()) as {
-    messages?: { id: string }[];
-    contacts?: { wa_id: string }[];
-  };
-
-  const metaMessageId = waData.messages?.[0]?.id ?? `admin-${Date.now()}`;
   const db = getAdminDb();
   const now = FieldValue.serverTimestamp();
 
