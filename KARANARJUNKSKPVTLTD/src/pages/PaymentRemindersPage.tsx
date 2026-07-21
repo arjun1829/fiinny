@@ -59,6 +59,7 @@ function buildWhatsAppMsg(inv: Invoice, businessName: string): string {
 export default function PaymentRemindersPage() {
   const { tenantId, tenantData, userRole } = useAuth();
   const isSales = userRole === 'sales';
+  const isViewOnly = isSales || userRole === 'retailer';
   const { allowedRetailerIds, filterLoading } = useSalesFilter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,12 +179,14 @@ export default function PaymentRemindersPage() {
           >
             <RefreshCw size={15} /> Refresh
           </button>
-          <button
-            onClick={sendBulkReminders}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1.1rem', background: '#25D366', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, font: 'inherit', fontSize: '0.85rem' }}
-          >
-            <Send size={15} /> Remind All Overdue
-          </button>
+          {!isViewOnly && (
+            <button
+              onClick={sendBulkReminders}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1.1rem', background: '#25D366', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, font: 'inherit', fontSize: '0.85rem' }}
+            >
+              <Send size={15} /> Remind All Overdue
+            </button>
+          )}
         </div>
       </div>
 
@@ -319,15 +322,17 @@ export default function PaymentRemindersPage() {
                     {/* Actions */}
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                        <button
-                          onClick={() => sendReminder(inv)}
-                          disabled={!inv.buyerContact}
-                          title={!inv.buyerContact ? 'No contact number' : 'Send WhatsApp reminder'}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: inv.buyerContact ? '#25D366' : 'var(--surface-border)', color: '#fff', border: 'none', borderRadius: '6px', cursor: inv.buyerContact ? 'pointer' : 'not-allowed', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
-                        >
-                          <MessageSquare size={12} /> Remind
-                        </button>
-                        {!isSales && (
+                        {!isViewOnly && (
+                          <button
+                            onClick={() => sendReminder(inv)}
+                            disabled={!inv.buyerContact}
+                            title={!inv.buyerContact ? 'No contact number' : 'Send WhatsApp reminder'}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: inv.buyerContact ? '#25D366' : 'var(--surface-border)', color: '#fff', border: 'none', borderRadius: '6px', cursor: inv.buyerContact ? 'pointer' : 'not-allowed', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
+                          >
+                            <MessageSquare size={12} /> Remind
+                          </button>
+                        )}
+                        {!isViewOnly && (
                           <button
                             onClick={() => markPaid(inv)}
                             style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}

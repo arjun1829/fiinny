@@ -336,7 +336,8 @@ function Layout({ children }: { children: React.ReactNode, currentTheme: 'light'
         {userRole === 'retailer' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
             <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0.25rem 1rem', marginBottom: '0.2rem' }}>My Portal</div>
-            <Link to="/retailer-portal" style={navLinkStyle('/retailer-portal')} onClick={() => setDrawerOpen(false)}><Store size={19} /> My Account</Link>
+            <Link to="/worklist" style={navLinkStyle('/worklist')} onClick={() => setDrawerOpen(false)}><ReceiptText size={19} /> My Orders</Link>
+            <Link to="/settings" style={navLinkStyle('/settings')} onClick={() => setDrawerOpen(false)}><Settings size={19} /> Settings</Link>
           </div>
         )}
 
@@ -409,9 +410,10 @@ function AppRoutes() {
   }
 
   // Role-based auto-redirect after login
+  const RETAILER_ALLOWED_PATHS = ['/worklist', '/settings'];
   if (currentUser && tenantId) {
-    if (userRole === 'retailer' && !locationHook.pathname.startsWith('/retailer-portal')) {
-      return <Navigate to="/retailer-portal" replace />;
+    if (userRole === 'retailer' && !RETAILER_ALLOWED_PATHS.some(p => locationHook.pathname.startsWith(p))) {
+      return <Navigate to="/worklist" replace />;
     }
     if (userRole === 'manufacturer' && !locationHook.pathname.startsWith('/manufacturer-portal')) {
       return <Navigate to="/manufacturer-portal" replace />;
@@ -464,8 +466,8 @@ function AppRoutes() {
       <Route path="/analytics" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="analytics"><AnalyticsPage /></ProtectedRoute>} />
       <Route path="/admin/manage-store" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="manage_store"><AdminStoreProductsPage /></ProtectedRoute>} />
       <Route path="/onboarding" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="retailers"><OnboardingPage /></ProtectedRoute>} />
-      <Route path="/worklist" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales']} appScreen="worklist"><WorklistPage /></ProtectedRoute>} />
-      <Route path="/worklist/:id" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales']} appScreen="worklist"><WorklistDetailsPage /></ProtectedRoute>} />
+      <Route path="/worklist" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales', 'retailer']} appScreen="worklist"><WorklistPage /></ProtectedRoute>} />
+      <Route path="/worklist/:id" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales', 'retailer']} appScreen="worklist"><WorklistDetailsPage /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="inventory"><InventoryPage /></ProtectedRoute>} />
       <Route path="/administration" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><AdministrationPage /></ProtectedRoute>} />
       <Route path="/digital-khata" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DigitalKhataPage /></ProtectedRoute>} />

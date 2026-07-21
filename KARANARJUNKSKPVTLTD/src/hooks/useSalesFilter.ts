@@ -12,7 +12,8 @@ export interface SalesFilter {
 
 /**
  * Resolves access for the current user.
- * - Non-sales roles → allowedRetailerIds: null (unrestricted).
+ * - Non-sales, non-retailer roles → allowedRetailerIds: null (unrestricted).
+ * - Retailer role → Set containing their single assigned retailer ID.
  * - Sales with neither districts nor retailers assigned → empty Set (sees nothing).
  * - Sales with districts only → resolves matching retailer IDs from Firestore.
  * - Sales with retailers only → uses those IDs directly (no Firestore fetch).
@@ -24,8 +25,15 @@ export function useSalesFilter(): SalesFilter {
   const [filterLoading, setFilterLoading] = useState(true);
 
   useEffect(() => {
-    if (userRole !== 'sales') {
+    if (userRole !== 'sales' && userRole !== 'retailer') {
       setAllowedRetailerIds(null);
+      setFilterLoading(false);
+      return;
+    }
+
+    // Retailer users always have exactly one assigned retailer — use it directly.
+    if (userRole === 'retailer') {
+      setAllowedRetailerIds(new Set(assignedRetailers));
       setFilterLoading(false);
       return;
     }
