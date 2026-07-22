@@ -324,17 +324,19 @@ export default function HomeView({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {products.length > 0 ? products.slice(0, 10).map((product) => {
-            // Mirror MarketView's discount model: a discount is either a seller promo
-            // (lowestFinalPrice below lowestPrice) OR the selling price being below the
-            // catalog price (lowestPrice < product.price). Previously this card only
-            // used maxDiscountPct, so catalog markdowns showed neither price nor label.
+            // "X% OFF" only appears for a GENUINE seller-configured discount —
+            // lowestFinalPrice (each seller's price after their own discountPct)
+            // being below lowestPrice (their plain price). We used to also treat
+            // "cheapest seller's price is below the catalog's reference price" as
+            // an offer, but that's just ordinary price variance between
+            // independent sellers (nobody ran a promotion) — it produced a fake
+            // "8% OFF" ribbon on products no seller had actually discounted.
             const sellerBasePrice = product.lowestPrice ?? product.price;
             const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
-            const promo = discountedPrice < sellerBasePrice;
-            const ribbonOriginal = promo ? sellerBasePrice : product.price;
-            const ribbonFinal = promo ? discountedPrice : sellerBasePrice;
-            const hasOffer = ribbonFinal < ribbonOriginal;
-            const maxPct = ribbonOriginal > 0
+            const hasOffer = discountedPrice < sellerBasePrice;
+            const ribbonOriginal = sellerBasePrice;
+            const ribbonFinal = discountedPrice;
+            const maxPct = hasOffer && ribbonOriginal > 0
               ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
               : 0;
             const savings = Math.round(ribbonOriginal - ribbonFinal);
@@ -394,7 +396,6 @@ export default function HomeView({
                     )}
                   </div>
                 )}
-                {(() => { console.log("[HomeView] Order button", { id: product.id, name: product.name, sellMode: product.sellMode, isOnline: product.isOnline, canOrder: product.sellMode !== "offline_store_only" }); return null; })()}
                 {product.sellMode !== "offline_store_only" && (
                   <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                     <HelperTooltip side="top" textKey="marketAddToCart">

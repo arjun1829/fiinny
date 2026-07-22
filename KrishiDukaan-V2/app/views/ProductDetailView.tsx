@@ -696,6 +696,12 @@ export default function ProductDetailView({
       .then((snap) => {
         if (cancelled || !snap.exists()) return;
         const d = snap.data() as Record<string, unknown>;
+        // Unlike the merged-products list (already filtered by
+        // fetchAllMergedProducts), this direct-by-id fallback previously
+        // rendered a deactivated product anyway — anyone with a stale link
+        // (share message, old bookmark, browser history) could reach it
+        // even after it was taken down. Mirror the same isActive check here.
+        if (d.isActive === false) return;
         const imgs: string[] = Array.isArray(d.images)
           ? (d.images as string[])
           : d.image

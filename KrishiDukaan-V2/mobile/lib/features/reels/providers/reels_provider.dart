@@ -96,3 +96,16 @@ final shopListingsProvider =
     FutureProvider.family<List<ListingModel>, String>((ref, phone) {
   return DashboardRepository().fetchSellerListings(phone);
 });
+
+final reelsFeedPlaybackActiveProvider =
+    NotifierProvider<_ReelsFeedPlaybackActiveNotifier, bool>(
+  _ReelsFeedPlaybackActiveNotifier.new,
+);
+
+class _ReelsFeedPlaybackActiveNotifier extends Notifier<bool> {
+  @override
+  bool build() => true;
+
+  void setPlayable(bool playable) => state = playable;
+}
+

@@ -44,7 +44,7 @@ class AppShell extends ConsumerWidget {
       selectedIcon: Icons.location_on_rounded,
     ),
     _ShellDestination(
-      label: 'AgriReels',
+      label: 'Reels',
       icon: Icons.play_circle_outline_rounded,
       selectedIcon: Icons.play_circle_rounded,
     ),

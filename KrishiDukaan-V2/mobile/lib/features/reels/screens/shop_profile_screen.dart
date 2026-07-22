@@ -8,7 +8,6 @@ import '../../../core/models/listing_model.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/format_count.dart';
-import '../../dashboard/providers/dashboard_provider.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
 
@@ -504,11 +503,29 @@ class _ReelGridCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // Video thumbnail only — no product image fallback
+            if (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  reel.thumbnailUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                ),
+              ),
+              // Dark overlay for text readability
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.black.withValues(alpha: 0.25),
+                ),
+              ),
+            ],
             // Play icon
             const Center(
               child: Icon(
                 Icons.play_circle_outline_rounded,
-                color: Colors.white54,
+                color: Colors.white70,
                 size: 36,
               ),
             ),
@@ -1330,8 +1347,8 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
         SnackBar(
           content: Text(
             wasReposted
-                ? 'Removed from your AgriReels profile.'
-                : 'Reposted to your AgriReels profile.',
+                ? 'Removed from your reels profile.'
+                : 'Reposted to your reels profile.',
           ),
         ),
       );
