@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2, Download } from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2, Download, Package } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc, collection } from 'firebase/firestore';
 import { generateRetailerStatement } from '../utils/statementGenerator';
@@ -113,7 +113,10 @@ export default function WorklistDetailsPage() {
     const [retailer, setRetailer] = useState<Retailer | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders' | 'payments'>('orders');
+    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'notes' | 'orders' | 'payments' | 'productSales'>('orders');
+    const [payChartView, setPayChartView] = useState<'circle' | 'bar'>(
+        () => (localStorage.getItem('partnerPayChartView') as 'circle' | 'bar') || 'circle'
+    );
     const [tasks, setTasks] = useState<Task[]>([]);
     const [notes, setNoteData] = useState<Note[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -136,6 +139,12 @@ export default function WorklistDetailsPage() {
     const [stmtFromDate, setStmtFromDate] = useState('');
     const [stmtToDate, setStmtToDate] = useState(() => new Date().toISOString().slice(0, 10));
     const [generatingStatement, setGeneratingStatement] = useState(false);
+
+    // Product Sales tab state
+    const [psFromDate, setPsFromDate] = useState('');
+    const [psToDate, setPsToDate] = useState('');
+    const [psSort, setPsSort] = useState<'qty_desc' | 'qty_asc' | 'recent' | 'name'>('qty_desc');
+    const [psSearch, setPsSearch] = useState('');
 
     // Sales Order delete confirmation
     const [soToDelete, setSoToDelete] = useState<SalesOrder | null>(null);
@@ -416,10 +425,14 @@ export default function WorklistDetailsPage() {
                     totalPaid: (Number(retailer?.totalPaid) || 0) + newlyPaid,
                     outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - newlyPaid),
                 });
-                // log payment entry
+                // log payment entry — include allocation fields so it is never
+                // treated as unallocated in the Link Payment modal.
                 await addDoc(getTenantCollection(db, tenantId, 'retailers', id, 'payments'), {
                     amount: newlyPaid,
                     notes: `Quick mark Paid — Order ${so.orderNumber || soId.slice(-6)}`,
+                    orderId: soId,
+                    linkedOrderIds: [soId],
+                    unallocatedAmount: 0,
                     createdAt: serverTimestamp(),
                 });
             }
@@ -587,10 +600,14 @@ export default function WorklistDetailsPage() {
                 notes: (quickPaidOrder.notes || '') + remark
             });
 
-            // Log payment entry
+            // Log payment entry — include allocation fields so it is never
+            // treated as unallocated in the Link Payment modal.
             await addDoc(getTenantCollection(db, tenantId!, 'retailers', id, 'payments'), {
                 amount: amount,
                 notes: `Quick Payment for Order ${quickPaidOrder.id.substring(0, 5)}: ${quickPaidRemark}`,
+                orderId: quickPaidOrder.id,
+                linkedOrderIds: [],
+                unallocatedAmount: 0,
                 createdAt: serverTimestamp()
             });
 
@@ -864,6 +881,48 @@ export default function WorklistDetailsPage() {
         s + Number(p.amount ?? 0), 0);
     const computedOutstanding = Math.max(0, computedTotalSales - computedTotalPaid);
 
+    // Product Sales aggregation — derived from salesOrders lineItems filtered by date range
+    const productSalesData = (() => {
+        const filtered = salesOrders.filter((so: any) => {
+            const invDate = so.invoiceDate || '';
+            if (psFromDate && invDate < psFromDate) return false;
+            if (psToDate && invDate > psToDate) return false;
+            return true;
+        });
+
+        const map: Record<string, { productName: string; totalQty: number; invoiceCount: number; lastInvoiceDate: string; firstInvoiceDate: string }> = {};
+
+        for (const so of filtered) {
+            const invDate: string = so.invoiceDate || '';
+            const items: any[] = so.lineItems || so.items || [];
+            for (const item of items) {
+                const name: string = (item.productName || item.itemDescription || '').trim();
+                if (!name) continue;
+                const qty = Number(item.qty ?? item.quantity ?? 0);
+                if (!map[name]) {
+                    map[name] = { productName: name, totalQty: 0, invoiceCount: 0, lastInvoiceDate: '', firstInvoiceDate: '' };
+                }
+                map[name].totalQty += qty;
+                map[name].invoiceCount += 1;
+                if (invDate) {
+                    if (!map[name].lastInvoiceDate || invDate > map[name].lastInvoiceDate) map[name].lastInvoiceDate = invDate;
+                    if (!map[name].firstInvoiceDate || invDate < map[name].firstInvoiceDate) map[name].firstInvoiceDate = invDate;
+                }
+            }
+        }
+
+        let rows = Object.values(map);
+        if (psSearch.trim()) {
+            const q = psSearch.trim().toLowerCase();
+            rows = rows.filter(r => r.productName.toLowerCase().includes(q));
+        }
+        if (psSort === 'qty_desc') rows.sort((a, b) => b.totalQty - a.totalQty);
+        else if (psSort === 'qty_asc') rows.sort((a, b) => a.totalQty - b.totalQty);
+        else if (psSort === 'recent') rows.sort((a, b) => b.lastInvoiceDate.localeCompare(a.lastInvoiceDate));
+        else rows.sort((a, b) => a.productName.localeCompare(b.productName));
+        return rows;
+    })();
+
     // Link an existing unallocated payment to a sales order
     const handleLinkPayments = async () => {
         if (!linkPaymentOrder || !tenantId || !id) return;
@@ -873,7 +932,13 @@ export default function WorklistDetailsPage() {
         const remaining = Math.max(0, grandTotal - alreadyPaid);
 
         const entries = Object.entries(linkAllocations)
-            .map(([pmtId, amt]) => ({ pmtId, amt: Math.min(Number(amt) || 0, availablePayments.find(p => p.id === pmtId)?.unallocatedAmount ?? 0) }))
+            .map(([pmtId, amt]) => {
+                const pmt = availablePayments.find(p => p.id === pmtId);
+                // Use getEffectiveUnallocated so old payments without the
+                // unallocatedAmount field are handled correctly (they carry their
+                // full amount as available rather than being silently capped to 0).
+                return { pmtId, amt: Math.min(Number(amt) || 0, pmt ? getEffectiveUnallocated(pmt) : 0) };
+            })
             .filter(({ amt }) => amt > 0);
 
         if (entries.length === 0) return;
@@ -1183,6 +1248,11 @@ export default function WorklistDetailsPage() {
                     ? Math.min(100, Math.round((computedTotalPaid / computedTotalSales) * 100))
                     : 0;
                 const pctColor = paidPct >= 100 ? '#10b981' : paidPct >= 60 ? '#f59e0b' : '#ef4444';
+                const pieData = [
+                    { name: 'Paid', value: computedTotalPaid > 0 ? computedTotalPaid : 0 },
+                    { name: 'Outstanding', value: computedOutstanding > 0 ? computedOutstanding : 0 },
+                ];
+                const hasPieData = pieData[0].value + pieData[1].value > 0;
 
                 // Order trend: group salesOrders by month (last 6)
                 const monthMap: Record<string, number> = {};
@@ -1198,40 +1268,127 @@ export default function WorklistDetailsPage() {
 
                 return (
                     <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-                        <h3 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1.25rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Partner Analytics</h3>
-
-                        {/* Payment completion progress bar */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
-                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Payment Completion</span>
-                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: pctColor }}>{paidPct}% Paid</span>
-                            </div>
-                            <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-raised)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
-                                <div style={{ height: '100%', width: `${paidPct}%`, minWidth: paidPct > 0 ? '4px' : '0', borderRadius: '999px', background: pctColor, transition: 'width 0.5s ease' }} />
-                            </div>
-                            <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.75rem' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                                    <span style={{ color: '#10b981', fontWeight: 600 }}>₹{computedTotalPaid.toLocaleString()} paid</span>
-                                </span>
-                                {computedOutstanding > 0
-                                    ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
-                                        <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{computedOutstanding.toLocaleString()} outstanding</span>
-                                      </span>
-                                    : <span style={{ color: '#10b981', fontWeight: 600 }}>Fully settled ✅</span>
-                                }
+                        {/* Header + view switcher */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                            <h3 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>Partner Analytics</h3>
+                            <div style={{ display: 'flex', gap: '0.2rem', background: 'var(--surface-base)', borderRadius: '8px', padding: '0.2rem', border: '1px solid var(--surface-border)' }}>
+                                {([['circle', '◉ Circular'], ['bar', '▬ Progress Bar']] as const).map(([val, label]) => (
+                                    <button
+                                        key={val}
+                                        onClick={() => { setPayChartView(val); localStorage.setItem('partnerPayChartView', val); }}
+                                        style={{ padding: '0.28rem 0.75rem', borderRadius: '6px', border: 'none', background: payChartView === val ? 'var(--primary-light)' : 'transparent', color: payChartView === val ? '#fff' : 'var(--text-tertiary)', fontWeight: payChartView === val ? 700 : 500, fontSize: '0.71rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
-                        {/* Stats grid */}
+                        {/* ── Circular / Doughnut View ── */}
+                        {payChartView === 'circle' && (
+                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                {/* Doughnut chart with centre label */}
+                                <div style={{ position: 'relative', width: 164, height: 164, flexShrink: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={hasPieData ? pieData : [{ name: 'empty', value: 1 }]}
+                                                cx="50%" cy="50%"
+                                                innerRadius={52} outerRadius={74}
+                                                startAngle={90} endAngle={-270}
+                                                dataKey="value"
+                                                strokeWidth={0}
+                                                paddingAngle={hasPieData && pieData[0].value > 0 && pieData[1].value > 0 ? 2 : 0}
+                                            >
+                                                {hasPieData ? (
+                                                    <>
+                                                        <Cell fill="#10b981" />
+                                                        <Cell fill={paidPct >= 100 ? '#10b98133' : '#ef4444'} />
+                                                    </>
+                                                ) : (
+                                                    <Cell fill="var(--surface-border)" />
+                                                )}
+                                            </Pie>
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    {/* Centre text overlay */}
+                                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                                        <div style={{ fontWeight: 800, fontSize: '1.55rem', color: pctColor, lineHeight: 1 }}>{paidPct}%</div>
+                                        <div style={{ fontSize: '0.58rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: '0.2rem' }}>Paid</div>
+                                    </div>
+                                </div>
+
+                                {/* Metric rows */}
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.85rem', minWidth: 160 }}>
+                                    {[
+                                        { label: 'Total Sales',    value: `₹${computedTotalSales.toLocaleString()}`,   dot: 'var(--secondary)',                                        bold: false },
+                                        { label: 'Amount Paid',    value: `₹${computedTotalPaid.toLocaleString()}`,    dot: '#10b981',                                                 bold: true  },
+                                        { label: 'Outstanding',    value: `₹${computedOutstanding.toLocaleString()}`,  dot: computedOutstanding > 0 ? '#ef4444' : '#10b981',           bold: true  },
+                                        { label: 'Completion',     value: `${paidPct}%`,                               dot: pctColor,                                                  bold: true  },
+                                    ].map(m => (
+                                        <div key={m.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.dot, flexShrink: 0, display: 'inline-block' }} />
+                                                {m.label}
+                                            </span>
+                                            <span style={{ fontWeight: m.bold ? 700 : 500, fontSize: '0.88rem', color: m.dot }}>{m.value}</span>
+                                        </div>
+                                    ))}
+                                    {paidPct >= 100 && computedTotalSales > 0 && (
+                                        <div style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600, marginTop: '0.1rem' }}>Fully settled ✅</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Progress Bar View ── */}
+                        {payChartView === 'bar' && (
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Payment Completion</span>
+                                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: pctColor }}>{paidPct}% Paid</span>
+                                </div>
+                                <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-raised)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                                    <div style={{ height: '100%', width: `${paidPct}%`, minWidth: paidPct > 0 ? '4px' : '0', borderRadius: '999px', background: pctColor, transition: 'width 0.5s ease' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.45rem', fontSize: '0.75rem' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                                        <span style={{ color: '#10b981', fontWeight: 600 }}>₹{computedTotalPaid.toLocaleString()} paid</span>
+                                    </span>
+                                    {computedOutstanding > 0
+                                        ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                                            <span style={{ color: '#ef4444', fontWeight: 600 }}>₹{computedOutstanding.toLocaleString()} outstanding</span>
+                                          </span>
+                                        : <span style={{ color: '#10b981', fontWeight: 600 }}>Fully settled ✅</span>
+                                    }
+                                </div>
+                                {/* Metric chips below the bar */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.6rem', marginTop: '1.1rem' }}>
+                                    {[
+                                        { label: 'Total Sales',  value: `₹${computedTotalSales.toLocaleString()}`,   color: 'var(--text-primary)' },
+                                        { label: 'Amount Paid',  value: `₹${computedTotalPaid.toLocaleString()}`,    color: '#10b981' },
+                                        { label: 'Outstanding',  value: `₹${computedOutstanding.toLocaleString()}`,  color: computedOutstanding > 0 ? '#ef4444' : 'var(--text-tertiary)' },
+                                        { label: 'Completion',   value: `${paidPct}%`,                               color: pctColor },
+                                    ].map(m => (
+                                        <div key={m.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.55rem 0.75rem' }}>
+                                            <div style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>{m.label}</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: m.color }}>{m.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Stats grid (always visible) */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(105px, 1fr))', gap: '0.6rem', marginBottom: trendData.length > 0 ? '1.5rem' : 0 }}>
                             {[
-                                { label: 'Total Orders', value: String(salesOrders.length), color: 'var(--text-primary)' },
-                                { label: 'Avg Order Value', value: `₹${salesOrders.length > 0 ? Math.round(computedTotalSales / salesOrders.length).toLocaleString() : 0}`, color: 'var(--secondary)' },
-                                { label: 'Paid Amount', value: `₹${computedTotalPaid.toLocaleString()}`, color: '#10b981' },
-                                { label: 'Outstanding', value: `₹${computedOutstanding.toLocaleString()}`, color: computedOutstanding > 0 ? '#ef4444' : 'var(--text-tertiary)' },
-                                { label: 'Paid Orders', value: String(salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length), color: '#10b981' },
+                                { label: 'Total Orders',    value: String(salesOrders.length),                                                                                                          color: 'var(--text-primary)' },
+                                { label: 'Avg Order Value', value: `₹${salesOrders.length > 0 ? Math.round(computedTotalSales / salesOrders.length).toLocaleString() : 0}`,                             color: 'var(--secondary)' },
+                                { label: 'Paid Amount',     value: `₹${computedTotalPaid.toLocaleString()}`,                                                                                            color: '#10b981' },
+                                { label: 'Outstanding',     value: `₹${computedOutstanding.toLocaleString()}`,                                                                                          color: computedOutstanding > 0 ? '#ef4444' : 'var(--text-tertiary)' },
+                                { label: 'Paid Orders',     value: String(salesOrders.filter((s: any) => s.paymentStatus === 'Paid').length),                                                           color: '#10b981' },
                             ].map(stat => (
                                 <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.55rem 0.75rem' }}>
                                     <div style={{ fontSize: '0.62rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>{stat.label}</div>
@@ -1264,6 +1421,7 @@ export default function WorklistDetailsPage() {
                 {[
                     { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: salesOrders.length },
                     { id: 'payments', label: 'Payments', icon: Wallet, count: payments.length },
+                    { id: 'productSales', label: 'Product Sales', icon: Package },
                     { id: 'overview', label: 'Overview', icon: User },
                 ].map(tab => (
                     <button
@@ -1575,6 +1733,126 @@ export default function WorklistDetailsPage() {
                                             {!isSales && <td />}
                                         </tr>
                                     </tfoot>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'productSales' && (
+                    <div className="animate-fade-in">
+                        {/* Filters */}
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>From Date</label>
+                                <input
+                                    type="date"
+                                    className="input-field"
+                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', width: '160px' }}
+                                    value={psFromDate}
+                                    onChange={e => setPsFromDate(e.target.value)}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>To Date</label>
+                                <input
+                                    type="date"
+                                    className="input-field"
+                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', width: '160px' }}
+                                    value={psToDate}
+                                    onChange={e => setPsToDate(e.target.value)}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort By</label>
+                                <select
+                                    className="input-field"
+                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', appearance: 'auto' }}
+                                    value={psSort}
+                                    onChange={e => setPsSort(e.target.value as any)}
+                                >
+                                    <option value="qty_desc">Qty: High → Low</option>
+                                    <option value="qty_asc">Qty: Low → High</option>
+                                    <option value="recent">Recently Sold</option>
+                                    <option value="name">Product Name</option>
+                                </select>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 180px' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Search Product</label>
+                                <input
+                                    type="text"
+                                    className="input-field"
+                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                                    placeholder="Search by product name..."
+                                    value={psSearch}
+                                    onChange={e => setPsSearch(e.target.value)}
+                                />
+                            </div>
+                            {(psFromDate || psToDate || psSearch) && (
+                                <button
+                                    onClick={() => { setPsFromDate(''); setPsToDate(''); setPsSearch(''); }}
+                                    style={{ padding: '0.4rem 0.9rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-secondary)', fontFamily: 'inherit', alignSelf: 'flex-end' }}
+                                >
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Summary */}
+                        {productSalesData.length > 0 && (
+                            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                                <div style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.5rem 1rem', fontSize: '0.82rem' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Products: </span>
+                                    <span style={{ fontWeight: 700 }}>{productSalesData.length}</span>
+                                </div>
+                                <div style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.5rem 1rem', fontSize: '0.82rem' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Total Qty Sold: </span>
+                                    <span style={{ fontWeight: 700, color: 'var(--primary-light)' }}>{productSalesData.reduce((s, r) => s + r.totalQty, 0).toLocaleString()}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Table */}
+                        {productSalesData.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <Package size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
+                                <p style={{ margin: 0 }}>{psSearch || psFromDate || psToDate ? 'No products match the current filters.' : 'No invoice data available yet.'}</p>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Product sales are derived from B2B invoices created for this partner.</p>
+                            </div>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '2px solid var(--surface-border)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600 }}>#</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600 }}>Product</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Total Qty Sold</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Invoice Count</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Last Sold Date</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>First Sold Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {productSalesData.map((row, idx) => (
+                                            <tr
+                                                key={row.productName}
+                                                style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
+                                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                            >
+                                                <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>{idx + 1}</td>
+                                                <td style={{ padding: '0.7rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{row.productName}</td>
+                                                <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--primary-light)', fontSize: '1rem' }}>{row.totalQty.toLocaleString()}</td>
+                                                <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', color: 'var(--text-secondary)' }}>{row.invoiceCount}</td>
+                                                <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                    {row.lastInvoiceDate ? new Date(row.lastInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </td>
+                                                <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                    {row.firstInvoiceDate ? new Date(row.firstInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
                                 </table>
                             </div>
                         )}
@@ -1923,7 +2201,7 @@ export default function WorklistDetailsPage() {
                                 </h2>
                                 <p style={{ margin: '0 0 1.5rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
                                     For: <strong style={{ color: 'var(--text-primary)' }}>{retailer.name}</strong>
-                                    {' · '}Outstanding: <strong style={{ color: '#ef4444' }}>₹{Number(retailer.outstandingAmount || 0).toLocaleString()}</strong>
+                                    {' · '}Outstanding: <strong style={{ color: computedOutstanding > 0 ? '#ef4444' : '#10b981' }}>₹{computedOutstanding.toLocaleString()}</strong>
                                 </p>
                                 <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

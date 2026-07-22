@@ -7,7 +7,7 @@ import {
     X, Copy, CheckSquare, FileText, ChevronDown, ChevronRight, Phone,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getDocs, orderBy, query, where } from 'firebase/firestore';
+import { getDocs, orderBy, query, where, collectionGroup } from 'firebase/firestore';
 import { db } from '../firebase';
 import Papa from 'papaparse';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,7 +42,10 @@ interface Retailer {
     bookName?: string;
     billBookPageNo?: string;
     createdAt?: { toMillis?: () => number };
-    hasPendingOrders?: boolean;
+    // Denormalized financial fields kept in sync by all invoice/payment mutations
+    outstandingAmount?: number;
+    totalSales?: number;
+    totalPaid?: number;
     closestCreditDays?: number | null;
     computedOutstanding?: number;
 }
@@ -158,11 +161,12 @@ function PartnersTab() {
     const [retailers, setRetailers] = useState<Retailer[]>([]);
     const [loading, setLoading] = useState(true);
     const [showUdhariModal, setShowUdhariModal] = useState(false);
+    const [showAnalytics, setShowAnalytics] = useState(false);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSize, setFilterSize] = useState('All');
     const [sortBy, setSortBy] = useState('newest');
-    const [partnerView, setPartnerView] = useState<'active' | 'history'>('active');
+    const [partnerView, setPartnerView] = useState<'all' | 'active' | 'cleared'>('all');
 
     const paymentsFileRef = useRef<HTMLInputElement>(null);
     const followupsFileRef = useRef<HTMLInputElement>(null);
@@ -212,18 +216,20 @@ function PartnersTab() {
                         where('retailerId', '==', r.id)
                     );
                     const snap = await getDocs(q);
-                    const pending = snap.docs
-                        .map(d => d.data() as { grandTotal?: number; amountPaid?: number; paymentStatus?: string })
-                        .filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
-                    const pendingAmount = pending.reduce((sum, so) =>
-                        sum + Math.max(0, (Number(so.grandTotal) || 0) - (Number(so.amountPaid) || 0)), 0);
+                    const pendingOrderCount = snap.docs
+                        .filter(d => d.data().paymentStatus?.toLowerCase() !== 'paid')
+                        .length;
+                    // Use total outstanding (Total Sales − Total Payments Received).
+                    // r.computedOutstanding already reflects all received payments,
+                    // not just those linked to specific invoices.
+                    const pendingAmount = r.computedOutstanding ?? 0;
                     return {
                         id: r.id,
                         name: r.name || '—',
                         number: r.number,
                         email: r.email,
                         pendingAmount,
-                        pendingOrderCount: pending.length,
+                        pendingOrderCount,
                         closestCreditDays: r.closestCreditDays ?? null,
                     };
                 })
@@ -239,22 +245,48 @@ function PartnersTab() {
         const fetchRetailers = async () => {
             if (!tenantId) return;
             try {
-                // Fetch retailers, all orders, and all salesOrders in parallel — 3 reads
-                // total instead of 2N+1 (previously one orders + one salesOrders query
-                // per retailer). Same documents read, but in 3 round-trips, not hundreds.
-                const [retailersSnap, ordersSnap, salesOrdersSnap] = await Promise.all([
+                // 3 parallel reads — retailers, salesOrders, and ALL payments for
+                // every retailer via a collection group query.  The payments fetch gives
+                // us the exact same "sum(payments.amount)" the profile page uses, so
+                // the Outstanding column and Active/Cleared filter match exactly.
+                const [retailersSnap, salesOrdersSnap, paymentsGroupSnap] = await Promise.all([
                     getDocs(query(getTenantCollection(db, tenantId, 'retailers'), orderBy('createdAt', 'desc'))),
-                    getDocs(getTenantCollection(db, tenantId, 'orders')),
                     getDocs(getTenantCollection(db, tenantId, 'salesOrders')),
+                    getDocs(collectionGroup(db, 'payments')),
                 ]);
 
-                // Group orders by retailerId so each retailer is an O(1) lookup.
-                const ordersByRetailer = new Map<string, { isDelivered?: boolean }[]>();
-                ordersSnap.docs.forEach(doc => {
-                    const o = doc.data() as { retailerId?: string; isDelivered?: boolean };
-                    if (!o.retailerId) return;
-                    const arr = ordersByRetailer.get(o.retailerId);
-                    if (arr) arr.push(o); else ordersByRetailer.set(o.retailerId, [o]);
+                // Sum payment amounts per retailer, filtering strictly to this tenant.
+                // getTenantCollection uses two different path layouts depending on tenantId:
+                //   master    →  retailers/{retailerId}/payments/{paymentId}        (4 parts)
+                //   non-master→  tenants/{tenantId}/retailers/{retailerId}/payments/{paymentId}  (6 parts)
+                // The previous filter hard-coded the 6-part form and silently dropped all
+                // master-tenant payments, which caused the Outstanding mismatch.
+                const isMasterTenant = tenantId === 'master';
+                const paymentsByRetailer = new Map<string, number>();
+                paymentsGroupSnap.docs.forEach(pdoc => {
+                    const parts = pdoc.ref.path.split('/');
+                    let rId: string | undefined;
+
+                    if (isMasterTenant) {
+                        // retailers/{retailerId}/payments/{paymentId}
+                        if (parts.length === 4 && parts[0] === 'retailers' && parts[2] === 'payments') {
+                            rId = parts[1];
+                        }
+                    } else {
+                        // tenants/{tenantId}/retailers/{retailerId}/payments/{paymentId}
+                        if (
+                            parts.length === 6      &&
+                            parts[0] === 'tenants'  &&
+                            parts[1] === tenantId   &&
+                            parts[2] === 'retailers' &&
+                            parts[4] === 'payments'
+                        ) {
+                            rId = parts[3];
+                        }
+                    }
+
+                    if (!rId) return;
+                    paymentsByRetailer.set(rId, (paymentsByRetailer.get(rId) ?? 0) + Number(pdoc.data().amount ?? 0));
                 });
 
                 // Group salesOrders by retailerId (include financial fields for outstanding calc).
@@ -275,13 +307,7 @@ function PartnersTab() {
                     .filter(d => (d.data() as { channel?: string }).channel !== 'pos')
                     .map(doc => {
                     const r = { id: doc.id, ...doc.data() } as Retailer;
-                    const orders = ordersByRetailer.get(r.id) ?? [];
                     const salesOrders = salesByRetailer.get(r.id) ?? [];
-
-                    const hasPendingPos = orders.some(o => !o.isDelivered);
-                    const hasPendingB2b = salesOrders.some(so => so.status === 'pending');
-                    const isBrandNew = orders.length === 0 && salesOrders.length === 0;
-                    const hasPending = isBrandNew || hasPendingPos || hasPendingB2b;
 
                     const pendingSOs = salesOrders.filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
                     const dueDates = pendingSOs
@@ -294,14 +320,17 @@ function PartnersTab() {
                         ? Math.round((nearestDue.getTime() - today.getTime()) / 864e5)
                         : null;
 
-                    // Outstanding = sum(grandTotal) - sum(amountPaid) across all orders.
-                    // Same formula as WorklistDetailsPage computedOutstanding.
+                    // EXACT same formula as WorklistDetailsPage (retailer profile page):
+                    //   computedTotalSales = sum(salesOrder.grandTotal | netAmount | totalAmount)
+                    //   computedTotalPaid  = sum(payments.amount) from payments subcollection
+                    //   computedOutstanding = max(0, computedTotalSales - computedTotalPaid)
+                    // Linked/unlinked status does not matter — every payment entry counts.
                     const soList = salesByRetailer.get(r.id) ?? [];
                     const soTotalSales = soList.reduce((s, so) => s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
-                    const soTotalPaid = soList.reduce((s, so) => s + Number(so.amountPaid ?? 0), 0);
+                    const soTotalPaid  = paymentsByRetailer.get(r.id) ?? 0;
                     const computedOutstanding = Math.max(0, soTotalSales - soTotalPaid);
 
-                    return { ...r, hasPendingOrders: hasPending, closestCreditDays, computedOutstanding };
+                    return { ...r, closestCreditDays, computedOutstanding };
                 });
 
                 // Sales users see retailers matching assignedDistricts OR assignedRetailers (union).
@@ -337,8 +366,9 @@ function PartnersTab() {
 
     const processedRetailers = useMemo(() => {
         let result = [...retailers];
-        if (partnerView === 'active') result = result.filter(r => r.hasPendingOrders);
-        else result = result.filter(r => !r.hasPendingOrders);
+        // Outstanding filter — uses Total Sales − Amount Paid (matches profile page)
+        if (partnerView === 'active')  result = result.filter(r => (r.computedOutstanding ?? 0) > 0);
+        if (partnerView === 'cleared') result = result.filter(r => (r.computedOutstanding ?? 0) <= 0);
 
         if (searchTerm) {
             const ls = searchTerm.toLowerCase();
@@ -439,12 +469,21 @@ function PartnersTab() {
 
     const kpi = useMemo(() => {
         const total = retailers.length;
-        const active = retailers.filter(r => r.hasPendingOrders).length;
+        // Active = outstanding > 0; Cleared = outstanding <= 0 (matches the filter buttons)
+        const active = retailers.filter(r => (r.computedOutstanding ?? 0) > 0).length;
+        // Financial totals from retailer docs' denormalized fields.
+        // totalSales and totalPaid are maintained by all invoice/payment mutations.
+        const totalInvoiceValue = retailers.reduce((s, r) => s + Number(r.totalSales ?? 0), 0);
+        const totalPaymentsReceived = retailers.reduce((s, r) => s + Number(r.totalPaid ?? 0), 0);
+        const totalOutstanding = retailers.reduce((s, r) => s + (r.computedOutstanding ?? 0), 0);
         return {
             total, active, cleared: total - active,
             big: retailers.filter(r => r.portfolioSize === 'Big').length,
             medium: retailers.filter(r => r.portfolioSize === 'Medium').length,
             small: retailers.filter(r => r.portfolioSize === 'Small').length,
+            totalInvoiceValue,
+            totalPaymentsReceived,
+            totalOutstanding,
         };
     }, [retailers]);
 
@@ -492,41 +531,98 @@ function PartnersTab() {
                 </div>
             </div>
 
-            {/* KPI Cards */}
+            {/* ── Financial Summary Cards (always visible) ── */}
             {!loading && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                    {[
-                        { label: 'Total Partners',    value: kpi.total,   icon: Users,        border: '#38bdf8', bg: 'rgba(56,189,248,0.07)' },
-                        { label: 'Active / Pending',  value: kpi.active,  icon: AlertCircle,  border: '#f59e0b', bg: 'rgba(245,158,11,0.07)' },
-                        { label: 'Cleared',           value: kpi.cleared, icon: CheckCircle2, border: '#10b981', bg: 'rgba(16,185,129,0.07)' },
-                        { label: 'Big Distributors',  value: kpi.big,     icon: TrendingUp,   border: '#0ea5e9', bg: 'rgba(14,165,233,0.07)' },
-                        { label: 'Medium Retailers',  value: kpi.medium,  icon: Store,        border: '#a78bfa', bg: 'rgba(167,139,250,0.07)' },
-                        { label: 'Small Retailers',   value: kpi.small,   icon: Building2,    border: '#34d399', bg: 'rgba(52,211,153,0.07)' },
-                    ].map(c => (
-                        <div key={c.label} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${c.border}`, background: c.bg }}>
+                <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                        {/* Total Invoice Value */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #38bdf8', background: 'rgba(56,189,248,0.07)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>{c.label}</p>
-                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.75rem', color: c.border }}>{c.value}</h2>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Invoice Value</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#38bdf8' }}>₹{kpi.totalInvoiceValue.toLocaleString('en-IN')}</h2>
                                 </div>
-                                <div style={{ background: `${c.border}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
-                                    <c.icon size={18} color={c.border} />
+                                <div style={{ background: '#38bdf822', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <FileText size={18} color="#38bdf8" />
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
+                        {/* Total Payments Received */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981', background: 'rgba(16,185,129,0.07)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Payments Received</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#10b981' }}>₹{kpi.totalPaymentsReceived.toLocaleString('en-IN')}</h2>
+                                </div>
+                                <div style={{ background: '#10b98122', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <CheckCircle2 size={18} color="#10b981" />
+                                </div>
+                            </div>
+                        </div>
+                        {/* Total Outstanding */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}`, background: kpi.totalOutstanding > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.04)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Outstanding</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981' }}>₹{kpi.totalOutstanding.toLocaleString('en-IN')}</h2>
+                                </div>
+                                <div style={{ background: `${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <AlertCircle size={18} color={kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Additional Analytics (collapsible) ── */}
+                    <div style={{ marginBottom: '1.75rem' }}>
+                        <button
+                            onClick={() => setShowAnalytics(v => !v)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 1rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600, transition: 'all 0.15s' }}
+                        >
+                            {showAnalytics ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            {showAnalytics ? 'Hide' : 'Show'} Additional Analytics
+                        </button>
+                        {showAnalytics && (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginTop: '0.75rem' }}>
+                                {[
+                                    { label: 'Total Partners',   value: kpi.total,   icon: Users,        border: '#38bdf8', bg: 'rgba(56,189,248,0.07)' },
+                                    { label: 'With Outstanding', value: kpi.active,  icon: AlertCircle,  border: '#f59e0b', bg: 'rgba(245,158,11,0.07)' },
+                                    { label: 'Cleared',          value: kpi.cleared, icon: CheckCircle2, border: '#10b981', bg: 'rgba(16,185,129,0.07)' },
+                                    { label: 'Big Distributors', value: kpi.big,     icon: TrendingUp,   border: '#0ea5e9', bg: 'rgba(14,165,233,0.07)' },
+                                    { label: 'Medium Retailers', value: kpi.medium,  icon: Store,        border: '#a78bfa', bg: 'rgba(167,139,250,0.07)' },
+                                    { label: 'Small Retailers',  value: kpi.small,   icon: Building2,    border: '#34d399', bg: 'rgba(52,211,153,0.07)' },
+                                ].map(c => (
+                                    <div key={c.label} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${c.border}`, background: c.bg }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <div>
+                                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>{c.label}</p>
+                                                <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.75rem', color: c.border }}>{c.value}</h2>
+                                            </div>
+                                            <div style={{ background: `${c.border}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                                <c.icon size={18} color={c.border} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Filters Bar */}
             <div className="glass-panel" style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '0.35rem' }}>
-                    {([['active', 'Active'], ['history', 'Cleared']] as const).map(([val, label]) => (
-                        <button key={val} onClick={() => setPartnerView(val)}
-                            style={{ padding: '0.4rem 1rem', borderRadius: '20px', border: `1px solid ${partnerView === val ? 'var(--primary-light)' : 'var(--surface-border)'}`, background: partnerView === val ? 'var(--primary-light)' : 'transparent', color: partnerView === val ? '#fff' : 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                            {label}
-                        </button>
-                    ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--surface-base)', padding: '0.25rem 0.75rem', borderRadius: '10px', border: `1px solid ${partnerView !== 'all' ? 'var(--primary-light)' : 'var(--surface-border)'}` }}>
+                    <Filter size={14} color={partnerView !== 'all' ? 'var(--primary-light)' : 'var(--text-secondary)'} />
+                    <select
+                        value={partnerView}
+                        onChange={e => setPartnerView(e.target.value as 'all' | 'active' | 'cleared')}
+                        style={{ background: 'transparent', color: partnerView !== 'all' ? 'var(--primary-light)' : 'var(--text-primary)', border: 'none', outline: 'none', padding: '0.35rem 0.25rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: partnerView !== 'all' ? 700 : 400 }}
+                    >
+                        <option value="all">Outstanding: All</option>
+                        <option value="active">Outstanding: Active</option>
+                        <option value="cleared">Outstanding: Cleared</option>
+                    </select>
                 </div>
                 <div style={{ flex: '1 1 240px', position: 'relative' }}>
                     <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
