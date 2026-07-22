@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2 } from 'lucide-react';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2, Download } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc } from 'firebase/firestore';
+import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc, collection } from 'firebase/firestore';
+import { generateRetailerStatement } from '../utils/statementGenerator';
 import { generatePaymentId } from '../utils/paymentIdGenerator';
 import { uploadPaymentProof } from '../utils/uploadPaymentProof';
 import PaymentAttachmentField from '../components/PaymentAttachmentField';
@@ -128,6 +130,12 @@ export default function WorklistDetailsPage() {
     const [paymentAccountName, setPaymentAccountName] = useState('');
     const [paymentTransactionRef, setPaymentTransactionRef] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+
+    // Statement download modal
+    const [showStatementModal, setShowStatementModal] = useState(false);
+    const [stmtFromDate, setStmtFromDate] = useState('');
+    const [stmtToDate, setStmtToDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [generatingStatement, setGeneratingStatement] = useState(false);
 
     // Sales Order delete confirmation
     const [soToDelete, setSoToDelete] = useState<SalesOrder | null>(null);
@@ -308,6 +316,35 @@ export default function WorklistDetailsPage() {
         const phone = retailer.number.replace(/\D/g, ''); // Strip non-digits
         const msg = encodeURIComponent(`Hello ${retailer.name}, this is from KaranArjun Krushi Seva Kendra.`);
         window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+    };
+
+    const handleDownloadStatement = async () => {
+        if (!tenantId || !retailer) return;
+        setGeneratingStatement(true);
+        try {
+            // Fetch invoice branding from Firestore
+            const brdSnap = await getDoc(fsDoc(collection(db, `tenants/${tenantId}/settings`), 'invoiceBranding'));
+            const brd = brdSnap.exists() ? brdSnap.data() : {};
+
+            generateRetailerStatement({
+                retailer,
+                salesOrders,
+                payments,
+                branding: {
+                    businessName: brd.businessName || 'Business',
+                    address: brd.address || '',
+                    gstin: brd.gstin || '',
+                },
+                fromDate: stmtFromDate ? new Date(stmtFromDate) : null,
+                toDate: stmtToDate ? new Date(stmtToDate) : null,
+            });
+            setShowStatementModal(false);
+        } catch (e) {
+            console.error('Statement generation failed:', e);
+            alert('Failed to generate statement. Please try again.');
+        } finally {
+            setGeneratingStatement(false);
+        }
     };
 
     const handleDeleteRetailer = async () => {
@@ -817,12 +854,14 @@ export default function WorklistDetailsPage() {
     };
     const availablePayments = payments.filter(p => getEffectiveUnallocated(p) > 0);
 
-    // Derived financials — order-level, matches list page formula exactly.
-    // Source of truth: salesOrder.amountPaid (updated by every payment operation).
+    // Derived financials
+    // Total Sales = sum of all B2B sales order amounts
+    // Amount Paid = sum of ALL received payments (linked or unlinked)
+    // Outstanding  = Total Sales − Amount Paid
     const computedTotalSales = salesOrders.reduce((s: number, so: any) =>
         s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
-    const computedTotalPaid = salesOrders.reduce((s: number, so: any) =>
-        s + Number(so.amountPaid ?? 0), 0);
+    const computedTotalPaid = payments.reduce((s: number, p: Payment) =>
+        s + Number(p.amount ?? 0), 0);
     const computedOutstanding = Math.max(0, computedTotalSales - computedTotalPaid);
 
     // Link an existing unallocated payment to a sales order
@@ -1053,6 +1092,7 @@ export default function WorklistDetailsPage() {
     }
 
     return (
+        <>
         <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
             <button
                 className="btn btn-secondary"
@@ -1083,6 +1123,12 @@ export default function WorklistDetailsPage() {
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                             <MapPin size={14} /> {retailer.atPost || ''} {retailer.taluka ? `| ${retailer.taluka}` : ''} {retailer.district ? `| ${retailer.district}` : ''}
                         </span>
+                        <button
+                            onClick={() => setShowStatementModal(true)}
+                            style={{ marginTop: '0.6rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.9rem', background: 'hsla(152,60%,40%,0.1)', border: '1px solid hsla(152,60%,40%,0.3)', borderRadius: '8px', color: 'var(--primary-light)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                        >
+                            <Download size={14} /> Download Statement
+                        </button>
                     </div>
                     <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                         {retailer.gstin && <span>GSTIN: {retailer.gstin}</span>}
@@ -1219,8 +1265,6 @@ export default function WorklistDetailsPage() {
                     { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: salesOrders.length },
                     { id: 'payments', label: 'Payments', icon: Wallet, count: payments.length },
                     { id: 'overview', label: 'Overview', icon: User },
-                    { id: 'tasks', label: t('worklist_details.tasks'), icon: CheckSquare, count: tasks.length },
-                    { id: 'notes', label: t('worklist_details.notes'), icon: FileText, count: notes.length }
                 ].map(tab => (
                     <button
                         key={tab.id}
@@ -2057,112 +2101,7 @@ export default function WorklistDetailsPage() {
                     </div>
                 )}
 
-                {/* Link Payment Modal */}
-                {linkPaymentOrder && (() => {
-                    const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
-                    const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
-                    const remaining = Math.max(0, grandTotal - alreadyPaid);
-                    const orderLabel = linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-8).toUpperCase();
-                    const totalAllocated = Object.values(linkAllocations).reduce((s, v) => s + (Number(v) || 0), 0);
-                    const outstandingAfter = Math.max(0, remaining - totalAllocated);
-                    const over = totalAllocated > remaining + 0.01;
-                    return (
-                        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-                            <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
-                                <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
-                                    <button onClick={() => !savingLinkPayment && setLinkPaymentOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
-
-                                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
-                                        <Link2 size={22} color="var(--primary-light)" /> Link Payment
-                                    </h2>
-                                    <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
-                                        Order: <strong style={{ color: 'var(--primary-light)' }}>{orderLabel}</strong>
-                                    </p>
-
-                                    {/* Order summary */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
-                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Order Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
-                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Already Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
-                                        <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
-                                    </div>
-
-                                    {availablePayments.length === 0 ? (
-                                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
-                                            <Wallet size={32} color="var(--surface-border)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
-                                            <p style={{ margin: 0 }}>No unallocated payments available.</p>
-                                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem' }}>Record a payment first, then link it here.</p>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div style={{ marginBottom: '0.75rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                                Available payments — enter amount to allocate:
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                                                {availablePayments.map(pmt => {
-                                                    const alloc = Number(linkAllocations[pmt.id] ?? 0);
-                                                    const maxAlloc = Math.min(getEffectiveUnallocated(pmt), remaining);
-                                                    const pmtDate = pmt.paymentDate || (pmt.createdAt?.toDate ? pmt.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
-                                                    return (
-                                                        <div key={pmt.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.85rem', background: alloc > 0 ? 'hsla(142,69%,58%,0.07)' : 'var(--surface-raised)', borderRadius: '8px', border: `1px solid ${alloc > 0 ? '#10b98130' : 'var(--surface-border)'}`, flexWrap: 'wrap', transition: 'all 0.15s' }}>
-                                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                                    <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 700 }}>{pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`}</span>
-                                                                    {pmt.paymentMethod && <span style={{ background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
-                                                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{pmtDate}</span>
-                                                                </div>
-                                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                                                                    Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{getEffectiveUnallocated(pmt).toLocaleString()}</strong>
-                                                                </div>
-                                                            </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                                                                <input
-                                                                    type="number" min={0} max={maxAlloc} step="0.01"
-                                                                    value={alloc || ''}
-                                                                    placeholder="0.00"
-                                                                    onChange={e => setLinkAllocations(prev => ({ ...prev, [pmt.id]: Math.min(Number(e.target.value) || 0, maxAlloc) }))}
-                                                                    style={{ width: '110px', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', color: 'var(--text-primary)', fontSize: '0.85rem', textAlign: 'right' }}
-                                                                />
-                                                                <button type="button"
-                                                                    onClick={() => setLinkAllocations(prev => ({ ...prev, [pmt.id]: maxAlloc }))}
-                                                                    style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
-                                                                    Max
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {/* Allocation summary */}
-                                            <div style={{ background: over ? 'hsla(0,84%,60%,0.08)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', border: `1px solid ${over ? 'hsla(0,84%,60%,0.3)' : 'var(--surface-border)'}` }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                                                    <span style={{ color: 'var(--text-secondary)' }}>Total linking:</span>
-                                                    <span style={{ fontWeight: 700, color: over ? '#ef4444' : '#10b981' }}>₹{totalAllocated.toLocaleString()}</span>
-                                                </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '0.3rem' }}>
-                                                    <span style={{ color: 'var(--text-secondary)' }}>Outstanding after:</span>
-                                                    <span style={{ fontWeight: 700, color: outstandingAfter <= 0 ? '#10b981' : '#f59e0b' }}>
-                                                        ₹{outstandingAfter.toLocaleString()}{outstandingAfter <= 0 ? ' ✅' : ''}
-                                                    </span>
-                                                </div>
-                                                {over && <div style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '0.4rem' }}>Allocation exceeds outstanding — reduce amounts.</div>}
-                                            </div>
-
-                                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                                <button type="button" className="btn btn-secondary" onClick={() => setLinkPaymentOrder(null)} disabled={savingLinkPayment} style={{ flex: 1 }}>Cancel</button>
-                                                <button type="button" className="btn btn-primary" onClick={handleLinkPayments}
-                                                    disabled={savingLinkPayment || totalAllocated <= 0 || over}
-                                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                                    {savingLinkPayment ? <Loader2 className="animate-spin" size={16} /> : <><Link2 size={15} /> Link Payments</>}
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
+                {/* Link Payment Modal — moved to portal at bottom of component */}
 
                 {/* Bulk Delete Confirmation Modal */}
                 {showBulkDeleteModal && (() => {
@@ -2362,7 +2301,178 @@ export default function WorklistDetailsPage() {
                         </div>
                     </div>
                 )}
+
             </div>
         </div>
+
+        {/* ── Link Payment Modal — portalled to body ── */}
+        {linkPaymentOrder && createPortal((() => {
+            const grandTotal = Number(linkPaymentOrder.grandTotal ?? linkPaymentOrder.netAmount ?? linkPaymentOrder.totalAmount ?? 0);
+            const alreadyPaid = Number(linkPaymentOrder.amountPaid ?? 0);
+            const remaining = Math.max(0, grandTotal - alreadyPaid);
+            const orderLabel = linkPaymentOrder.orderNumber || linkPaymentOrder.invoiceNumber || linkPaymentOrder.id.slice(-8).toUpperCase();
+            const totalAllocated = Object.values(linkAllocations).reduce((s, v) => s + (Number(v) || 0), 0);
+            const outstandingAfter = Math.max(0, remaining - totalAllocated);
+            const over = totalAllocated > remaining + 0.01;
+            return (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                    <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                            <button onClick={() => !savingLinkPayment && setLinkPaymentOrder(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
+
+                            <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                                <Link2 size={22} color="var(--primary-light)" /> Link Payment
+                            </h2>
+                            <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                Order: <strong style={{ color: 'var(--primary-light)' }}>{orderLabel}</strong>
+                            </p>
+
+                            {/* Order summary */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem' }}>
+                                <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Order Total</div><div style={{ fontWeight: 700 }}>₹{grandTotal.toLocaleString()}</div></div>
+                                <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Already Paid</div><div style={{ fontWeight: 700, color: '#10b981' }}>₹{alreadyPaid.toLocaleString()}</div></div>
+                                <div><div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontWeight: 700, color: '#ef4444' }}>₹{remaining.toLocaleString()}</div></div>
+                            </div>
+
+                            {availablePayments.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-tertiary)' }}>
+                                    <Wallet size={32} color="var(--surface-border)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
+                                    <p style={{ margin: 0 }}>No unallocated payments available.</p>
+                                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.82rem' }}>Record a payment first, then link it here.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div style={{ marginBottom: '0.75rem', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                        Available payments — enter amount to allocate:
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                                        {availablePayments.map(pmt => {
+                                            const alloc = Number(linkAllocations[pmt.id] ?? 0);
+                                            const maxAlloc = Math.min(getEffectiveUnallocated(pmt), remaining);
+                                            const pmtDate = pmt.paymentDate || (pmt.createdAt?.toDate ? pmt.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
+                                            return (
+                                                <div key={pmt.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.85rem', background: alloc > 0 ? 'hsla(142,69%,58%,0.07)' : 'var(--surface-raised)', borderRadius: '8px', border: `1px solid ${alloc > 0 ? '#10b98130' : 'var(--surface-border)'}`, flexWrap: 'wrap', transition: 'all 0.15s' }}>
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                            <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 700 }}>{pmt.paymentId || `#${pmt.id.slice(-6).toUpperCase()}`}</span>
+                                                            {pmt.paymentMethod && <span style={{ background: '#10b98122', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '99px', fontSize: '0.7rem', fontWeight: 600 }}>{pmt.paymentMethod}</span>}
+                                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{pmtDate}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                                            Total: ₹{Number(pmt.amount || 0).toLocaleString()} · Remaining: <strong style={{ color: '#10b981' }}>₹{getEffectiveUnallocated(pmt).toLocaleString()}</strong>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                                                        <input
+                                                            type="number" min={0} max={maxAlloc} step="0.01"
+                                                            value={alloc || ''}
+                                                            placeholder="0.00"
+                                                            onChange={e => setLinkAllocations(prev => ({ ...prev, [pmt.id]: Math.min(Number(e.target.value) || 0, maxAlloc) }))}
+                                                            style={{ width: '110px', padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-base)', color: 'var(--text-primary)', fontSize: '0.85rem', textAlign: 'right' }}
+                                                        />
+                                                        <button type="button"
+                                                            onClick={() => setLinkAllocations(prev => ({ ...prev, [pmt.id]: maxAlloc }))}
+                                                            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem', borderRadius: '6px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                                                            Max
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Allocation summary */}
+                                    <div style={{ background: over ? 'hsla(0,84%,60%,0.08)' : 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem 1rem', marginBottom: '1.25rem', border: `1px solid ${over ? 'hsla(0,84%,60%,0.3)' : 'var(--surface-border)'}` }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                                            <span style={{ color: 'var(--text-secondary)' }}>Total linking:</span>
+                                            <span style={{ fontWeight: 700, color: over ? '#ef4444' : '#10b981' }}>₹{totalAllocated.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '0.3rem' }}>
+                                            <span style={{ color: 'var(--text-secondary)' }}>Outstanding after:</span>
+                                            <span style={{ fontWeight: 700, color: outstandingAfter <= 0 ? '#10b981' : '#f59e0b' }}>
+                                                ₹{outstandingAfter.toLocaleString()}{outstandingAfter <= 0 ? ' ✅' : ''}
+                                            </span>
+                                        </div>
+                                        {over && <div style={{ fontSize: '0.72rem', color: '#ef4444', marginTop: '0.4rem' }}>Allocation exceeds outstanding — reduce amounts.</div>}
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                        <button type="button" className="btn btn-secondary" onClick={() => setLinkPaymentOrder(null)} disabled={savingLinkPayment} style={{ flex: 1 }}>Cancel</button>
+                                        <button type="button" className="btn btn-primary" onClick={handleLinkPayments}
+                                            disabled={savingLinkPayment || totalAllocated <= 0 || over}
+                                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                            {savingLinkPayment ? <Loader2 className="animate-spin" size={16} /> : <><Link2 size={15} /> Link Payments</>}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        })(), document.body)}
+
+        {/* ── Statement Download Modal — portalled to body to escape fixed-position traps ── */}
+        {showStatementModal && createPortal(
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}>
+                <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
+                    <button onClick={() => setShowStatementModal(false)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+                        <X size={22} />
+                    </button>
+                    <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+                        <Download size={20} color="var(--primary-light)" /> Download Statement
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+                        Ledger statement for <strong>{retailer.name}</strong>. Leave dates blank for all transactions.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div>
+                            <label className="input-label">From Date <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                            <input
+                                type="date"
+                                className="input-field"
+                                value={stmtFromDate}
+                                onChange={e => setStmtFromDate(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="input-label">To Date <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                            <input
+                                type="date"
+                                className="input-field"
+                                value={stmtToDate}
+                                onChange={e => setStmtToDate(e.target.value)}
+                            />
+                        </div>
+
+                        <div style={{ padding: '0.75rem', background: 'hsla(152,60%,40%,0.07)', borderRadius: '8px', border: '1px solid hsla(152,60%,40%,0.2)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--primary-light)' }}>Will include:</div>
+                            <div>• {salesOrders.length} invoice{salesOrders.length !== 1 ? 's' : ''} (Debit)</div>
+                            <div>• {payments.length} payment{payments.length !== 1 ? 's' : ''} (Credit)</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
+                            <button
+                                className="btn btn-primary"
+                                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                                onClick={handleDownloadStatement}
+                                disabled={generatingStatement}
+                            >
+                                {generatingStatement
+                                    ? <><Loader2 size={15} className="animate-spin" /> Generating…</>
+                                    : <><Download size={15} /> Download PDF</>
+                                }
+                            </button>
+                            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowStatementModal(false)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+        </>
     );
 }

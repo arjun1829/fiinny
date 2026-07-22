@@ -78,6 +78,7 @@ export default function WorklistPage() {
 
     const visibleTabs = MODULE_TABS.filter(tab => {
         if (userRole === 'sales' && tab.id === 'online-orders') return false;
+        if (userRole === 'retailer' && (tab.id === 'online-orders' || tab.id === 'tracking-info')) return false;
         return true;
     });
 
@@ -150,6 +151,8 @@ function PartnersTab() {
     const navigate = useNavigate();
     const { tenantId, userRole, assignedDistricts, assignedRetailers } = useAuth();
     const isSales = userRole === 'sales';
+    const isRetailer = userRole === 'retailer';
+    const isViewOnly = isSales || isRetailer;
     const { t } = useTranslation();
     const { getSchema } = useSchema();
     const [retailers, setRetailers] = useState<Retailer[]>([]);
@@ -301,7 +304,8 @@ function PartnersTab() {
                     return { ...r, hasPendingOrders: hasPending, closestCreditDays, computedOutstanding };
                 });
 
-                // Sales users see retailers matching assignedDistricts OR assignedRetailers (union)
+                // Sales users see retailers matching assignedDistricts OR assignedRetailers (union).
+                // Retailer users see only their own shop (exactly one entry in assignedRetailers).
                 if (userRole === 'sales') {
                     const lowerDistricts = assignedDistricts.map(d => d.toLowerCase());
                     const retailerIdSet = new Set(assignedRetailers);
@@ -313,6 +317,12 @@ function PartnersTab() {
                             retailerIdSet.has(r.id)
                         ));
                     }
+                } else if (userRole === 'retailer') {
+                    const retailerIdSet = new Set(assignedRetailers);
+                    setRetailers(retailerIdSet.size > 0
+                        ? retailersWithStatus.filter(r => retailerIdSet.has(r.id))
+                        : []
+                    );
                 } else {
                     setRetailers(retailersWithStatus);
                 }
@@ -464,7 +474,7 @@ function PartnersTab() {
                     <p style={{ color: 'var(--text-secondary)' }}>B2B wholesale partners — orders, dues and follow-ups.</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {!isSales && (
+                    {!isViewOnly && (
                         <>
                             <input type="file" accept=".csv" ref={paymentsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'payments')} />
                             <input type="file" accept=".csv" ref={followupsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'followups')} />
@@ -476,7 +486,7 @@ function PartnersTab() {
                     )}
                     <button className="btn btn-secondary" onClick={handlePrintUdhari} disabled={processedRetailers.length === 0}><Download size={16} /> Print</button>
                     <button className="btn btn-secondary" onClick={handleExportCSV} disabled={processedRetailers.length === 0}><Download size={16} /> {t('worklist.export_csv')}</button>
-                    {!isSales && (
+                    {!isViewOnly && (
                         <button className="btn btn-primary" onClick={() => navigate('/onboarding')}><UserPlus size={16} /> {t('worklist.add_new')}</button>
                     )}
                 </div>
@@ -545,8 +555,8 @@ function PartnersTab() {
                 <span style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', marginLeft: 'auto' }}>{processedRetailers.length} partners</span>
             </div>
 
-            {/* Bulk Action Toolbar */}
-            {selectedIds.size > 0 && (
+            {/* Bulk Action Toolbar — hidden in view-only mode */}
+            {!isViewOnly && selectedIds.size > 0 && (
                 <div style={{
                     display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap',
                     padding: '0.6rem 1rem', marginBottom: '0.75rem',
@@ -589,7 +599,7 @@ function PartnersTab() {
                     <Store size={48} color="var(--surface-border)" style={{ margin: '0 auto 1rem auto', display: 'block' }} />
                     <h3>{t('worklist.no_retailers_found')}</h3>
                     <p>{t('worklist.no_retailers_found_desc')}</p>
-                    {!isSales && (
+                    {!isViewOnly && (
                         <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/onboarding')}>
                             <UserPlus size={16} /> Onboard a Partner
                         </button>
@@ -601,13 +611,15 @@ function PartnersTab() {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid var(--surface-border)', background: 'var(--surface-raised)', textAlign: 'left' }}>
-                                    <th style={{ padding: '0.7rem 0.5rem 0.7rem 1rem', width: '36px' }}>
-                                        <input type="checkbox"
-                                            checked={selectedIds.size === processedRetailers.length && processedRetailers.length > 0}
-                                            onChange={e => e.target.checked ? handleSelectAll() : handleClearSelection()}
-                                            style={{ cursor: 'pointer' }}
-                                        />
-                                    </th>
+                                    {!isViewOnly && (
+                                        <th style={{ padding: '0.7rem 0.5rem 0.7rem 1rem', width: '36px' }}>
+                                            <input type="checkbox"
+                                                checked={selectedIds.size === processedRetailers.length && processedRetailers.length > 0}
+                                                onChange={e => e.target.checked ? handleSelectAll() : handleClearSelection()}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                        </th>
+                                    )}
                                     {[
                                         'Retailer Name', 'Contact', 'District',
                                         ...(!isCompact ? ['Taluka', 'Village'] : []),
@@ -633,9 +645,11 @@ function PartnersTab() {
                                                 onMouseEnter={e => { e.currentTarget.style.background = isSelected ? 'hsla(210,100%,70%,0.1)' : 'var(--surface-raised)'; }}
                                                 onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'hsla(210,100%,70%,0.07)' : 'transparent'; }}
                                             >
-                                                <td style={{ padding: '0.8rem 0.5rem 0.8rem 1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                                                    <input type="checkbox" checked={isSelected} onChange={e => handleSelectionChange(r.id, e.target.checked)} style={{ cursor: 'pointer' }} />
-                                                </td>
+                                                {!isViewOnly && (
+                                                    <td style={{ padding: '0.8rem 0.5rem 0.8rem 1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                                        <input type="checkbox" checked={isSelected} onChange={e => handleSelectionChange(r.id, e.target.checked)} style={{ cursor: 'pointer' }} />
+                                                    </td>
+                                                )}
                                                 <td style={{ padding: '0.8rem 0.75rem' }}>
                                                     <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name || '—'}</div>
                                                 </td>

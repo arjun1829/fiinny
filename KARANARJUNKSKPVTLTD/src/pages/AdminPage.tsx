@@ -156,6 +156,7 @@ export default function AdminPage() {
                 role: 'retailer',
                 tenantId: tenantId || 'master',
                 linkedId: inviteRetailerId,
+                assignedRetailers: [inviteRetailerId],
                 createdAt: serverTimestamp()
             });
             await deleteApp(secondaryApp);
