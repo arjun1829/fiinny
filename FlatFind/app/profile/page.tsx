@@ -7,6 +7,11 @@ import { useRequireAuth } from '@/features/auth/hooks/useRequireAuth';
 import { LoginModal } from '@/features/auth/components/LoginModal';
 import { Button } from '@/components/ui';
 import { fetchSavedListingIds, fetchViewedListingIds } from '@/features/saved-history/lib/saved-history-firestore';
+import { fetchRevealedListingIds } from '@/features/subscription/lib/reveal-firestore';
+import { getProStatus } from '@/types/subscription';
+import { ProExpiryWarning } from '@/features/subscription/components/ProBadge';
+import { UpgradeModal } from '@/features/subscription/components/UpgradeModal';
+import { FREE_CONTACTS } from '@/constants/listing-display';
 import { MyListingsSection } from '@/features/my-listings/components/MyListingsSection';
 import { CompleteProfileCard } from '@/features/profile/components/CompleteProfileCard';
 import { ProfileInfoCard } from '@/features/profile/components/ProfileInfoCard';
@@ -50,6 +55,8 @@ export default function ProfilePage() {
   const { requireAuth, modalOpen, modalMessage, closeModal } = useRequireAuth();
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const [viewedCount, setViewedCount] = useState<number | null>(null);
+  const [revealedCount, setRevealedCount] = useState<number | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -62,7 +69,11 @@ export default function ProfilePage() {
     if (!user) return;
     fetchSavedListingIds(user.uid).then((ids) => setSavedCount(ids.size));
     fetchViewedListingIds(user.uid).then((ids) => setViewedCount(ids.size));
+    fetchRevealedListingIds(user.uid).then((ids) => setRevealedCount(ids.size));
   }, [user]);
+
+  const proStatus = getProStatus(profile);
+  const remainingReveals = Math.max(0, FREE_CONTACTS - (revealedCount ?? 0));
 
   if (authLoading) {
     return <div className="py-20 text-center text-muted">Loading…</div>;
@@ -80,7 +91,7 @@ export default function ProfilePage() {
   const stats = [
     { icon: '♥', value: savedCount ?? '—', label: 'Saved Listings', bg: '#fce7f3', color: '#be185d' },
     { icon: '👁', value: viewedCount ?? '—', label: 'Listings Viewed', bg: '#dbeafe', color: '#1d4ed8' },
-    { icon: '📞', value: 0, label: 'Contacts Revealed', bg: '#dcfce7', color: '#166534' },
+    { icon: '📞', value: revealedCount ?? '—', label: 'Contacts Revealed', bg: '#dcfce7', color: '#166534' },
     { icon: '🔍', value: 0, label: 'Total Visits', bg: '#fff7ed', color: '#c2410c' },
   ];
 
@@ -97,18 +108,44 @@ export default function ProfilePage() {
 
           <SectionLabel>Current Plan</SectionLabel>
           <div className="mb-8 rounded-r2 border-[1.5px] border-border bg-white p-5 shadow-card">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="font-display text-[22px] font-black leading-none text-ink">Free</div>
-                <div className="mt-[6px] text-[13px] text-muted">4 contact reveals remaining</div>
-              </div>
-              <span className="flex-shrink-0 rounded-full bg-[#fef9c3] px-3 py-1 text-[11px] font-bold tracking-wide text-[#854d0e]">
-                Free Plan
-              </span>
-            </div>
-            <Button variant="brand" className="w-full py-[11px] text-[13.5px] shadow-sm" disabled>
-              ⚡ Upgrade to Pro — ₹499/mo
-            </Button>
+            {proStatus.isPro ? (
+              <>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-display text-[22px] font-black leading-none text-brand-2">Pro</div>
+                    <div className="mt-[6px] text-[13px] text-muted">
+                      Unlimited contact reveals · Renews{' '}
+                      {proStatus.proExpiry
+                        ? new Date(proStatus.proExpiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                        : '—'}
+                    </div>
+                  </div>
+                  <span className="flex-shrink-0 rounded-full bg-brand-light px-3 py-1 text-[11px] font-bold tracking-wide text-brand-2">
+                    ✓ Pro Plan
+                  </span>
+                </div>
+                <ProExpiryWarning status={proStatus} />
+              </>
+            ) : (
+              <>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-display text-[22px] font-black leading-none text-ink">Free</div>
+                    <div className="mt-[6px] text-[13px] text-muted">{remainingReveals} contact reveals remaining</div>
+                  </div>
+                  <span className="flex-shrink-0 rounded-full bg-[#fef9c3] px-3 py-1 text-[11px] font-bold tracking-wide text-[#854d0e]">
+                    Free Plan
+                  </span>
+                </div>
+                <Button
+                  variant="brand"
+                  className="w-full py-[11px] text-[13.5px] shadow-sm"
+                  onClick={() => setUpgradeOpen(true)}
+                >
+                  ⚡ Upgrade to Pro — ₹499/mo
+                </Button>
+              </>
+            )}
           </div>
 
           <SectionLabel>Activity</SectionLabel>
@@ -161,6 +198,7 @@ export default function ProfilePage() {
           <MyListingsSection uid={user.uid} />
         </div>
       </div>
+      <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
     </div>
   );
 }

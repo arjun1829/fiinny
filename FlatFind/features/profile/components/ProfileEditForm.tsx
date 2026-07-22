@@ -35,6 +35,14 @@ export function ProfileEditForm({ profile, maskedPhone, avatarGlyph }: ProfileEd
   const { user, refreshProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Captured once from the profile this form was loaded with — not re-read
+  // after save, so the UI doesn't flicker mid-submit (updateUserProfile's
+  // own profileCompleted recompute happens after this render). Drives both
+  // the onboarding-vs-editing copy below and handleSubmit's post-save
+  // redirect (see ProfileCompletionGuard for the other half of this flow:
+  // it's what sent an incomplete user here in the first place).
+  const isOnboarding = !profile.profileCompleted;
+
   const [fullName, setFullName] = useState(profile.fullName ?? '');
   const [email, setEmail] = useState(profile.email ?? '');
   const [alternatePhone, setAlternatePhone] = useState(profile.alternatePhone ?? '');
@@ -120,7 +128,10 @@ export function ProfileEditForm({ profile, maskedPhone, avatarGlyph }: ProfileEd
 
       await refreshProfile();
       toast('✅ Profile updated.');
-      router.push('/profile');
+      // First-time completion lands on Home (spec's redirect diagram); a
+      // routine edit by an already-complete user lands back on /profile,
+      // same as before this change.
+      router.push(isOnboarding ? '/' : '/profile');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your profile. Please try again.');
     } finally {
@@ -133,8 +144,12 @@ export function ProfileEditForm({ profile, maskedPhone, avatarGlyph }: ProfileEd
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto max-w-[540px] rounded-r2 border-[1.5px] border-border bg-white p-[30px]">
-      <h1 className="mb-1 font-display text-2xl font-extrabold tracking-tight">Edit Profile</h1>
-      <p className="mb-6 text-sm text-muted">Keep your details up to date.</p>
+      <h1 className="mb-1 font-display text-2xl font-extrabold tracking-tight">
+        {isOnboarding ? 'Complete Your Profile' : 'Edit Profile'}
+      </h1>
+      <p className="mb-6 text-sm text-muted">
+        {isOnboarding ? 'Add a few details to continue using FlatFind.' : 'Keep your details up to date.'}
+      </p>
 
       <div className="mb-6 flex items-center gap-4">
         <div className="relative h-[76px] w-[76px] flex-shrink-0">
@@ -216,9 +231,12 @@ export function ProfileEditForm({ profile, maskedPhone, avatarGlyph }: ProfileEd
       {error && <p className="mt-3 text-[12.5px] text-red-600">{error}</p>}
 
       <div className="mt-6 flex gap-3">
-        <Button variant="outline" type="button" className="flex-1 py-[13px] text-[15px]" onClick={() => router.push('/profile')}>
-          Cancel
-        </Button>
+        {/* No Cancel while onboarding — ProfileCompletionGuard would just redirect straight back here, so there's nowhere valid to cancel to yet. */}
+        {!isOnboarding && (
+          <Button variant="outline" type="button" className="flex-1 py-[13px] text-[15px]" onClick={() => router.push('/profile')}>
+            Cancel
+          </Button>
+        )}
         <Button variant="brand" type="submit" className="flex-1 py-[13px] text-[15px]" disabled={submitting}>
           {submitting ? 'Saving…' : 'Save Changes'}
         </Button>

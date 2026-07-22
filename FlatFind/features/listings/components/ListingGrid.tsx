@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import type { Listing } from '@/types/listing';
 import type { LatLng } from '@/utils/haversine';
 import { LoginModal } from '@/features/auth/components/LoginModal';
 import { useSavedListings } from '@/features/saved-history/hooks/useSavedListings';
+import { useContactReveal } from '@/features/subscription/hooks/useContactReveal';
+import { UpgradeModal } from '@/features/subscription/components/UpgradeModal';
 import { ListingCard } from './ListingCard';
 
 interface ListingGridProps {
@@ -14,13 +17,21 @@ interface ListingGridProps {
 // Mirrors .grid / #grid + the .empty state (index (1).html, GRID + EMPTY
 // blocks). auto-fill(310px) is the original's exact grid-template-columns.
 //
-// useSavedListings() is instantiated once here — the shared ancestor of
-// every card on a page — rather than inside each ListingCard. One shared
-// saved-set and one shared login-modal instance, instead of N independent
-// Firestore reads and N login modals if every card owned its own copy of
-// this state.
+// useSavedListings() and useContactReveal() are both instantiated once here
+// — the shared ancestor of every card on a page — rather than inside each
+// ListingCard. One shared saved-set/reveal-set and one shared login-modal
+// instance, instead of N independent Firestore reads and N login modals if
+// every card owned its own copy of this state.
 export function ListingGrid({ listings, userLocation }: ListingGridProps) {
   const { savedIds, toggleSave, loginModalOpen, loginModalMessage, closeLoginModal } = useSavedListings();
+  const {
+    isRevealed,
+    reveal,
+    loginModalOpen: revealLoginModalOpen,
+    loginModalMessage: revealLoginModalMessage,
+    closeLoginModal: closeRevealLoginModal,
+  } = useContactReveal();
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   if (listings.length === 0) {
     return (
@@ -43,10 +54,14 @@ export function ListingGrid({ listings, userLocation }: ListingGridProps) {
             userLocation={userLocation}
             isSaved={savedIds.has(listing.id)}
             onToggleSave={() => toggleSave(listing.id)}
+            isRevealed={isRevealed(listing.id)}
+            onRevealContact={() => reveal(listing.id, () => setUpgradeModalOpen(true))}
           />
         ))}
       </div>
       <LoginModal open={loginModalOpen} onClose={closeLoginModal} message={loginModalMessage} />
+      <LoginModal open={revealLoginModalOpen} onClose={closeRevealLoginModal} message={revealLoginModalMessage} />
+      <UpgradeModal open={upgradeModalOpen} onClose={() => setUpgradeModalOpen(false)} />
     </>
   );
 }
