@@ -23,16 +23,35 @@ export async function syncSupplierTotals(db: Firestore, tenantId: string, suppli
     if (!supSnap.exists()) return;
     const supplierName = supSnap.data().name;
 
-    const [posSnap, pmtsSnap, invSnap] = await Promise.all([
+    // Query by both the stable id and the current name and merge (deduped by
+    // doc id): older PO/payment docs were only ever tagged with supplierName,
+    // so an id-only query would silently drop them the moment a supplier gets
+    // renamed, wiping totalPaid/outstandingBalance back to the wrong number.
+    const [posByIdSnap, posByNameSnap, pmtsByIdSnap, pmtsByNameSnap, invSnap] = await Promise.all([
+        getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierId', '==', supplierId))),
         getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierName', '==', supplierName))),
+        getDocs(query(getTenantCollection(db, tenantId, 'supplierPayments'), where('supplierId', '==', supplierId))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierPayments'), where('supplierName', '==', supplierName))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierInvoices'), where('supplierId', '==', supplierId))),
     ]);
 
-    const poInvoiced = posSnap.docs.reduce((s, d) => s + poAmount(d.data()), 0);
+    const posDocsMap = new Map<string, ReturnType<typeof posByIdSnap.docs[number]['data']>>();
+    posByIdSnap.docs.forEach(d => posDocsMap.set(d.id, d.data()));
+    posByNameSnap.docs.forEach(d => {
+        if (!posDocsMap.has(d.id)) posDocsMap.set(d.id, d.data());
+        if (!(d.data() as any).supplierId) updateDoc(getTenantDoc(db, tenantId, 'purchaseOrders', d.id), { supplierId }).catch(() => {});
+    });
+    const pmtDocsMap = new Map<string, ReturnType<typeof pmtsByIdSnap.docs[number]['data']>>();
+    pmtsByIdSnap.docs.forEach(d => pmtDocsMap.set(d.id, d.data()));
+    pmtsByNameSnap.docs.forEach(d => {
+        if (!pmtDocsMap.has(d.id)) pmtDocsMap.set(d.id, d.data());
+        if (!(d.data() as any).supplierId) updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', d.id), { supplierId }).catch(() => {});
+    });
+
+    const poInvoiced = Array.from(posDocsMap.values()).reduce((s, d) => s + poAmount(d), 0);
     const invInvoiced = invSnap.docs.reduce((s, d) => s + invAmount(d.data()), 0);
     const totalInvoiced = poInvoiced + invInvoiced;
-    const totalPaid = pmtsSnap.docs.reduce((s, d) => s + pmtAmount(d.data()), 0);
+    const totalPaid = Array.from(pmtDocsMap.values()).reduce((s, d) => s + pmtAmount(d), 0);
     const outstandingBalance = totalInvoiced - totalPaid;
 
     await updateDoc(getTenantDoc(db, tenantId, 'suppliers', supplierId), {

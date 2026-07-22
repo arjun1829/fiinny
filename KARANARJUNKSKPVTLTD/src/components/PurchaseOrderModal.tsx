@@ -33,8 +33,10 @@ export interface POForEdit {
 }
 
 interface PurchaseOrderModalProps {
-  /** Linked supplier name written onto new POs (preserves the existing name-based join). */
+  /** Linked supplier name — kept for display/legacy lookups, not the join key. */
   supplierName: string;
+  /** Stable supplier doc id — the real join key, immune to the supplier being renamed later. */
+  supplierId: string;
   /** Pass a PO to edit, or null/undefined to add a new one. */
   editing?: POForEdit | null;
   onClose: () => void;
@@ -71,7 +73,7 @@ const labelStyle: React.CSSProperties = {
   color: 'var(--text-secondary)', marginBottom: '0.3rem',
 };
 
-export default function PurchaseOrderModal({ supplierName, editing, onClose, onSaved }: PurchaseOrderModalProps) {
+export default function PurchaseOrderModal({ supplierName, supplierId, editing, onClose, onSaved }: PurchaseOrderModalProps) {
   const { tenantId, currentUser } = useAuth();
   const isEdit = !!editing;
 
@@ -215,12 +217,12 @@ export default function PurchaseOrderModal({ supplierName, editing, onClose, onS
 
       if (editing) {
         await updateDoc(getTenantDoc(db, tenantId, 'purchaseOrders', editing.id), {
-          poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
+          supplierId, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
           notes: form.notes.trim(), lines, totalAmount: total, taxableValue: total, updatedAt: serverTimestamp(),
         });
       } else {
         await addDoc(getTenantCollection(db, tenantId, 'purchaseOrders'), {
-          supplierName, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
+          supplierId, supplierName, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
           notes: form.notes.trim(), lines, totalAmount: total, taxableValue: total,
           createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
         });

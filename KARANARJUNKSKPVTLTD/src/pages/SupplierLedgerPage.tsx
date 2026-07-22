@@ -16,10 +16,13 @@ interface Supplier {
   address?: string;
   email?: string;
   phone?: string;
+  supplierType?: string;
   outstandingBalance: number;
   totalInvoiced?: number;
   totalPaid?: number;
 }
+
+type PartyFilter = 'all' | 'suppliers' | 'transporters';
 
 export default function SupplierLedgerPage() {
   const { tenantId } = useAuth();
@@ -29,6 +32,7 @@ export default function SupplierLedgerPage() {
   const [loading, setLoading] = useState(true);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [search, setSearch] = useState('');
+  const [partyFilter, setPartyFilter] = useState<PartyFilter>('all');
 
   const loadSuppliers = async () => {
     if (!tenantId) return;
@@ -58,13 +62,16 @@ export default function SupplierLedgerPage() {
 
   // Summary cards stay on the full set; only the list below is filtered.
   const q = search.trim().toLowerCase();
+  const partyFiltered = partyFilter === 'all'
+    ? suppliers
+    : suppliers.filter(sup => (sup.supplierType === 'Transporter') === (partyFilter === 'transporters'));
   const visibleSuppliers = q
-    ? suppliers.filter(sup =>
+    ? partyFiltered.filter(sup =>
         (sup.name || '').toLowerCase().includes(q) ||
         (sup.phone || '').toLowerCase().includes(q) ||
         (sup.email || '').toLowerCase().includes(q) ||
         (sup.address || '').toLowerCase().includes(q))
-    : suppliers;
+    : partyFiltered;
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem' }}>
@@ -103,6 +110,24 @@ export default function SupplierLedgerPage() {
             </div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: c.color }}>{c.value}</div>
           </div>
+        ))}
+      </div>
+
+      {/* Party type filter */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+        {([
+          { key: 'all', label: 'All' },
+          { key: 'suppliers', label: 'Suppliers' },
+          { key: 'transporters', label: 'Transporters' },
+        ] as const).map(f => (
+          <button
+            key={f.key}
+            onClick={() => setPartyFilter(f.key)}
+            className={partyFilter === f.key ? 'btn btn-primary' : 'btn btn-secondary'}
+            style={{ padding: '0.35rem 0.9rem', fontSize: '0.8rem' }}
+          >
+            {f.label}
+          </button>
         ))}
       </div>
 

@@ -161,14 +161,26 @@ export default function SupplierInvoicePage() {
           });
         }
 
-        // Existing POs for this supplier (optional linking)
-        if (supplierName) {
-          const poList = await getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierName', '==', supplierName)));
+        // Existing POs for this supplier (optional linking). Matched by both
+        // the stable supplierId and the current name — legacy POs saved before
+        // supplierId existed only carry the name, and a renamed supplier's POs
+        // would otherwise vanish from this list on an id-only match.
+        if (supplierName || supplierIdParam) {
+          const [byId, byName] = await Promise.all([
+            supplierIdParam
+              ? getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierId', '==', supplierIdParam)))
+              : Promise.resolve(null),
+            supplierName
+              ? getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierName', '==', supplierName)))
+              : Promise.resolve(null),
+          ]);
+          const poMap = new Map<string, { poNumber?: string; totalAmount?: number }>();
+          byId?.docs.forEach(d => poMap.set(d.id, d.data() as any));
+          byName?.docs.forEach(d => { if (!poMap.has(d.id)) poMap.set(d.id, d.data() as any); });
           if (!cancelled) {
-            setPurchaseOrders(poList.docs.map(d => {
-              const pd = d.data() as { poNumber?: string; totalAmount?: number };
-              return { id: d.id, label: `${pd.poNumber ?? d.id.slice(0, 8)} · ₹${(pd.totalAmount ?? 0).toLocaleString('en-IN')}` };
-            }));
+            setPurchaseOrders(Array.from(poMap.entries()).map(([id, pd]) => (
+              { id, label: `${pd.poNumber ?? id.slice(0, 8)} · ₹${(pd.totalAmount ?? 0).toLocaleString('en-IN')}` }
+            )));
           }
         }
 
