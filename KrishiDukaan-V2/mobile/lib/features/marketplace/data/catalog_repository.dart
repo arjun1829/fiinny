@@ -390,9 +390,14 @@ class CatalogRepository {
     }
     try {
       final doc = await _db.collection('products').doc(catalogId).get();
-      if (doc.exists) {
-        return CatalogModel.fromFirestore(doc);
-      }
+      if (!doc.exists) return null;
+      // Unlike fetchAllMergedProducts (already filtered), this direct-by-id
+      // fallback previously rendered a deactivated product anyway — a stale
+      // deep link (share message, notification, browser history) could reach
+      // it even after it was taken down. Mirror the same isActive check here.
+      final data = doc.data();
+      if (data != null && data['isActive'] == false) return null;
+      return CatalogModel.fromFirestore(doc);
     } catch (_) {}
     return null;
   }

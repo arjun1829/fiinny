@@ -11,6 +11,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
+import '../../../core/utils/format_count.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -30,16 +31,6 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   int _currentPage = 0;
   bool _initialized = false;
 
-  // Route-level visibility guard. The tab-switch listener below only fires
-  // when activeShellIndexProvider changes, which misses two real cases:
-  //  1. a screen pushed ON TOP of the shell (upload, cart, product detail…)
-  //     — the tab index never changes, so audio kept playing underneath;
-  //  2. tab changes that bypass the nav bar's onTap (Android back gesture
-  //     going Home via PopScope's goBranch, programmatic context.go).
-  // Listening to the router delegate catches every navigation of any kind:
-  // the feed is audible only while the top-most location is exactly /reels.
-  GoRouter? _router;
-
   @override
   void initState() {
     super.initState();
@@ -47,32 +38,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_router == null) {
-      _router = GoRouter.of(context);
-      _router!.routerDelegate.addListener(_handleRouteChange);
-    }
-  }
-
-  void _handleRouteChange() {
-    if (!mounted) return;
-    final path = _router!.routerDelegate.currentConfiguration.uri.path;
-    if (path != '/reels') {
-      for (final c in _controllers.values) {
-        c.pause();
-      }
-    } else {
-      final reels = ref.read(reelsFeedProvider).value ?? [];
-      if (_currentPage < reels.length) {
-        _controllers[reels[_currentPage].id]?.play();
-      }
-    }
-  }
-
-  @override
   void dispose() {
-    _router?.routerDelegate.removeListener(_handleRouteChange);
     WidgetsBinding.instance.removeObserver(this);
     for (final c in _controllers.values) {
       c.dispose();
@@ -92,6 +58,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
       // foregrounded the app while on a different tab and the reel must stay silent.
       const reelsTab = 4;
       if (ref.read(activeShellIndexProvider) != reelsTab) return;
+      if (!ref.read(reelsFeedPlaybackActiveProvider)) return;
       final reels = ref.read(reelsFeedProvider).value ?? [];
       if (_currentPage < reels.length) {
         _controllers[reels[_currentPage].id]?.play();
@@ -110,7 +77,14 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     controller.initialize().then((_) {
       if (!mounted) return;
       controller.setLooping(true);
-      if (index == _currentPage) controller.play();
+      if (index == _currentPage) {
+        const reelsTab = 4;
+        final isReelsTab = ref.read(activeShellIndexProvider) == reelsTab;
+        final isPlaybackActive = ref.read(reelsFeedPlaybackActiveProvider);
+        if (isReelsTab && isPlaybackActive) {
+          controller.play();
+        }
+      }
       setState(() {});
     });
   }
@@ -149,10 +123,28 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
       const reelsTab = 4;
       if (tabIndex != reelsTab) {
+        // Mark inactive FIRST so any late-initialising controllers don't sneak in.
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(false);
         for (final c in _controllers.values) {
           c.pause();
         }
       } else {
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(true);
+        final reels = ref.read(reelsFeedProvider).value ?? [];
+        if (_currentPage < reels.length) {
+          _controllers[reels[_currentPage].id]?.play();
+        }
+      }
+    });
+
+    ref.listen<bool>(reelsFeedPlaybackActiveProvider, (_, isActive) {
+      if (!isActive) {
+        for (final c in _controllers.values) {
+          c.pause();
+        }
+      } else {
+        const reelsTab = 4;
+        if (ref.read(activeShellIndexProvider) != reelsTab) return;
         final reels = ref.read(reelsFeedProvider).value ?? [];
         if (_currentPage < reels.length) {
           _controllers[reels[_currentPage].id]?.play();
@@ -294,7 +286,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                             },
                           ),
                           Text(
-                            'AgriReels',
+                            'Reels',
                             style: AppTextStyles.heading2.copyWith(
                               color: Colors.white,
                               shadows: [
@@ -769,8 +761,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
         SnackBar(
           content: Text(
             wasReposted
-                ? 'Removed from your AgriReels profile.'
-                : 'Reposted to your AgriReels profile.',
+                ? 'Removed from your reels profile.'
+                : 'Reposted to your reels profile.',
           ),
         ),
       );

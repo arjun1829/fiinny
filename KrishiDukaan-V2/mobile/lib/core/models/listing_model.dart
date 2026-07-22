@@ -258,15 +258,37 @@ class DiscountModel {
   }
 
   /// Builds a discount from a single `availability[]` entry.
+  ///
+  /// Newer entries (written by DashboardRepository.syncMarketMirror /
+  /// web's syncAvailabilityDiscount) carry `discountEnabled` + the raw
+  /// start/end dates alongside `discountPct`, so isCurrentlyActive re-checks
+  /// validity live on every read — exactly like fromProductData. Older
+  /// entries only ever had a bare `discountPct` number with no dates; those
+  /// are treated as active whenever positive (unchanged legacy behavior —
+  /// there's no date info to invalidate them with).
   static DiscountModel? fromAvailabilityEntry(Map<String, dynamic> entry) {
     final discType = entry['discountType'] as String? ?? 'percentage';
+    final hasEnabledFlag = entry.containsKey('discountEnabled');
+    if (hasEnabledFlag && entry['discountEnabled'] != true) return null;
     if (discType == 'fixed_amount') {
       final amt = (entry['discountFixedAmt'] as num?)?.toDouble() ?? 0.0;
       if (amt <= 0) return null;
-      return DiscountModel(percentage: 0.0, fixedAmount: amt, type: 'fixed_amount', isActive: true);
+      return DiscountModel(
+        percentage: 0.0,
+        fixedAmount: amt,
+        type: 'fixed_amount',
+        isActive: true,
+        startDate: (entry['discountStartDate'] as Timestamp?)?.toDate(),
+        endDate: (entry['discountEndDate'] as Timestamp?)?.toDate(),
+      );
     }
     final pct = (entry['discountPct'] as num?)?.toDouble() ?? 0.0;
     if (pct <= 0) return null;
-    return DiscountModel(percentage: pct, isActive: true);
+    return DiscountModel(
+      percentage: pct,
+      isActive: true,
+      startDate: (entry['discountStartDate'] as Timestamp?)?.toDate(),
+      endDate: (entry['discountEndDate'] as Timestamp?)?.toDate(),
+    );
   }
 }
