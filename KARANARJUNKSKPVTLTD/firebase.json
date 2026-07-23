@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "karanarjun-pvt-ltd",
+    "target": "app",
     "public": "dist",
     "ignore": [
       "firebase.json",
