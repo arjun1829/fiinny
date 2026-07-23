@@ -2614,9 +2614,8 @@ export default function WorklistDetailsPage() {
 
                 {/* Unlink Payments Modal */}
                 {unlinkOrder && (
-                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
-                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px', maxHeight: '90vh', overflowY: 'auto' }}>
                                 <button onClick={() => { setUnlinkOrder(null); setUnlinkAllocations([]); }} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
                                 <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
                                     <Link2 size={22} color="var(--primary-light)" /> Linked Payments
@@ -2665,7 +2664,6 @@ export default function WorklistDetailsPage() {
                                     </div>
                                 )}
                             </div>
-                        </div>
                     </div>
                 )}
 
