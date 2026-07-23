@@ -6,6 +6,7 @@ import { logger } from "firebase-functions/v2";
 import { queueWaNotification } from "./wa-notify";
 
 export { sendWaNotification, retryWaNotifications, webhookReceiver } from "./wa-dispatch";
+export { transcodeReel } from "./reels/media/transcodeReel";
 
 admin.initializeApp();
 const db = admin.firestore();

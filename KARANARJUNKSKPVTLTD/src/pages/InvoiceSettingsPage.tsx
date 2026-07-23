@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import { FileText, Save, Loader2, ShieldAlert, Building2, MapPin, Hash, ShieldCheck, Image as ImageIcon, CreditCard, PenLine, QrCode, KeyRound } from 'lucide-react';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import { FileText, Save, Loader2, ShieldAlert, Building2, MapPin, Hash, ShieldCheck, Image as ImageIcon, CreditCard, PenLine, QrCode, KeyRound, Upload, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { getTenantDoc } from '../utils/tenantPath';
@@ -21,10 +22,30 @@ export default function InvoiceSettingsPage() {
         logoUrl: tenantData?.logoUrl || '',
         bankDetails: '',
         signatureName: '',
+        signatureUrl: '',
         upiId: '',
         razorpayKeyId: '',
         terms: '1. Goods once sold will not be taken back.\n2. Payment should be made within 30 days.'
     });
+    const [uploadingSig, setUploadingSig] = useState(false);
+    const sigInputRef = useRef<HTMLInputElement>(null);
+
+    const handleSignatureUpload = async (file: File) => {
+        if (!tenantId || !file) return;
+        setUploadingSig(true);
+        try {
+            const sref = storageRef(storage, `tenants/${tenantId}/branding/signature_${Date.now()}_${file.name}`);
+            const snap = await uploadBytes(sref, file);
+            const url = await getDownloadURL(snap.ref);
+            setSettings(s => ({ ...s, signatureUrl: url }));
+            showToast('Signature uploaded. Remember to Save.', 'success');
+        } catch (err) {
+            console.error('Signature upload failed', err);
+            showToast('Could not upload the signature. Please try again.', 'error');
+        } finally {
+            setUploadingSig(false);
+        }
+    };
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -182,6 +203,55 @@ export default function InvoiceSettingsPage() {
                                 value={settings.signatureName}
                                 onChange={e => setSettings({ ...settings, signatureName: e.target.value })}
                             />
+                        </div>
+
+                        {/* Signature image — optional. When set it prints above the
+                            signatory name on POS, B2B and supplier invoices. */}
+                        <div className="input-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <PenLine size={16} /> Signature Image <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
+                            </label>
+                            <input
+                                ref={sigInputRef}
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={e => { const f = e.target.files?.[0]; if (f) handleSignatureUpload(f); e.target.value = ''; }}
+                            />
+                            {settings.signatureUrl ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                    <img
+                                        src={settings.signatureUrl}
+                                        alt="Signature"
+                                        style={{ height: '54px', maxWidth: '200px', objectFit: 'contain', background: '#fff', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '4px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => sigInputRef.current?.click()}
+                                        disabled={uploadingSig}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', cursor: 'pointer', font: 'inherit', fontSize: '0.85rem' }}>
+                                        {uploadingSig ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Replace
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSettings(s => ({ ...s, signatureUrl: '' }))}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', borderRadius: '8px', border: '1px solid var(--surface-border)', background: 'transparent', color: '#ef4444', cursor: 'pointer', font: 'inherit', fontSize: '0.85rem' }}>
+                                        <X size={14} /> Remove
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => sigInputRef.current?.click()}
+                                    disabled={uploadingSig}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px dashed var(--surface-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', font: 'inherit', fontSize: '0.875rem' }}>
+                                    {uploadingSig ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                                    {uploadingSig ? 'Uploading…' : 'Upload signature image'}
+                                </button>
+                            )}
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.35rem' }}>
+                                Leave empty to print only the signatory name.
+                            </p>
                         </div>
 
                         {/* UPI + Razorpay section */}

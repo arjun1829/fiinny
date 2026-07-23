@@ -52,7 +52,7 @@ type EditProps = {
 
 type SupplierFormModalProps = CreateProps | EditProps;
 
-const SUPPLIER_TYPES = ['Manufacturer', 'Distributor', 'Wholesaler', 'Retailer', 'Service', 'Other'];
+const SUPPLIER_TYPES = ['Manufacturer', 'Distributor', 'Wholesaler', 'Retailer', 'Transporter', 'Service', 'Other'];
 const PAYMENT_TERMS = ['Advance', 'Cash on Delivery', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Custom'];
 
 const emptyForm = {

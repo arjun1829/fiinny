@@ -21,6 +21,7 @@ export interface InvoiceTemplateBranding {
     logoUrl?: string;
     bankDetails?: string;
     signatureName?: string;
+    signatureUrl?: string;    // optional uploaded signature image (printed above the name)
     terms?: string;
     contact?: string;
     email?: string;

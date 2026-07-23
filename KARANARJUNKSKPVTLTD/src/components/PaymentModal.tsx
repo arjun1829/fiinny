@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { IndianRupee, X, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { IndianRupee, X, AlertCircle, Loader2, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { addDoc, updateDoc, serverTimestamp, type Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,11 +24,30 @@ export interface PaymentForEdit {
   transactionRef?: string;
   accountName?: string;
   accountDetails?: { accountName?: string; transactionRef?: string };
+  bankDetails?: {
+    holderName?: string;
+    beneficiaryName?: string;
+    payerAccountNumber?: string;
+    beneficiaryAccountNumber?: string;
+    ifscCode?: string;
+    cbsTransactionId?: string;
+    statusRemark?: string;
+  };
   notes?: string;
+  linkedInvoiceId?: string;
+  linkedInvoiceNumber?: string;
+  linkedInvoiceType?: 'po' | 'invoice';
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentType?: string;
   createdAt?: Timestamp;
+}
+
+export interface ApplicableDoc {
+  id: string;
+  type: 'po' | 'invoice';
+  label: string;
+  amount: number;
 }
 
 interface PaymentModalProps {
@@ -36,12 +55,55 @@ interface PaymentModalProps {
   supplierName: string;
   outstandingBalance: number;
   editing?: PaymentForEdit | null;
+  applicableDocs?: ApplicableDoc[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Other'];
-const ACCOUNT_DETAIL_METHODS = new Set(['UPI', 'Bank Transfer', 'Other']);
+const PAYMENT_METHODS = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Bank Transfer', 'Cheque', 'Other'];
+const ACCOUNT_DETAIL_METHODS = new Set(['UPI', 'NEFT', 'RTGS', 'Bank Transfer', 'Cheque', 'Other']);
+const accountFieldLabels = (method: string) =>
+  method === 'Cheque'
+    ? { name: 'Bank Name', ref: 'Cheque Number' }
+    : { name: 'Account Name', ref: 'Transaction Reference Number (UTR / UPI Ref)' };
+const accountFieldPlaceholders = (method: string) =>
+  method === 'Cheque'
+    ? { name: 'e.g. HDFC Bank', ref: 'e.g. 004521' }
+    : { name: 'e.g. HDFC Bank, Google Pay', ref: 'UTR / Transaction ID' };
+
+interface BankDetailsForm {
+  holderName: string;
+  beneficiaryName: string;
+  payerAccountNumber: string;
+  beneficiaryAccountNumber: string;
+  ifscCode: string;
+  cbsTransactionId: string;
+  statusRemark: string;
+}
+
+const emptyBankDetails: BankDetailsForm = {
+  holderName: '', beneficiaryName: '', payerAccountNumber: '', beneficiaryAccountNumber: '',
+  ifscCode: '', cbsTransactionId: '', statusRemark: '',
+};
+
+const BANK_DETAIL_FIELDS: { key: keyof BankDetailsForm; label: string; placeholder: string }[] = [
+  { key: 'holderName', label: 'Payer Account Holder Name', placeholder: 'e.g. TANPURE ARJUN POPAT' },
+  { key: 'payerAccountNumber', label: 'Payer A/c Number', placeholder: 'e.g. SB-102004001002198' },
+  { key: 'beneficiaryName', label: 'Beneficiary Name', placeholder: "e.g. Agrimass BioFertilizers" },
+  { key: 'beneficiaryAccountNumber', label: 'Beneficiary A/c No.', placeholder: 'e.g. 1828651100003216' },
+  { key: 'ifscCode', label: 'IFSC Code', placeholder: 'e.g. IBKL0001828' },
+  { key: 'cbsTransactionId', label: 'CBS Transaction ID', placeholder: 'e.g. 466917' },
+  { key: 'statusRemark', label: 'Status / Remark', placeholder: 'e.g. SUCCESS' },
+];
+
+const ATTACHMENT_FAIL_MSG = 'Payment was saved, but the proof attachment failed to upload (slow/blocked connection). You can attach it later via Edit.';
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Upload timed out')), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -67,7 +129,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 export default function PaymentModal({
-  supplierId, supplierName, outstandingBalance, editing, onClose, onSaved,
+  supplierId, supplierName, outstandingBalance, editing, applicableDocs = [], onClose, onSaved,
 }: PaymentModalProps) {
   const { tenantId, currentUser } = useAuth();
   const isEdit = !!editing;
@@ -80,10 +142,14 @@ export default function PaymentModal({
         accountName: pmtAccountOf(editing),
         notes: editing.notes ?? '',
         paymentDate: pmtDateOf(editing),
+        linkedDocId: editing.linkedInvoiceId ? `${editing.linkedInvoiceType || 'invoice'}:${editing.linkedInvoiceId}` : '',
+        ...emptyBankDetails,
+        ...(editing.bankDetails ?? {}),
       }
-    : { amount: '', paymentMethod: 'Cash', transactionRef: '', accountName: '', notes: '', paymentDate: today() }
+    : { amount: '', paymentMethod: 'Cash', transactionRef: '', accountName: '', notes: '', paymentDate: today(), linkedDocId: '', ...emptyBankDetails }
   );
 
+  const [moreOpen, setMoreOpen] = useState(() => !!editing?.bankDetails && Object.values(editing.bankDetails).some(v => v));
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofCleared, setProofCleared] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,11 +176,17 @@ export default function PaymentModal({
     const amt = parseFloat(form.amount);
     if (isNaN(amt) || amt <= 0) { setError('Enter a valid amount'); return; }
     setSaving(true); setError(null);
+    let attachmentWarning: string | null = null;
     try {
       const accountDetails = {
         accountName: form.accountName.trim(),
         transactionRef: form.transactionRef.trim(),
       };
+      const bankDetails = BANK_DETAIL_FIELDS.reduce((acc, f) => ({ ...acc, [f.key]: form[f.key].trim() }), {} as BankDetailsForm);
+      const linkedDoc = form.linkedDocId ? applicableDocs.find(d => `${d.type}:${d.id}` === form.linkedDocId) : undefined;
+      const linkedFields = linkedDoc
+        ? { linkedInvoiceId: linkedDoc.id, linkedInvoiceNumber: linkedDoc.label, linkedInvoiceType: linkedDoc.type }
+        : { linkedInvoiceId: null, linkedInvoiceNumber: null, linkedInvoiceType: null };
 
       if (editing) {
         const updateData: Record<string, unknown> = {
@@ -122,33 +194,39 @@ export default function PaymentModal({
           paymentMethod: form.paymentMethod,
           paymentDate: form.paymentDate,
           accountDetails,
+          bankDetails,
           notes: form.notes.trim(),
+          ...linkedFields,
           mode: form.paymentMethod,
           date: form.paymentDate,
           reference: form.transactionRef.trim(),
           updatedAt: serverTimestamp(),
         };
         if (proofFile) {
-          const meta = await uploadPaymentProof(tenantId, editing.id, proofFile);
-          updateData.attachmentUrl = meta.url;
-          updateData.attachmentName = meta.name;
-          updateData.attachmentType = meta.type;
+          try {
+            const meta = await withTimeout(uploadPaymentProof(tenantId, editing.id, proofFile), 60000);
+            updateData.attachmentUrl = meta.url;
+            updateData.attachmentName = meta.name;
+            updateData.attachmentType = meta.type;
+          } catch (upErr) { console.error('Payment proof upload failed:', upErr); attachmentWarning = ATTACHMENT_FAIL_MSG; }
         } else if (proofCleared) {
           updateData.attachmentUrl = null;
           updateData.attachmentName = null;
           updateData.attachmentType = null;
         }
-        await updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', editing.id), updateData);
+        await withTimeout(updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', editing.id), updateData), 20000);
       } else {
-        const paymentId = await generatePaymentId(tenantId);
+        const paymentId = await withTimeout(generatePaymentId(tenantId), 15000).catch(() => `PAY-${new Date().getFullYear()}-${String((Date.now() % 9998) + 1).padStart(4, '0')}`);
         const proofData: Record<string, string> = {};
         if (proofFile) {
-          const meta = await uploadPaymentProof(tenantId, paymentId, proofFile);
-          proofData.attachmentUrl = meta.url;
-          proofData.attachmentName = meta.name;
-          proofData.attachmentType = meta.type;
+          try {
+            const meta = await withTimeout(uploadPaymentProof(tenantId, paymentId, proofFile), 60000);
+            proofData.attachmentUrl = meta.url;
+            proofData.attachmentName = meta.name;
+            proofData.attachmentType = meta.type;
+          } catch (upErr) { console.error('Payment proof upload failed:', upErr); attachmentWarning = ATTACHMENT_FAIL_MSG; }
         }
-        await addDoc(getTenantCollection(db, tenantId, 'supplierPayments'), {
+        await withTimeout(addDoc(getTenantCollection(db, tenantId, 'supplierPayments'), {
           paymentId,
           partnerId: supplierId,
           supplierId,
@@ -157,9 +235,11 @@ export default function PaymentModal({
           paymentMethod: form.paymentMethod,
           paymentDate: form.paymentDate,
           accountDetails,
+          bankDetails,
           notes: form.notes.trim(),
           linkedOrderIds: [],
           unallocatedAmount: amt,
+          ...linkedFields,
           ...proofData,
           mode: form.paymentMethod,
           date: form.paymentDate,
@@ -167,10 +247,12 @@ export default function PaymentModal({
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           createdBy: currentUser?.email ?? '',
-        });
+        }), 20000);
       }
+      if (attachmentWarning) alert(attachmentWarning);
       onSaved();
     } catch (e) {
+      console.error('Record Payment save failed:', e);
       setError(e instanceof Error ? e.message : 'Failed to save payment');
     }
     setSaving(false);
@@ -257,14 +339,47 @@ export default function PaymentModal({
             {showAccountDetails && (
               <>
                 <div>
-                  <label style={labelStyle}>Account Name</label>
-                  <input className="input-field" placeholder="e.g. HDFC Bank, Google Pay" value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                  <label style={labelStyle}>{accountFieldLabels(form.paymentMethod).name}</label>
+                  <input className="input-field" placeholder={accountFieldPlaceholders(form.paymentMethod).name} value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} style={{ width: '100%', margin: 0 }} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Transaction Reference Number</label>
-                  <input className="input-field" placeholder="UTR / Transaction ID" value={form.transactionRef} onChange={e => setForm(f => ({ ...f, transactionRef: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                  <label style={labelStyle}>{accountFieldLabels(form.paymentMethod).ref}</label>
+                  <input className="input-field" placeholder={accountFieldPlaceholders(form.paymentMethod).ref} value={form.transactionRef} onChange={e => setForm(f => ({ ...f, transactionRef: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen(o => !o)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-light)', fontWeight: 600, fontSize: '0.82rem', padding: 0 }}
+                    aria-expanded={moreOpen}
+                  >
+                    {moreOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />} More bank / transaction details (optional)
+                  </button>
+                  {moreOpen && (
+                    <div style={{ marginTop: '0.75rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                      {BANK_DETAIL_FIELDS.map(f => (
+                        <div key={f.key}>
+                          <label style={labelStyle}>{f.label}</label>
+                          <input className="input-field" placeholder={f.placeholder} value={form[f.key]} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))} style={{ width: '100%', margin: 0 }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
+            )}
+
+            {applicableDocs.length > 0 && (
+              <div>
+                <label style={labelStyle}>Apply to Invoice / PO (optional)</label>
+                <select className="input-field" value={form.linkedDocId} onChange={e => setForm(f => ({ ...f, linkedDocId: e.target.value }))} style={{ width: '100%', margin: 0 }}>
+                  <option value="">— Not linked to a specific invoice —</option>
+                  {applicableDocs.map(d => (
+                    <option key={`${d.type}:${d.id}`} value={`${d.type}:${d.id}`}>{d.label} · {inr(d.amount)}</option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <div>
