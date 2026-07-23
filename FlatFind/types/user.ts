@@ -51,4 +51,21 @@ export interface UserProfile {
   profilePhotoURL?: string;
   /** True once fullName and email are both non-empty. Computed and stored by profile-firestore.ts's updateUserProfile on every write, rather than recomputed ad hoc by every reader — see isProfileComplete(). */
   profileCompleted: boolean;
+
+  // --- Pro Subscription fields (Phase 15 — Freemium/Razorpay). All optional
+  // — absent entirely for every free user, never defaulted to false/null on
+  // write. Field names match firestore.rules' subscriptionFieldsUnchanged()
+  // guard exactly; renaming any of these requires updating that rule too.
+  // Written client-side by subscription-firestore.ts's
+  // activateProAfterPayment(), but only ever called after
+  // app/api/razorpay/verify/route.ts has confirmed the Razorpay signature
+  // server-side — see that file's header comment for the full trust chain.
+  /** True once a payment has been verified; NOT sufficient on its own to gate a feature — always pair with a proExpiry check (see isProActive() in types/subscription.ts), since this flag is never cleared on expiry. */
+  isPro?: boolean;
+  /** ISO timestamp, 30 days from the verified payment. Pro is active iff isPro && proExpiry is in the future. */
+  proExpiry?: string;
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  /** ISO timestamp of the most recent verified payment — distinct from proExpiry (when access ends) and updatedAt (touched by unrelated profile edits too). */
+  lastPaymentAt?: string;
 }
