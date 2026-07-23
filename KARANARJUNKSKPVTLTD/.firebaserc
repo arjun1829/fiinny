@@ -1,5 +1,23 @@
 {
   "projects": {
-    "default": "karanarjun-pvt-ltd"
-  }
+    "default": "karanarjun-pvt-ltd",
+    "uat": "finny-erp-uat"
+  },
+  "targets": {
+    "karanarjun-pvt-ltd": {
+      "hosting": {
+        "app": [
+          "karanarjun-pvt-ltd"
+        ]
+      }
+    },
+    "finny-erp-uat": {
+      "hosting": {
+        "app": [
+          "finny-erp-uat"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

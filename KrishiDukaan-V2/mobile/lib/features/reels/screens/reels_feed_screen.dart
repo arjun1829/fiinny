@@ -31,6 +31,22 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   int _currentPage = 0;
   bool _initialized = false;
 
+  // Route-level visibility guard.
+  //
+  // The tab-index listener in build() only fires when the bottom-nav branch
+  // changes, which misses a screen pushed ON TOP of the reels tab: tapping a
+  // reel's seller profile (`/shop/...`) or its linked product (`/product/...`)
+  // pushes a root route while the tab index stays on reels, so nothing paused
+  // the video and its audio kept playing underneath the new screen.
+  //
+  // ReelsNavigatorObserver drives the same shared gate via NavigatorObserver
+  // callbacks, but those fire mid-navigation where a Riverpod write can be
+  // rejected (and is swallowed by its `catch`), so it can't be the only
+  // safeguard. Listening to the router settles after navigation completes and
+  // pauses the controllers directly — audio plays only while the top-most
+  // location is exactly /reels.
+  GoRouter? _router;
+
   @override
   void initState() {
     super.initState();
@@ -38,7 +54,45 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_router == null) {
+      _router = GoRouter.of(context);
+      _router!.routerDelegate.addListener(_handleRouteChange);
+    }
+  }
+
+  void _handleRouteChange() {
+    if (!mounted) return;
+    const reelsTab = 4;
+    final path = _router!.routerDelegate.currentConfiguration.uri.path;
+    final visible =
+        path == '/reels' && ref.read(activeShellIndexProvider) == reelsTab;
+
+    // Pause/resume the controllers directly FIRST. This is what actually
+    // silences the audio, and it must not depend on the provider write below
+    // succeeding.
+    if (!visible) {
+      for (final c in _controllers.values) {
+        c.pause();
+      }
+    } else {
+      final reels = ref.read(reelsFeedProvider).value ?? [];
+      if (_currentPage < reels.length) {
+        _controllers[reels[_currentPage].id]?.play();
+      }
+    }
+
+    // Then keep the shared gate in sync, so a controller that finishes
+    // initialising while we're away can't start playing on its own.
+    try {
+      ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(visible);
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_handleRouteChange);
     WidgetsBinding.instance.removeObserver(this);
     for (final c in _controllers.values) {
       c.dispose();

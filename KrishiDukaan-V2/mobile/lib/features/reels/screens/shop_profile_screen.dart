@@ -1060,6 +1060,18 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
   final Map<String, VideoPlayerController> _controllers = {};
   late int _currentPage;
 
+  // This screen is pushed imperatively (Navigator.push, not a go_router
+  // route), so it has no URL path of its own to compare against — unlike
+  // ReelsFeedScreen. Instead: remember the go_router path that was active
+  // underneath when this screen opened (e.g. the shop profile or product
+  // page), then pause whenever the path moves away from that — which is
+  // exactly what happens when a reel's linked-product tag is tapped
+  // (context.push('/product/...')) and a screen appears on top while this
+  // reel's audio kept playing underneath, unnoticed because nothing here
+  // was listening for it.
+  GoRouter? _router;
+  String? _basePath;
+
   @override
   void initState() {
     super.initState();
@@ -1073,7 +1085,30 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_router == null) {
+      _router = GoRouter.of(context);
+      _basePath = _router!.routerDelegate.currentConfiguration.uri.path;
+      _router!.routerDelegate.addListener(_handleRouteChange);
+    }
+  }
+
+  void _handleRouteChange() {
+    if (!mounted) return;
+    final path = _router!.routerDelegate.currentConfiguration.uri.path;
+    if (path != _basePath) {
+      for (final c in _controllers.values) {
+        c.pause();
+      }
+    } else {
+      _controllers[widget.reels[_currentPage].id]?.play();
+    }
+  }
+
+  @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_handleRouteChange);
     WidgetsBinding.instance.removeObserver(this);
     for (final c in _controllers.values) {
       c.dispose();
