@@ -5,6 +5,7 @@ import {
   X, Loader2, AlertCircle, IndianRupee, Package, ChevronDown, ChevronRight,
   MessageSquare, Plus, Truck, CreditCard, CalendarDays, Trash2, Search,
   MessageCircle, Mic, Printer, CheckSquare, FileText, Square, Receipt, Paperclip,
+  Download,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -19,6 +20,7 @@ import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import SupplierFormModal, { type SupplierLike } from '../components/SupplierFormModal';
 import PurchaseOrderModal, { type POForEdit } from '../components/PurchaseOrderModal';
 import PaymentModal, { type PaymentForEdit } from '../components/PaymentModal';
+import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPDF';
 
 interface Supplier extends SupplierLike {
   id: string;
@@ -275,6 +277,23 @@ export default function SupplierLedgerDetailPage() {
     if (!window.confirm(`Delete PO ${po.poNumber ?? ''} (${inr(poAmount(po))})? This cannot be undone.`)) return;
     try { await deleteDoc(getTenantDoc(db, tenantId, 'purchaseOrders', po.id)); await load(true); }
     catch (e: any) { alert(e.message); }
+  };
+
+  const handleDownloadPOPDF = (po: PO) => {
+    if (!supplier) return;
+    generatePurchaseOrderPDF({
+      poNumber: po.poNumber,
+      internalId: po.id,
+      date: fmtDate(poDateVal(po) as any),
+      status: po.status,
+      notes: po.notes,
+      supplierName: supplier.name,
+      supplierAddress: supplier.address,
+      supplierPhone: supplier.phone,
+      supplierEmail: supplier.email,
+      lines: poLines(po),
+      totalAmount: poAmount(po),
+    });
   };
 
   // ── Payment add/edit ───────────────────────────────────────────────────────
@@ -757,6 +776,7 @@ export default function SupplierLedgerDetailPage() {
                           </span>
                         )}
                         <div style={{ fontWeight: 700, fontSize: '1rem' }}>{inr(poAmount(po))}</div>
+                        {iconBtn(<Download size={14} />, () => handleDownloadPOPDF(po), 'Download PDF', 'var(--text-tertiary)')}
                         {iconBtn(<Pencil size={14} />, () => openEditPO(po), 'Edit PO', 'var(--primary-light)')}
                         {iconBtn(<Trash2 size={14} />, () => handleDeletePO(po), 'Delete PO', '#ff4d4f')}
                       </div>
