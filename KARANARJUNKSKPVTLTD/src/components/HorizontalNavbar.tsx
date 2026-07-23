@@ -18,15 +18,19 @@ const PRIORITY_NAV = [
   { path: '/order-history',    label: 'Audit Log',        icon: <ClipboardList size={15} />,  screenKey: 'order_history' as AppScreen },
 ];
 
+const SALES_NAV_PATHS = ['/worklist'];
+
 export default function HorizontalNavbar() {
   const location = useLocation();
   const { userRole, permissions } = useAuth();
 
   const isOwner = userRole === 'admin' || userRole === 'analyst';
-  if (!isOwner) return null;
+  const isSalesUser = userRole === 'sales';
+  if (!isOwner && !isSalesUser) return null;
 
   const visibleItems = PRIORITY_NAV.filter(item => {
     if (!userRole || !permissions) return false;
+    if (isSalesUser) return SALES_NAV_PATHS.includes(item.path);
     if (permissions[userRole] && !permissions[userRole][item.screenKey]) return false;
     return true;
   });

@@ -132,6 +132,7 @@ export type RetailerProfile = {
 import { MarketplaceProduct } from '../types/product';
 import type { CartItem, OrderDoc, OrderItem, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
 import { generateAndStoreInvoice } from './utils/invoice-storage';
+import { getActiveDiscountPct } from './utils/discount';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -357,9 +358,19 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
         applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
         dosage: data.dosage ? String(data.dosage) : undefined,
         bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
-        // Discount fields — written by updateDiscountRecord when a seller sets a discount
-        effectiveDiscountPct: typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0,
-        maxDiscountPct: typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0,
+        // Discount fields — written by updateDiscountRecord when a seller sets a discount.
+        // `effectiveDiscountPct`/`maxDiscountPct` are snapshots taken once at save time and
+        // never re-evaluated afterward, so once a discount's end date passes (or it's
+        // disabled) the stored number stays frozen at the old %, showing a phantom offer
+        // on marketplace cards after checkout/detail pages correctly show none. Recompute
+        // liveness from the raw discountEnabled/discountPct/date fields (same helper the
+        // dashboard uses) whenever they're present, instead of trusting the stale snapshot.
+        effectiveDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
+          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
+          : (typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0),
+        maxDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
+          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
+          : (typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0),
         variants: Array.isArray(data.variants) ? data.variants : undefined,
         images: Array.isArray(data.images) ? data.images : undefined,
         videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
@@ -1463,6 +1474,7 @@ export async function createOrdersFromCart(params: {
       customerAddress: customerAddress.trim(),
       sellerId,
       sellerType,
+      ...(sellerPhoneHint ? { sellerPhone: sellerPhoneHint } : {}),
       ...(sellerName ? { sellerName } : {}),
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
@@ -3835,4 +3847,96 @@ export async function adminDeleteUser(
   await Promise.all(rootDeletions);
 
   return { productsDeactivated, inventoryDeleted, seatListingsDeleted, subscriptionsDeleted, networkRelationshipsDeleted };
+}
+
+// ── WhatsApp Incoming Messages ────────────────────────────────────────────────
+
+export interface WaIncomingMessage {
+  id: string;
+  phone: string;
+  waId: string;
+  messageText: string;
+  messageType: string;
+  timestamp: any;
+  receivedAt: any;
+  rawPayload?: any;
+}
+
+export interface WaResolvedUser {
+  name: string;
+  businessName: string;
+  role: "retailer" | "manufacturer" | "salesExecutive" | "admin" | "customer" | "unknown";
+}
+
+export interface WaConvMeta {
+  phone: string;
+  status: "open" | "resolved";
+  unreadCount: number;
+  lastIncomingAt?: any;
+  lastIncomingText?: string;
+  lastOutgoingAt?: any;
+  lastOutgoingText?: string;
+  resolvedAt?: any;
+  updatedAt?: any;
+}
+
+export interface WaOutMessage {
+  id: string;
+  direction: "outgoing";
+  text: string | null;
+  messageType: string;
+  timestamp: any;
+  messageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  sentBy: string;
+}
+
+export interface WaNote {
+  id: string;
+  text: string;
+  createdAt: any;
+  createdBy: string;
+}
+
+export async function resolveWaUserByPhone(phone: string): Promise<WaResolvedUser | null> {
+  const tenDigit = phone.replace(/^91/, "");
+  const candidates = Array.from(new Set([phone, tenDigit]));
+
+  for (const p of candidates) {
+    const userSnap = await getDoc(doc(db, "users", p));
+    if (userSnap.exists()) {
+      const d = userSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.shopName || d.businessName || "",
+        role: (d.role as WaResolvedUser["role"]) || "unknown",
+      };
+    }
+  }
+
+  for (const p of candidates) {
+    const retailerSnap = await getDoc(doc(db, "retailers", p));
+    if (retailerSnap.exists()) {
+      const d = retailerSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.shopName || d.businessName || "",
+        role: "retailer",
+      };
+    }
+  }
+
+  for (const p of candidates) {
+    const mfrSnap = await getDoc(doc(db, "manufacturers", p));
+    if (mfrSnap.exists()) {
+      const d = mfrSnap.data() as any;
+      return {
+        name: d.name || d.ownerName || "",
+        businessName: d.businessName || d.shopName || "",
+        role: "manufacturer",
+      };
+    }
+  }
+
+  return null;
 }

@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import Link from 'next/link';
 import { ICONS } from '../constants';
 import { motion } from 'framer-motion';
 import { useI18n } from '../i18n/I18nContext';
 import { saveContactMessage } from '../firebase';
+import { PLAY_STORE_URL, APP_STORE_URL, androidLive, iosLive } from '../lib/store-links';
 
 export default function AboutView() {
   const { t } = useI18n();
@@ -157,6 +159,49 @@ export default function AboutView() {
                 </div>
               </motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Get the app */}
+      <section id="app" className="bg-white py-16 border-b border-surface-container">
+        <div className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+          <div className="rounded-3xl bg-surface-container-low border border-surface-container p-8 md:p-12 flex flex-col md:flex-row items-center gap-8 md:gap-12">
+            <img
+              src="/images/krishidukan icon.webp"
+              alt="KrishiDukan app icon"
+              className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border border-surface-container object-contain bg-white shadow-sm shrink-0"
+            />
+            <div className="text-center md:text-left flex-1">
+              <span className="text-primary text-xs font-black uppercase tracking-widest mb-3 block">
+                {t('aboutAppLabel')}
+              </span>
+              <h2 className="text-3xl md:text-4xl font-bold text-on-surface mb-3 leading-tight">
+                {t('aboutAppTitle')}
+              </h2>
+              <p className="text-on-surface-variant text-base leading-relaxed mb-6 max-w-xl">
+                {t('aboutAppSubtitle')}
+              </p>
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                {androidLive ? (
+                  <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" aria-label="Get KrishiDukan on Google Play">
+                    <img src="/images/google-play-badge.png" alt="Get it on Google Play" className="h-14 w-auto" />
+                  </a>
+                ) : null}
+                {iosLive ? (
+                  <a href={APP_STORE_URL!} target="_blank" rel="noopener noreferrer" aria-label="Download KrishiDukan on the App Store">
+                    <img src="/images/app-store-badge.svg" alt="Download on the App Store" className="h-12 w-auto" />
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-2 h-12 px-4 rounded-xl bg-on-surface/10 text-on-surface-variant text-sm font-bold cursor-not-allowed select-none" title="Coming soon to the App Store">
+                    {t('footerIosSoon')}
+                  </div>
+                )}
+              </div>
+              <Link href="/app" className="mt-4 inline-block text-sm font-bold text-primary hover:underline">
+                {t('footerViewAppPage')} →
+              </Link>
+            </div>
           </div>
         </div>
       </section>

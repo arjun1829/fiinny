@@ -11,6 +11,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
+import '../../../core/utils/format_count.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -57,6 +58,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
       // foregrounded the app while on a different tab and the reel must stay silent.
       const reelsTab = 4;
       if (ref.read(activeShellIndexProvider) != reelsTab) return;
+      if (!ref.read(reelsFeedPlaybackActiveProvider)) return;
       final reels = ref.read(reelsFeedProvider).value ?? [];
       if (_currentPage < reels.length) {
         _controllers[reels[_currentPage].id]?.play();
@@ -75,7 +77,14 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     controller.initialize().then((_) {
       if (!mounted) return;
       controller.setLooping(true);
-      if (index == _currentPage) controller.play();
+      if (index == _currentPage) {
+        const reelsTab = 4;
+        final isReelsTab = ref.read(activeShellIndexProvider) == reelsTab;
+        final isPlaybackActive = ref.read(reelsFeedPlaybackActiveProvider);
+        if (isReelsTab && isPlaybackActive) {
+          controller.play();
+        }
+      }
       setState(() {});
     });
   }
@@ -114,10 +123,28 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
       const reelsTab = 4;
       if (tabIndex != reelsTab) {
+        // Mark inactive FIRST so any late-initialising controllers don't sneak in.
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(false);
         for (final c in _controllers.values) {
           c.pause();
         }
       } else {
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(true);
+        final reels = ref.read(reelsFeedProvider).value ?? [];
+        if (_currentPage < reels.length) {
+          _controllers[reels[_currentPage].id]?.play();
+        }
+      }
+    });
+
+    ref.listen<bool>(reelsFeedPlaybackActiveProvider, (_, isActive) {
+      if (!isActive) {
+        for (final c in _controllers.values) {
+          c.pause();
+        }
+      } else {
+        const reelsTab = 4;
+        if (ref.read(activeShellIndexProvider) != reelsTab) return;
         final reels = ref.read(reelsFeedProvider).value ?? [];
         if (_currentPage < reels.length) {
           _controllers[reels[_currentPage].id]?.play();
@@ -232,8 +259,34 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                       ),
                       child: Row(
                         children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Back to Home',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(0);
+                              context.go('/');
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.storefront_rounded,
+                              color: Colors.white70,
+                            ),
+                            tooltip: 'Go to Marketplace',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(1);
+                              context.go('/marketplace');
+                            },
+                          ),
                           Text(
-                            'AgriReels',
+                            'Reels',
                             style: AppTextStyles.heading2.copyWith(
                               color: Colors.white,
                               shadows: [
@@ -708,8 +761,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
         SnackBar(
           content: Text(
             wasReposted
-                ? 'Removed from your AgriReels profile.'
-                : 'Reposted to your AgriReels profile.',
+                ? 'Removed from your reels profile.'
+                : 'Reposted to your reels profile.',
           ),
         ),
       );
@@ -1059,11 +1112,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return count.toString();
-  }
+  String _formatCount(int count) => formatCount(count);
 }
 
 // ── Overlay helper widgets ────────────────────────────────────────────────────

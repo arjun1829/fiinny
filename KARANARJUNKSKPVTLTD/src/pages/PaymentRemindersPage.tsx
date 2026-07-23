@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getDocs, query, orderBy, updateDoc } from 'firebase/firestore';
+import { getDocs, query, orderBy, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
 import { fmtINR } from '../utils/gstCalculator';
 import { Bell, Send, CheckCircle2, Clock, AlertTriangle, Loader2, RefreshCw, MessageSquare } from 'lucide-react';
 
@@ -56,7 +57,10 @@ function buildWhatsAppMsg(inv: Invoice, businessName: string): string {
 }
 
 export default function PaymentRemindersPage() {
-  const { tenantId, tenantData } = useAuth();
+  const { tenantId, tenantData, userRole } = useAuth();
+  const isSales = userRole === 'sales';
+  const isViewOnly = isSales || userRole === 'retailer';
+  const { allowedRetailerIds, filterLoading } = useSalesFilter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [remindedSet, setRemindedSet] = useState<Set<string>>(new Set());
@@ -65,11 +69,19 @@ export default function PaymentRemindersPage() {
   const businessName = (tenantData as any)?.businessName || 'Your Business Name';
 
   const fetchInvoices = async () => {
-    if (!tenantId) return;
+    if (!tenantId || filterLoading) return;
     setLoading(true);
     try {
-      const snap = await getDocs(query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc')));
-      const all = snap.docs.map(d => ({
+      let docs;
+      if (allowedRetailerIds === null) {
+        // Admin/analyst: fetch all
+        const snap = await getDocs(query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc')));
+        docs = snap.docs;
+      } else {
+        // Sales user: fetch only for allowed retailers
+        docs = await fetchSalesOrdersByRetailerIds(tenantId, allowedRetailerIds);
+      }
+      const all = docs.map(d => ({
         id: d.id,
         ...d.data(),
         netAmount: Number((d.data() as any).netAmount) || 0,
@@ -78,7 +90,7 @@ export default function PaymentRemindersPage() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchInvoices(); }, [tenantId]);
+  useEffect(() => { fetchInvoices(); }, [tenantId, filterLoading, allowedRetailerIds === null ? 'all' : Array.from(allowedRetailerIds).sort().join(',')]);
 
   const filtered = useMemo(() => {
     return invoices.filter(inv => {
@@ -167,12 +179,14 @@ export default function PaymentRemindersPage() {
           >
             <RefreshCw size={15} /> Refresh
           </button>
-          <button
-            onClick={sendBulkReminders}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1.1rem', background: '#25D366', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, font: 'inherit', fontSize: '0.85rem' }}
-          >
-            <Send size={15} /> Remind All Overdue
-          </button>
+          {!isViewOnly && (
+            <button
+              onClick={sendBulkReminders}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1.1rem', background: '#25D366', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, font: 'inherit', fontSize: '0.85rem' }}
+            >
+              <Send size={15} /> Remind All Overdue
+            </button>
+          )}
         </div>
       </div>
 
@@ -308,20 +322,24 @@ export default function PaymentRemindersPage() {
                     {/* Actions */}
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                        <button
-                          onClick={() => sendReminder(inv)}
-                          disabled={!inv.buyerContact}
-                          title={!inv.buyerContact ? 'No contact number' : 'Send WhatsApp reminder'}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: inv.buyerContact ? '#25D366' : 'var(--surface-border)', color: '#fff', border: 'none', borderRadius: '6px', cursor: inv.buyerContact ? 'pointer' : 'not-allowed', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
-                        >
-                          <MessageSquare size={12} /> Remind
-                        </button>
-                        <button
-                          onClick={() => markPaid(inv)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
-                        >
-                          <CheckCircle2 size={12} /> Paid
-                        </button>
+                        {!isViewOnly && (
+                          <button
+                            onClick={() => sendReminder(inv)}
+                            disabled={!inv.buyerContact}
+                            title={!inv.buyerContact ? 'No contact number' : 'Send WhatsApp reminder'}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: inv.buyerContact ? '#25D366' : 'var(--surface-border)', color: '#fff', border: 'none', borderRadius: '6px', cursor: inv.buyerContact ? 'pointer' : 'not-allowed', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
+                          >
+                            <MessageSquare size={12} /> Remind
+                          </button>
+                        )}
+                        {!isViewOnly && (
+                          <button
+                            onClick={() => markPaid(inv)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, font: 'inherit', fontSize: '0.76rem' }}
+                          >
+                            <CheckCircle2 size={12} /> Paid
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

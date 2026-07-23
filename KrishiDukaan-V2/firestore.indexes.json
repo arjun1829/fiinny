@@ -204,6 +204,31 @@
       ]
     },
     {
+      "collectionGroup": "waNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "followedShopId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "taggedShopIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt",     "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "linkedProductId", "order": "ASCENDING" },
+        { "fieldPath": "viewsCount",      "order": "DESCENDING" },
+        { "fieldPath": "createdAt",       "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "dealerVisits",
       "queryScope": "COLLECTION",
       "fields": [

@@ -80,10 +80,9 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
                 snap: true,
                 elevation: 0,
                 backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                flexibleSpace: Container(
-                  decoration: BoxDecoration(gradient: topBarGradient()),
-                ),
+                foregroundColor: AppColors.onSurface,
+                systemOverlayStyle: topBarOverlayStyle,
+                flexibleSpace: const TopBarBackdrop(),
                 titleSpacing: 16,
                 title: Row(
                   children: [
@@ -92,8 +91,9 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
                     Text(
                       'Crop Hubs',
                       style: AppTextStyles.heading2.copyWith(
-                        color: Colors.white,
+                        color: AppColors.onSurface,
                         fontSize: 18,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ],
@@ -265,6 +265,12 @@ class HubContentWidget extends StatelessWidget {
         // Advisory
         _AdvisorySection(hub: hub),
         const SizedBox(height: 24),
+
+        // Videos
+        if (hub.videos.isNotEmpty) ...[
+          _VideosSection(hub: hub),
+          const SizedBox(height: 24),
+        ],
 
         // Expert FAQ
         _FaqSection(hub: hub),
@@ -1276,6 +1282,218 @@ class _AdvisorySection extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Videos Section
+// ──────────────────────────────────────────────────────────────────────────────
+class _VideosSection extends StatelessWidget {
+  final HubModel hub;
+  const _VideosSection({required this.hub});
+
+  Future<void> _launch(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section heading
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEBEE),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.play_circle_outline,
+                  color: Color(0xFFD32F2F),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Videos',
+                    style: AppTextStyles.heading2.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    'WATCH & LEARN',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.onSurfaceVariant,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Video cards
+          ...hub.videos.map(
+            (video) => GestureDetector(
+              onTap: () => _launch(video.url),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.divider),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.cardShadow,
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Thumbnail
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                      child: Stack(
+                        children: [
+                          SizedBox(
+                            height: 180,
+                            width: double.infinity,
+                            child: video.thumbnail.isNotEmpty
+                                ? CachedNetworkImage(
+                                    memCacheWidth: 1000,
+                                    imageUrl: video.thumbnail,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, _, _) => Container(
+                                      color: AppColors.primary
+                                          .withValues(alpha: 0.15),
+                                    ),
+                                  )
+                                : Container(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.15),
+                                  ),
+                          ),
+                          // Dark overlay
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.35),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Play button overlay
+                          Positioned.fill(
+                            child: Center(
+                              child: Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: Color(0xFFD32F2F),
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Title + description
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            video.title,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (video.description.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              video.description,
+                              style: AppTextStyles.body.copyWith(
+                                color: AppColors.onSurfaceVariant,
+                                fontSize: 12,
+                                height: 1.45,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.play_circle_fill,
+                                size: 14,
+                                color: Color(0xFFD32F2F),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Watch Video',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: const Color(0xFFD32F2F),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

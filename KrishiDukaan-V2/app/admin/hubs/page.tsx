@@ -23,6 +23,7 @@ type HubForm = {
   soilType: string;
   waterNeeds: string;
   bestSeason: string;
+  videos: { id: string; title: string; url: string; thumbnail: string; description: string }[];
 };
 
 const EMPTY_FORM: HubForm = {
@@ -35,6 +36,7 @@ const EMPTY_FORM: HubForm = {
   growthStages: [{ phase: "", duration: "", description: "", products: "" }],
   commonMistakes: [""],
   idealClimate: "", soilType: "", waterNeeds: "", bestSeason: "",
+  videos: [],
 };
 
 const ICON_OPTIONS = ["Sprout", "Water", "Science", "Check"];
@@ -63,6 +65,13 @@ function formToHub(f: HubForm): Omit<Hub, "id"> {
     soilType: f.soilType.trim(),
     waterNeeds: f.waterNeeds.trim(),
     bestSeason: f.bestSeason.trim(),
+    videos: f.videos.filter(v => v.url.trim()).map(v => ({
+      id: v.id || `vid_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      title: v.title.trim(),
+      url: v.url.trim(),
+      thumbnail: v.thumbnail.trim(),
+      description: v.description.trim(),
+    })),
   };
 }
 
@@ -83,6 +92,7 @@ function hubToForm(h: Hub): HubForm {
     soilType: h.soilType || "",
     waterNeeds: h.waterNeeds || "",
     bestSeason: h.bestSeason || "",
+    videos: h.videos?.length ? h.videos : [{ id: "", title: "", url: "", thumbnail: "", description: "" }],
   };
 }
 
@@ -289,6 +299,7 @@ export default function AdminHubsPage() {
                       <span className="text-xs text-on-surface-variant">{h.seeds.length} seeds</span>
                       <span className="text-xs text-on-surface-variant">{h.nutrition.length} nutrition</span>
                       <span className="text-xs text-on-surface-variant">{h.irrigation.items.length} irrigation</span>
+                      <span className="text-xs text-on-surface-variant">{(h.videos?.length ?? 0)} videos</span>
                     </div>
                   </div>
                 </div>
@@ -391,6 +402,33 @@ export default function AdminHubsPage() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Videos */}
+                  {h.videos && h.videos.length > 0 && (
+                    <div className="md:col-span-3 border-t border-outline-variant/10 pt-4">
+                      <h4 className="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">Videos ({h.videos.length})</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {h.videos.map((v, i) => (
+                          <a key={i} href={v.url} target="_blank" rel="noopener noreferrer"
+                            className="bg-white rounded-xl border border-surface-container overflow-hidden hover:border-primary/30 transition-colors group">
+                            {v.thumbnail ? (
+                              <div className="aspect-video overflow-hidden">
+                                <img src={v.thumbnail} alt={v.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                              </div>
+                            ) : (
+                              <div className="aspect-video bg-surface-container flex items-center justify-center">
+                                <span className="text-2xl">▶️</span>
+                              </div>
+                            )}
+                            <div className="p-3">
+                              <p className="text-xs font-bold text-on-surface line-clamp-2">{v.title || 'Watch Video'}</p>
+                              {v.description && <p className="text-[10px] text-on-surface-variant mt-1 line-clamp-2">{v.description}</p>}
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -665,6 +703,65 @@ export default function AdminHubsPage() {
                       </button>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Videos */}
+              <div className="border-t border-surface-container pt-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-primary">Hub Videos</h3>
+                  <button type="button"
+                    onClick={() => setF(p => ({ ...p, videos: [...p.videos, { id: '', title: '', url: '', thumbnail: '', description: '' }] }))}
+                    className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
+                    <Plus className="h-3 w-3" /> Add Video
+                  </button>
+                </div>
+                <p className="text-xs text-on-surface-variant mb-4">Paste YouTube links or any video URL. Thumbnails can be YouTube thumbnails (https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg).</p>
+                <div className="space-y-4">
+                  {f.videos.map((video, i) => (
+                    <div key={i} className="rounded-2xl border border-outline-variant bg-surface-container-low p-4 space-y-3 relative">
+                      <button type="button"
+                        onClick={() => setF(p => ({ ...p, videos: p.videos.filter((_, j) => j !== i) }))}
+                        className="absolute top-2 right-2 p-1 text-on-surface-variant hover:text-red-500 transition-colors">
+                        <X className="h-4 w-4" />
+                      </button>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Video Title</label>
+                        <input type="text" value={video.title} placeholder="e.g. How to prune tomato plants"
+                          onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], title: e.target.value }; setF(p => ({ ...p, videos: v })); }}
+                          className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Video URL *</label>
+                        <input type="url" value={video.url} placeholder="https://www.youtube.com/watch?v=..."
+                          onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], url: e.target.value }; setF(p => ({ ...p, videos: v })); }}
+                          className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Thumbnail URL</label>
+                        <div className="flex gap-2 items-center">
+                          <input type="text" value={video.thumbnail} placeholder="https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg"
+                            onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], thumbnail: e.target.value }; setF(p => ({ ...p, videos: v })); }}
+                            className="flex-1 min-w-0 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                          {video.thumbnail && (
+                            <div className="w-16 h-10 rounded-xl overflow-hidden border border-surface-container shrink-0">
+                              <img src={video.thumbnail} alt="thumb" className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Description</label>
+                        <textarea value={video.description} placeholder="Brief description of what this video covers…" rows={2}
+                          onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], description: e.target.value }; setF(p => ({ ...p, videos: v })); }}
+                          className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" />
+                      </div>
+                    </div>
+                  ))}
+                  {f.videos.length === 0 && (
+                    <p className="text-xs text-on-surface-variant text-center py-4">No videos yet. Click Add Video to add a YouTube link or video URL.</p>
+                  )}
                 </div>
               </div>
 

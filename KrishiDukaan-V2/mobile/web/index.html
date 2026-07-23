@@ -31,6 +31,12 @@
 
   <title>krishidukaan_app</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google Maps JS SDK — required by google_maps_flutter_web. Without this,
+       the plugin throws "Cannot read properties of undefined (reading 'maps')"
+       because window.google.maps never gets defined. Same key as
+       AppConfig.googleMapsApiKey / the Android manifest / iOS AppDelegate. -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778"></script>
 </head>
 <body>
   <!--

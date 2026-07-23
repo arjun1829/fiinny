@@ -5,10 +5,11 @@ import {
     Receipt, IndianRupee, AlertCircle, Clock,
     CheckSquare, X, Trash2, BadgeCheck, CalendarDays,
 } from 'lucide-react';
-import { query, onSnapshot, orderBy, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { query, onSnapshot, orderBy, updateDoc, writeBatch, serverTimestamp, getDocs, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
+import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,10 @@ const PAYMENT_MODES = ['Cash', 'UPI', 'Cheque', 'NEFT', 'RTGS', 'Credit', 'Onlin
 
 export default function B2BInvoiceWorklistPage() {
     const navigate = useNavigate();
-    const { tenantId } = useAuth();
+    const { tenantId, userRole } = useAuth();
+    const isSales = userRole === 'sales';
+    const isViewOnly = isSales || userRole === 'retailer';
+    const { allowedRetailerIds, filterLoading } = useSalesFilter();
     const [invoices, setInvoices] = useState<B2BInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -62,17 +66,31 @@ export default function B2BInvoiceWorklistPage() {
     const clearSelection = () => setSelectedIds(new Set());
 
     useEffect(() => {
-        if (!tenantId) return;
-        const q = query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc'));
-        const unsub = onSnapshot(q, (snap) => {
-            const list = snap.docs
-                .map(d => ({ id: d.id, ...d.data() }) as B2BInvoice)
-                .filter(o => o.invoiceType === 'B2B_GST'); // B2B GST invoices only
-            setInvoices(list);
-            setLoading(false);
-        }, () => setLoading(false));
-        return () => unsub();
-    }, [tenantId]);
+        if (!tenantId || filterLoading) return;
+        setLoading(true);
+
+        if (allowedRetailerIds === null) {
+            // Admin/analyst: real-time listener, no restriction
+            const q = query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc'));
+            const unsub = onSnapshot(q, snap => {
+                setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() }) as B2BInvoice).filter(o => o.invoiceType === 'B2B_GST'));
+                setLoading(false);
+            }, () => setLoading(false));
+            return () => unsub();
+        }
+
+        // Sales user: one-shot query scoped to allowed retailer IDs
+        fetchSalesOrdersByRetailerIds(tenantId, allowedRetailerIds)
+            .then(docs => {
+                const list = docs
+                    .map(d => ({ id: d.id, ...d.data() }) as B2BInvoice)
+                    .filter(o => o.invoiceType === 'B2B_GST')
+                    .sort((a, b) => (b.createdAt?.toDate?.()?.getTime() ?? 0) - (a.createdAt?.toDate?.()?.getTime() ?? 0));
+                setInvoices(list);
+            })
+            .catch(() => setInvoices([]))
+            .finally(() => setLoading(false));
+    }, [tenantId, filterLoading, allowedRetailerIds === null ? 'all' : Array.from(allowedRetailerIds).sort().join(',')]);
 
     const filtered = useMemo(() => {
         let r = invoices;
@@ -177,9 +195,11 @@ export default function B2BInvoiceWorklistPage() {
                     </h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Every B2B GST invoice across all customers — work payments in one place.</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => navigate('/b2b-invoice')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <FileText size={16} /> New B2B Invoice
-                </button>
+                {!isViewOnly && (
+                    <button className="btn btn-primary" onClick={() => navigate('/b2b-invoice')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <FileText size={16} /> New B2B Invoice
+                    </button>
+                )}
             </div>
 
             {/* KPI Cards */}
@@ -224,8 +244,8 @@ export default function B2BInvoiceWorklistPage() {
                 <span style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', marginLeft: 'auto' }}>{filtered.length} invoices</span>
             </div>
 
-            {/* Bulk quick-action bar */}
-            {selectedIds.size > 0 && (
+            {/* Bulk quick-action bar — hidden in sales view-only mode */}
+            {!isViewOnly && selectedIds.size > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0.7rem 1rem', marginBottom: '1rem', background: 'var(--primary-light)', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
                     <CheckSquare size={16} color="#fff" />
                     <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.88rem' }}>{selectedIds.size} selected</span>
@@ -283,12 +303,14 @@ export default function B2BInvoiceWorklistPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', whiteSpace: 'nowrap' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                <th style={{ padding: '0.85rem 1rem', width: '40px' }}>
-                                    <input type="checkbox" aria-label="Select all"
-                                        checked={filtered.length > 0 && filtered.every(o => selectedIds.has(o.id))}
-                                        onChange={e => (e.target.checked ? selectAllFiltered() : clearSelection())}
-                                        style={{ cursor: 'pointer' }} />
-                                </th>
+                                {!isViewOnly && (
+                                    <th style={{ padding: '0.85rem 1rem', width: '40px' }}>
+                                        <input type="checkbox" aria-label="Select all"
+                                            checked={filtered.length > 0 && filtered.every(o => selectedIds.has(o.id))}
+                                            onChange={e => (e.target.checked ? selectAllFiltered() : clearSelection())}
+                                            style={{ cursor: 'pointer' }} />
+                                    </th>
+                                )}
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Date</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Invoice No</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Customer</th>
@@ -310,10 +332,12 @@ export default function B2BInvoiceWorklistPage() {
                                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-raised)'}
                                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = restBg}
                                     >
-                                        <td style={{ padding: '0.85rem 1rem' }}>
-                                            <input type="checkbox" aria-label={`Select ${o.orderNumber || o.id}`}
-                                                checked={sel} onChange={() => toggleSelect(o.id)} style={{ cursor: 'pointer' }} />
-                                        </td>
+                                        {!isViewOnly && (
+                                            <td style={{ padding: '0.85rem 1rem' }}>
+                                                <input type="checkbox" aria-label={`Select ${o.orderNumber || o.id}`}
+                                                    checked={sel} onChange={() => toggleSelect(o.id)} style={{ cursor: 'pointer' }} />
+                                            </td>
+                                        )}
                                         <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{dateStr(o)}</td>
                                         <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--primary-light)' }}>{o.orderNumber || o.id.slice(-8).toUpperCase()}</td>
                                         <td style={{ padding: '0.85rem 1rem' }}>
@@ -337,13 +361,19 @@ export default function B2BInvoiceWorklistPage() {
                                             )}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem' }}>
-                                            <select
-                                                value={out <= 0 ? 'Paid' : 'Pending'}
-                                                onChange={e => markPayment(o, e.target.value as 'Paid' | 'Pending')}
-                                                style={{ fontSize: '0.78rem', padding: '0.3rem 0.5rem', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid var(--surface-border)', background: out <= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: out <= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
-                                                <option value="Pending">Pending</option>
-                                                <option value="Paid">Paid</option>
-                                            </select>
+                                            {isViewOnly ? (
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '8px', background: out <= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: out <= 0 ? '#10b981' : '#ef4444', border: `1px solid ${out <= 0 ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+                                                    {out <= 0 ? 'Paid' : 'Pending'}
+                                                </span>
+                                            ) : (
+                                                <select
+                                                    value={out <= 0 ? 'Paid' : 'Pending'}
+                                                    onChange={e => markPayment(o, e.target.value as 'Paid' | 'Pending')}
+                                                    style={{ fontSize: '0.78rem', padding: '0.3rem 0.5rem', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', border: '1px solid var(--surface-border)', background: out <= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: out <= 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                                                    <option value="Pending">Pending</option>
+                                                    <option value="Paid">Paid</option>
+                                                </select>
+                                            )}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
                                             <button

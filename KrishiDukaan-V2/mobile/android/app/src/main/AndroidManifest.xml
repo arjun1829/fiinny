@@ -29,16 +29,21 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Deep link for invite codes -->
+            <!-- Deep link for invite codes and products -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https"
-                      android:host="krishidukan.com"
-                      android:pathPrefix="/signup"/>
+                <data android:scheme="https" android:host="krishidukan.com" />
+                <data android:scheme="https" android:host="karan-arjun-uat.web.app" />
             </intent-filter>
         </activity>
+
+        <!-- Google Maps SDK — same key as GOOGLE_MAPS_API_KEY / AppConfig.googleMapsApiKey,
+             restricted to this app's package + SHA-1 in Google Cloud Console. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDh_Y67TDJc2KLLJ8Wcc2JvEeHzmfVL778"/>
 
         <!-- FCM default notification icon and color -->
         <meta-data

@@ -4,12 +4,24 @@ import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../models/catalog_model.dart';
 import '../utils/currency_utils.dart';
+import '../utils/geo_utils.dart';
 
-class ProductCard extends StatelessWidget {
+class ProductCard extends StatefulWidget {
   final CatalogModel product;
   final VoidCallback onTap;
 
   const ProductCard({super.key, required this.product, required this.onTap});
+
+  @override
+  State<ProductCard> createState() => _ProductCardState();
+}
+
+class _ProductCardState extends State<ProductCard> {
+  // Press-down scale gives every card tactile feedback — the single cheapest
+  // "the app feels alive" win since ProductCard appears on every surface.
+  bool _pressed = false;
+
+  CatalogModel get product => widget.product;
 
   @override
   Widget build(BuildContext context) {
@@ -23,202 +35,240 @@ class ProductCard extends StatelessWidget {
     final savings = (product.price - discountedPrice).round();
 
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: hasOffer 
-              ? Border.all(color: const Color(0xFF86EFAC), width: 1.5)
-              : Border.all(color: AppColors.divider.withValues(alpha: 0.6)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 16,
-              spreadRadius: 4,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image (with corner offer ribbon)
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(12),
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 150;
+          final radius = compact ? 12.0 : 14.0;
+          final infoPadding = compact ? 8.0 : 10.0;
+
+          return AnimatedScale(
+            scale: _pressed ? 0.96 : 1.0,
+            duration: const Duration(milliseconds: 110),
+            curve: Curves.easeOut,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(radius),
+                border: hasOffer
+                    ? Border.all(color: const Color(0xFF86EFAC), width: 1.3)
+                    : Border.all(
+                        color: AppColors.divider.withValues(alpha: 0.6),
                       ),
-                      child: product.hasImages
-                          ? CachedNetworkImage(
-                              // Resizing the image in memory significantly speeds up decoding and
-                              // makes scrolling the grid buttery smooth. 400px is plenty for a grid card.
-                              memCacheWidth: 400,
-                              maxWidthDiskCache: 600,
-                              imageUrl: product.imageUrl,
-                              fit: BoxFit.contain,
-                              fadeInDuration: const Duration(milliseconds: 250),
-                              placeholder: (_, _) => Container(
-                                color: AppColors.surfaceVariant,
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.grass,
-                                    size: 40,
-                                    color: AppColors.primaryLight,
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (_, _, _) => _placeholder(),
-                            )
-                          : _placeholder(),
-                    ),
+                // Soft ambient shadow — no spread. The previous spreadRadius
+                // bled grey between grid cards and made the page look muddy.
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.07),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  if (hasOffer)
-                    Positioned(
-                      top: 8,
-                      left: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF16A34A),
-                          borderRadius: BorderRadius.only(
-                            topRight: Radius.circular(6),
-                            bottomRight: Radius.circular(6),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.local_offer,
-                              size: 10,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${maxPct.toStringAsFixed(0)}% OFF',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                 ],
               ),
-            ),
-            // Info
-            Padding(
-              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Category badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryContainer.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      product.category,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  // Name
-                  Text(
-                    product.name,
-                    style: AppTextStyles.bodyMedium,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  // Price — discounted block when an offer exists
-                  if (hasOffer) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                  // Image (with corner offer ribbon)
+                  Expanded(
+                    child: Stack(
                       children: [
-                        Flexible(
-                          child: Text(
-                            CurrencyUtils.format(discountedPrice),
-                            style: AppTextStyles.price.copyWith(
-                              color: const Color(0xFF15803D),
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(radius),
                             ),
+                            child: product.hasImages
+                                ? CachedNetworkImage(
+                                    memCacheWidth: compact ? 260 : 400,
+                                    maxWidthDiskCache: compact ? 360 : 600,
+                                    imageUrl: product.imageUrl,
+                                    fit: BoxFit.contain,
+                                    fadeInDuration: const Duration(
+                                      milliseconds: 250,
+                                    ),
+                                    placeholder: (_, _) => Container(
+                                      color: AppColors.surfaceVariant,
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.grass,
+                                          size: compact ? 28 : 40,
+                                          color: AppColors.primaryLight,
+                                        ),
+                                      ),
+                                    ),
+                                    errorWidget: (_, _, _) => _placeholder(),
+                                  )
+                                : _placeholder(),
+                          ),
+                        ),
+                        if (hasOffer)
+                          Positioned(
+                            top: compact ? 6 : 8,
+                            left: 0,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: compact ? 6 : 8,
+                                vertical: 3,
+                              ),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF16A34A),
+                                borderRadius: BorderRadius.only(
+                                  topRight: Radius.circular(6),
+                                  bottomRight: Radius.circular(6),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.local_offer,
+                                    size: compact ? 9 : 10,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${maxPct.toStringAsFixed(0)}% OFF',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: compact ? 9 : 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Info
+                  Padding(
+                    padding: EdgeInsets.all(infoPadding),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Category badge
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: compact ? 5 : 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryContainer.withValues(
+                              alpha: 0.5,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            product.category,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: compact ? 9 : 11,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        SizedBox(height: compact ? 4 : 6),
+                        // Name
                         Text(
-                          CurrencyUtils.format(product.price),
-                          style: AppTextStyles.caption.copyWith(
-                            decoration: TextDecoration.lineThrough,
+                          product.name,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontSize: compact ? 12 : 14,
                           ),
+                          maxLines: compact ? 1 : 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        SizedBox(height: compact ? 4 : 6),
+                        // Price — discounted block when an offer exists
+                        if (hasOffer) ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  CurrencyUtils.format(discountedPrice),
+                                  style: AppTextStyles.price.copyWith(
+                                    color: const Color(0xFF15803D),
+                                    fontSize: compact ? 13 : 16,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              SizedBox(width: compact ? 4 : 6),
+                              if (!compact)
+                                Text(
+                                  CurrencyUtils.format(product.price),
+                                  style: AppTextStyles.caption.copyWith(
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (savings > 0 && !compact)
+                            Text(
+                              'Save ${CurrencyUtils.format(savings.toDouble())}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: const Color(0xFF16A34A),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                        ] else
+                          Text(
+                            CurrencyUtils.format(product.price),
+                            style: AppTextStyles.price.copyWith(
+                              fontSize: compact ? 13 : 16,
+                            ),
+                          ),
+                        SizedBox(height: compact ? 2 : 4),
+                        // Nearest store distance
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.near_me_outlined,
+                              size: compact ? 10 : 12,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                product.nearestStoreDistanceKm != null
+                                    ? '${GeoUtils.formatDistance(product.nearestStoreDistanceKm!)} away'
+                                    : 'Nearby store',
+                                style: AppTextStyles.caption.copyWith(
+                                  fontSize: compact ? 9 : 11,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (product.rating != null && !compact) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.star,
+                                size: 12,
+                                color: AppColors.secondary,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                product.rating!.toStringAsFixed(1),
+                                style: AppTextStyles.caption,
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
-                    if (savings > 0)
-                      Text(
-                        'Save ${CurrencyUtils.format(savings.toDouble())}',
-                        style: AppTextStyles.caption.copyWith(
-                          color: const Color(0xFF16A34A),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ] else
-                    Text(
-                      CurrencyUtils.format(product.price),
-                      style: AppTextStyles.price,
-                    ),
-                  const SizedBox(height: 4),
-                  // Seller count
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.store_outlined,
-                        size: 12,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${product.sellerCount} seller${product.sellerCount != 1 ? 's' : ''}',
-                        style: AppTextStyles.caption,
-                      ),
-                      if (product.rating != null) ...[
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.star,
-                          size: 12,
-                          color: AppColors.secondary,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          product.rating!.toStringAsFixed(1),
-                          style: AppTextStyles.caption,
-                        ),
-                      ],
-                    ],
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

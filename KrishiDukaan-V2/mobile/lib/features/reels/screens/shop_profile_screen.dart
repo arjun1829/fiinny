@@ -7,7 +7,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
-import '../../dashboard/providers/dashboard_provider.dart';
+import '../../../core/utils/format_count.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
 
@@ -20,7 +20,7 @@ class ShopProfileScreen extends ConsumerWidget {
     final shopAsync = ref.watch(shopUserProvider(shopPhone));
     final reelsAsync = ref.watch(sellerReelsProvider(shopPhone));
     final followersAsync = ref.watch(followerCountProvider(shopPhone));
-    final productsAsync = ref.watch(myListingsProvider(shopPhone));
+    final productsAsync = ref.watch(shopListingsProvider(shopPhone));
     final currentUser = ref.watch(currentUserProvider).value;
     final isOwnShop = currentUser?.phone == shopPhone;
 
@@ -330,11 +330,7 @@ class ShopProfileScreen extends ConsumerWidget {
     );
   }
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
-  }
+  String _fmt(int n) => formatCount(n);
 }
 
 // ── Stat column ───────────────────────────────────────────────────────────────
@@ -507,11 +503,29 @@ class _ReelGridCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // Video thumbnail only — no product image fallback
+            if (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  reel.thumbnailUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                ),
+              ),
+              // Dark overlay for text readability
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.black.withValues(alpha: 0.25),
+                ),
+              ),
+            ],
             // Play icon
             const Center(
               child: Icon(
                 Icons.play_circle_outline_rounded,
-                color: Colors.white54,
+                color: Colors.white70,
                 size: 36,
               ),
             ),
@@ -810,7 +824,7 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).value;
     final listingsAsync = user != null
-        ? ref.watch(myListingsProvider(user.phone))
+        ? ref.watch(shopListingsProvider(user.phone))
         : const AsyncValue<List<ListingModel>>.data([]);
 
     return Container(
@@ -1333,8 +1347,8 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
         SnackBar(
           content: Text(
             wasReposted
-                ? 'Removed from your AgriReels profile.'
-                : 'Reposted to your AgriReels profile.',
+                ? 'Removed from your reels profile.'
+                : 'Reposted to your reels profile.',
           ),
         ),
       );

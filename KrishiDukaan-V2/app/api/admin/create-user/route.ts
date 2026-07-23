@@ -12,12 +12,16 @@ import { FieldValue } from "firebase-admin/firestore";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, email, password, callerUid } = body as {
+    const { name, email, password, callerUid, role: rawRole } = body as {
       name?: string;
       email?: string;
       password?: string;
       callerUid?: string;
+      role?: string;
     };
+
+    // Email/password roles this route can provision. Both live at users/{uid}.
+    const role = rawRole === "salesExecutive" ? "salesExecutive" : "admin";
 
     if (!email?.trim())  return NextResponse.json({ error: "Email is required." },                       { status: 400 });
     if (!password || password.length < 6)
@@ -60,13 +64,15 @@ export async function POST(req: NextRequest) {
     const uid = newUser.uid;
     const now = FieldValue.serverTimestamp();
 
-    // Admin doc lives at users/{uid} (uid as doc ID) — matching existing admin schema
+    // Email-based accounts (admin + salesExecutive) live at users/{uid}
+    // (uid as doc ID) — matching the existing admin schema.
     await adminDb.collection("users").doc(uid).set({
       uid,
       name: (name || "").trim(),
       email: email.trim().toLowerCase(),
-      role: "admin",
-      isPaid: true,
+      role,
+      // Admins are treated as paid; sales execs are internal staff, not subscribers.
+      isPaid: role === "admin",
       totalSeats: 0,
       productCount: 0,
       createdByAdmin: callerUid,
@@ -75,17 +81,19 @@ export async function POST(req: NextRequest) {
     });
 
     await adminDb.collection("adminLogs").doc().set({
-      action: "admin_create_admin_user",
+      action: role === "salesExecutive" ? "admin_create_sales_executive" : "admin_create_admin_user",
       targetUid: uid,
       targetEmail: email.trim().toLowerCase(),
       performedBy: callerUid,
       createdAt: now,
     });
 
+    const loginPath = role === "salesExecutive" ? "/sales/login" : "/admin-login";
+    const label     = role === "salesExecutive" ? "Sales Executive" : "Admin";
     return NextResponse.json({
       success: true,
       uid,
-      message: `Admin account created. They can log in at /admin-login with ${email.trim().toLowerCase()}.`,
+      message: `${label} account created. They can log in at ${loginPath} with ${email.trim().toLowerCase()}.`,
     });
 
   } catch (e: unknown) {

@@ -1,20 +1,19 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Download, FileSpreadsheet, Store, Search, Filter, ArrowUpDown,
-    ArrowUpRight, Users, Building2, UserPlus, TrendingUp, AlertCircle,
-    CheckCircle2, Bell, ShoppingCart, Truck, Clock, Mail, MessageSquare,
-    X, Copy, CheckSquare, FileText,
+    Users, Building2, UserPlus, TrendingUp, AlertCircle,
+    CheckCircle2, Bell, ShoppingCart, Truck, Mail, MessageSquare,
+    X, Copy, CheckSquare, FileText, ChevronDown, ChevronRight, Phone,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getDocs, orderBy, query, where } from 'firebase/firestore';
+import { getDocs, orderBy, query, where, collectionGroup } from 'firebase/firestore';
 import { db } from '../firebase';
 import Papa from 'papaparse';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
 import UdhariUploadModal from '../components/UdhariUploadModal';
 import { useSchema } from '../contexts/SchemaContext';
-import DynamicTable from '../components/DynamicTable';
 
 // Import sub-pages directly (WorklistPage itself is lazy-loaded by App.tsx)
 import PaymentRemindersPage from './PaymentRemindersPage';
@@ -33,6 +32,9 @@ interface Retailer {
     id: string;
     name?: string;
     location?: string;
+    district?: string;
+    taluka?: string;
+    atPost?: string;
     number?: string;
     alternateNumber?: string;
     portfolioSize?: string;
@@ -40,11 +42,12 @@ interface Retailer {
     bookName?: string;
     billBookPageNo?: string;
     createdAt?: { toMillis?: () => number };
+    // Denormalized financial fields kept in sync by all invoice/payment mutations
+    outstandingAmount?: number;
     totalSales?: number;
     totalPaid?: number;
-    outstandingAmount?: number;
-    hasPendingOrders?: boolean;
     closestCreditDays?: number | null;
+    computedOutstanding?: number;
 }
 
 interface ReminderEntry {
@@ -74,6 +77,13 @@ const MODULE_TABS: { id: ModuleTab; label: string; icon: React.ReactNode }[] = [
 
 export default function WorklistPage() {
     const [moduleTab, setModuleTab] = useState<ModuleTab>('partners');
+    const { userRole } = useAuth();
+
+    const visibleTabs = MODULE_TABS.filter(tab => {
+        if (userRole === 'sales' && tab.id === 'online-orders') return false;
+        if (userRole === 'retailer' && (tab.id === 'online-orders' || tab.id === 'tracking-info')) return false;
+        return true;
+    });
 
     return (
         <div className="animate-fade-in" style={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -92,7 +102,7 @@ export default function WorklistPage() {
                 overflowX: 'auto',
             }}
             >
-                {MODULE_TABS.map(tab => {
+                {visibleTabs.map(tab => {
                     const active = moduleTab === tab.id;
                     return (
                         <button
@@ -142,21 +152,38 @@ export default function WorklistPage() {
 
 function PartnersTab() {
     const navigate = useNavigate();
-    const { tenantId } = useAuth();
+    const { tenantId, userRole, assignedDistricts, assignedRetailers } = useAuth();
+    const isSales = userRole === 'sales';
+    const isRetailer = userRole === 'retailer';
+    const isViewOnly = isSales || isRetailer;
     const { t } = useTranslation();
     const { getSchema } = useSchema();
     const [retailers, setRetailers] = useState<Retailer[]>([]);
     const [loading, setLoading] = useState(true);
     const [showUdhariModal, setShowUdhariModal] = useState(false);
+    const [showAnalytics, setShowAnalytics] = useState(false);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSize, setFilterSize] = useState('All');
     const [sortBy, setSortBy] = useState('newest');
-    const [partnerView, setPartnerView] = useState<'active' | 'history'>('active');
+    const [partnerView, setPartnerView] = useState<'all' | 'active' | 'cleared'>('all');
 
     const paymentsFileRef = useRef<HTMLInputElement>(null);
     const followupsFileRef = useRef<HTMLInputElement>(null);
     const [uploadingCSV, setUploadingCSV] = useState(false);
+
+    // Responsive: hide Taluka/Village columns on narrow screens, show expand chevron instead
+    const [isCompact, setIsCompact] = useState(() => typeof window !== 'undefined' && window.innerWidth < 860);
+    useEffect(() => {
+        const handler = () => setIsCompact(window.innerWidth < 860);
+        window.addEventListener('resize', handler);
+        return () => window.removeEventListener('resize', handler);
+    }, []);
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+    const toggleExpand = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setExpandedRows(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    };
 
     // ── Selection & bulk correspondence ──────────────────────────────────────
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -189,18 +216,20 @@ function PartnersTab() {
                         where('retailerId', '==', r.id)
                     );
                     const snap = await getDocs(q);
-                    const pending = snap.docs
-                        .map(d => d.data() as { grandTotal?: number; amountPaid?: number; paymentStatus?: string })
-                        .filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
-                    const pendingAmount = pending.reduce((sum, so) =>
-                        sum + Math.max(0, (Number(so.grandTotal) || 0) - (Number(so.amountPaid) || 0)), 0);
+                    const pendingOrderCount = snap.docs
+                        .filter(d => d.data().paymentStatus?.toLowerCase() !== 'paid')
+                        .length;
+                    // Use total outstanding (Total Sales − Total Payments Received).
+                    // r.computedOutstanding already reflects all received payments,
+                    // not just those linked to specific invoices.
+                    const pendingAmount = r.computedOutstanding ?? 0;
                     return {
                         id: r.id,
                         name: r.name || '—',
                         number: r.number,
                         email: r.email,
                         pendingAmount,
-                        pendingOrderCount: pending.length,
+                        pendingOrderCount,
                         closestCreditDays: r.closestCreditDays ?? null,
                     };
                 })
@@ -216,28 +245,55 @@ function PartnersTab() {
         const fetchRetailers = async () => {
             if (!tenantId) return;
             try {
-                // Fetch retailers, all orders, and all salesOrders in parallel — 3 reads
-                // total instead of 2N+1 (previously one orders + one salesOrders query
-                // per retailer). Same documents read, but in 3 round-trips, not hundreds.
-                const [retailersSnap, ordersSnap, salesOrdersSnap] = await Promise.all([
+                // 3 parallel reads — retailers, salesOrders, and ALL payments for
+                // every retailer via a collection group query.  The payments fetch gives
+                // us the exact same "sum(payments.amount)" the profile page uses, so
+                // the Outstanding column and Active/Cleared filter match exactly.
+                const [retailersSnap, salesOrdersSnap, paymentsGroupSnap] = await Promise.all([
                     getDocs(query(getTenantCollection(db, tenantId, 'retailers'), orderBy('createdAt', 'desc'))),
-                    getDocs(getTenantCollection(db, tenantId, 'orders')),
                     getDocs(getTenantCollection(db, tenantId, 'salesOrders')),
+                    getDocs(collectionGroup(db, 'payments')),
                 ]);
 
-                // Group orders by retailerId so each retailer is an O(1) lookup.
-                const ordersByRetailer = new Map<string, { isDelivered?: boolean }[]>();
-                ordersSnap.docs.forEach(doc => {
-                    const o = doc.data() as { retailerId?: string; isDelivered?: boolean };
-                    if (!o.retailerId) return;
-                    const arr = ordersByRetailer.get(o.retailerId);
-                    if (arr) arr.push(o); else ordersByRetailer.set(o.retailerId, [o]);
+                // Sum payment amounts per retailer, filtering strictly to this tenant.
+                // getTenantCollection uses two different path layouts depending on tenantId:
+                //   master    →  retailers/{retailerId}/payments/{paymentId}        (4 parts)
+                //   non-master→  tenants/{tenantId}/retailers/{retailerId}/payments/{paymentId}  (6 parts)
+                // The previous filter hard-coded the 6-part form and silently dropped all
+                // master-tenant payments, which caused the Outstanding mismatch.
+                const isMasterTenant = tenantId === 'master';
+                const paymentsByRetailer = new Map<string, number>();
+                paymentsGroupSnap.docs.forEach(pdoc => {
+                    const parts = pdoc.ref.path.split('/');
+                    let rId: string | undefined;
+
+                    if (isMasterTenant) {
+                        // retailers/{retailerId}/payments/{paymentId}
+                        if (parts.length === 4 && parts[0] === 'retailers' && parts[2] === 'payments') {
+                            rId = parts[1];
+                        }
+                    } else {
+                        // tenants/{tenantId}/retailers/{retailerId}/payments/{paymentId}
+                        if (
+                            parts.length === 6      &&
+                            parts[0] === 'tenants'  &&
+                            parts[1] === tenantId   &&
+                            parts[2] === 'retailers' &&
+                            parts[4] === 'payments'
+                        ) {
+                            rId = parts[3];
+                        }
+                    }
+
+                    if (!rId) return;
+                    paymentsByRetailer.set(rId, (paymentsByRetailer.get(rId) ?? 0) + Number(pdoc.data().amount ?? 0));
                 });
 
-                // Group salesOrders by retailerId.
-                const salesByRetailer = new Map<string, { status?: string; paymentStatus?: string; dueDate?: string }[]>();
+                // Group salesOrders by retailerId (include financial fields for outstanding calc).
+                type SOEntry = { status?: string; paymentStatus?: string; dueDate?: string; grandTotal?: number; netAmount?: number; totalAmount?: number; amountPaid?: number };
+                const salesByRetailer = new Map<string, SOEntry[]>();
                 salesOrdersSnap.docs.forEach(doc => {
-                    const so = doc.data() as { retailerId?: string; status?: string; paymentStatus?: string; dueDate?: string };
+                    const so = doc.data() as { retailerId?: string } & SOEntry;
                     if (!so.retailerId) return;
                     const arr = salesByRetailer.get(so.retailerId);
                     if (arr) arr.push(so); else salesByRetailer.set(so.retailerId, [so]);
@@ -251,13 +307,7 @@ function PartnersTab() {
                     .filter(d => (d.data() as { channel?: string }).channel !== 'pos')
                     .map(doc => {
                     const r = { id: doc.id, ...doc.data() } as Retailer;
-                    const orders = ordersByRetailer.get(r.id) ?? [];
                     const salesOrders = salesByRetailer.get(r.id) ?? [];
-
-                    const hasPendingPos = orders.some(o => !o.isDelivered);
-                    const hasPendingB2b = salesOrders.some(so => so.status === 'pending');
-                    const isBrandNew = orders.length === 0 && salesOrders.length === 0;
-                    const hasPending = isBrandNew || hasPendingPos || hasPendingB2b;
 
                     const pendingSOs = salesOrders.filter(so => so.paymentStatus?.toLowerCase() !== 'paid');
                     const dueDates = pendingSOs
@@ -270,10 +320,41 @@ function PartnersTab() {
                         ? Math.round((nearestDue.getTime() - today.getTime()) / 864e5)
                         : null;
 
-                    return { ...r, hasPendingOrders: hasPending, closestCreditDays };
+                    // EXACT same formula as WorklistDetailsPage (retailer profile page):
+                    //   computedTotalSales = sum(salesOrder.grandTotal | netAmount | totalAmount)
+                    //   computedTotalPaid  = sum(payments.amount) from payments subcollection
+                    //   computedOutstanding = max(0, computedTotalSales - computedTotalPaid)
+                    // Linked/unlinked status does not matter — every payment entry counts.
+                    const soList = salesByRetailer.get(r.id) ?? [];
+                    const soTotalSales = soList.reduce((s, so) => s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0), 0);
+                    const soTotalPaid  = paymentsByRetailer.get(r.id) ?? 0;
+                    const computedOutstanding = Math.max(0, soTotalSales - soTotalPaid);
+
+                    return { ...r, closestCreditDays, computedOutstanding };
                 });
 
-                setRetailers(retailersWithStatus);
+                // Sales users see retailers matching assignedDistricts OR assignedRetailers (union).
+                // Retailer users see only their own shop (exactly one entry in assignedRetailers).
+                if (userRole === 'sales') {
+                    const lowerDistricts = assignedDistricts.map(d => d.toLowerCase());
+                    const retailerIdSet = new Set(assignedRetailers);
+                    if (lowerDistricts.length === 0 && retailerIdSet.size === 0) {
+                        setRetailers([]); // no access configured
+                    } else {
+                        setRetailers(retailersWithStatus.filter(r =>
+                            lowerDistricts.includes((r.district || '').toLowerCase()) ||
+                            retailerIdSet.has(r.id)
+                        ));
+                    }
+                } else if (userRole === 'retailer') {
+                    const retailerIdSet = new Set(assignedRetailers);
+                    setRetailers(retailerIdSet.size > 0
+                        ? retailersWithStatus.filter(r => retailerIdSet.has(r.id))
+                        : []
+                    );
+                } else {
+                    setRetailers(retailersWithStatus);
+                }
             } catch (error) {
                 console.error('Error fetching retailers: ', error);
             } finally {
@@ -281,18 +362,21 @@ function PartnersTab() {
             }
         };
         fetchRetailers();
-    }, [tenantId]);
+    }, [tenantId, userRole, assignedDistricts.join('|'), assignedRetailers.join('|')]);
 
     const processedRetailers = useMemo(() => {
         let result = [...retailers];
-        if (partnerView === 'active') result = result.filter(r => r.hasPendingOrders);
-        else result = result.filter(r => !r.hasPendingOrders);
+        // Outstanding filter — uses Total Sales − Amount Paid (matches profile page)
+        if (partnerView === 'active')  result = result.filter(r => (r.computedOutstanding ?? 0) > 0);
+        if (partnerView === 'cleared') result = result.filter(r => (r.computedOutstanding ?? 0) <= 0);
 
         if (searchTerm) {
             const ls = searchTerm.toLowerCase();
             result = result.filter(r =>
                 r.name?.toLowerCase().includes(ls) ||
-                r.location?.toLowerCase().includes(ls) ||
+                r.district?.toLowerCase().includes(ls) ||
+                r.taluka?.toLowerCase().includes(ls) ||
+                r.atPost?.toLowerCase().includes(ls) ||
                 r.number?.includes(searchTerm)
             );
         }
@@ -385,17 +469,41 @@ function PartnersTab() {
 
     const kpi = useMemo(() => {
         const total = retailers.length;
-        const active = retailers.filter(r => r.hasPendingOrders).length;
+        // Active = outstanding > 0; Cleared = outstanding <= 0 (matches the filter buttons)
+        const active = retailers.filter(r => (r.computedOutstanding ?? 0) > 0).length;
+        // Financial totals from retailer docs' denormalized fields.
+        // totalSales and totalPaid are maintained by all invoice/payment mutations.
+        const totalInvoiceValue = retailers.reduce((s, r) => s + Number(r.totalSales ?? 0), 0);
+        const totalPaymentsReceived = retailers.reduce((s, r) => s + Number(r.totalPaid ?? 0), 0);
+        const totalOutstanding = retailers.reduce((s, r) => s + (r.computedOutstanding ?? 0), 0);
         return {
             total, active, cleared: total - active,
             big: retailers.filter(r => r.portfolioSize === 'Big').length,
             medium: retailers.filter(r => r.portfolioSize === 'Medium').length,
             small: retailers.filter(r => r.portfolioSize === 'Small').length,
+            totalInvoiceValue,
+            totalPaymentsReceived,
+            totalOutstanding,
         };
     }, [retailers]);
 
     return (
         <div>
+            {/* Access filter indicator for sales users */}
+            {userRole === 'sales' && (assignedDistricts.length > 0 || assignedRetailers.length > 0) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', padding: '0.55rem 1rem', marginBottom: '1rem', background: 'hsla(152,60%,40%,0.07)', borderRadius: '8px', border: '1px solid hsla(152,60%,40%,0.2)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <Filter size={13} style={{ color: 'var(--primary-light)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, color: 'var(--primary-light)' }}>Access filter active:</span>
+                    {assignedDistricts.map(d => (
+                        <span key={d} style={{ padding: '0.15rem 0.55rem', borderRadius: '10px', background: 'hsla(152,60%,40%,0.15)', color: 'var(--primary-light)', fontWeight: 600, fontSize: '0.75rem' }}>{d}</span>
+                    ))}
+                    {assignedRetailers.length > 0 && (
+                        <span style={{ padding: '0.15rem 0.55rem', borderRadius: '10px', background: 'hsla(38,92%,50%,0.12)', color: '#d97706', fontWeight: 600, fontSize: '0.75rem' }}>
+                            +{assignedRetailers.length} specific retailer{assignedRetailers.length !== 1 ? 's' : ''}
+                        </span>
+                    )}
+                </div>
+            )}
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
@@ -405,53 +513,116 @@ function PartnersTab() {
                     <p style={{ color: 'var(--text-secondary)' }}>B2B wholesale partners — orders, dues and follow-ups.</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <input type="file" accept=".csv" ref={paymentsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'payments')} />
-                    <input type="file" accept=".csv" ref={followupsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'followups')} />
-                    <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Payments CSV Template" onClick={() => downloadTemplate('payments')}><Download size={13} /> T1</button>
-                    <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => paymentsFileRef.current?.click()}><FileSpreadsheet size={14} /> Payments</button>
-                    <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Followups CSV Template" onClick={() => downloadTemplate('followups')}><Download size={13} /> T2</button>
-                    <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => followupsFileRef.current?.click()}><FileSpreadsheet size={14} /> Followups</button>
+                    {!isViewOnly && (
+                        <>
+                            <input type="file" accept=".csv" ref={paymentsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'payments')} />
+                            <input type="file" accept=".csv" ref={followupsFileRef} style={{ display: 'none' }} onChange={e => handleCSVUpload(e, 'followups')} />
+                            <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Payments CSV Template" onClick={() => downloadTemplate('payments')}><Download size={13} /> T1</button>
+                            <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => paymentsFileRef.current?.click()}><FileSpreadsheet size={14} /> Payments</button>
+                            <button className="btn btn-secondary btn-sm tooltip" data-tooltip="Followups CSV Template" onClick={() => downloadTemplate('followups')}><Download size={13} /> T2</button>
+                            <button className="btn btn-secondary btn-sm" disabled={uploadingCSV} onClick={() => followupsFileRef.current?.click()}><FileSpreadsheet size={14} /> Followups</button>
+                        </>
+                    )}
                     <button className="btn btn-secondary" onClick={handlePrintUdhari} disabled={processedRetailers.length === 0}><Download size={16} /> Print</button>
                     <button className="btn btn-secondary" onClick={handleExportCSV} disabled={processedRetailers.length === 0}><Download size={16} /> {t('worklist.export_csv')}</button>
-                    <button className="btn btn-primary" onClick={() => navigate('/onboarding')}><UserPlus size={16} /> {t('worklist.add_new')}</button>
+                    {!isViewOnly && (
+                        <button className="btn btn-primary" onClick={() => navigate('/onboarding')}><UserPlus size={16} /> {t('worklist.add_new')}</button>
+                    )}
                 </div>
             </div>
 
-            {/* KPI Cards */}
+            {/* ── Financial Summary Cards (always visible) ── */}
             {!loading && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                    {[
-                        { label: 'Total Partners',    value: kpi.total,   icon: Users,        border: '#38bdf8', bg: 'rgba(56,189,248,0.07)' },
-                        { label: 'Active / Pending',  value: kpi.active,  icon: AlertCircle,  border: '#f59e0b', bg: 'rgba(245,158,11,0.07)' },
-                        { label: 'Cleared',           value: kpi.cleared, icon: CheckCircle2, border: '#10b981', bg: 'rgba(16,185,129,0.07)' },
-                        { label: 'Big Distributors',  value: kpi.big,     icon: TrendingUp,   border: '#0ea5e9', bg: 'rgba(14,165,233,0.07)' },
-                        { label: 'Medium Retailers',  value: kpi.medium,  icon: Store,        border: '#a78bfa', bg: 'rgba(167,139,250,0.07)' },
-                        { label: 'Small Retailers',   value: kpi.small,   icon: Building2,    border: '#34d399', bg: 'rgba(52,211,153,0.07)' },
-                    ].map(c => (
-                        <div key={c.label} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${c.border}`, background: c.bg }}>
+                <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                        {/* Total Invoice Value */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #38bdf8', background: 'rgba(56,189,248,0.07)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>{c.label}</p>
-                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.75rem', color: c.border }}>{c.value}</h2>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Invoice Value</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#38bdf8' }}>₹{kpi.totalInvoiceValue.toLocaleString('en-IN')}</h2>
                                 </div>
-                                <div style={{ background: `${c.border}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
-                                    <c.icon size={18} color={c.border} />
+                                <div style={{ background: '#38bdf822', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <FileText size={18} color="#38bdf8" />
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
+                        {/* Total Payments Received */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #10b981', background: 'rgba(16,185,129,0.07)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Payments Received</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#10b981' }}>₹{kpi.totalPaymentsReceived.toLocaleString('en-IN')}</h2>
+                                </div>
+                                <div style={{ background: '#10b98122', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <CheckCircle2 size={18} color="#10b981" />
+                                </div>
+                            </div>
+                        </div>
+                        {/* Total Outstanding */}
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}`, background: kpi.totalOutstanding > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.04)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Outstanding</p>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981' }}>₹{kpi.totalOutstanding.toLocaleString('en-IN')}</h2>
+                                </div>
+                                <div style={{ background: `${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <AlertCircle size={18} color={kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Additional Analytics (collapsible) ── */}
+                    <div style={{ marginBottom: '1.75rem' }}>
+                        <button
+                            onClick={() => setShowAnalytics(v => !v)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 1rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text-secondary)', fontFamily: 'inherit', fontWeight: 600, transition: 'all 0.15s' }}
+                        >
+                            {showAnalytics ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            {showAnalytics ? 'Hide' : 'Show'} Additional Analytics
+                        </button>
+                        {showAnalytics && (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginTop: '0.75rem' }}>
+                                {[
+                                    { label: 'Total Partners',   value: kpi.total,   icon: Users,        border: '#38bdf8', bg: 'rgba(56,189,248,0.07)' },
+                                    { label: 'With Outstanding', value: kpi.active,  icon: AlertCircle,  border: '#f59e0b', bg: 'rgba(245,158,11,0.07)' },
+                                    { label: 'Cleared',          value: kpi.cleared, icon: CheckCircle2, border: '#10b981', bg: 'rgba(16,185,129,0.07)' },
+                                    { label: 'Big Distributors', value: kpi.big,     icon: TrendingUp,   border: '#0ea5e9', bg: 'rgba(14,165,233,0.07)' },
+                                    { label: 'Medium Retailers', value: kpi.medium,  icon: Store,        border: '#a78bfa', bg: 'rgba(167,139,250,0.07)' },
+                                    { label: 'Small Retailers',  value: kpi.small,   icon: Building2,    border: '#34d399', bg: 'rgba(52,211,153,0.07)' },
+                                ].map(c => (
+                                    <div key={c.label} className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${c.border}`, background: c.bg }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <div>
+                                                <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>{c.label}</p>
+                                                <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.75rem', color: c.border }}>{c.value}</h2>
+                                            </div>
+                                            <div style={{ background: `${c.border}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                                <c.icon size={18} color={c.border} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Filters Bar */}
             <div className="glass-panel" style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '0.35rem' }}>
-                    {([['active', 'Active'], ['history', 'Cleared']] as const).map(([val, label]) => (
-                        <button key={val} onClick={() => setPartnerView(val)}
-                            style={{ padding: '0.4rem 1rem', borderRadius: '20px', border: `1px solid ${partnerView === val ? 'var(--primary-light)' : 'var(--surface-border)'}`, background: partnerView === val ? 'var(--primary-light)' : 'transparent', color: partnerView === val ? '#fff' : 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                            {label}
-                        </button>
-                    ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--surface-base)', padding: '0.25rem 0.75rem', borderRadius: '10px', border: `1px solid ${partnerView !== 'all' ? 'var(--primary-light)' : 'var(--surface-border)'}` }}>
+                    <Filter size={14} color={partnerView !== 'all' ? 'var(--primary-light)' : 'var(--text-secondary)'} />
+                    <select
+                        value={partnerView}
+                        onChange={e => setPartnerView(e.target.value as 'all' | 'active' | 'cleared')}
+                        style={{ background: 'transparent', color: partnerView !== 'all' ? 'var(--primary-light)' : 'var(--text-primary)', border: 'none', outline: 'none', padding: '0.35rem 0.25rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: partnerView !== 'all' ? 700 : 400 }}
+                    >
+                        <option value="all">Outstanding: All</option>
+                        <option value="active">Outstanding: Active</option>
+                        <option value="cleared">Outstanding: Cleared</option>
+                    </select>
                 </div>
                 <div style={{ flex: '1 1 240px', position: 'relative' }}>
                     <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
@@ -480,8 +651,8 @@ function PartnersTab() {
                 <span style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', marginLeft: 'auto' }}>{processedRetailers.length} partners</span>
             </div>
 
-            {/* Bulk Action Toolbar */}
-            {selectedIds.size > 0 && (
+            {/* Bulk Action Toolbar — hidden in view-only mode */}
+            {!isViewOnly && selectedIds.size > 0 && (
                 <div style={{
                     display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap',
                     padding: '0.6rem 1rem', marginBottom: '0.75rem',
@@ -524,39 +695,108 @@ function PartnersTab() {
                     <Store size={48} color="var(--surface-border)" style={{ margin: '0 auto 1rem auto', display: 'block' }} />
                     <h3>{t('worklist.no_retailers_found')}</h3>
                     <p>{t('worklist.no_retailers_found_desc')}</p>
-                    <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/onboarding')}>
-                        <UserPlus size={16} /> Onboard a Partner
-                    </button>
+                    {!isViewOnly && (
+                        <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/onboarding')}>
+                            <UserPlus size={16} /> Onboard a Partner
+                        </button>
+                    )}
                 </div>
             ) : (
-                <div style={{ marginTop: '1rem' }}>
-                    <DynamicTable
-                        moduleId="retailers"
-                        data={processedRetailers}
-                        onRowClick={(row) => navigate(`/worklist/${row.id}`)}
-                        selectedIds={selectedIds}
-                        onSelectionChange={handleSelectionChange}
-                        actionsRef={(row) => {
-                            const cd = (row as Retailer).closestCreditDays ?? null;
-                            const label = cd === null ? null
-                                : cd === 0 ? 'Due Today'
-                                : cd < 0 ? `Overdue ${Math.abs(cd)}d`
-                                : `Due in ${cd}d`;
-                            const color = cd === null ? '' : cd < 0 ? '#ef4444' : cd <= 3 ? '#f59e0b' : '#10b981';
-                            return (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                                    {label !== null ? (
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '10px', background: `${color}18`, color, border: `1px solid ${color}44`, whiteSpace: 'nowrap' }}>
-                                            <Clock size={11} /> {label}
-                                        </span>
-                                    ) : (
-                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>—</span>
+                <div className="glass-panel" style={{ overflow: 'hidden', marginTop: '0.5rem' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '2px solid var(--surface-border)', background: 'var(--surface-raised)', textAlign: 'left' }}>
+                                    {!isViewOnly && (
+                                        <th style={{ padding: '0.7rem 0.5rem 0.7rem 1rem', width: '36px' }}>
+                                            <input type="checkbox"
+                                                checked={selectedIds.size === processedRetailers.length && processedRetailers.length > 0}
+                                                onChange={e => e.target.checked ? handleSelectAll() : handleClearSelection()}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                        </th>
                                     )}
-                                    <ArrowUpRight size={20} color="var(--primary-light)" />
-                                </div>
-                            );
-                        }}
-                    />
+                                    {[
+                                        'Retailer Name', 'Contact', 'District',
+                                        ...(!isCompact ? ['Taluka', 'Village'] : []),
+                                        'Portfolio', 'Outstanding',
+                                    ].map((h, i) => (
+                                        <th key={h} style={{ padding: '0.7rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === (isCompact ? 4 : 6) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                                    ))}
+                                    {isCompact && <th style={{ width: '36px' }} />}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {processedRetailers.map(r => {
+                                    const outstanding = r.computedOutstanding ?? 0;
+                                    const isSelected = selectedIds.has(r.id);
+                                    const isExpanded = expandedRows.has(r.id);
+                                    const psBadge = ({ 'Big': { bg: '#0ea5e922', color: '#0ea5e9' }, 'Medium': { bg: '#8b5cf622', color: '#8b5cf6' }, 'Small': { bg: '#10b98122', color: '#10b981' } } as Record<string, { bg: string; color: string }>)[r.portfolioSize || ''] || { bg: 'var(--surface-raised)', color: 'var(--text-tertiary)' };
+                                    const compactCols = isCompact ? 6 : 8;
+                                    return (
+                                        <Fragment key={r.id}>
+                                            <tr
+                                                onClick={() => navigate(`/worklist/${r.id}`)}
+                                                style={{ borderBottom: '1px solid var(--surface-border)', cursor: 'pointer', background: isSelected ? 'hsla(210,100%,70%,0.07)' : 'transparent', transition: 'background 0.12s' }}
+                                                onMouseEnter={e => { e.currentTarget.style.background = isSelected ? 'hsla(210,100%,70%,0.1)' : 'var(--surface-raised)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'hsla(210,100%,70%,0.07)' : 'transparent'; }}
+                                            >
+                                                {!isViewOnly && (
+                                                    <td style={{ padding: '0.8rem 0.5rem 0.8rem 1rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                                        <input type="checkbox" checked={isSelected} onChange={e => handleSelectionChange(r.id, e.target.checked)} style={{ cursor: 'pointer' }} />
+                                                    </td>
+                                                )}
+                                                <td style={{ padding: '0.8rem 0.75rem' }}>
+                                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name || '—'}</div>
+                                                </td>
+                                                <td style={{ padding: '0.8rem 0.75rem' }} onClick={e => e.stopPropagation()}>
+                                                    {r.number
+                                                        ? <a href={`tel:${r.number}`} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--primary-light)', textDecoration: 'none', fontSize: '0.83rem' }}><Phone size={12} />{r.number}</a>
+                                                        : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                                                </td>
+                                                <td style={{ padding: '0.8rem 0.75rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{r.district || '—'}</td>
+                                                {!isCompact && <>
+                                                    <td style={{ padding: '0.8rem 0.75rem', color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>{r.taluka || '—'}</td>
+                                                    <td style={{ padding: '0.8rem 0.75rem', color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>{r.atPost || '—'}</td>
+                                                </>}
+                                                <td style={{ padding: '0.8rem 0.75rem' }}>
+                                                    <span style={{ background: psBadge.bg, color: psBadge.color, padding: '0.15rem 0.55rem', borderRadius: '99px', fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                        {r.portfolioSize || '—'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.8rem 0.75rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                                    {outstanding > 0
+                                                        ? <span style={{ color: '#ef4444', fontWeight: 700 }}>₹{outstanding.toLocaleString('en-IN')}</span>
+                                                        : <span style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 600 }}>—</span>}
+                                                </td>
+                                                {isCompact && (
+                                                    <td style={{ padding: '0.8rem 0.5rem', textAlign: 'center' }} onClick={e => toggleExpand(r.id, e)}>
+                                                        {isExpanded ? <ChevronDown size={15} color="var(--text-tertiary)" /> : <ChevronRight size={15} color="var(--text-tertiary)" />}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                            {isCompact && isExpanded && (
+                                                <tr style={{ borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+                                                    <td colSpan={compactCols} style={{ padding: '0.5rem 1rem 0.65rem 3.5rem' }}>
+                                                        <div style={{ display: 'flex', gap: '2rem', fontSize: '0.82rem' }}>
+                                                            <div>
+                                                                <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>Taluka</div>
+                                                                <div style={{ fontWeight: 500, color: 'var(--text-secondary)', marginTop: '0.1rem' }}>{r.taluka || '—'}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>Village</div>
+                                                                <div style={{ fontWeight: 500, color: 'var(--text-secondary)', marginTop: '0.1rem' }}>{r.atPost || '—'}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
 

@@ -394,6 +394,10 @@ export function AddRetailerModal({
         email: email.trim(),
         address,
         geo,
+        // Product assignment is mandatory in the manual flow — the
+        // product_assignment_pending_signup message covers onboarding.
+        // Setting this prevents a duplicate retailer_onboarding message.
+        skipOnboardingNotification: true,
       });
 
       const trimmedEmail = email.trim().toLowerCase();

@@ -49,6 +49,13 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
       ],
       theme: ThemeData(
         useMaterial3: true,
+        // Bundled Roboto (see pubspec.yaml) for every Text/TextStyle that
+        // doesn't set its own fontFamily — without this, iOS silently
+        // substitutes San Francisco for unstyled text while AppTextStyles'
+        // explicit 'Roboto' now resolves correctly, so screens mixing both
+        // (most of them) would still show two different typefaces side by
+        // side with mismatched line-heights.
+        fontFamily: 'Roboto',
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.primary,
           primary: AppColors.primary,
@@ -57,7 +64,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           error: AppColors.error,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.topBarStart,
           foregroundColor: Colors.white,
           elevation: 0,
           // Soft shadow that only appears once content scrolls beneath the bar,
@@ -99,9 +106,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,
@@ -113,6 +118,24 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
             borderRadius: BorderRadius.circular(12),
           ),
           color: Colors.white,
+        ),
+        // Floating rounded snackbars app-wide — every confirmation/error toast
+        // (add to cart, review posted, OTP errors…) picks this up for free.
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF2A2A2A),
+          contentTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+            fontFamily: 'Roboto',
+          ),
+          actionTextColor: AppColors.secondary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          elevation: 4,
         ),
       ),
       routerConfig: router,
