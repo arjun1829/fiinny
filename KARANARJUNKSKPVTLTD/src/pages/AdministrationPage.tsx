@@ -27,14 +27,14 @@ type AdminTab =
     | 'roles';
 
 const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'retailers',         label: 'Manage Retailers',   icon: <UserCog size={16} /> },
-    { id: 'schema-builder',    label: 'UI Layout Builder',  icon: <Database size={16} /> },
     { id: 'users',             label: 'Manage Users',       icon: <Users size={16} /> },
+    { id: 'roles',             label: 'Role Matrix',        icon: <ShieldAlert size={16} /> },
+    { id: 'retailers',         label: 'Manage Retailers',   icon: <UserCog size={16} /> },
     { id: 'store',             label: 'Manage Store',       icon: <Store size={16} /> },
     { id: 'manufacturers',     label: 'Manufacturers',      icon: <Factory size={16} /> },
     { id: 'invoice-templates', label: 'Invoice Templates',  icon: <Layers size={16} /> },
     { id: 'invoice-branding',  label: 'Invoice Branding',   icon: <Palette size={16} /> },
-    { id: 'roles',             label: 'Role Matrix',        icon: <ShieldAlert size={16} /> },
+    { id: 'schema-builder',    label: 'UI Layout Builder',  icon: <Database size={16} /> },
 ];
 // ─── Scroll Arrow Button ──────────────────────────────────────────────────────
 
