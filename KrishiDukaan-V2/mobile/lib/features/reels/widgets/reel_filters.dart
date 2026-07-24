@@ -8,6 +8,15 @@ import 'package:flutter/material.dart';
 /// which maps the same ids to CSS filters). Burning them in would require
 /// shipping ffmpeg (~60MB APK); trim is the only edit applied to the file
 /// itself (via video_compress's native startTime/duration).
+/// Hard ceiling on reel length, enforced at compress time in
+/// ReelUploadScreen._upload.
+///
+/// This is a delivery-cost constant as much as a product one: every extra
+/// second is bytes that every future viewer downloads before playback starts.
+/// Raising it makes the feed slower and the Storage egress bill larger, so
+/// change it deliberately.
+const int maxReelSeconds = 90;
+
 class ReelFilter {
   final String id;
   final String label;

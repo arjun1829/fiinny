@@ -6,10 +6,14 @@ import type { Listing } from '@/types/listing';
 import { TAG_CONFIG, CITY_COLOR_CLASS, TYPE_ICON } from '@/constants/listing-display';
 import { formatRelativeTime } from '@/utils/format-relative-time';
 import { haversineDistanceKm, type LatLng } from '@/utils/haversine';
+import { useState } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useUserLocation } from '@/features/map/hooks/useUserLocation';
 import { recordListingView } from '@/features/saved-history/lib/saved-history-firestore';
 import { useSavedListings } from '@/features/saved-history/hooks/useSavedListings';
+import { useContactReveal } from '@/features/subscription/hooks/useContactReveal';
+import { UpgradeModal } from '@/features/subscription/components/UpgradeModal';
+import { maskPhone } from '@/features/subscription/lib/mask-phone';
 import { LoginModal } from '@/features/auth/components/LoginModal';
 import { ImageCarousel } from './ImageCarousel';
 
@@ -35,13 +39,26 @@ interface ListingDetailProps {
 //     the listing document — that's server-side-trigger territory
 //     (analogous to KrishiDukaan's Cloud Functions pattern) which is out
 //     of scope for Phase 10.
-//  2. Paywall/reveal gating is still deferred to Phase 11, same as
-//     ListingCard — contact actions render in the "already revealed" state.
+//  2. Paywall/reveal gating: this component owns its own useContactReveal
+//     instance (same independence useSavedListings/useRequireAuth already
+//     have here) rather than receiving it as a prop — ListingDetail is
+//     reached both from the intercepting-route modal (sibling of
+//     ListingGrid, no shared ancestor) and the standalone /listings/[id]
+//     page, so there's no single parent to lift this state into.
 export function ListingDetail({ listing, onClose }: ListingDetailProps) {
   const { user } = useAuth();
   const userLocation = useUserLocation();
   const { savedIds, toggleSave, loginModalOpen, loginModalMessage, closeLoginModal } = useSavedListings();
   const isSaved = savedIds.has(listing.id);
+  const {
+    isRevealed,
+    reveal,
+    loginModalOpen: revealLoginModalOpen,
+    loginModalMessage: revealLoginModalMessage,
+    closeLoginModal: closeRevealLoginModal,
+  } = useContactReveal();
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const contactRevealed = isRevealed(listing.id);
 
   useEffect(() => {
     if (user) {
@@ -135,14 +152,24 @@ export function ListingDetail({ listing, onClose }: ListingDetailProps) {
         </div>
 
         {listing.contact_phone ? (
-          <div className="flex gap-[10px]">
-            <button type="button" className="flex-1 rounded-2xl bg-brand py-[13px] text-[15px] font-bold text-white">
-              📞 {listing.contact_phone}
+          contactRevealed ? (
+            <div className="flex gap-[10px]">
+              <button type="button" className="flex-1 rounded-2xl bg-brand py-[13px] text-[15px] font-bold text-white">
+                📞 {listing.contact_phone}
+              </button>
+              <button type="button" className="flex-1 rounded-2xl bg-brand-light py-[13px] text-[15px] font-bold text-brand-2">
+                💬 WhatsApp
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => reveal(listing.id, () => setUpgradeModalOpen(true))}
+              className="w-full rounded-2xl bg-brand-light py-[13px] text-[15px] font-bold text-brand-2"
+            >
+              🔒 {maskPhone(listing.contact_phone)} · Reveal Contact
             </button>
-            <button type="button" className="flex-1 rounded-2xl bg-brand-light py-[13px] text-[15px] font-bold text-brand-2">
-              💬 WhatsApp
-            </button>
-          </div>
+          )
         ) : (
           <button
             type="button"
@@ -155,6 +182,8 @@ export function ListingDetail({ listing, onClose }: ListingDetailProps) {
       </div>
 
       <LoginModal open={loginModalOpen} onClose={closeLoginModal} message={loginModalMessage} />
+      <LoginModal open={revealLoginModalOpen} onClose={closeRevealLoginModal} message={revealLoginModalMessage} />
+      <UpgradeModal open={upgradeModalOpen} onClose={() => setUpgradeModalOpen(false)} />
     </div>
   );
 }

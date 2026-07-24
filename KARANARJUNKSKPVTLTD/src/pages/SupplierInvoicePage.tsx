@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Save, Printer, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, Printer, Loader2, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   getDoc, getDocs, addDoc, updateDoc, query, where, orderBy, runTransaction, serverTimestamp,
 } from 'firebase/firestore';
@@ -8,6 +8,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { syncSupplierTotals } from '../utils/supplierLedgerSync';
+import { postSupplierInvoiceToInventory, type PostedLine } from '../utils/inventoryPosting';
 import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { fmtINR } from '../utils/gstCalculator';
 import { calcPurchaseLine, calcPurchaseTotals, rateWithGstToWithoutGst, rateWithoutGstToWithGst } from '../utils/purchaseInvoiceCalc';
@@ -99,12 +100,15 @@ export default function SupplierInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [branding, setBranding] = useState<{ businessName?: string; address?: string; gstin?: string; contact?: string; email?: string; signatureName?: string } | null>(null);
+  const [branding, setBranding] = useState<{ businessName?: string; address?: string; gstin?: string; contact?: string; email?: string; signatureName?: string; signatureUrl?: string } | null>(null);
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [priceList, setPriceList] = useState<PriceListItem[]>([]);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string>(invoiceIdParam);
 
   const autoGenIdRef = useRef<string>('');
+  // Stock already posted to inventory by a prior save — reversed before re-posting
+  // so editing an invoice never double-counts stock.
+  const prevPostedRef = useRef<PostedLine[]>([]);
 
   const [supplier, setSupplier] = useState<SupplierDoc>({});
   const [meta, setMeta] = useState({

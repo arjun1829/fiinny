@@ -256,12 +256,12 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
       }
       if (editing) {
         await updateDoc(getTenantDoc(db, tenantId, 'purchaseOrders', editing.id), {
-          poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
+          supplierId, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
           notes: form.notes.trim(), lines, totalAmount: total, taxableValue: total, updatedAt: serverTimestamp(),
         });
       } else {
         await addDoc(getTenantCollection(db, tenantId, 'purchaseOrders'), {
-          supplierName, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
+          supplierId, supplierName, poNumber: form.poNumber.trim(), internalPurchaseId: internalId, poDate: form.poDate, status: form.status,
           notes: form.notes.trim(), lines, totalAmount: total, taxableValue: total,
           createdAt: serverTimestamp(), createdBy: currentUser?.email ?? '',
         });

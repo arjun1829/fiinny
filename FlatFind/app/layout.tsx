@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import { Fraunces, Outfit } from 'next/font/google';
 import { ToastProvider } from '@/components/ui';
 import { AuthProvider } from '@/providers/auth-provider';
+import { ProfileCompletionGuard } from '@/features/auth/components/ProfileCompletionGuard';
 import { Header } from '@/components/layout/Header';
 import { TabBar } from '@/components/layout/TabBar';
 import { MainContainer } from '@/components/layout/MainContainer';
@@ -49,12 +51,16 @@ export default function RootLayout({
       <body>
         <ToastProvider>
           <AuthProvider>
-            <Header />
-            <TabBar />
-            <MainContainer>{children}</MainContainer>
-            {modal}
+            <ProfileCompletionGuard>
+              <Header />
+              <TabBar />
+              <MainContainer>{children}</MainContainer>
+              {modal}
+            </ProfileCompletionGuard>
           </AuthProvider>
         </ToastProvider>
+        {/* Razorpay Checkout — loaded once, app-wide, lazily (not needed until a user opens UpgradeModal). window.Razorpay is declared in useRazorpayCheckout.ts. */}
+        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       </body>
     </html>
   );

@@ -19,8 +19,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import SupplierFormModal, { type SupplierLike } from '../components/SupplierFormModal';
 import PurchaseOrderModal, { type POForEdit } from '../components/PurchaseOrderModal';
-import PaymentModal, { type PaymentForEdit } from '../components/PaymentModal';
+import PaymentModal, { type PaymentForEdit, type ApplicableDoc } from '../components/PaymentModal';
 import { generatePurchaseOrderPDF } from '../utils/purchaseOrderPDF';
+import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
+import { downloadPaymentReceiptPDF, downloadSupplierStatementPDF } from '../utils/invoiceEngine';
+import type { InvoiceTemplateBranding } from '../types/invoiceTemplate';
 
 interface Supplier extends SupplierLike {
   id: string;
@@ -62,9 +65,21 @@ interface Payment {
   paymentDate?: string;
   paymentMethod?: string;
   accountDetails?: { accountName?: string; transactionRef?: string };
+  bankDetails?: {
+    holderName?: string;
+    beneficiaryName?: string;
+    payerAccountNumber?: string;
+    beneficiaryAccountNumber?: string;
+    ifscCode?: string;
+    cbsTransactionId?: string;
+    statusRemark?: string;
+  };
   notes?: string;
   linkedOrderIds?: string[];
   unallocatedAmount?: number;
+  linkedInvoiceId?: string;
+  linkedInvoiceNumber?: string;
+  linkedInvoiceType?: 'po' | 'invoice';
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentType?: string;
@@ -135,6 +150,16 @@ const poDateVal = (po: PO) => po.poDate ?? po.date ?? po.createdAt;
 const pmtMode = (p: Payment) => p.paymentMethod || p.mode || p.paymentMode || 'Payment';
 const pmtRef = (p: Payment) => p.accountDetails?.transactionRef || p.reference || p.receiptNo || '';
 const pmtEffectiveDate = (p: Payment) => p.paymentDate ?? p.date ?? p.createdAt;
+const pmtDateStr = (p: Payment): string | undefined => {
+  const v = pmtEffectiveDate(p);
+  if (!v) return undefined;
+  if (typeof v === 'string') return v;
+  if (typeof (v as any).toMillis === 'function') {
+    const ms = (v as any).toMillis();
+    if (!isNaN(ms)) return new Date(ms).toISOString().slice(0, 10);
+  }
+  return undefined;
+};
 
 const statusColor = (s?: string): string =>
   ({ received: '#10b981', pending: '#f59e0b', partial: '#38bdf8', cancelled: '#ef4444' } as Record<string, string>)[s ?? 'received'] || '#94a3b8';
@@ -185,6 +210,7 @@ export default function SupplierLedgerDetailPage() {
   // Filters
   const [poSearch, setPoSearch] = useState('');
   const [pmtSearch, setPmtSearch] = useState('');
+  const [invSearch, setInvSearch] = useState('');
 
   // Expanded PO rows
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -196,6 +222,9 @@ export default function SupplierLedgerDetailPage() {
   // Payment modal (add/edit) — handled by the shared PaymentModal.
   // undefined = closed, null = add, Payment = edit.
   const [pmtEditing, setPmtEditing] = useState<PaymentForEdit | null | undefined>(undefined);
+
+  // Invoice branding — fetched lazily on first PDF/WhatsApp action, then cached.
+  const [branding, setBranding] = useState<InvoiceTemplateBranding | null>(null);
 
   // Comments + voice
   const [newComment, setNewComment] = useState('');
@@ -222,20 +251,43 @@ export default function SupplierLedgerDetailPage() {
       if (!supSnap.exists()) { setError('Supplier not found'); setLoading(false); return; }
       const sup = { id: supSnap.id, outstandingBalance: 0, ...supSnap.data() } as Supplier;
 
-      const [posSnap, pmtsSnap, cmtsSnap, tasksSnap, invSnap] = await Promise.all([
+      // Purchase Orders and Payments were historically joined to a supplier by
+      // the mutable `supplierName` string rather than the stable doc id, so
+      // renaming a supplier silently orphaned their POs/payments from view
+      // (the records were never deleted — just no longer matched). Query by
+      // BOTH supplierId and the current name and merge, so nothing disappears
+      // on a rename; the opportunistic backfill below heals it permanently.
+      const [posByIdSnap, posByNameSnap, pmtsByIdSnap, pmtsByNameSnap, cmtsSnap, tasksSnap, invSnap] = await Promise.all([
+        getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierId', '==', id))),
         getDocs(query(getTenantCollection(db, tenantId, 'purchaseOrders'), where('supplierName', '==', sup.name))),
+        getDocs(query(getTenantCollection(db, tenantId, 'supplierPayments'), where('supplierId', '==', id))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierPayments'), where('supplierName', '==', sup.name))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierComments'), where('supplierId', '==', id))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierTasks'), where('supplierId', '==', id))),
         getDocs(query(getTenantCollection(db, tenantId, 'supplierInvoices'), where('supplierId', '==', id))),
       ]);
 
-      const posList = posSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as PO))
+      const posDocsMap = new Map<string, PO>();
+      posByIdSnap.docs.forEach(d => posDocsMap.set(d.id, { id: d.id, ...d.data() } as PO));
+      posByNameSnap.docs.forEach(d => {
+        if (!posDocsMap.has(d.id)) posDocsMap.set(d.id, { id: d.id, ...d.data() } as PO);
+        if (!(d.data() as any).supplierId) {
+          updateDoc(getTenantDoc(db, tenantId, 'purchaseOrders', d.id), { supplierId: id }).catch(() => {});
+        }
+      });
+      const pmtDocsMap = new Map<string, Payment>();
+      pmtsByIdSnap.docs.forEach(d => pmtDocsMap.set(d.id, { id: d.id, ...d.data() } as Payment));
+      pmtsByNameSnap.docs.forEach(d => {
+        if (!pmtDocsMap.has(d.id)) pmtDocsMap.set(d.id, { id: d.id, ...d.data() } as Payment);
+        if (!(d.data() as any).supplierId) {
+          updateDoc(getTenantDoc(db, tenantId, 'supplierPayments', d.id), { supplierId: id }).catch(() => {});
+        }
+      });
+
+      const posList = Array.from(posDocsMap.values())
         .sort((a, b) => sortVal(poDateVal(b)) - sortVal(poDateVal(a)));
-      const pmtsList = pmtsSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as Payment))
-        .sort((a, b) => sortVal(b.date ?? b.createdAt) - sortVal(a.date ?? a.createdAt));
+      const pmtsList = Array.from(pmtDocsMap.values())
+        .sort((a, b) => sortVal(pmtEffectiveDate(b)) - sortVal(pmtEffectiveDate(a)));
       const cmtsList = cmtsSnap.docs
         .map(d => ({ id: d.id, ...d.data() } as Comment))
         .sort((a, b) => sortVal(b.createdAt) - sortVal(a.createdAt));
@@ -459,6 +511,25 @@ export default function SupplierLedgerDetailPage() {
     );
   }, [payments, pmtSearch]);
 
+  const filteredInvoices = useMemo(() => {
+    const q = invSearch.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter(inv =>
+      (inv.internalPurchaseId ?? '').toLowerCase().includes(q) ||
+      (inv.supplierInvoiceNumber ?? '').toLowerCase().includes(q) ||
+      (inv.invoiceDate ?? '').toLowerCase().includes(q) ||
+      (inv.status ?? '').toLowerCase().includes(q) ||
+      (inv.taxMode ?? '').toLowerCase().includes(q) ||
+      String(inv.netAmount ?? '').includes(q) ||
+      // Match on what was actually bought — product name, company or batch.
+      (Array.isArray((inv as any).lines) ? (inv as any).lines.some((l: any) =>
+        (l?.description ?? '').toLowerCase().includes(q) ||
+        (l?.mfgCompany ?? '').toLowerCase().includes(q) ||
+        (l?.batchNo ?? '').toLowerCase().includes(q)
+      ) : false)
+    );
+  }, [invoices, invSearch]);
+
   const analytics = useMemo(() => {
     const invoiced = pos.reduce((s, p) => s + poAmount(p), 0);
     const paid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -483,11 +554,81 @@ export default function SupplierLedgerDetailPage() {
   const statementRows = useMemo(() => {
     const entries = [
       ...pos.map(po => ({ date: poDateVal(po), particulars: `PO ${po.poNumber ?? po.id.slice(0, 6)}${po.notes ? ' — ' + po.notes : ''}`, debit: poAmount(po), credit: 0 })),
-      ...payments.map(p => ({ date: pmtEffectiveDate(p) as any, particulars: `Payment · ${pmtMode(p)}${pmtRef(p) ? ' ' + pmtRef(p) : ''}`, debit: 0, credit: Number(p.amount) || 0 })),
+      ...invoices.map(inv => ({ date: (inv.invoiceDate ?? inv.createdAt) as any, particulars: `Invoice ${inv.supplierInvoiceNumber || inv.internalPurchaseId || inv.id.slice(0, 6)}`, debit: Number(inv.netAmount) || 0, credit: 0 })),
+      ...payments.map(p => ({ date: pmtEffectiveDate(p) as any, particulars: `Payment · ${pmtMode(p)}${pmtRef(p) ? ' ' + pmtRef(p) : ''}${p.linkedInvoiceNumber ? ' → ' + p.linkedInvoiceNumber : ''}`, debit: 0, credit: Number(p.amount) || 0 })),
     ].sort((a, b) => sortVal(a.date) - sortVal(b.date));
     let bal = 0;
     return entries.map(e => { bal += e.debit - e.credit; return { ...e, balance: bal }; });
-  }, [pos, payments]);
+  }, [pos, invoices, payments]);
+
+  // Purchase Orders + Supplier Invoices a payment can optionally be tagged against.
+  const applicableDocs = useMemo<ApplicableDoc[]>(() => [
+    ...pos.map(po => ({ id: po.id, type: 'po' as const, label: `PO ${po.poNumber ?? po.id.slice(0, 6)}`, amount: poAmount(po) })),
+    ...invoices.map(inv => ({ id: inv.id, type: 'invoice' as const, label: inv.supplierInvoiceNumber || inv.internalPurchaseId || inv.id.slice(0, 8), amount: Number(inv.netAmount) || 0 })),
+  ], [pos, invoices]);
+
+  const getBranding = async (): Promise<InvoiceTemplateBranding> => {
+    if (branding) return branding;
+    if (!tenantId) return { businessName: '', address: '' };
+    const b = await fetchInvoiceBranding(tenantId);
+    setBranding(b);
+    return b;
+  };
+
+  const handleDownloadReceipt = async (pmt: Payment) => {
+    if (!supplier) return;
+    const b = await getBranding();
+    downloadPaymentReceiptPDF(b, {
+      paymentId: pmt.paymentId,
+      amount: pmt.amount,
+      paymentDate: pmtDateStr(pmt),
+      paymentMethod: pmtMode(pmt),
+      accountDetails: { accountName: pmt.accountDetails?.accountName || '', transactionRef: pmtRef(pmt) },
+      bankDetails: pmt.bankDetails,
+      notes: pmt.notes,
+      linkedInvoiceNumber: pmt.linkedInvoiceNumber,
+    }, supplier);
+  };
+
+  const handleWhatsAppReceipt = async (pmt: Payment) => {
+    if (!supplier) return;
+    const phone = firstPhone(supplier.phone);
+    if (!phone) { alert('No phone number on file for this supplier.'); return; }
+    await handleDownloadReceipt(pmt);
+    const msg = encodeURIComponent(
+      `Payment Receipt\n\n` +
+      `To: ${supplier.name}\n` +
+      `Receipt No: ${pmt.paymentId || '—'}\n` +
+      `Date: ${fmtDate(pmtEffectiveDate(pmt) as any)}\n` +
+      `Amount: Rs. ${Number(pmt.amount || 0).toLocaleString('en-IN')}\n` +
+      `Method: ${pmtMode(pmt)}${pmtRef(pmt) ? ' · ' + pmtRef(pmt) : ''}\n` +
+      (pmt.linkedInvoiceNumber ? `Against: ${pmt.linkedInvoiceNumber}\n` : '') +
+      `\nPlease find the receipt PDF attached (just downloaded).`
+    );
+    window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+  };
+
+  const handleDownloadStatement = async () => {
+    if (!supplier) return;
+    const b = await getBranding();
+    downloadSupplierStatementPDF(b, supplier, statementRows, (v: any) => fmtDate(v));
+  };
+
+  const handleWhatsAppStatement = async () => {
+    if (!supplier) return;
+    const phone = firstPhone(supplier.phone);
+    if (!phone) { alert('No phone number on file for this supplier.'); return; }
+    await handleDownloadStatement();
+    const msg = encodeURIComponent(
+      `Statement of Account\n\n` +
+      `Party: ${supplier.name}\n` +
+      `Total Invoiced: Rs. ${(supplier.totalInvoiced ?? 0).toLocaleString('en-IN')}\n` +
+      `Total Paid: Rs. ${(supplier.totalPaid ?? 0).toLocaleString('en-IN')}\n` +
+      `Outstanding: Rs. ${supplier.outstandingBalance.toLocaleString('en-IN')}\n\n` +
+      `Please find the statement PDF attached (just downloaded).`
+    );
+    window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+  };
 
   const printStatement = () => {
     if (!supplier) return;
@@ -755,9 +896,17 @@ export default function SupplierLedgerDetailPage() {
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Account Statement</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({statementRows.length} entries)</span>
             </div>
-            <button className="btn btn-secondary" onClick={printStatement} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
-              <Printer size={13} /> Print
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={printStatement} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
+                <Printer size={13} /> Print
+              </button>
+              <button className="btn btn-secondary" onClick={handleDownloadStatement} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
+                <Download size={13} /> Download PDF
+              </button>
+              <button className="btn" onClick={handleWhatsAppStatement} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem', background: '#25D366', color: '#fff' }}>
+                <MessageCircle size={13} /> Share via WhatsApp
+              </button>
+            </div>
           </div>
           {(
             <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
@@ -926,6 +1075,9 @@ export default function SupplierLedgerDetailPage() {
                       {pmtRef(pmt) && <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>· {pmtRef(pmt)}</span>}
                     </div>
                     {pmt.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.15rem' }}>{pmt.notes}</div>}
+                    {pmt.linkedInvoiceNumber && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--primary-light)', marginTop: '0.15rem' }}>Against: {pmt.linkedInvoiceNumber}</div>
+                    )}
                     {pmt.attachmentUrl && (
                       <a href={pmt.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem', textDecoration: 'none' }}>
                         <Paperclip size={11} /> {pmt.attachmentName || 'View proof'}
@@ -937,6 +1089,8 @@ export default function SupplierLedgerDetailPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--primary-light)' }}>{inr(pmt.amount)}</div>
+                    {iconBtn(<Download size={14} />, () => handleDownloadReceipt(pmt), 'Download receipt', 'var(--primary-light)')}
+                    {iconBtn(<MessageCircle size={14} />, () => handleWhatsAppReceipt(pmt), 'Share receipt via WhatsApp', '#25D366')}
                     {iconBtn(<Pencil size={14} />, () => openEditPayment(pmt), 'Edit payment', 'var(--primary-light)')}
                     {iconBtn(<Trash2 size={14} />, () => handleDeletePayment(pmt), 'Delete payment', '#ff4d4f')}
                   </div>
@@ -956,18 +1110,26 @@ export default function SupplierLedgerDetailPage() {
               <span style={{ fontWeight: 700, fontSize: '1rem' }}>Supplier Invoices</span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({invoices.length})</span>
             </div>
-            <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
-              <Plus size={13} /> New Invoice
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={13} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                <input className="input-field" placeholder="Filter invoices / products…" value={invSearch} onChange={e => setInvSearch(e.target.value)} style={{ paddingLeft: '1.9rem', height: '32px', fontSize: '0.8rem', width: '200px', margin: 0 }} />
+              </div>
+              <button className="btn btn-secondary" onClick={() => navigate(`/supplier-invoice?supplierId=${supplier.id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem' }}>
+                <Plus size={13} /> New Invoice
+              </button>
+            </div>
           </div>
 
           <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {invoices.length === 0 && (
+            {filteredInvoices.length === 0 && (
               <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', padding: '0.75rem 0' }}>
-                No supplier invoices yet. Click “New Invoice” to create one.
+                {invoices.length === 0
+                  ? 'No supplier invoices yet. Click “New Invoice” to create one.'
+                  : 'No invoices match your filter.'}
               </div>
             )}
-            {invoices.map(inv => (
+            {filteredInvoices.map(inv => (
               <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)', gap: '1rem', flexWrap: 'wrap', borderLeft: '3px solid #8b5cf6' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1226,7 +1388,7 @@ export default function SupplierLedgerDetailPage() {
       {/* Add / Edit PO Modal — shared PurchaseOrderModal, mounted only when open */}
       {poEditing !== undefined && supplier && (
         <PurchaseOrderModal
-          supplierId={id}
+          supplierId={supplier.id}
           supplierName={supplier.name}
           editing={poEditing}
           onClose={() => setPoEditing(undefined)}
@@ -1241,6 +1403,7 @@ export default function SupplierLedgerDetailPage() {
           supplierName={supplier.name}
           outstandingBalance={supplier.outstandingBalance}
           editing={pmtEditing}
+          applicableDocs={applicableDocs}
           onClose={() => setPmtEditing(undefined)}
           onSaved={() => { setPmtEditing(undefined); load(true); }}
         />

@@ -4,6 +4,7 @@ import type { Listing } from '@/types/listing';
 import { TAG_CONFIG, CITY_COLOR_CLASS, TYPE_ICON } from '@/constants/listing-display';
 import { formatRelativeTime } from '@/utils/format-relative-time';
 import { haversineDistanceKm, type LatLng } from '@/utils/haversine';
+import { maskPhone } from '@/features/subscription/lib/mask-phone';
 import { ImageCarousel } from './ImageCarousel';
 
 const NEW_WINDOW_MS = 2 * 60 * 60 * 1000; // matches isNew in buildCard()
@@ -15,6 +16,10 @@ interface ListingCardProps {
   userLocation?: LatLng | null;
   isSaved?: boolean;
   onToggleSave?: () => void;
+  /** True when this listing's contact should show in full — Pro or already-revealed; useContactReveal.isRevealed() folds both cases in. */
+  isRevealed?: boolean;
+  /** Requests a reveal for this card's listing — gates through login/cap, see useContactReveal. */
+  onRevealContact?: () => void;
 }
 
 // Mirrors .card / buildCard() (index (1).html, main IIFE). Structural/visual
@@ -31,11 +36,18 @@ interface ListingCardProps {
 //    app/@modal/(.)listings/[id]/page.tsx and app/listings/[id]/page.tsx.
 //
 // Paywall/reveal gating (isContactLocked, S.freeLeft, .lock-inline,
-// cardReveal/cardRevealWA) is still NOT here — that logic depends on
-// subscription state that doesn't exist until Phase 11. Every card below
-// renders in the "already revealed" state (the original's
-// `S.isPaid || S.contactsUsed.has(l.id)` branch).
-export function ListingCard({ listing, index, userLocation, isSaved = false, onToggleSave }: ListingCardProps) {
+// cardReveal/cardRevealWA) is now wired via useContactReveal, instantiated
+// once in ListingGrid and passed down as isPro/isRevealed/onRevealContact —
+// same prop-threading shape isSaved/onToggleSave already use for saves.
+export function ListingCard({
+  listing,
+  index,
+  userLocation,
+  isSaved = false,
+  onToggleSave,
+  isRevealed = false,
+  onRevealContact,
+}: ListingCardProps) {
   const tag = TAG_CONFIG[listing.tag];
   const isNew = Date.now() - new Date(listing.created).getTime() < NEW_WINDOW_MS;
   const isHot = listing.views > HOT_VIEW_THRESHOLD;
@@ -107,18 +119,30 @@ export function ListingCard({ listing, index, userLocation, isSaved = false, onT
           </div>
         </div>
 
-        {/* Phase 4 stand-in for the full paywall/reveal cactions — see file header.
-            preventDefault+stopPropagation for the same reason as the save button above. */}
+        {/* preventDefault+stopPropagation for the same reason as the save button above — contact actions must not trigger the card's own navigation. */}
         <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
           {listing.contact_phone ? (
-            <>
-              <button type="button" className="flex-1 rounded-[10px] bg-brand-light px-2 py-[9px] text-[12.5px] font-bold text-brand-2">
-                📞 {listing.contact_phone}
+            isRevealed ? (
+              <>
+                <button type="button" className="flex-1 rounded-[10px] bg-brand-light px-2 py-[9px] text-[12.5px] font-bold text-brand-2">
+                  📞 {listing.contact_phone}
+                </button>
+                <button type="button" className="flex-1 rounded-[10px] bg-[#dcfce7] px-2 py-[9px] text-[12.5px] font-bold text-[#166534]">
+                  💬 WhatsApp
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRevealContact?.();
+                }}
+                className="flex-1 rounded-[10px] bg-brand-light px-2 py-[9px] text-[12.5px] font-bold text-brand-2"
+              >
+                🔒 {maskPhone(listing.contact_phone)} · Reveal
               </button>
-              <button type="button" className="flex-1 rounded-[10px] bg-[#dcfce7] px-2 py-[9px] text-[12.5px] font-bold text-[#166534]">
-                💬 WhatsApp
-              </button>
-            </>
+            )
           ) : (
             <button type="button" className="flex-1 rounded-[10px] bg-brand-light px-2 py-[9px] text-[12.5px] font-bold text-brand-2">
               🔗 View Original Post

@@ -483,7 +483,7 @@ function AppRoutes() {
       <Route path="/worklist/:id" element={<ProtectedRoute requireRole={['admin', 'analyst', 'sales', 'retailer']} appScreen="worklist"><WorklistDetailsPage /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="inventory"><InventoryPage /></ProtectedRoute>} />
       <Route path="/administration" element={<ProtectedRoute requireRole={['admin']} appScreen="admin"><AdministrationPage /></ProtectedRoute>} />
-      <Route path="/digital-khata" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><DigitalKhataPage /></ProtectedRoute>} />
+      <Route path="/digital-khata" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="khata"><DigitalKhataPage /></ProtectedRoute>} />
       <Route path="/sales-order/new" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SalesOrderPage /></ProtectedRoute>} />
       <Route path="/sales-order/:id" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="worklist"><SalesOrderPage /></ProtectedRoute>} />
       <Route path="/dispatch" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="dispatch"><DispatchBoardPage /></ProtectedRoute>} />

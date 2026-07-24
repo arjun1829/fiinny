@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { useAuth } from '@/providers/auth-provider';
 import { LoginModal } from '@/features/auth/components/LoginModal';
+import { getProStatus } from '@/types/subscription';
+import { ProBadge } from '@/features/subscription/components/ProBadge';
+import { UpgradeModal } from '@/features/subscription/components/UpgradeModal';
 
 // Mirrors #hdr / .hdr-inner / .logo / .hdr-right (index (1).html, HEADER
 // block) — sticky top bar with logo, +Post, Profile, and Go Pro.
@@ -30,10 +33,12 @@ import { LoginModal } from '@/features/auth/components/LoginModal';
 // Go Pro is still stubbed — Phase 11 (payments) wires it to the real
 // upgrade flow.
 export function Header() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const phone = user?.phoneNumber?.replace('+91', '') ?? '';
   const avatarGlyph = phone.slice(-2);
+  const { isPro } = getProStatus(profile);
 
   return (
     <header id="hdr" className="sticky top-0 z-[300] border-b-[1.5px] border-border bg-white">
@@ -79,14 +84,23 @@ export function Header() {
             </button>
           )}
 
-          {/* Phase 11 (payments) wires this to the real upgrade flow. */}
-          <Button variant="brand" size="sm" className="mobile:px-3 mobile:py-[7px] mobile:text-xs" disabled>
-            ⚡ Go Pro
-          </Button>
+          {isPro ? (
+            <ProBadge />
+          ) : (
+            <Button
+              variant="brand"
+              size="sm"
+              className="mobile:px-3 mobile:py-[7px] mobile:text-xs"
+              onClick={() => (user ? setUpgradeOpen(true) : setLoginOpen(true))}
+            >
+              ⚡ Go Pro
+            </Button>
+          )}
         </div>
       </div>
 
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} message="Login to view your profile." />
+      <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
     </header>
   );
 }
