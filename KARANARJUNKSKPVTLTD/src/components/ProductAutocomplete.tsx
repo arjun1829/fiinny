@@ -6,6 +6,13 @@ export interface ProductLite {
   name: string;
   baseUnit?: string;
   unit?: string;
+  // Purchase invoice fields
+  purchasePrice?: number;
+  gstPct?: number;
+  retailerPrice?: number;
+  boxCapacity?: number;
+  unitSize?: number;
+  unitMeasure?: string;
 }
 
 interface ProductAutocompleteProps {
