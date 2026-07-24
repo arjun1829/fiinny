@@ -5,7 +5,7 @@ import {
   X, Loader2, AlertCircle, IndianRupee, Package, ChevronDown, ChevronRight,
   MessageSquare, Plus, Truck, CreditCard, CalendarDays, Trash2, Search,
   MessageCircle, Mic, Printer, CheckSquare, FileText, Square, Receipt, Paperclip,
-  Download,
+  Download, Tag, Edit2,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -87,6 +87,16 @@ interface Task {
   createdAt?: Timestamp;
 }
 
+/** One item in a supplier-specific price list. */
+interface PriceListItem {
+  id: string;
+  productName: string;
+  productId?: string;
+  packaging: string;
+  purchaseRate: number;
+  gstPct: number;
+}
+
 /** A saved Supplier Purchase Invoice (from the supplierInvoices collection). */
 interface SupplierInvoice {
   id: string;
@@ -160,8 +170,8 @@ export default function SupplierLedgerDetailPage() {
   // Supplier edit — handled by the shared SupplierFormModal in edit mode
   const [editMode, setEditMode] = useState(false);
 
-  // Account Statement / Purchase Orders / Payments / Supplier Invoices — single tabbed view.
-  const [activeTab, setActiveTab] = useState<'account' | 'purchaseOrders' | 'payments' | 'invoices'>('purchaseOrders');
+  // Account Statement / Purchase Orders / Payments / Supplier Invoices / Price List — single tabbed view.
+  const [activeTab, setActiveTab] = useState<'account' | 'purchaseOrders' | 'payments' | 'invoices' | 'priceList'>('account');
 
   // Supplier Purchase Invoices (read-only list; created/edited via SupplierInvoicePage).
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
@@ -196,6 +206,13 @@ export default function SupplierLedgerDetailPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDue, setNewTaskDue] = useState('');
   const [taskSaving, setTaskSaving] = useState(false);
+
+  // Price List
+  const [priceList, setPriceList] = useState<PriceListItem[]>([]);
+  const [plLoading, setPlLoading] = useState(false);
+  const [plEditId, setPlEditId] = useState<string | null>(null);
+  const [plForm, setPlForm] = useState<{ productName: string; packaging: string; purchaseRate: string; gstPct: string } | null>(null);
+  const [plSaving, setPlSaving] = useState(false);
 
   const load = useCallback(async (persist = false) => {
     if (!tenantId || !id) return;
@@ -259,6 +276,55 @@ export default function SupplierLedgerDetailPage() {
   }, [tenantId, id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load price list whenever the Price List tab becomes active
+  useEffect(() => {
+    if (activeTab !== 'priceList' || !tenantId || !id) return;
+    let cancelled = false;
+    setPlLoading(true);
+    getDocs(getTenantCollection(db, tenantId, 'suppliers', id, 'priceList'))
+      .then(snap => {
+        if (cancelled) return;
+        setPriceList(snap.docs.map(d => ({ id: d.id, ...d.data() } as PriceListItem))
+          .sort((a, b) => a.productName.localeCompare(b.productName)));
+      })
+      .catch(console.error)
+      .finally(() => { if (!cancelled) setPlLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, tenantId, id]);
+
+  const handleSavePriceListItem = async () => {
+    if (!plForm || !tenantId || !id) return;
+    if (!plForm.productName.trim()) return;
+    setPlSaving(true);
+    try {
+      const data = {
+        productName: plForm.productName.trim(),
+        packaging: plForm.packaging.trim(),
+        purchaseRate: parseFloat(plForm.purchaseRate) || 0,
+        gstPct: parseFloat(plForm.gstPct) || 0,
+        updatedAt: serverTimestamp(),
+      };
+      if (plEditId) {
+        await updateDoc(getTenantDoc(db, tenantId, 'suppliers', id, 'priceList', plEditId), data);
+        setPriceList(prev => prev.map(p => p.id === plEditId ? { ...p, ...data } : p));
+      } else {
+        const ref = await addDoc(getTenantCollection(db, tenantId, 'suppliers', id, 'priceList'), { ...data, createdAt: serverTimestamp() });
+        setPriceList(prev => [...prev, { id: ref.id, ...data } as PriceListItem]
+          .sort((a, b) => a.productName.localeCompare(b.productName)));
+      }
+      setPlForm(null);
+      setPlEditId(null);
+    } catch (e) { console.error(e); }
+    finally { setPlSaving(false); }
+  };
+
+  const handleDeletePriceListItem = async (item: PriceListItem) => {
+    if (!window.confirm(`Remove "${item.productName}" from this supplier's price list?`)) return;
+    if (!tenantId || !id) return;
+    await deleteDoc(getTenantDoc(db, tenantId, 'suppliers', id, 'priceList', item.id));
+    setPriceList(prev => prev.filter(p => p.id !== item.id));
+  };
 
   const handleWhatsApp = () => {
     const phone = firstPhone(supplier?.phone);
@@ -648,6 +714,7 @@ export default function SupplierLedgerDetailPage() {
           { key: 'purchaseOrders', label: 'Purchase Orders', icon: <Package size={15} />, count: pos.length },
           { key: 'payments', label: 'Payments Made', icon: <CreditCard size={15} />, count: payments.length },
           { key: 'invoices', label: 'Supplier Invoices', icon: <Receipt size={15} />, count: invoices.length },
+          { key: 'priceList', label: 'Price List', icon: <Tag size={15} />, count: priceList.length },
         ] as const).map((t, idx, arr) => {
           const active = activeTab === t.key;
           return (
@@ -930,6 +997,118 @@ export default function SupplierLedgerDetailPage() {
         </div>
       )}
 
+      {/* Price List */}
+      {activeTab === 'priceList' && card(
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
+              <span style={{ color: 'var(--primary-light)' }}><Tag size={16} /></span>
+              <span style={{ fontWeight: 700, fontSize: '1rem' }}>Supplier Price List</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({priceList.length} items)</span>
+            </div>
+            {!plForm && (
+              <button className="btn btn-primary" onClick={() => { setPlEditId(null); setPlForm({ productName: '', packaging: '', purchaseRate: '', gstPct: '5' }); }}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
+                <Plus size={14} /> Add Product
+              </button>
+            )}
+          </div>
+
+          {/* Add / Edit form */}
+          {plForm && (
+            <div style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem', border: '1px solid var(--primary-light)' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--primary-light)' }}>
+                {plEditId ? 'Edit Product' : 'New Product'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.6rem', marginBottom: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Product Name *</label>
+                  <input className="input-field" placeholder="e.g. Urea 45kg" value={plForm.productName}
+                    onChange={e => setPlForm(f => f ? { ...f, productName: e.target.value } : f)}
+                    style={{ margin: 0, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Packaging / Unit</label>
+                  <input className="input-field" placeholder="e.g. 500ml, 1L, 50kg" value={plForm.packaging}
+                    onChange={e => setPlForm(f => f ? { ...f, packaging: e.target.value } : f)}
+                    style={{ margin: 0, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Purchase Rate (₹) *</label>
+                  <input className="input-field" type="number" placeholder="0.00" value={plForm.purchaseRate}
+                    onChange={e => setPlForm(f => f ? { ...f, purchaseRate: e.target.value } : f)}
+                    style={{ margin: 0, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>GST %</label>
+                  <input className="input-field" type="number" placeholder="5" value={plForm.gstPct}
+                    onChange={e => setPlForm(f => f ? { ...f, gstPct: e.target.value } : f)}
+                    style={{ margin: 0, width: '100%' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary" onClick={() => { setPlForm(null); setPlEditId(null); }} disabled={plSaving}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleSavePriceListItem} disabled={plSaving || !plForm.productName.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  {plSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  {plEditId ? 'Save Changes' : 'Add to Price List'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Price list table */}
+          {plLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}><Loader2 size={24} className="animate-spin" style={{ color: 'var(--text-tertiary)' }} /></div>
+          ) : priceList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
+              No products in this supplier's price list yet.<br />
+              <span style={{ fontSize: '0.8rem' }}>Click "Add Product" to get started.</span>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-tertiary)', textAlign: 'left' }}>
+                    <th style={{ padding: '0.4rem 0.6rem', fontWeight: 600 }}>Product</th>
+                    <th style={{ padding: '0.4rem 0.6rem', fontWeight: 600 }}>Packaging</th>
+                    <th style={{ padding: '0.4rem 0.6rem', fontWeight: 600, textAlign: 'right' }}>Purchase Rate</th>
+                    <th style={{ padding: '0.4rem 0.6rem', fontWeight: 600, textAlign: 'right' }}>GST %</th>
+                    <th style={{ padding: '0.4rem 0.6rem', fontWeight: 600, textAlign: 'right' }}>Rate + GST</th>
+                    <th style={{ padding: '0.4rem 0.6rem' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priceList.map(item => (
+                    <tr key={item.id} style={{ borderTop: '1px solid var(--surface-border)' }}>
+                      <td style={{ padding: '0.5rem 0.6rem', fontWeight: 500 }}>{item.productName}</td>
+                      <td style={{ padding: '0.5rem 0.6rem', color: 'var(--text-secondary)' }}>{item.packaging || '—'}</td>
+                      <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', fontWeight: 600 }}>{inr(item.purchaseRate)}</td>
+                      <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', color: 'var(--text-secondary)' }}>{item.gstPct}%</td>
+                      <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', color: 'var(--primary-light)', fontWeight: 700 }}>
+                        {inr(item.purchaseRate * (1 + item.gstPct / 100))}
+                      </td>
+                      <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                          <button onClick={() => { setPlEditId(item.id); setPlForm({ productName: item.productName, packaging: item.packaging, purchaseRate: String(item.purchaseRate), gstPct: String(item.gstPct) }); }}
+                            title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '0.2rem', display: 'flex' }}>
+                            <Edit2 size={14} />
+                          </button>
+                          <button onClick={() => handleDeletePriceListItem(item)} title="Delete"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.2rem', display: 'flex' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Follow-up Tasks */}
       {card(
         <div>
@@ -1047,6 +1226,7 @@ export default function SupplierLedgerDetailPage() {
       {/* Add / Edit PO Modal — shared PurchaseOrderModal, mounted only when open */}
       {poEditing !== undefined && supplier && (
         <PurchaseOrderModal
+          supplierId={id}
           supplierName={supplier.name}
           editing={poEditing}
           onClose={() => setPoEditing(undefined)}

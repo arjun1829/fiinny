@@ -4,6 +4,21 @@ function r2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * Derive rate excluding GST from rate including GST.
+ * Rate w/o GST = Rate +GST / (1 + GST% / 100)
+ * Examples: 18% → ÷1.18, 12% → ÷1.12, 5% → ÷1.05
+ */
+export function rateWithGstToWithoutGst(rateWithGst: number, gstPct: number): number {
+  if (gstPct <= 0 || rateWithGst <= 0) return r2(rateWithGst);
+  return r2(rateWithGst / (1 + gstPct / 100));
+}
+
+/** Convenience inverse: rate excluding GST → rate including GST. */
+export function rateWithoutGstToWithGst(rateWithoutGst: number, gstPct: number): number {
+  return r2(rateWithoutGst * (1 + gstPct / 100));
+}
+
 export interface PurchaseLineInput {
   rateWithoutGst: number;
   gstPct: number;

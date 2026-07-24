@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, BarChart3, Layers, ReceiptText, Activity, FileText, ClipboardList, Package, ShieldAlert, Calculator } from 'lucide-react';
+import { Home, BarChart3, Layers, ReceiptText, Activity, FileText, ClipboardList, Package, ShieldAlert, Calculator, Target } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { AppScreen } from '../contexts/AuthContext';
 
@@ -16,9 +16,11 @@ const PRIORITY_NAV = [
   { path: '/barcode',          label: 'Barcode Labels',    icon: <Activity size={15} />,       screenKey: 'inventory' as AppScreen },
   { path: '/gst-reports',      label: 'GST Reports',      icon: <FileText size={15} />,       screenKey: 'analytics' as AppScreen },
   { path: '/order-history',    label: 'Audit Log',        icon: <ClipboardList size={15} />,  screenKey: 'order_history' as AppScreen },
+  // Sales-user-only items — filtered via SALES_NAV_PATHS below
+  { path: '/sales-targets',    label: 'Sales Targets',    icon: <Target size={15} />,         screenKey: 'worklist' as AppScreen },
 ];
 
-const SALES_NAV_PATHS = ['/worklist'];
+const SALES_NAV_PATHS = ['/sales-targets', '/worklist'];
 
 export default function HorizontalNavbar() {
   const location = useLocation();
