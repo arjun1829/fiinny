@@ -2,11 +2,10 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Package, Plus, Trash2, X, AlertCircle, Loader2, CheckCircle2, Tag,
 } from 'lucide-react';
-import { addDoc, updateDoc, getDocs, query, where, orderBy, runTransaction, serverTimestamp, type Timestamp } from 'firebase/firestore';
+import { addDoc, updateDoc, getDocs, query, where, runTransaction, serverTimestamp, type Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
-import ProductAutocomplete, { type ProductLite } from './ProductAutocomplete';
 
 /** A stored PO line item. */
 export interface POLine {
@@ -120,7 +119,6 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
   const [poNumberTouched, setPoNumberTouched] = useState(false);
   const [priceList, setPriceList] = useState<PriceListItem[]>([]);
   const [plLoading, setPlLoading] = useState(false);
-  const [products, setProducts] = useState<ProductLite[]>([]);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
@@ -130,22 +128,6 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
     const t = setTimeout(() => firstFieldRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, []);
-
-  // Load master products (always — used as autocomplete fallback)
-  useEffect(() => {
-    if (!tenantId) return;
-    let cancelled = false;
-    getDocs(query(getTenantCollection(db, tenantId, 'products'), orderBy('name')))
-      .then(snap => {
-        if (cancelled) return;
-        setProducts(snap.docs.map(d => {
-          const p = d.data() as { name?: string; baseUnit?: string; unit?: string; purchasePrice?: number; gstPct?: number; retailerPrice?: number; boxCapacity?: number };
-          return { id: d.id, name: p.name ?? '', baseUnit: p.baseUnit, unit: p.unit, purchasePrice: p.purchasePrice, gstPct: p.gstPct };
-        }));
-      })
-      .catch(console.error);
-    return () => { cancelled = true; };
-  }, [tenantId]);
 
   // Load supplier price list when supplierId is provided
   useEffect(() => {
@@ -162,6 +144,21 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
       .finally(() => { if (!cancelled) setPlLoading(false); });
     return () => { cancelled = true; };
   }, [tenantId, supplierId]);
+
+  // When editing a saved PO, backfill priceListItemId by matching saved description against price list
+  useEffect(() => {
+    if (priceList.length === 0) return;
+    setForm(f => ({
+      ...f,
+      lines: f.lines.map(l => {
+        if (l.priceListItemId) return l;
+        const match =
+          priceList.find(p => p.productName === l.description && p.packaging === l.packaging) ??
+          priceList.find(p => p.productName === l.description);
+        return match ? { ...l, priceListItemId: match.id } : l;
+      }),
+    }));
+  }, [priceList]);
 
   // Auto-generate Internal Purchase ID on create
   useEffect(() => {
@@ -193,19 +190,6 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [saving, onClose]);
-
-  // Fallback: select from master product catalog (auto-fills unit)
-  const selectMasterProduct = (lineIdx: number, p: ProductLite) =>
-    setForm(f => ({
-      ...f,
-      lines: f.lines.map((l, i) => i === lineIdx ? {
-        ...l,
-        description: p.name,
-        unit: l.unit || p.baseUnit || p.unit || '',
-        rate: l.rate || (p.purchasePrice != null ? String(p.purchasePrice) : ''),
-        gstPct: l.gstPct || (p.gstPct != null ? String(p.gstPct) : '0'),
-      } : l),
-    }));
 
   // When a price list product is selected, auto-fill the line
   const selectPriceListItem = (lineIdx: number, itemId: string) => {
@@ -289,7 +273,7 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
     setSaving(false);
   };
 
-  const hasPriceList = !plLoading && priceList.length > 0;
+  const hasPriceList = priceList.length > 0;
 
   return (
     <div
@@ -368,28 +352,33 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
         <label style={{ ...labelStyle, marginBottom: '0.5rem' }}>
           Products
           {plLoading && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>loading price list…</span>}
-          {hasPriceList && (
+          {!plLoading && hasPriceList && (
             <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--primary-light)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
-              <Tag size={11} /> from supplier price list
+              <Tag size={11} /> {priceList.length} products from supplier price list
             </span>
           )}
         </label>
 
-        {/* Price list loading placeholder */}
+        {/* Loading state */}
         {plLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>
             <Loader2 size={16} className="animate-spin" /> Loading supplier price list…
           </div>
         )}
 
-        {/* Soft tip when no price list — don't block the user */}
-        {!plLoading && supplierId && priceList.length === 0 && (
-          <div style={{ padding: '0.45rem 0.75rem', background: 'var(--surface-raised)', color: 'var(--text-tertiary)', borderRadius: '8px', fontSize: '0.75rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Tag size={12} /> Tip: Add products to this supplier's <strong>Price List</strong> tab for faster PO entry.
+        {/* Empty price list — block entry, prompt user to set up price list first */}
+        {!plLoading && supplierId && !hasPriceList && (
+          <div style={{ padding: '1rem', background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.3)', borderRadius: '10px', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+            <Tag size={15} style={{ color: '#f59e0b', flexShrink: 0, marginTop: '0.05rem' }} />
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>No price list configured for this supplier</div>
+              Go to the supplier profile → <strong>Price List</strong> tab and add products before creating a PO.
+            </div>
           </div>
         )}
 
-        {!plLoading && (
+        {/* Product lines — only shown when price list is available */}
+        {!plLoading && hasPriceList && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
             {form.lines.map((l, i) => {
               const qty = parseFloat(l.quantity) || 0;
@@ -399,49 +388,36 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
 
               return (
                 <div key={i} style={{ background: 'var(--surface-raised)', borderRadius: '10px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {/* Row 1: product selector */}
+                  {/* Row 1: price-list-only product selector */}
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {hasPriceList ? (
-                      <select
-                        className="input-field"
-                        value={l.priceListItemId}
-                        onChange={e => selectPriceListItem(i, e.target.value)}
-                        style={{ flex: 1, margin: 0 }}
-                      >
-                        <option value="">— Select product from price list —</option>
-                        {priceList.map(item => (
-                          <option key={item.id} value={item.id}>
-                            {item.productName}{item.packaging ? ` (${item.packaging})` : ''} — ₹{item.purchaseRate} + {item.gstPct}% GST
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <ProductAutocomplete
-                        value={l.description}
-                        onChange={v => setLine(i, 'description', v)}
-                        onSelect={p => selectMasterProduct(i, p)}
-                        products={products}
-                        placeholder="Type to search product…"
-                        style={{ margin: 0 }}
-                      />
-                    )}
+                    <select
+                      className="input-field"
+                      value={l.priceListItemId}
+                      onChange={e => selectPriceListItem(i, e.target.value)}
+                      style={{ flex: 1, margin: 0 }}
+                    >
+                      <option value="">— Select product —</option>
+                      {priceList.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.productName}{item.packaging ? ` (${item.packaging})` : ''} — ₹{item.purchaseRate} + {item.gstPct}% GST
+                        </option>
+                      ))}
+                    </select>
                     <button onClick={() => removeLine(i)} className="btn-icon" title="Remove line"
                       style={{ padding: '0.3rem', color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
                       <Trash2 size={14} />
                     </button>
                   </div>
 
-                  {/* Row 2: auto-filled details + quantity */}
+                  {/* Row 2: auto-filled fields + quantity */}
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    {/* Packaging chip */}
-                    {(l.packaging || hasPriceList) && (
-                      <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>PKG</span>
-                        <input className="input-field" placeholder="packaging" value={l.packaging}
-                          onChange={e => setLine(i, 'packaging', e.target.value)}
-                          style={{ width: '80px', margin: 0, fontSize: '0.8rem', padding: '0.25rem 0.4rem', color: hasPriceList && l.priceListItemId ? 'var(--text-secondary)' : undefined }} />
-                      </div>
-                    )}
+                    {/* Packaging — read-only from price list, editable for overrides */}
+                    <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>PKG</span>
+                      <input className="input-field" placeholder="packaging" value={l.packaging}
+                        onChange={e => setLine(i, 'packaging', e.target.value)}
+                        style={{ width: '80px', margin: 0, fontSize: '0.8rem', padding: '0.25rem 0.4rem', color: l.priceListItemId ? 'var(--text-secondary)' : undefined }} />
+                    </div>
                     {/* Rate */}
                     <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>RATE</span>
@@ -480,7 +456,7 @@ export default function PurchaseOrderModal({ supplierId, supplierName, editing, 
           </div>
         )}
 
-        {!plLoading && (
+        {!plLoading && hasPriceList && (
           <button className="btn btn-secondary" onClick={addLine}
             style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', fontSize: '0.8rem', marginBottom: '1rem' }}>
             <Plus size={13} /> Add product
