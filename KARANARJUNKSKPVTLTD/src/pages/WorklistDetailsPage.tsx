@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2, Download, Package } from 'lucide-react';
+import { ArrowLeft, User, Phone, MapPin, Calendar, MessageCircle, FileText, CheckSquare, ShoppingCart, Loader2, Trash2, Mic, TrendingUp, X, AlertTriangle, FilePen, Printer, PlusCircle, Square, Wallet, Pencil, Paperclip, Link2, Download, Package, Search } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getDoc, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, updateDoc, where, writeBatch, arrayUnion, arrayRemove, doc as fsDoc, collection } from 'firebase/firestore';
@@ -15,6 +15,9 @@ import { getTenantDoc, getTenantCollection } from '../utils/tenantPath';
 import { useSchema } from '../contexts/SchemaContext';
 import DynamicForm from '../components/DynamicForm';
 import OutstandingInvoice from '../components/OutstandingInvoice';
+import DatePeriodFilter from '../components/DatePeriodFilter';
+import { type FinancialPeriod, getFinancialDateRange } from '../utils/financialPeriod';
+import { printB2BInvoice } from '../utils/printB2BInvoice';
 
 
 interface Retailer {
@@ -140,9 +143,16 @@ export default function WorklistDetailsPage() {
     const [stmtToDate, setStmtToDate] = useState(() => new Date().toISOString().slice(0, 10));
     const [generatingStatement, setGeneratingStatement] = useState(false);
 
-    // Product Sales tab state
-    const [psFromDate, setPsFromDate] = useState('');
-    const [psToDate, setPsToDate] = useState('');
+    // Shared date period filter — drives B2B Orders, Payments, and Product Sales
+    const [profilePeriod, setProfilePeriod] = useState<FinancialPeriod>('all');
+    const [profileCustomFrom, setProfileCustomFrom] = useState('');
+    const [profileCustomTo, setProfileCustomTo] = useState('');
+
+    // Payments tab filters
+    const [pmtStatusFilter, setPmtStatusFilter] = useState<'all' | 'available' | 'partial' | 'allocated'>('all');
+    const [pmtSearch, setPmtSearch] = useState('');
+
+    // Product Sales tab state (sort + search remain tab-specific)
     const [psSort, setPsSort] = useState<'qty_desc' | 'qty_asc' | 'recent' | 'name'>('qty_desc');
     const [psSearch, setPsSearch] = useState('');
 
@@ -319,6 +329,46 @@ export default function WorklistDetailsPage() {
             unsubProducts();
         };
     }, [id, tenantId]);
+
+    // ─── Shared date-filter derived views (used by Orders, Payments, Product Sales) ──
+    const profileRange = getFinancialDateRange(profilePeriod, profileCustomFrom, profileCustomTo);
+    const profileFrom  = profileRange?.[0] ?? '';
+    const profileTo    = profileRange?.[1] ?? '';
+
+    const displaySalesOrders: any[] = profileRange
+        ? salesOrders.filter((so: any) => {
+            const d = so.invoiceDate || '';
+            return (!profileFrom || d >= profileFrom) && (!profileTo || d <= profileTo);
+        })
+        : salesOrders;
+
+    const displayPayments: Payment[] = profileRange
+        ? payments.filter((p: Payment) => {
+            const d = p.paymentDate || '';
+            return (!profileFrom || d >= profileFrom) && (!profileTo || d <= profileTo);
+        })
+        : payments;
+
+    const filteredDisplayPayments: Payment[] = displayPayments.filter(p => {
+        const unallocated = Number(p.unallocatedAmount) || 0;
+        const linkedCount = p.linkedOrderIds?.length ?? (p.orderId ? 1 : 0);
+        // Status filter
+        if (pmtStatusFilter === 'available' && unallocated <= 0) return false;
+        if (pmtStatusFilter === 'partial' && !(unallocated > 0 && linkedCount > 0)) return false;
+        if (pmtStatusFilter === 'allocated' && unallocated > 0) return false;
+        // Search filter
+        if (pmtSearch.trim()) {
+            const q = pmtSearch.trim().toLowerCase();
+            const refId = (p.paymentId || `#${p.id.slice(-6).toUpperCase()}`).toLowerCase();
+            if (
+                !refId.includes(q) &&
+                !(p.notes || '').toLowerCase().includes(q) &&
+                !(p.orderNumber || '').toLowerCase().includes(q) &&
+                !String(Number(p.amount) || 0).includes(q)
+            ) return false;
+        }
+        return true;
+    });
 
     const handleWhatsApp = () => {
         if (!retailer?.number) return;
@@ -537,7 +587,7 @@ export default function WorklistDetailsPage() {
         });
     };
 
-    const handleSelectAllSOs = () => setSelectedSoIds(new Set(salesOrders.map((so: any) => so.id)));
+    const handleSelectAllSOs = () => setSelectedSoIds(new Set(displaySalesOrders.map((so: any) => so.id)));
     const handleClearSoSelection = () => setSelectedSoIds(new Set());
 
     // Bulk delete: sequentially apply the same financial reversal as single delete
@@ -881,28 +931,25 @@ export default function WorklistDetailsPage() {
         s + Number(p.amount ?? 0), 0);
     const computedOutstanding = Math.max(0, computedTotalSales - computedTotalPaid);
 
-    // Product Sales aggregation — derived from salesOrders lineItems filtered by date range
+    // Product Sales aggregation — derived from displaySalesOrders (shared date filter)
     const productSalesData = (() => {
-        const filtered = salesOrders.filter((so: any) => {
-            const invDate = so.invoiceDate || '';
-            if (psFromDate && invDate < psFromDate) return false;
-            if (psToDate && invDate > psToDate) return false;
-            return true;
-        });
+        const filtered = displaySalesOrders;
 
-        const map: Record<string, { productName: string; totalQty: number; invoiceCount: number; lastInvoiceDate: string; firstInvoiceDate: string }> = {};
+        const map: Record<string, { productName: string; totalQty: number; paidQty: number; unpaidQty: number; invoiceCount: number; lastInvoiceDate: string; firstInvoiceDate: string }> = {};
 
         for (const so of filtered) {
             const invDate: string = so.invoiceDate || '';
+            const isPaid = (so.paymentStatus || '').toLowerCase() === 'paid';
             const items: any[] = so.lineItems || so.items || [];
             for (const item of items) {
                 const name: string = (item.productName || item.itemDescription || '').trim();
                 if (!name) continue;
                 const qty = Number(item.qty ?? item.quantity ?? 0);
                 if (!map[name]) {
-                    map[name] = { productName: name, totalQty: 0, invoiceCount: 0, lastInvoiceDate: '', firstInvoiceDate: '' };
+                    map[name] = { productName: name, totalQty: 0, paidQty: 0, unpaidQty: 0, invoiceCount: 0, lastInvoiceDate: '', firstInvoiceDate: '' };
                 }
                 map[name].totalQty += qty;
+                if (isPaid) { map[name].paidQty += qty; } else { map[name].unpaidQty += qty; }
                 map[name].invoiceCount += 1;
                 if (invDate) {
                     if (!map[name].lastInvoiceDate || invDate > map[name].lastInvoiceDate) map[name].lastInvoiceDate = invDate;
@@ -1416,11 +1463,28 @@ export default function WorklistDetailsPage() {
                 );
             })()}
 
+            {/* ── Shared Date Period Filter ── */}
+            <div style={{ marginBottom: '1.25rem', padding: '0.65rem 1rem', background: 'var(--surface-raised)', borderRadius: '10px', border: '1px solid var(--surface-border)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <DatePeriodFilter
+                    period={profilePeriod}
+                    customFrom={profileCustomFrom}
+                    customTo={profileCustomTo}
+                    onPeriodChange={setProfilePeriod}
+                    onCustomFromChange={setProfileCustomFrom}
+                    onCustomToChange={setProfileCustomTo}
+                />
+                {profilePeriod !== 'all' && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+                        Applies to: B2B Orders · Payments · Product Sales
+                    </span>
+                )}
+            </div>
+
             {/* Tabs Navigation */}
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--surface-border)', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
                 {[
-                    { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: salesOrders.length },
-                    { id: 'payments', label: 'Payments', icon: Wallet, count: payments.length },
+                    { id: 'orders', label: 'B2B Orders', icon: ShoppingCart, count: displaySalesOrders.length },
+                    { id: 'payments', label: 'Payments', icon: Wallet, count: displayPayments.length },
                     { id: 'productSales', label: 'Product Sales', icon: Package },
                     { id: 'overview', label: 'Overview', icon: User },
                 ].map(tab => (
@@ -1604,15 +1668,17 @@ export default function WorklistDetailsPage() {
                 {activeTab === 'payments' && (
                     <div className="animate-fade-in">
                         {/* Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
                             <div>
-                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Payments &amp; Credits ({payments.length})</h3>
+                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>
+                                    Payments &amp; Credits ({filteredDisplayPayments.length}{filteredDisplayPayments.length !== payments.length ? ` of ${payments.length}` : ''})
+                                </h3>
                                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
                                     <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-                                        Total received: <b style={{ color: '#10b981' }}>₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
+                                        Total received: <b style={{ color: '#10b981' }}>₹{filteredDisplayPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}</b>
                                     </span>
                                     <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-                                        Total available: <b style={{ color: '#f59e0b' }}>₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()}</b>
+                                        Total available: <b style={{ color: '#f59e0b' }}>₹{filteredDisplayPayments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()}</b>
                                     </span>
                                 </div>
                             </div>
@@ -1623,11 +1689,76 @@ export default function WorklistDetailsPage() {
                             )}
                         </div>
 
-                        {payments.length === 0 ? (
+                        {/* Filter bar */}
+                        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem', padding: '0.65rem 0.75rem', background: 'var(--surface-raised)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
+                            {/* Status chips */}
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>Status:</span>
+                            {([
+                                ['all',       'All',                '#64748b', 'rgba(100,116,139,0.1)'],
+                                ['available', 'Available',          '#f59e0b', 'rgba(245,158,11,0.12)'],
+                                ['partial',   'Partially Allocated','#8b5cf6', 'rgba(139,92,246,0.12)'],
+                                ['allocated', 'Fully Allocated',    '#10b981', 'rgba(16,185,129,0.1)'],
+                            ] as [string, string, string, string][]).map(([val, label, color, bg]) => (
+                                <button
+                                    key={val}
+                                    onClick={() => setPmtStatusFilter(val as any)}
+                                    style={{
+                                        padding: '0.22rem 0.65rem',
+                                        borderRadius: '999px',
+                                        border: `1px solid ${pmtStatusFilter === val ? color : 'var(--surface-border)'}`,
+                                        background: pmtStatusFilter === val ? bg : 'transparent',
+                                        color: pmtStatusFilter === val ? color : 'var(--text-secondary)',
+                                        fontSize: '0.75rem',
+                                        fontWeight: pmtStatusFilter === val ? 700 : 400,
+                                        cursor: 'pointer',
+                                        fontFamily: 'inherit',
+                                        whiteSpace: 'nowrap',
+                                        transition: 'all 0.15s',
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                            {/* Divider */}
+                            <div style={{ width: '1px', height: '20px', background: 'var(--surface-border)', margin: '0 0.15rem', flexShrink: 0 }} />
+                            {/* Search */}
+                            <div style={{ position: 'relative', flex: '1 1 200px', minWidth: '160px' }}>
+                                <Search size={13} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search ref, notes, amount…"
+                                    value={pmtSearch}
+                                    onChange={e => setPmtSearch(e.target.value)}
+                                    className="input-field"
+                                    style={{ paddingLeft: '1.8rem', paddingRight: pmtSearch ? '1.8rem' : '0.6rem', height: '30px', fontSize: '0.8rem', margin: 0 }}
+                                />
+                                {pmtSearch && (
+                                    <button onClick={() => setPmtSearch('')} style={{ position: 'absolute', right: '0.4rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', padding: 0 }}>
+                                        <X size={13} />
+                                    </button>
+                                )}
+                            </div>
+                            {/* Active filter count */}
+                            {(pmtStatusFilter !== 'all' || pmtSearch || profilePeriod !== 'all') && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                                    {filteredDisplayPayments.length} result{filteredDisplayPayments.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
+
+                        {filteredDisplayPayments.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                 <Wallet size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
-                                <p style={{ margin: 0 }}>No payments recorded yet.</p>
-                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use "Add Payment" above, or "Add Payment" on any invoice.</p>
+                                <p style={{ margin: 0 }}>
+                                    {payments.length === 0
+                                        ? 'No payments recorded yet.'
+                                        : 'No payments match the current filters.'}
+                                </p>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+                                    {payments.length === 0
+                                        ? 'Use "Add Payment" above, or "Add Payment" on any invoice.'
+                                        : 'Try adjusting the status filter, search, or date range.'}
+                                </p>
                             </div>
                         ) : (
                             <div style={{ overflowX: 'auto' }}>
@@ -1635,7 +1766,7 @@ export default function WorklistDetailsPage() {
                                     <thead>
                                         <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Payment ID</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Date</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Payment Date</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Amount</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Method</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notes</th>
@@ -1644,15 +1775,16 @@ export default function WorklistDetailsPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {payments.map(p => {
-                                            const displayDate = p.paymentDate || (p.createdAt?.toDate
-                                                ? p.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                                                : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'));
+                                        {filteredDisplayPayments.map(p => {
+                                            const displayDate = p.paymentDate
+                                                ? new Date(p.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : '—';
                                             const paymentIdDisplay = p.paymentId || `#${p.id.slice(-6).toUpperCase()}`;
                                             const linkedCount = p.linkedOrderIds?.length ?? (p.orderId ? 1 : 0);
                                             const unallocated = Number(p.unallocatedAmount) || 0;
                                             const isLinked = linkedCount > 0;
                                             const isAvailable = unallocated > 0;
+                                            const isPartial = isLinked && isAvailable;
                                             return (
                                                 <tr key={p.id} style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
                                                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-raised)')}
@@ -1661,7 +1793,10 @@ export default function WorklistDetailsPage() {
                                                         <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--primary-light)', fontWeight: 600 }}>{paymentIdDisplay}</span>
                                                     </td>
                                                     <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
-                                                        {typeof displayDate === 'string' ? displayDate : '—'}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                            <Calendar size={12} color="var(--text-tertiary)" />
+                                                            {displayDate}
+                                                        </div>
                                                     </td>
                                                     <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981', whiteSpace: 'nowrap' }}>
                                                         ₹{Number(p.amount || 0).toLocaleString()}
@@ -1685,18 +1820,27 @@ export default function WorklistDetailsPage() {
                                                     </td>
                                                     <td style={{ padding: '0.7rem 0.75rem' }}>
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
-                                                            {isLinked && (
-                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                                                    🔗 Linked to {linkedCount} Order{linkedCount !== 1 ? 's' : ''}
-                                                                </span>
-                                                            )}
-                                                            {isAvailable && (
+                                                            {isPartial ? (
+                                                                <>
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#8b5cf622', color: '#8b5cf6', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                        🔗 {linkedCount} order{linkedCount !== 1 ? 's' : ''} linked
+                                                                    </span>
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                        🟡 ₹{unallocated.toLocaleString()} still available
+                                                                    </span>
+                                                                </>
+                                                            ) : isAvailable ? (
                                                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                                                     🟡 ₹{unallocated.toLocaleString()} Available
                                                                 </span>
-                                                            )}
-                                                            {!isLinked && !isAvailable && (
-                                                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                                                            ) : isLinked ? (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#10b98122', color: '#10b981', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    ✓ Fully Allocated
+                                                                </span>
+                                                            ) : (
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#10b98122', color: '#10b981', padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                                    ✓ Fully Allocated
+                                                                </span>
                                                             )}
                                                         </div>
                                                     </td>
@@ -1719,15 +1863,15 @@ export default function WorklistDetailsPage() {
                                     <tfoot>
                                         <tr style={{ borderTop: '2px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
                                             <td colSpan={2} style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                                Total ({payments.length} payments)
+                                                Total ({filteredDisplayPayments.length} payment{filteredDisplayPayments.length !== 1 ? 's' : ''})
                                             </td>
                                             <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
-                                                ₹{payments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
+                                                ₹{filteredDisplayPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
                                             </td>
                                             <td colSpan={2} />
                                             <td style={{ padding: '0.6rem 0.75rem' }}>
                                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#f59e0b22', color: '#f59e0b', padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                                                    🟡 ₹{payments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()} available
+                                                    🟡 ₹{filteredDisplayPayments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()} available
                                                 </span>
                                             </td>
                                             {!isSales && <td />}
@@ -1741,28 +1885,8 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'productSales' && (
                     <div className="animate-fade-in">
-                        {/* Filters */}
+                        {/* Filters — date range is driven by the shared period filter above the tabs */}
                         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1.25rem' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>From Date</label>
-                                <input
-                                    type="date"
-                                    className="input-field"
-                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', width: '160px' }}
-                                    value={psFromDate}
-                                    onChange={e => setPsFromDate(e.target.value)}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                                <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>To Date</label>
-                                <input
-                                    type="date"
-                                    className="input-field"
-                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', width: '160px' }}
-                                    value={psToDate}
-                                    onChange={e => setPsToDate(e.target.value)}
-                                />
-                            </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                                 <label style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort By</label>
                                 <select
@@ -1788,9 +1912,9 @@ export default function WorklistDetailsPage() {
                                     onChange={e => setPsSearch(e.target.value)}
                                 />
                             </div>
-                            {(psFromDate || psToDate || psSearch) && (
+                            {psSearch && (
                                 <button
-                                    onClick={() => { setPsFromDate(''); setPsToDate(''); setPsSearch(''); }}
+                                    onClick={() => setPsSearch('')}
                                     style={{ padding: '0.4rem 0.9rem', background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-secondary)', fontFamily: 'inherit', alignSelf: 'flex-end' }}
                                 >
                                     Clear
@@ -1809,6 +1933,14 @@ export default function WorklistDetailsPage() {
                                     <span style={{ color: 'var(--text-tertiary)' }}>Total Qty Sold: </span>
                                     <span style={{ fontWeight: 700, color: 'var(--primary-light)' }}>{productSalesData.reduce((s, r) => s + r.totalQty, 0).toLocaleString()}</span>
                                 </div>
+                                <div style={{ background: 'rgba(16,185,129,0.08)', borderRadius: '10px', padding: '0.5rem 1rem', fontSize: '0.82rem', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Paid Qty: </span>
+                                    <span style={{ fontWeight: 700, color: '#10b981' }}>{productSalesData.reduce((s, r) => s + r.paidQty, 0).toLocaleString()}</span>
+                                </div>
+                                <div style={{ background: 'rgba(239,68,68,0.07)', borderRadius: '10px', padding: '0.5rem 1rem', fontSize: '0.82rem', border: '1px solid rgba(239,68,68,0.15)' }}>
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Unpaid Qty: </span>
+                                    <span style={{ fontWeight: 700, color: '#ef4444' }}>{productSalesData.reduce((s, r) => s + r.unpaidQty, 0).toLocaleString()}</span>
+                                </div>
                             </div>
                         )}
 
@@ -1816,7 +1948,7 @@ export default function WorklistDetailsPage() {
                         {productSalesData.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                 <Package size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
-                                <p style={{ margin: 0 }}>{psSearch || psFromDate || psToDate ? 'No products match the current filters.' : 'No invoice data available yet.'}</p>
+                                <p style={{ margin: 0 }}>{psSearch || profilePeriod !== 'all' ? 'No products match the current filters.' : 'No invoice data available yet.'}</p>
                                 <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Product sales are derived from B2B invoices created for this partner.</p>
                             </div>
                         ) : (
@@ -1826,14 +1958,18 @@ export default function WorklistDetailsPage() {
                                         <tr style={{ borderBottom: '2px solid var(--surface-border)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600 }}>#</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600 }}>Product</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Total Qty Sold</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Total Qty</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Paid Qty</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Unpaid Qty</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>Invoice Count</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Last Sold Date</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>First Sold Date</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {productSalesData.map((row, idx) => (
+                                        {productSalesData.map((row, idx) => {
+                                            const pct = row.totalQty > 0 ? Math.round((row.paidQty / row.totalQty) * 100) : 0;
+                                            return (
                                             <tr
                                                 key={row.productName}
                                                 style={{ borderBottom: '1px solid var(--surface-border)', transition: 'background 0.12s' }}
@@ -1843,6 +1979,15 @@ export default function WorklistDetailsPage() {
                                                 <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>{idx + 1}</td>
                                                 <td style={{ padding: '0.7rem 0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{row.productName}</td>
                                                 <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--primary-light)', fontSize: '1rem' }}>{row.totalQty.toLocaleString()}</td>
+                                                <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
+                                                        <span style={{ fontWeight: 700, color: '#10b981' }}>{row.paidQty.toLocaleString()}</span>
+                                                        {row.totalQty > 0 && <span style={{ fontSize: '0.68rem', color: '#10b981', opacity: 0.75 }}>{pct}%</span>}
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', fontWeight: 700, color: row.unpaidQty > 0 ? '#ef4444' : 'var(--text-tertiary)' }}>
+                                                    {row.unpaidQty > 0 ? row.unpaidQty.toLocaleString() : '—'}
+                                                </td>
                                                 <td style={{ padding: '0.7rem 0.75rem', textAlign: 'right', color: 'var(--text-secondary)' }}>{row.invoiceCount}</td>
                                                 <td style={{ padding: '0.7rem 0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                                                     {row.lastInvoiceDate ? new Date(row.lastInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
@@ -1851,7 +1996,8 @@ export default function WorklistDetailsPage() {
                                                     {row.firstInvoiceDate ? new Date(row.firstInvoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                                                 </td>
                                             </tr>
-                                        ))}
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -1902,7 +2048,7 @@ export default function WorklistDetailsPage() {
                         {/* Sales Orders Table */}
                         <div style={{ marginBottom: '3rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Sales Orders ({salesOrders.length})</h3>
+                                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Sales Orders ({displaySalesOrders.length}{profileRange && displaySalesOrders.length !== salesOrders.length ? ` of ${salesOrders.length}` : ''})</h3>
                                 <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>Edit status &amp; payment inline → Save remarks</span>
                             </div>
 
@@ -1923,7 +2069,7 @@ export default function WorklistDetailsPage() {
                                             onClick={handleSelectAllSOs}
                                             style={{ padding: '0.28rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.5)', background: 'transparent', color: '#fff', fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit' }}
                                         >
-                                            Select All ({salesOrders.length})
+                                            Select All ({displaySalesOrders.length})
                                         </button>
                                         <button
                                             onClick={handleClearSoSelection}
@@ -1945,13 +2091,13 @@ export default function WorklistDetailsPage() {
                                 </div>
                             )}
 
-                            {salesOrders.length === 0 ? (
+                            {displaySalesOrders.length === 0 ? (
                                 <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                     <ShoppingCart size={40} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
-                                    <p style={{ margin: 0 }}>No sales orders yet for this partner.</p>
-                                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>Use the buttons above to create one.</p>
+                                    <p style={{ margin: 0 }}>{salesOrders.length === 0 ? 'No sales orders yet for this partner.' : 'No orders match the selected period.'}</p>
+                                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>{salesOrders.length === 0 ? 'Use the buttons above to create one.' : 'Change the date filter above to see more orders.'}</p>
                                 </div>
-                            ) : salesOrders.map((so: any) => {
+                            ) : displaySalesOrders.map((so: any) => {
                                 const statusColor: Record<string, string> = { confirmed: '#10b981', draft: '#f59e0b', dispatched: '#38bdf8', cancelled: '#ef4444' };
                                 const color = statusColor[so.status?.toLowerCase()] || '#94a3b8';
                                 const date = so.invoiceDate
@@ -2118,10 +2264,19 @@ export default function WorklistDetailsPage() {
                                                     <FilePen size={14} /> Edit Order
                                                 </button>
                                             )}
-                                            <button className="btn btn-secondary" onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
-                                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-                                                <Printer size={14} /> View / Print Invoice
-                                            </button>
+                                            {isSales ? (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => tenantId && printB2BInvoice(so.id, tenantId)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Printer size={14} /> Print Invoice
+                                                </button>
+                                            ) : (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Printer size={14} /> View / Edit Invoice
+                                                </button>
+                                            )}
                                             {!isSales && (so.linkedPaymentIds?.length ?? 0) > 0 && (
                                                 <button className="btn btn-secondary"
                                                     onClick={() => handleOpenUnlinkModal(so)}
@@ -2469,9 +2624,8 @@ export default function WorklistDetailsPage() {
 
                 {/* Unlink Payments Modal */}
                 {unlinkOrder && (
-                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, overflowY: 'auto', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-                        <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem 1rem' }}>
-                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px' }}>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+                            <div className="glass-panel" style={{ width: '100%', maxWidth: '560px', padding: '2rem', position: 'relative', borderRadius: '16px', maxHeight: '90vh', overflowY: 'auto' }}>
                                 <button onClick={() => { setUnlinkOrder(null); setUnlinkAllocations([]); }} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={22} /></button>
                                 <h2 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
                                     <Link2 size={22} color="var(--primary-light)" /> Linked Payments
@@ -2520,7 +2674,6 @@ export default function WorklistDetailsPage() {
                                     </div>
                                 )}
                             </div>
-                        </div>
                     </div>
                 )}
 

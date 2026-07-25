@@ -30,6 +30,7 @@ export default function ManageRolesPage() {
             { key: 'analytics', label: 'Master Analytics' },
             { key: 'retailers', label: 'Retailers List' },
             { key: 'worklist', label: 'Worklist' },
+            { key: 'khata', label: 'Khata (Udhari)' },
             { key: 'dispatch', label: 'Dispatch Board' },
             { key: 'pos', label: 'POS Billing' },
             { key: 'loyalty', label: 'Loyalty & Memberships' },

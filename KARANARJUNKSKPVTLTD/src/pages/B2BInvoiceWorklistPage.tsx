@@ -10,6 +10,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
+import { printB2BInvoice } from '../utils/printB2BInvoice';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -376,12 +377,21 @@ export default function B2BInvoiceWorklistPage() {
                                             )}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                                            <button
-                                                onClick={() => navigate(`/b2b-invoice?orderId=${o.id}${o.retailerId ? `&retailerId=${o.retailerId}` : ''}`)}
-                                                title="View / Print invoice"
-                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
-                                                <Printer size={13} /> View / Print
-                                            </button>
+                                            {isSales ? (
+                                                <button
+                                                    onClick={() => tenantId && printB2BInvoice(o.id, tenantId)}
+                                                    title="Print invoice"
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
+                                                    <Printer size={13} /> Print Invoice
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => navigate(`/b2b-invoice?orderId=${o.id}${o.retailerId ? `&retailerId=${o.retailerId}` : ''}`)}
+                                                    title="View / Edit invoice"
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
+                                                    <Printer size={13} /> View / Edit
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 );

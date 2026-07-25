@@ -13,7 +13,9 @@ import Papa from 'papaparse';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
 import UdhariUploadModal from '../components/UdhariUploadModal';
+import DatePeriodFilter from '../components/DatePeriodFilter';
 import { useSchema } from '../contexts/SchemaContext';
+import { type FinancialPeriod, getFinancialDateRange } from '../utils/financialPeriod';
 
 // Import sub-pages directly (WorklistPage itself is lazy-loaded by App.tsx)
 import PaymentRemindersPage from './PaymentRemindersPage';
@@ -163,6 +165,12 @@ function PartnersTab() {
     const [showUdhariModal, setShowUdhariModal] = useState(false);
     const [showAnalytics, setShowAnalytics] = useState(false);
 
+    const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('month');
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
+    const [sosByRetailer, setSosByRetailer] = useState<Map<string, { invoiceDate?: string; grandTotal?: number; netAmount?: number; totalAmount?: number }[]>>(new Map());
+    const [pmtsByRetailer, setPmtsByRetailer] = useState<Map<string, { amount: number; paymentDate?: string }[]>>(new Map());
+
     const [searchTerm, setSearchTerm] = useState('');
     const [filterSize, setFilterSize] = useState('All');
     const [sortBy, setSortBy] = useState('newest');
@@ -263,6 +271,7 @@ function PartnersTab() {
                 // master-tenant payments, which caused the Outstanding mismatch.
                 const isMasterTenant = tenantId === 'master';
                 const paymentsByRetailer = new Map<string, number>();
+                const rawPmtsByRetailerMap = new Map<string, { amount: number; paymentDate?: string }[]>();
                 paymentsGroupSnap.docs.forEach(pdoc => {
                     const parts = pdoc.ref.path.split('/');
                     let rId: string | undefined;
@@ -287,10 +296,13 @@ function PartnersTab() {
 
                     if (!rId) return;
                     paymentsByRetailer.set(rId, (paymentsByRetailer.get(rId) ?? 0) + Number(pdoc.data().amount ?? 0));
+                    const pmtArr = rawPmtsByRetailerMap.get(rId) ?? [];
+                    pmtArr.push({ amount: Number(pdoc.data().amount ?? 0), paymentDate: pdoc.data().paymentDate });
+                    rawPmtsByRetailerMap.set(rId, pmtArr);
                 });
 
                 // Group salesOrders by retailerId (include financial fields for outstanding calc).
-                type SOEntry = { status?: string; paymentStatus?: string; dueDate?: string; grandTotal?: number; netAmount?: number; totalAmount?: number; amountPaid?: number };
+                type SOEntry = { invoiceDate?: string; status?: string; paymentStatus?: string; dueDate?: string; grandTotal?: number; netAmount?: number; totalAmount?: number; amountPaid?: number };
                 const salesByRetailer = new Map<string, SOEntry[]>();
                 salesOrdersSnap.docs.forEach(doc => {
                     const so = doc.data() as { retailerId?: string } & SOEntry;
@@ -355,6 +367,8 @@ function PartnersTab() {
                 } else {
                     setRetailers(retailersWithStatus);
                 }
+                setSosByRetailer(salesByRetailer);
+                setPmtsByRetailer(rawPmtsByRetailerMap);
             } catch (error) {
                 console.error('Error fetching retailers: ', error);
             } finally {
@@ -487,6 +501,47 @@ function PartnersTab() {
         };
     }, [retailers]);
 
+    const filteredKpi = useMemo(() => {
+        const range = getFinancialDateRange(financialPeriod, customFrom, customTo);
+        if (!range) {
+            return {
+                totalInvoiceValue: kpi.totalInvoiceValue,
+                totalPaymentsReceived: kpi.totalPaymentsReceived,
+                totalOutstanding: kpi.totalOutstanding,
+            };
+        }
+        const [from, to] = range;
+        const retailerIdSet = new Set(retailers.map(r => r.id));
+        let totalInvoiceValue = 0;
+        let totalPaymentsReceived = 0;
+
+        sosByRetailer.forEach((soList, rId) => {
+            if (!retailerIdSet.has(rId)) return;
+            for (const so of soList) {
+                const invDate = so.invoiceDate || '';
+                if ((!from || invDate >= from) && (!to || invDate <= to)) {
+                    totalInvoiceValue += Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+                }
+            }
+        });
+
+        pmtsByRetailer.forEach((pmtList, rId) => {
+            if (!retailerIdSet.has(rId)) return;
+            for (const pmt of pmtList) {
+                const pmtDate = pmt.paymentDate || '';
+                if ((!from || pmtDate >= from) && (!to || pmtDate <= to)) {
+                    totalPaymentsReceived += Number(pmt.amount ?? 0);
+                }
+            }
+        });
+
+        return {
+            totalInvoiceValue,
+            totalPaymentsReceived,
+            totalOutstanding: Math.max(0, totalInvoiceValue - totalPaymentsReceived),
+        };
+    }, [financialPeriod, customFrom, customTo, retailers, sosByRetailer, pmtsByRetailer, kpi]);
+
     return (
         <div>
             {/* Access filter indicator for sales users */}
@@ -534,13 +589,25 @@ function PartnersTab() {
             {/* ── Financial Summary Cards (always visible) ── */}
             {!loading && (
                 <>
+                    {/* Financial Period Filter */}
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <DatePeriodFilter
+                            period={financialPeriod}
+                            customFrom={customFrom}
+                            customTo={customTo}
+                            onPeriodChange={setFinancialPeriod}
+                            onCustomFromChange={setCustomFrom}
+                            onCustomToChange={setCustomTo}
+                        />
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                         {/* Total Invoice Value */}
                         <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: '4px solid #38bdf8', background: 'rgba(56,189,248,0.07)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Invoice Value</p>
-                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#38bdf8' }}>₹{kpi.totalInvoiceValue.toLocaleString('en-IN')}</h2>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#38bdf8' }}>₹{filteredKpi.totalInvoiceValue.toLocaleString('en-IN')}</h2>
                                 </div>
                                 <div style={{ background: '#38bdf822', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
                                     <FileText size={18} color="#38bdf8" />
@@ -552,7 +619,7 @@ function PartnersTab() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Payments Received</p>
-                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#10b981' }}>₹{kpi.totalPaymentsReceived.toLocaleString('en-IN')}</h2>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: '#10b981' }}>₹{filteredKpi.totalPaymentsReceived.toLocaleString('en-IN')}</h2>
                                 </div>
                                 <div style={{ background: '#10b98122', borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
                                     <CheckCircle2 size={18} color="#10b981" />
@@ -560,14 +627,14 @@ function PartnersTab() {
                             </div>
                         </div>
                         {/* Total Outstanding */}
-                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}`, background: kpi.totalOutstanding > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.04)' }}>
+                        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderLeft: `4px solid ${filteredKpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}`, background: filteredKpi.totalOutstanding > 0 ? 'rgba(239,68,68,0.07)' : 'rgba(16,185,129,0.04)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Total Outstanding</p>
-                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981' }}>₹{kpi.totalOutstanding.toLocaleString('en-IN')}</h2>
+                                    <h2 style={{ margin: 0, fontWeight: 800, fontSize: '1.6rem', color: filteredKpi.totalOutstanding > 0 ? '#ef4444' : '#10b981' }}>₹{filteredKpi.totalOutstanding.toLocaleString('en-IN')}</h2>
                                 </div>
-                                <div style={{ background: `${kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
-                                    <AlertCircle size={18} color={kpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
+                                <div style={{ background: `${filteredKpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'}22`, borderRadius: '10px', padding: '0.55rem', flexShrink: 0 }}>
+                                    <AlertCircle size={18} color={filteredKpi.totalOutstanding > 0 ? '#ef4444' : '#10b981'} />
                                 </div>
                             </div>
                         </div>

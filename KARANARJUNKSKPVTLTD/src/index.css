@@ -15,6 +15,7 @@
   --surface-base: hsla(220, 33%, 100%, 0.8);
   --surface-raised: hsla(220, 33%, 96%, 0.9);
   --surface-border: hsla(220, 20%, 20%, 0.08);
+  --input-bg: hsla(0, 0%, 100%, 0.95);
 
   /* Text - High Contrast for Maturity */
   --text-primary: hsl(220, 45%, 12%);
@@ -42,6 +43,7 @@
   --surface-base: hsla(220, 20%, 15%, 0.7);
   --surface-raised: hsla(220, 20%, 20%, 0.7);
   --surface-border: hsla(220, 20%, 40%, 0.2);
+  --input-bg: hsla(220, 20%, 10%, 0.5);
 
   --text-primary: hsl(220, 10%, 98%);
   --text-secondary: hsl(220, 10%, 75%);
@@ -161,7 +163,7 @@ h3 {
 .input-field {
   width: 100%;
   padding: 0.875rem 1rem;
-  background: hsla(220, 20%, 10%, 0.5);
+  background: var(--input-bg);
   border: 1px solid var(--surface-border);
   border-radius: 10px;
   color: var(--text-primary);
@@ -174,7 +176,7 @@ h3 {
   outline: none;
   border-color: var(--primary);
   box-shadow: var(--neon-glow);
-  background: hsla(220, 20%, 12%, 0.8);
+  background: var(--input-bg);
 }
 
 /* Buttons */

@@ -248,10 +248,21 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
             totalDuration != null &&
             edit.trimsVideo(totalDuration)) {
           trimStartSec = edit.trimStart.inSeconds;
-          trimDurationSec = (edit.trimEnd - edit.trimStart)
-              .inSeconds
-              .clamp(1, _maxReelDuration.inSeconds);
+          trimDurationSec =
+              (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, maxReelSeconds);
         }
+
+        // Always pass an explicit duration, even when the user never opened the
+        // editor.
+        //
+        // Previously `duration` stayed null on the untrimmed path, so a picked
+        // clip uploaded at its full length — a 3-minute video stayed 3 minutes
+        // and shipped tens of megabytes that every viewer then downloaded before
+        // the first frame could render. The cap was only ever applied to people
+        // who happened to trim.
+        trimDurationSec ??= totalDuration != null
+            ? totalDuration.inSeconds.clamp(1, maxReelSeconds)
+            : maxReelSeconds;
 
         final info = await VideoCompress.compressVideo(
           _pickedFile!.path,

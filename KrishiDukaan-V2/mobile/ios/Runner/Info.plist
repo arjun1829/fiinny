@@ -34,6 +34,14 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>KrishiDukan uses your location to show nearby agri stores, calculate delivery availability, and give directions to dealers.</string>
+	<!-- Required by App Store review (ITMS-90683) even though the app only ever
+	     requests when-in-use authorization: the bundled geolocator SDK links the
+	     always-authorization API, and Apple mandates a purpose string for any
+	     referenced sensitive API regardless of whether it is called. The wording
+	     matches the when-in-use string because that is genuinely all the app does
+	     — location is never collected in the background. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>KrishiDukan uses your location to show nearby agri stores, calculate delivery availability, and give directions to dealers.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>KrishiDukan uses the camera to record AgriReels videos and capture product photos.</string>
 	<key>NSMicrophoneUsageDescription</key>

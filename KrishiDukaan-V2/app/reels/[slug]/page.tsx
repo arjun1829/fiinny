@@ -9,6 +9,7 @@ import {
   linkedProductStorePath,
   reelCssFilter,
 } from "../../lib/seo/reels-server";
+import ReelOverlay from "../components/ReelOverlay";
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
@@ -146,7 +147,11 @@ export default async function ReelPage({ params }: PageProps) {
               poster={reel.thumbnailUrl}
               controls
               playsInline
-              preload="metadata"
+              // This page has exactly one video and the visitor arrived
+              // specifically to watch it, so fetching eagerly is right here —
+              // unlike the feed, where dozens of elements compete (see
+              // ../lib/preload.ts).
+              preload="auto"
               style={
                 reelCssFilter(reel.filterId)
                   ? { filter: reelCssFilter(reel.filterId) }
@@ -155,19 +160,11 @@ export default async function ReelPage({ params }: PageProps) {
               className="aspect-[9/16] w-full object-contain"
             />
             {reel.overlayText ? (
-              <div
-                className={`pointer-events-none absolute inset-x-6 flex justify-center ${
-                  reel.overlayPos === "top"
-                    ? "top-10"
-                    : reel.overlayPos === "bottom"
-                      ? "bottom-20"
-                      : "top-1/2 -translate-y-1/2"
-                }`}
-              >
-                <p className="max-w-full rounded-xl bg-black/35 px-3 py-1.5 text-center text-lg font-extrabold leading-snug text-white drop-shadow-md">
-                  {reel.overlayText}
-                </p>
-              </div>
+              <ReelOverlay
+                text={reel.overlayText}
+                position={reel.overlayPos}
+                variant="detail"
+              />
             ) : null}
           </div>
 

@@ -24,7 +24,7 @@
     "i18next-http-backend": "^3.0.2",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.26.0",
     "papaparse": "^5.5.3",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",

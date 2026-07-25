@@ -22,6 +22,23 @@ function formatDate(d?: Date) {
     return (d || new Date()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/**
+ * jsPDF's built-in fonts (Helvetica/Times/Courier) only support WinAnsi
+ * (Latin-1) encoding — any character outside that range (₹, →, ·, smart
+ * quotes, em/en dashes) corrupts the whole text run instead of just that
+ * glyph. Swap the common offenders for ASCII equivalents before handing
+ * strings to jsPDF/autoTable.
+ */
+function pdfSafe(s: string): string {
+    return s
+        .replace(/₹/g, 'Rs.')
+        .replace(/→/g, '->')
+        .replace(/[·•]/g, '-')
+        .replace(/[’‘]/g, "'")
+        .replace(/[“”]/g, '"')
+        .replace(/[–—]/g, '-');
+}
+
 // ── PDF Generator ─────────────────────────────────────────────
 export function generateInvoicePDF(
     template: InvoiceTemplate,
@@ -231,6 +248,250 @@ export function printThermalInvoice(
 </body>
 </html>`);
     win.document.close();
+}
+
+// ── Supplier Payment Receipt ────────────────────────────────────
+export interface SupplierPaymentData {
+    paymentId?: string;
+    amount: number;
+    paymentDate?: string;
+    paymentMethod?: string;
+    accountDetails?: { accountName?: string; transactionRef?: string };
+    bankDetails?: {
+        holderName?: string;
+        beneficiaryName?: string;
+        payerAccountNumber?: string;
+        beneficiaryAccountNumber?: string;
+        ifscCode?: string;
+        cbsTransactionId?: string;
+        statusRemark?: string;
+    };
+    notes?: string;
+    linkedInvoiceNumber?: string;
+}
+
+export interface SupplierLite {
+    name?: string;
+    address?: string;
+    phone?: string;
+    gstin?: string;
+    outstandingBalance?: number;
+}
+
+export function generatePaymentReceiptPDF(
+    branding: InvoiceTemplateBranding,
+    payment: SupplierPaymentData,
+    supplier: SupplierLite,
+) {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // ── Header ──
+    doc.setFontSize(22);
+    doc.setTextColor(40, 167, 69);
+    doc.text(branding.businessName || 'Business', 14, 20);
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(branding.address || '', 14, 27, { maxWidth: 110 });
+
+    if (branding.gstin || branding.licenseNumbers) {
+        const items = [branding.gstin && `GSTIN: ${branding.gstin}`, branding.licenseNumbers && `LIC: ${branding.licenseNumbers}`].filter(Boolean);
+        doc.text(items.join('   '), 14, 34);
+    }
+
+    if (branding.logoUrl) {
+        try { doc.addImage(branding.logoUrl, 'PNG', 160, 10, 36, 18); } catch { /* skip if invalid */ }
+    }
+
+    let y = 44;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.text('PAYMENT RECEIPT', 14, y);
+    doc.setFont('helvetica', 'normal');
+
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Receipt No: ${payment.paymentId || '-'}`, 14, y + 7);
+    doc.text(`Date: ${payment.paymentDate ? formatDate(new Date(payment.paymentDate)) : formatDate()}`, 14, y + 12);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Paid To:', 125, y);
+    doc.text(pdfSafe(supplier.name || '-'), 125, y + 6, { maxWidth: 70 });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    let sy = y + 11;
+    if (supplier.phone) { doc.text(`Ph: ${supplier.phone}`, 125, sy); sy += 5; }
+    if (supplier.address) { doc.text(pdfSafe(supplier.address), 125, sy, { maxWidth: 70 }); sy += 5; }
+    if (supplier.gstin) { doc.text(`GSTIN: ${supplier.gstin}`, 125, sy); }
+
+    y += 32;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, y, 196, y);
+    y += 10;
+
+    // ── Amount ──
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(20);
+    doc.setTextColor(40, 167, 69);
+    doc.text(`Amount Paid: Rs. ${Number(payment.amount || 0).toLocaleString('en-IN')}`, 14, y);
+    y += 12;
+
+    // ── Details table ──
+    const accountDetails = payment.accountDetails;
+    const rows: [string, string][] = [
+        ['Payment Method', payment.paymentMethod || 'Cash'],
+    ];
+    if (accountDetails?.accountName) rows.push([payment.paymentMethod === 'Cheque' ? 'Bank Name' : 'Account / Bank', pdfSafe(accountDetails.accountName)]);
+    if (accountDetails?.transactionRef) rows.push([payment.paymentMethod === 'Cheque' ? 'Cheque No.' : 'Transaction Ref (UTR)', pdfSafe(accountDetails.transactionRef)]);
+
+    const bd = payment.bankDetails;
+    if (bd?.holderName) rows.push(['Payer Account Holder', pdfSafe(bd.holderName)]);
+    if (bd?.payerAccountNumber) rows.push(['Payer A/c Number', pdfSafe(bd.payerAccountNumber)]);
+    if (bd?.beneficiaryName) rows.push(['Beneficiary Name', pdfSafe(bd.beneficiaryName)]);
+    if (bd?.beneficiaryAccountNumber) rows.push(['Beneficiary A/c No.', pdfSafe(bd.beneficiaryAccountNumber)]);
+    if (bd?.ifscCode) rows.push(['IFSC Code', pdfSafe(bd.ifscCode)]);
+    if (bd?.cbsTransactionId) rows.push(['CBS Transaction ID', pdfSafe(bd.cbsTransactionId)]);
+    if (bd?.statusRemark) rows.push(['Status / Remark', pdfSafe(bd.statusRemark)]);
+
+    if (payment.linkedInvoiceNumber) rows.push(['Applied Against', pdfSafe(payment.linkedInvoiceNumber)]);
+    if (payment.notes) rows.push(['Notes', pdfSafe(payment.notes)]);
+
+    autoTable(doc, {
+        startY: y,
+        body: rows,
+        theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 1.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: [80, 80, 80] }, 1: { textColor: [0, 0, 0] } },
+        margin: { left: 14, right: 14 },
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || y + 20;
+
+    if (typeof supplier.outstandingBalance === 'number') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`Outstanding Balance After This Payment: Rs. ${supplier.outstandingBalance.toLocaleString('en-IN')}`, 14, finalY + 10);
+    }
+
+    if (branding.signatureName) {
+        const sigY = Math.max(finalY + 40, 250);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(60, 60, 60);
+        doc.text('Authorised Signatory', 190, sigY - 4, { align: 'right' });
+        doc.setFont('helvetica', 'bold');
+        doc.text(branding.signatureName, 190, sigY + 1, { align: 'right' });
+        doc.line(134, sigY - 5, 190, sigY - 5);
+    }
+
+    return doc;
+}
+
+export function downloadPaymentReceiptPDF(
+    branding: InvoiceTemplateBranding,
+    payment: SupplierPaymentData,
+    supplier: SupplierLite,
+) {
+    const doc = generatePaymentReceiptPDF(branding, payment, supplier);
+    const name = `Receipt_${(supplier.name || 'supplier').replace(/\s/g, '_')}_${payment.paymentId || Date.now()}.pdf`;
+    doc.save(name);
+    return name;
+}
+
+// ── Supplier Account Statement ──────────────────────────────────
+export interface StatementRow {
+    date: any;
+    particulars: string;
+    debit: number;
+    credit: number;
+    balance: number;
+}
+
+export function generateSupplierStatementPDF(
+    branding: InvoiceTemplateBranding,
+    supplier: SupplierLite & { totalInvoiced?: number; totalPaid?: number },
+    rows: StatementRow[],
+    formatRowDate: (v: any) => string,
+) {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    doc.setFontSize(22);
+    doc.setTextColor(40, 167, 69);
+    doc.text(branding.businessName || 'Business', 14, 20);
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(branding.address || '', 14, 27, { maxWidth: 110 });
+
+    if (branding.gstin || branding.licenseNumbers) {
+        const items = [branding.gstin && `GSTIN: ${branding.gstin}`, branding.licenseNumbers && `LIC: ${branding.licenseNumbers}`].filter(Boolean);
+        doc.text(items.join('   '), 14, 34);
+    }
+
+    if (branding.logoUrl) {
+        try { doc.addImage(branding.logoUrl, 'PNG', 160, 10, 36, 18); } catch { /* skip if invalid */ }
+    }
+
+    let y = 44;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.text('STATEMENT OF ACCOUNT', 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Party: ${pdfSafe(supplier.name || '-')}`, 14, y + 7);
+    doc.text(`Generated: ${formatDate()}`, 14, y + 12);
+    if (supplier.phone) doc.text(`Ph: ${supplier.phone}`, 14, y + 17);
+
+    y += 26;
+
+    autoTable(doc, {
+        startY: y,
+        head: [['Date', 'Particulars', 'Debit', 'Credit', 'Balance']],
+        body: rows.map(r => [
+            formatRowDate(r.date),
+            pdfSafe(r.particulars),
+            r.debit ? r.debit.toLocaleString('en-IN') : '',
+            r.credit ? r.credit.toLocaleString('en-IN') : '',
+            r.balance.toLocaleString('en-IN'),
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [40, 167, 69], fontStyle: 'bold' },
+        margin: { left: 14, right: 14 },
+        styles: { fontSize: 8 },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right', fontStyle: 'bold' } },
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || y + 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Total Invoiced: Rs. ${(supplier.totalInvoiced ?? 0).toLocaleString('en-IN')}`, 14, finalY + 10);
+    doc.text(`Total Paid: Rs. ${(supplier.totalPaid ?? 0).toLocaleString('en-IN')}`, 14, finalY + 16);
+    doc.setTextColor(supplier.outstandingBalance && supplier.outstandingBalance > 0 ? 220 : 40, supplier.outstandingBalance && supplier.outstandingBalance > 0 ? 60 : 167, supplier.outstandingBalance && supplier.outstandingBalance > 0 ? 60 : 69);
+    doc.text(`Outstanding Payable: Rs. ${(supplier.outstandingBalance ?? 0).toLocaleString('en-IN')}`, 14, finalY + 22);
+
+    return doc;
+}
+
+export function downloadSupplierStatementPDF(
+    branding: InvoiceTemplateBranding,
+    supplier: SupplierLite & { totalInvoiced?: number; totalPaid?: number },
+    rows: StatementRow[],
+    formatRowDate: (v: any) => string,
+) {
+    const doc = generateSupplierStatementPDF(branding, supplier, rows, formatRowDate);
+    const name = `Statement_${(supplier.name || 'supplier').replace(/\s/g, '_')}_${Date.now()}.pdf`;
+    doc.save(name);
+    return name;
 }
 
 // ── Email Opener ──────────────────────────────────────────────
