@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/reel_comment_model.dart';
+import '../domain/ranking_context.dart';
 
 class ReelsRepository {
   final _db = FirebaseFirestore.instance;
@@ -11,13 +12,22 @@ class ReelsRepository {
 
   // ── Feed ──────────────────────────────────────────────────────────────────
 
+  /// Filters out flagged reels in memory rather than with a Firestore
+  /// `moderationStatus != 'flagged'` clause: an inequality filter forces
+  /// `orderBy` onto that same field first, which would break the `createdAt`
+  /// ordering the whole feed depends on — and likely needs a composite index
+  /// this repo has been burned by before (see fetchSellerReels). Flagged
+  /// reels are rare, so the client-side filter costs nothing that matters.
   Future<List<ReelModel>> fetchFeed({int limit = 30}) async {
     final snap = await _db
         .collection('reels')
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .get();
-    return snap.docs.map(ReelModel.fromFirestore).toList();
+    return snap.docs
+        .map(ReelModel.fromFirestore)
+        .where((r) => r.moderationStatus != 'flagged')
+        .toList();
   }
 
   /// Returns all reels for a shop: their own + any reels they were tagged in
@@ -48,6 +58,12 @@ class ReelsRepository {
         if (seen.add(doc.id)) merged.add(ReelModel.fromFirestore(doc));
       }
     }
+    // Same rationale as fetchFeed: filtered in memory, not in the query.
+    // This also hides a flagged reel from the owner's own profile view, not
+    // just strangers' — an acceptable trade for a first-cut moderation gate;
+    // flagReelOnReports (functions/src/index.ts) notifies the owner
+    // separately so they aren't left wondering where it went.
+    merged.removeWhere((r) => r.moderationStatus == 'flagged');
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return merged;
   }
@@ -55,7 +71,10 @@ class ReelsRepository {
   Future<ReelModel?> fetchReelById(String reelId) async {
     final doc = await _db.collection('reels').doc(reelId).get();
     if (!doc.exists) return null;
-    return ReelModel.fromFirestore(doc);
+    final reel = ReelModel.fromFirestore(doc);
+    // A shared/deep-linked reel must not be viewable once flagged, even by
+    // someone who already has the link.
+    return reel.moderationStatus == 'flagged' ? null : reel;
   }
 
   /// Reels linked to a product — most-viewed first, capped at 5.
@@ -70,7 +89,10 @@ class ReelsRepository {
         .where('linkedProductId', isEqualTo: productId)
         .limit(50)
         .get();
-    final reels = snap.docs.map(ReelModel.fromFirestore).toList();
+    final reels = snap.docs
+        .map(ReelModel.fromFirestore)
+        .where((r) => r.moderationStatus != 'flagged')
+        .toList();
     reels.sort((a, b) {
       final byViews = b.viewsCount.compareTo(a.viewsCount);
       return byViews != 0 ? byViews : b.createdAt.compareTo(a.createdAt);
@@ -199,6 +221,83 @@ class ReelsRepository {
         .count()
         .get();
     return agg.count ?? 0;
+  }
+
+  /// shopOwnerIds [viewerPhone] follows — feeds the ranker's affinity signal.
+  Future<Set<String>> fetchFollowedShopIds(String viewerPhone) async {
+    if (viewerPhone.isEmpty) return {};
+    final snap = await _db
+        .collection('follows')
+        .where('followerId', isEqualTo: viewerPhone)
+        .get();
+    return snap.docs
+        .map((d) => d.data()['followedShopId'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  // ── Ranking support ──────────────────────────────────────────────────────
+
+  /// Seller phones [viewerPhone] has actually bought from — the strongest
+  /// affinity signal the ranker uses. Reads `customerPhone`/`sellerPhone`,
+  /// the phone-keyed fields orders carry alongside the legacy uid ones (see
+  /// OrderRepository.watchMyOrders), which is what `reel.shopOwnerId` is
+  /// keyed by.
+  Future<Set<String>> fetchOrderedShopIds(String viewerPhone) async {
+    if (viewerPhone.isEmpty) return {};
+    final snap = await _db
+        .collection('orders')
+        .where('customerPhone', isEqualTo: viewerPhone)
+        .get();
+    return snap.docs
+        .map((d) => d.data()['sellerPhone'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  /// Resolves city/state/pincode for a batch of sellers, one parallel get per
+  /// id — cheap at feed scale (a candidate pool has a few dozen distinct
+  /// sellers at most) and avoids a `whereIn` chunking dance for something
+  /// that runs once per feed load.
+  Future<Map<String, SellerLocation>> fetchSellerLocations(
+    Set<String> shopOwnerIds,
+  ) async {
+    if (shopOwnerIds.isEmpty) return {};
+    final docs = await Future.wait(
+      shopOwnerIds.map((id) => _db.collection('users').doc(id).get()),
+    );
+    final out = <String, SellerLocation>{};
+    for (final doc in docs) {
+      if (!doc.exists) continue;
+      final data = doc.data();
+      out[doc.id] = SellerLocation(
+        city: data?['city'] as String?,
+        state: data?['state'] as String?,
+        pincode: data?['pincode'] as String?,
+      );
+    }
+    return out;
+  }
+
+  // ── Moderation ────────────────────────────────────────────────────────────
+
+  /// Files a report against [reelId]. Writes to `reel_reports`, never
+  /// touches the reel doc directly — `flagReelOnReports`
+  /// (functions/src/index.ts) is what tallies reports and flips
+  /// `moderationStatus`, running with the admin SDK so it isn't bound by the
+  /// same rules a client is. See firestore.rules for why clients (including
+  /// the reel's own owner) cannot set `moderationStatus` themselves.
+  Future<void> reportReel({
+    required String reelId,
+    required String reporterId,
+    required String reason,
+  }) async {
+    await _db.collection('reel_reports').add({
+      'reelId': reelId,
+      'reporterId': reporterId,
+      'reason': reason,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // ── CRUD ──────────────────────────────────────────────────────────────────

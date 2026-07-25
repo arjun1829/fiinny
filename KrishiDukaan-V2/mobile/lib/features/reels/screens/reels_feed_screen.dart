@@ -830,6 +830,42 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     }
   }
 
+  /// Files a report, picked from a fixed reason list rather than free text —
+  /// the Cloud Function that acts on these (flagReelOnReports) only counts
+  /// them, it doesn't read them, so structured reasons are enough for a
+  /// human reviewer later and avoid an open text field's abuse surface.
+  Future<void> _reportReel() async {
+    if (widget.currentUserId == null) {
+      _showLoginPrompt();
+      return;
+    }
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _ReportReasonSheet(),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await ref.read(reelsRepoProvider).reportReel(
+            reelId: widget.reel.id,
+            reporterId: widget.currentUserId!,
+            reason: reason,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reported — thanks for flagging this.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not submit report: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -1025,6 +1061,15 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                   label: _formatCount(widget.reel.viewsCount),
                   onTap: () {},
                 ),
+                if (!isOwnReel) ...[
+                  const SizedBox(height: 20),
+                  _ActionButton(
+                    icon: Icons.flag_outlined,
+                    iconColor: Colors.white70,
+                    label: 'Report',
+                    onTap: _reportReel,
+                  ),
+                ],
               ],
             ),
           ),
@@ -1699,6 +1744,49 @@ class _ShopSearchSheetState extends ConsumerState<_ShopSearchSheet> {
                     },
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Report reason sheet ───────────────────────────────────────────────────────
+
+class _ReportReasonSheet extends StatelessWidget {
+  const _ReportReasonSheet();
+
+  static const _reasons = [
+    'Misleading product or price claim',
+    'Spam or off-platform contact scraping',
+    'Inappropriate or offensive content',
+    'Something else',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 4),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('Report this reel', style: AppTextStyles.heading3),
+          ),
+          for (final reason in _reasons)
+            ListTile(
+              title: Text(reason),
+              onTap: () => Navigator.pop(context, reason),
+            ),
+          const SizedBox(height: 8),
         ],
       ),
     );

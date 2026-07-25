@@ -1,14 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/reel_comment_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/user_model.dart';
+import '../../../core/providers/user_provider.dart';
 import '../../dashboard/data/dashboard_repository.dart';
+import '../data/ranking_context_builder.dart';
 import '../data/reels_repository.dart';
+import '../domain/ranking_context.dart';
+import '../domain/reel_ranker.dart';
 
 final _repo = ReelsRepository();
+final _rankingContextBuilder = RankingContextBuilder(_repo);
 
 final reelsRepoProvider = Provider((_) => _repo);
 
@@ -22,34 +26,30 @@ class _CommentSheetNotifier extends Notifier<bool> {
   void setOpen(bool open) => state = open;
 }
 
+/// Ranked feed, replacing the old shuffle-newest-50. See
+/// domain/reel_ranker.dart for why: geography and commercial intent matter
+/// more here than raw engagement. The scoring logic itself lives entirely
+/// under domain/ — this provider only fetches, hands off, and returns.
 final reelsFeedProvider = FutureProvider<List<ReelModel>>((ref) async {
-  // Firestore and SharedPreferences are independent — awaiting them in sequence
-  // added the disk read to the critical path before a single video byte was
-  // requested. The feed cannot start loading video until this future resolves,
-  // so everything here is directly in front of the user's first frame.
+  // Watched (not read) so the feed re-ranks once the user doc arrives — on a
+  // cold app start this provider can build before currentUserProvider's first
+  // snapshot lands, and without watching it the feed would be stuck on
+  // cold-start weights for the rest of the session.
+  final currentUser = ref.watch(currentUserProvider).value;
+
+  // Independent reads fired together — sequencing either in front of the
+  // other would add pure latency before a single video byte is requested.
   final results = await Future.wait([
     _repo.fetchFeed(limit: 50),
-    SharedPreferences.getInstance(),
+    _rankingContextBuilder.build(currentUser: currentUser),
   ]);
   final reels = results[0] as List<ReelModel>;
-  final prefs = results[1] as SharedPreferences;
-  final seenReelsIds = prefs.getStringList('seen_reels') ?? [];
+  final ctx = results[1] as RankingContext;
 
-  final unseenReels = <ReelModel>[];
-  final seenReels = <ReelModel>[];
+  final sellerLocations =
+      await _rankingContextBuilder.sellerLocationsFor(reels);
 
-  for (final reel in reels) {
-    if (seenReelsIds.contains(reel.id)) {
-      seenReels.add(reel);
-    } else {
-      unseenReels.add(reel);
-    }
-  }
-
-  unseenReels.shuffle();
-  seenReels.shuffle();
-
-  return [...unseenReels, ...seenReels];
+  return const ReelRanker().rank(reels, ctx, sellerLocations: sellerLocations);
 });
 
 final sellerReelsProvider = FutureProvider.family<List<ReelModel>, String>((
