@@ -116,9 +116,14 @@ function isListable(data: Record<string, unknown>): boolean {
 }
 
 // ─── Slug helpers ─────────────────────────────────────────────────────────
-// Products have no stored slug, so the URL slug is `{kebab-name}-{docId}`.
-// We always resolve by the trailing doc id, so a bare `{docId}` URL also works
-// and existing links never break.
+// URL slug format: `{kebab-name}--{docId}` (double-hyphen separator).
+// The double hyphen is used because both the kebab name and the Firestore doc
+// id can contain single hyphens (e.g. doc id "karanarjun-humi-gold-250-g"),
+// making a single-hyphen separator ambiguous at extraction time.
+//
+// Legacy slugs built before this fix used a single hyphen and only worked
+// correctly for auto-generated (no-hyphen) doc ids. The extractor below
+// handles both formats so existing indexed URLs continue to resolve.
 
 export function buildProductSlug(name: string, id: string): string {
   const base = name
@@ -129,13 +134,19 @@ export function buildProductSlug(name: string, id: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 70);
-  return base ? `${base}-${id}` : id;
+  return base ? `${base}--${id}` : id;
 }
 
-/** Extract the Firestore doc id from a slug of the form `{kebab-name}-{docId}` or a bare id. */
+/** Extract the Firestore doc id from a product slug.
+ *  New format:    `{kebab-name}--{docId}`  → split on first "--"
+ *  Legacy format: `{kebab-name}-{docId}`   → lastIndexOf("-") fallback
+ *  Bare id (no name prefix):               → returned as-is
+ */
 export function extractIdFromSlug(slug: string): string {
   const decoded = decodeURIComponent(slug).trim();
-  // Doc id is the last hyphen-separated segment; bare ids (no extra name) pass through.
+  const sep = decoded.indexOf("--");
+  if (sep !== -1) return decoded.slice(sep + 2);
+  // Legacy: single-hyphen format — only correct for IDs that contain no hyphens.
   const idx = decoded.lastIndexOf("-");
   return idx === -1 ? decoded : decoded.slice(idx + 1);
 }
