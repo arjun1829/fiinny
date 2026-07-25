@@ -29,6 +29,14 @@ class ReelModel {
   final String? originalShopOwnerId;
   final String? originalShopName;
 
+  /// 'approved' | 'flagged'. Missing on every reel written before this field
+  /// existed, which is treated as 'approved' — moderation gates new reports,
+  /// it does not retroactively hide the existing corpus. Only the
+  /// `flagReelOnReports` Cloud Function (admin SDK, bypasses rules) can set
+  /// this to 'flagged'; see firestore.rules for why clients — including the
+  /// reel's own owner — cannot write it directly.
+  final String moderationStatus;
+
   const ReelModel({
     required this.id,
     required this.shopOwnerId,
@@ -53,6 +61,7 @@ class ReelModel {
     this.originalReelId,
     this.originalShopOwnerId,
     this.originalShopName,
+    this.moderationStatus = 'approved',
   });
 
   factory ReelModel.fromFirestore(DocumentSnapshot doc) {
@@ -89,6 +98,7 @@ class ReelModel {
       originalReelId: data['originalReelId'] as String?,
       originalShopOwnerId: data['originalShopOwnerId'] as String?,
       originalShopName: data['originalShopName'] as String?,
+      moderationStatus: data['moderationStatus'] as String? ?? 'approved',
     );
   }
 

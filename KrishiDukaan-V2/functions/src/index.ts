@@ -824,6 +824,70 @@ export const notifyShopOwnerOnFollow = onDocumentCreated(
   }
 );
 
+/**
+ * Someone reported a reel → tally reports on the reel doc, and once the
+ * count crosses REPORT_FLAG_THRESHOLD, flip moderationStatus to 'flagged' so
+ * it drops out of every feed/profile/product-page query (see
+ * ReelsRepository in the mobile app, and getAllReels in
+ * app/lib/seo/reels-server.ts on web).
+ *
+ * Runs with the admin SDK, which is not subject to firestore.rules — that's
+ * deliberate: no client, including the reel's own owner, may set
+ * moderationStatus directly (see the `reels` match block in
+ * firestore.rules). Per docs/reels-ranking-architecture.md §7, a human
+ * reviewing nothing on day one is fine — the field and the filter existing
+ * at all is the actual requirement this closes.
+ */
+const REPORT_FLAG_THRESHOLD = 3;
+
+export const flagReelOnReports = onDocumentCreated(
+  "reel_reports/{reportId}",
+  async (event) => {
+    const d = event.data?.data() as Record<string, unknown> | undefined;
+    if (!d) return;
+
+    const reelId = String(d.reelId ?? "");
+    if (!reelId) return;
+
+    const reelRef = db.collection("reels").doc(reelId);
+
+    // Transaction so two reports landing back-to-back can't both read the
+    // same pre-increment count and only one of them actually cross the
+    // threshold.
+    const justFlagged = await db.runTransaction(async (txn) => {
+      const reelSnap = await txn.get(reelRef);
+      if (!reelSnap.exists) return false;
+
+      const reel = reelSnap.data() as Record<string, unknown>;
+      const reportCount = (Number(reel.reportCount) || 0) + 1;
+      const wasFlagged = reel.moderationStatus === "flagged";
+      const nowFlagged = reportCount >= REPORT_FLAG_THRESHOLD;
+
+      txn.update(reelRef, {
+        reportCount,
+        ...(nowFlagged ? { moderationStatus: "flagged" } : {}),
+      });
+
+      return nowFlagged && !wasFlagged;
+    });
+
+    if (!justFlagged) return;
+
+    const reelSnap = await reelRef.get();
+    const reel = reelSnap.data() as Record<string, unknown> | undefined;
+    const ownerPhone = String(reel?.shopOwnerId ?? "");
+    if (!ownerPhone) return;
+
+    await notify(
+      ownerPhone,
+      "reel_flagged",
+      "Your reel was flagged for review",
+      "Multiple viewers reported one of your reels, so it's hidden from the feed pending review.",
+      { reelId }
+    );
+  }
+);
+
 /** Manufacturer/admin assigned a product to a retailer → notify the retailer. */
 export const notifyRetailerOnAssignment = onDocumentCreated(
   "products/{productId}",

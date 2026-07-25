@@ -680,7 +680,13 @@ service cloud.firestore {
       allow create: if isAuthed()
         && request.resource.data.shopOwnerId == myPhone();
       allow update: if isAdmin()
-        || (isAuthed() && phoneMatches(resource.data.shopOwnerId))
+        // The owner can edit their own reel, but not moderationStatus or
+        // reportCount — those exist so a report can't be reversed by the
+        // person being reported. Only flagReelOnReports (admin SDK, bypasses
+        // rules entirely) or an admin may touch them.
+        || (isAuthed() && phoneMatches(resource.data.shopOwnerId)
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                    .hasAny(['moderationStatus', 'reportCount']))
         // Allow any authed user to increment the counter fields only
         // (likesCount via toggleLike, commentsCount via addComment, viewsCount via incrementViewsCount)
         || (isAuthed() && request.resource.data.diff(resource.data).affectedKeys()
@@ -713,6 +719,17 @@ service cloud.firestore {
     match /follows/{followId} {
       allow read: if true;
       allow write: if isAuthed();
+    }
+
+    // ─── reel_reports ────────────────────────────────────────────────────────
+    // Any authenticated user may file a report against a reel. Nobody reads,
+    // updates, or deletes them from the client — flagReelOnReports
+    // (functions/src/index.ts) tallies them with the admin SDK, and a report
+    // that could be edited or deleted by its author or the reported owner
+    // would defeat the point of it.
+    match /reel_reports/{reportId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAuthed() && request.resource.data.reporterId == myPhone();
     }
     
     
