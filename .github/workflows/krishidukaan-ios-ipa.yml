@@ -49,7 +49,7 @@ jobs:
           # Builds that the current highest build for KrishiDukaan is still
           # below 1001 before relying on this. Computed in bash, not a YAML
           # expression, since GitHub Actions' ${{ }} syntax has no + operator.
-          echo "BUILD_NUMBER=$((1000 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
