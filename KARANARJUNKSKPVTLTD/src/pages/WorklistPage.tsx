@@ -165,7 +165,7 @@ function PartnersTab() {
     const [showUdhariModal, setShowUdhariModal] = useState(false);
     const [showAnalytics, setShowAnalytics] = useState(false);
 
-    const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('all');
+    const [financialPeriod, setFinancialPeriod] = useState<FinancialPeriod>('month');
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
     const [sosByRetailer, setSosByRetailer] = useState<Map<string, { invoiceDate?: string; grandTotal?: number; netAmount?: number; totalAmount?: number }[]>>(new Map());

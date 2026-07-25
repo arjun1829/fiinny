@@ -556,26 +556,21 @@ export default function RateSheetPage() {
                 </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600 }}>
-                    {visibleProducts.length} {visibleProducts.length === 1 ? 'product' : 'products'}
-                </div>
-                <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '360px', minWidth: '200px' }}>
-                    <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-                    <input
-                        type="text"
-                        className="input-field"
-                        placeholder="Search by name, SKU, company or batch…"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        style={{ paddingLeft: '2.4rem', margin: 0, height: '40px' }}
-                    />
-                    {searchTerm && (
-                        <button onClick={() => setSearchTerm('')} title="Clear" style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}>
-                            <X size={15} />
-                        </button>
-                    )}
-                </div>
+            <div style={{ position: 'relative', width: '100%', marginBottom: '1.5rem' }}>
+                <Search size={20} style={{ position: 'absolute', left: '1.1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                <input
+                    type="text"
+                    className="input-field"
+                    placeholder={`Search by name, SKU, company or batch… (${visibleProducts.length} products)`}
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    style={{ paddingLeft: '3rem', paddingRight: '3rem', margin: 0, height: '54px', fontSize: '1.05rem', borderRadius: '14px', width: '100%', boxSizing: 'border-box' }}
+                />
+                {searchTerm && (
+                    <button onClick={() => setSearchTerm('')} title="Clear" style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}>
+                        <X size={18} />
+                    </button>
+                )}
             </div>
 
             {/* Every cell holds exactly one value — copying a block into Excel keeps
