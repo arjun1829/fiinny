@@ -1,11 +1,6 @@
 name: KrishiDukaan iOS IPA (Flutter export + ASC upload)
 
 env:
-  # Offset keeps this well above any build number already uploaded manually
-  # in the past (last known manual TestFlight build was 121 as of 2026-07-24).
-  # Verify in App Store Connect -> TestFlight -> Builds that the current
-  # highest build for KrishiDukaan is still below 1001 before relying on this.
-  BUILD_NUMBER: ${{ 1000 + github.run_number }}
   BUNDLE_ID: com.karanarjuntechnologies.KrishiDukan
   TEAM_ID: D9JTVVB85F
 
@@ -43,6 +38,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute build number
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Offset keeps this well above any build number already uploaded
+          # manually in the past (last known manual TestFlight build was 121
+          # as of 2026-07-24). Verify in App Store Connect -> TestFlight ->
+          # Builds that the current highest build for KrishiDukaan is still
+          # below 1001 before relying on this. Computed in bash, not a YAML
+          # expression, since GitHub Actions' ${{ }} syntax has no + operator.
+          echo "BUILD_NUMBER=$((1000 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
 
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
