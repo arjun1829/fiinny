@@ -17,6 +17,7 @@ import DynamicForm from '../components/DynamicForm';
 import OutstandingInvoice from '../components/OutstandingInvoice';
 import DatePeriodFilter from '../components/DatePeriodFilter';
 import { type FinancialPeriod, getFinancialDateRange } from '../utils/financialPeriod';
+import { printB2BInvoice } from '../utils/printB2BInvoice';
 
 
 interface Retailer {
@@ -2263,10 +2264,19 @@ export default function WorklistDetailsPage() {
                                                     <FilePen size={14} /> Edit Order
                                                 </button>
                                             )}
-                                            <button className="btn btn-secondary" onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
-                                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-                                                <Printer size={14} /> View / Print Invoice
-                                            </button>
+                                            {isSales ? (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => tenantId && printB2BInvoice(so.id, tenantId)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Printer size={14} /> Print Invoice
+                                                </button>
+                                            ) : (
+                                                <button className="btn btn-secondary"
+                                                    onClick={() => navigate(`/b2b-invoice?orderId=${so.id}&retailerId=${id}`)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                                                    <Printer size={14} /> View / Edit Invoice
+                                                </button>
+                                            )}
                                             {!isSales && (so.linkedPaymentIds?.length ?? 0) > 0 && (
                                                 <button className="btn btn-secondary"
                                                     onClick={() => handleOpenUnlinkModal(so)}
