@@ -6,7 +6,8 @@ import {
   linkedProductStorePath,
   reelCssFilter,
 } from "../lib/seo/reels-server";
-import ReelsFeedClient, { type FeedReel } from "./ReelsFeedClient";
+import ReelsFeedClient from "./ReelsFeedClient";
+import type { FeedReel } from "./lib/types";
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";

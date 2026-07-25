@@ -516,6 +516,65 @@ export default function HubView({
         </div>
       </section>
 
+      {/* Videos Section */}
+      {selectedHub.videos && selectedHub.videos.length > 0 && (
+        <section className="bg-white rounded-[40px] border border-surface-container p-8 md:p-12">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full">Video Library</span>
+              <h2 className="text-3xl font-black text-on-surface tracking-tight mt-3">Watch & Learn</h2>
+              <p className="text-on-surface-variant text-sm mt-1">{selectedHub.name} farming guides and expert tutorials</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {selectedHub.videos.map((video, i) => (
+              <a
+                key={video.id || i}
+                href={video.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group rounded-3xl overflow-hidden border border-surface-container hover:border-primary/30 hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 bg-surface-container-lowest"
+              >
+                <div className="relative aspect-video overflow-hidden bg-on-surface/5">
+                  {video.thumbnail ? (
+                    <img
+                      src={video.thumbnail}
+                      alt={video.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-5xl">🎥</span>
+                    </div>
+                  )}
+                  {/* Play overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+                    <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <svg className="w-6 h-6 text-primary ml-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <h3 className="font-black text-on-surface text-base line-clamp-2 group-hover:text-primary transition-colors">
+                    {video.title || 'Watch Video'}
+                  </h3>
+                  {video.description && (
+                    <p className="text-sm text-on-surface-variant mt-2 line-clamp-2 leading-relaxed">{video.description}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-4">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full">
+                      Watch Now →
+                    </span>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Expert Wisdom / FAQ */}
       <section className="bg-white rounded-[40px] border border-surface-container p-8 md:p-12">
         <div className="text-center mb-12">

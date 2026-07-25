@@ -10,6 +10,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
+import { printB2BInvoice } from '../utils/printB2BInvoice';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ export default function B2BInvoiceWorklistPage() {
     const navigate = useNavigate();
     const { tenantId, userRole } = useAuth();
     const isSales = userRole === 'sales';
+    const isViewOnly = isSales || userRole === 'retailer';
     const { allowedRetailerIds, filterLoading } = useSalesFilter();
     const [invoices, setInvoices] = useState<B2BInvoice[]>([]);
     const [loading, setLoading] = useState(true);
@@ -194,7 +196,7 @@ export default function B2BInvoiceWorklistPage() {
                     </h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Every B2B GST invoice across all customers — work payments in one place.</p>
                 </div>
-                {!isSales && (
+                {!isViewOnly && (
                     <button className="btn btn-primary" onClick={() => navigate('/b2b-invoice')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <FileText size={16} /> New B2B Invoice
                     </button>
@@ -244,7 +246,7 @@ export default function B2BInvoiceWorklistPage() {
             </div>
 
             {/* Bulk quick-action bar — hidden in sales view-only mode */}
-            {!isSales && selectedIds.size > 0 && (
+            {!isViewOnly && selectedIds.size > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0.7rem 1rem', marginBottom: '1rem', background: 'var(--primary-light)', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
                     <CheckSquare size={16} color="#fff" />
                     <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.88rem' }}>{selectedIds.size} selected</span>
@@ -302,7 +304,7 @@ export default function B2BInvoiceWorklistPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', whiteSpace: 'nowrap' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                {!isSales && (
+                                {!isViewOnly && (
                                     <th style={{ padding: '0.85rem 1rem', width: '40px' }}>
                                         <input type="checkbox" aria-label="Select all"
                                             checked={filtered.length > 0 && filtered.every(o => selectedIds.has(o.id))}
@@ -331,7 +333,7 @@ export default function B2BInvoiceWorklistPage() {
                                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-raised)'}
                                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = restBg}
                                     >
-                                        {!isSales && (
+                                        {!isViewOnly && (
                                             <td style={{ padding: '0.85rem 1rem' }}>
                                                 <input type="checkbox" aria-label={`Select ${o.orderNumber || o.id}`}
                                                     checked={sel} onChange={() => toggleSelect(o.id)} style={{ cursor: 'pointer' }} />
@@ -360,7 +362,7 @@ export default function B2BInvoiceWorklistPage() {
                                             )}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem' }}>
-                                            {isSales ? (
+                                            {isViewOnly ? (
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '8px', background: out <= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: out <= 0 ? '#10b981' : '#ef4444', border: `1px solid ${out <= 0 ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
                                                     {out <= 0 ? 'Paid' : 'Pending'}
                                                 </span>
@@ -375,12 +377,21 @@ export default function B2BInvoiceWorklistPage() {
                                             )}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                                            <button
-                                                onClick={() => navigate(`/b2b-invoice?orderId=${o.id}${o.retailerId ? `&retailerId=${o.retailerId}` : ''}`)}
-                                                title="View / Print invoice"
-                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
-                                                <Printer size={13} /> View / Print
-                                            </button>
+                                            {isSales ? (
+                                                <button
+                                                    onClick={() => tenantId && printB2BInvoice(o.id, tenantId)}
+                                                    title="Print invoice"
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
+                                                    <Printer size={13} /> Print Invoice
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => navigate(`/b2b-invoice?orderId=${o.id}${o.retailerId ? `&retailerId=${o.retailerId}` : ''}`)}
+                                                    title="View / Edit invoice"
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, fontFamily: 'inherit' }}>
+                                                    <Printer size={13} /> View / Edit
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 );

@@ -23,6 +23,11 @@ const WA_PHONE_NUMBER_ID      = defineSecret("WA_PHONE_NUMBER_ID");
 const WA_WABA_ID              = defineSecret("WA_WABA_ID");
 const WA_APP_SECRET           = defineSecret("WA_APP_SECRET");
 const WA_WEBHOOK_VERIFY_TOKEN = defineSecret("WA_WEBHOOK_VERIFY_TOKEN");
+// Test-mode credentials — only injected when WA_PROVIDER=test.
+// Store via: firebase secrets:set WA_TEST_ACCESS_TOKEN
+const WA_TEST_ACCESS_TOKEN    = defineSecret("WA_TEST_ACCESS_TOKEN");
+const WA_TEST_PHONE_NUMBER_ID = defineSecret("WA_TEST_PHONE_NUMBER_ID");
+// WA_TEST_RECIPIENTS is non-sensitive (just verified phone numbers), set in functions/.env.
 
 
 /**
@@ -34,7 +39,7 @@ export const sendWaNotification = onDocumentCreated(
   {
     document: "waNotifications/{id}",
     region: REGION,
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID],
   },
   async (event) => {
     await processSingleNotification(event.params.id);
@@ -51,7 +56,7 @@ export const retryWaNotifications = onSchedule(
     region: REGION,
     timeoutSeconds: 120,
     memory: "256MiB",
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID],
   },
   async () => {
     await resetStuckAndFailed(25);

@@ -24,7 +24,6 @@ import {
 } from "../_lib/subscriptions-firestore";
 import {
   acceptManufacturerInvite,
-  autoAcceptPendingInvitesForPhone,
   fetchLinkedRetailerDocIds,
 } from "../../lib/invite/invite-acceptance-service";
 import type { InventoryRow } from "../_types/inventory";
@@ -300,9 +299,8 @@ export default function InventoryPage() {
     (async () => {
       try {
         if (resolvedRole === "retailer") {
-          await autoAcceptPendingInvitesForPhone(effectiveUid).catch((e) => {
-            console.warn("[autoAccept] Silent failure:", e);
-          });
+          // P5: autoAcceptPendingInvitesForPhone removed — invite acceptance and
+          // backfill are owned by the signup/invite flow, not the dashboard.
 
           if (urlInviteCode) {
             setMagicStatus(null);

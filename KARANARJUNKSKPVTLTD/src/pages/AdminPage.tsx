@@ -1,19 +1,42 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { firebaseConfig, db } from '../firebase';
 import { getTenantCollection } from '../utils/tenantPath';
-import { Shield, ShieldAlert, UserCog, UserPlus, Loader2, Mail, Lock, User as UserIcon, Edit2, Trash2, X, Save, Store, Factory } from 'lucide-react';
+import { Shield, ShieldAlert, UserCog, UserPlus, Loader2, Mail, Lock, User as UserIcon, Edit2, Trash2, X, Save, Store, Factory, Target } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
+
+function ymToDisplay(ym: string): string {
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+}
+function currentYM(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function prevYM(ym: string): string {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function nextYM(ym: string): string {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function fyLabel(ym: string): string {
+    const [y, m] = ym.split('-').map(Number);
+    return m >= 4 ? `FY ${y}-${String(y + 1).slice(2)}` : `FY ${y - 1}-${String(y).slice(2)}`;
+}
 
 export default function AdminPage() {
     const { t } = useTranslation();
     const { userRole, currentUser, tenantId } = useAuth();
     const { showToast } = useToast();
-    const [activeSection, setActiveSection] = useState<'staff' | 'retailer' | 'manufacturer'>('staff');
+    const [activeSection, setActiveSection] = useState<'staff' | 'retailer' | 'manufacturer' | 'targets'>('staff');
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -52,6 +75,12 @@ export default function AdminPage() {
     // Edit User States
     const [editUserForm, setEditUserForm] = useState<{ id: string, name: string, email: string } | null>(null);
     const [updateLoading, setUpdateLoading] = useState(false);
+
+    // Sales Targets States
+    const [targetMonth, setTargetMonth] = useState(currentYM());
+    const [targetData, setTargetData] = useState<Record<string, { invoice: string; payment: string }>>({});
+    const [loadingTargets, setLoadingTargets] = useState(false);
+    const [savingTargetFor, setSavingTargetFor] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -92,6 +121,52 @@ export default function AdminPage() {
             setLoading(false);
         }
     }, [userRole, tenantId]);
+
+    // Load targets for all sales users whenever the targets tab month changes
+    useEffect(() => {
+        if (activeSection !== 'targets' || !tenantId) return;
+        const salesUsers = users.filter(u => u.role === 'sales');
+        if (salesUsers.length === 0) return;
+        let cancelled = false;
+        setLoadingTargets(true);
+        (async () => {
+            const entries: Record<string, { invoice: string; payment: string }> = {};
+            await Promise.all(salesUsers.map(async u => {
+                const snap = await getDoc(doc(db, 'tenants', tenantId, 'salesTargets', `${u.id}_${targetMonth}`));
+                if (snap.exists()) {
+                    const d = snap.data();
+                    entries[u.id] = { invoice: String(d.invoiceTarget ?? ''), payment: String(d.paymentTarget ?? '') };
+                } else {
+                    entries[u.id] = { invoice: '', payment: '' };
+                }
+            }));
+            if (!cancelled) setTargetData(entries);
+            if (!cancelled) setLoadingTargets(false);
+        })();
+        return () => { cancelled = true; };
+    }, [activeSection, targetMonth, users, tenantId]);
+
+    const handleSaveTarget = async (userId: string, userName: string) => {
+        if (!tenantId) return;
+        setSavingTargetFor(userId);
+        try {
+            const docId = `${userId}_${targetMonth}`;
+            await setDoc(doc(db, 'tenants', tenantId, 'salesTargets', docId), {
+                userId,
+                userName,
+                month: targetMonth,
+                financialYear: fyLabel(targetMonth),
+                invoiceTarget: parseFloat(targetData[userId]?.invoice || '0') || 0,
+                paymentTarget: parseFloat(targetData[userId]?.payment || '0') || 0,
+                updatedAt: serverTimestamp(),
+            }, { merge: true });
+            showToast(`Target saved for ${userName} — ${ymToDisplay(targetMonth)}`, 'success');
+        } catch (e) {
+            showToast('Failed to save target', 'error');
+        } finally {
+            setSavingTargetFor(null);
+        }
+    };
 
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -156,6 +231,7 @@ export default function AdminPage() {
                 role: 'retailer',
                 tenantId: tenantId || 'master',
                 linkedId: inviteRetailerId,
+                assignedRetailers: [inviteRetailerId],
                 createdAt: serverTimestamp()
             });
             await deleteApp(secondaryApp);
@@ -278,8 +354,8 @@ export default function AdminPage() {
             </div>
 
             {/* Section Tabs */}
-            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--surface-border)', marginBottom: '2rem' }}>
-                {([['staff', <UserCog size={16} />, 'Staff Users'], ['retailer', <Store size={16} />, 'Invite Retailer'], ['manufacturer', <Factory size={16} />, 'Invite Manufacturer']] as const).map(([id, icon, label]) => (
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--surface-border)', marginBottom: '2rem', flexWrap: 'wrap' }}>
+                {([['staff', <UserCog size={16} />, 'Staff Users'], ['retailer', <Store size={16} />, 'Invite Retailer'], ['manufacturer', <Factory size={16} />, 'Invite Manufacturer'], ['targets', <Target size={16} />, 'Sales Targets']] as const).map(([id, icon, label]) => (
                     <button key={id} onClick={() => setActiveSection(id as any)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.7rem 1.1rem', background: activeSection === id ? 'var(--surface-raised)' : 'transparent', color: activeSection === id ? 'var(--text-primary)' : 'var(--text-tertiary)', border: '1px solid', borderColor: activeSection === id ? 'var(--surface-border)' : 'transparent', borderRadius: '10px', cursor: 'pointer', fontWeight: activeSection === id ? 600 : 400, font: 'inherit', marginBottom: '-1px' }}>
                         {icon}{label}
                     </button>
@@ -613,6 +689,87 @@ export default function AdminPage() {
                     </div>
                 )}
             </div>}
+
+            {/* ── Sales Targets section ──────────────────────────────────── */}
+            {activeSection === 'targets' && (
+                <div>
+                    {/* Month navigator */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.75rem', flexWrap: 'wrap' }}>
+                        <button onClick={() => setTargetMonth(prevYM(targetMonth))} style={{ background: 'var(--surface-raised)', border: 'none', borderRadius: '8px', padding: '0.4rem 0.7rem', cursor: 'pointer', color: 'var(--text-primary)', fontSize: '1rem', lineHeight: 1 }}>‹</button>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 700, minWidth: '160px', textAlign: 'center' }}>{ymToDisplay(targetMonth)}</div>
+                        <button onClick={() => setTargetMonth(nextYM(targetMonth))} style={{ background: 'var(--surface-raised)', border: 'none', borderRadius: '8px', padding: '0.4rem 0.7rem', cursor: 'pointer', color: 'var(--text-primary)', fontSize: '1rem', lineHeight: 1 }}>›</button>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginLeft: '0.25rem' }}>{fyLabel(targetMonth)}</span>
+                    </div>
+
+                    {loadingTargets && (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                            <Loader2 size={28} className="animate-spin" style={{ color: 'var(--text-tertiary)' }} />
+                        </div>
+                    )}
+
+                    {!loadingTargets && (() => {
+                        const salesUsers = users.filter(u => u.role === 'sales');
+                        if (salesUsers.length === 0) {
+                            return (
+                                <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                    No sales users found. Create a user with the <strong>Sales</strong> role first.
+                                </div>
+                            );
+                        }
+                        return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {/* Header row */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px 180px 100px', gap: '0.75rem', padding: '0.5rem 1rem', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.06em' }}>
+                                    <div>Sales User</div>
+                                    <div>Invoice Target (₹)</div>
+                                    <div>Payment Target (₹)</div>
+                                    <div></div>
+                                </div>
+                                {salesUsers.map(user => (
+                                    <div key={user.id} className="glass-panel" style={{ display: 'grid', gridTemplateColumns: '1fr 180px 180px 100px', gap: '0.75rem', alignItems: 'center', padding: '0.9rem 1rem', borderRadius: '12px' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user.name || '—'}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{user.email}</div>
+                                            {Array.isArray(user.assignedDistricts) && user.assignedDistricts.length > 0 && (
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '0.15rem' }}>
+                                                    Districts: {user.assignedDistricts.join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            placeholder="e.g. 500000"
+                                            value={targetData[user.id]?.invoice ?? ''}
+                                            onChange={e => setTargetData(prev => ({ ...prev, [user.id]: { ...prev[user.id], invoice: e.target.value } }))}
+                                            style={{ margin: 0, padding: '0.45rem 0.6rem', fontSize: '0.875rem', width: '100%' }}
+                                        />
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            placeholder="e.g. 300000"
+                                            value={targetData[user.id]?.payment ?? ''}
+                                            onChange={e => setTargetData(prev => ({ ...prev, [user.id]: { ...prev[user.id], payment: e.target.value } }))}
+                                            style={{ margin: 0, padding: '0.45rem 0.6rem', fontSize: '0.875rem', width: '100%' }}
+                                        />
+                                        <button
+                                            onClick={() => handleSaveTarget(user.id, user.name || user.email)}
+                                            disabled={savingTargetFor === user.id}
+                                            className="btn btn-primary"
+                                            style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem', justifyContent: 'center', width: '100%' }}
+                                        >
+                                            {savingTargetFor === user.id
+                                                ? <Loader2 size={14} className="animate-spin" />
+                                                : <><Save size={13} /> Save</>
+                                            }
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
         </div>
     );
 }

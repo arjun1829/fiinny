@@ -450,20 +450,19 @@ export default function MarketView({
             const distText = formatDistance(dist, t('nearby'));
             // lowestFinalPrice = min(sellingPrice × (1 − discountPct/100)) across all sellers.
             // lowestPrice      = min(sellingPrice) before discounts.
-            // Never mix lowestPrice with maxDiscountPct — they may belong to different sellers
-            // and produce a fictional price no seller actually charges.
+            // "X% OFF" only appears for a GENUINE seller-configured discount — a seller's
+            // lowestFinalPrice below their own lowestPrice. We used to also flag "cheapest
+            // seller's price is below the catalog's reference price" as an offer, but that's
+            // just ordinary price variance between independent sellers (nobody ran a
+            // promotion) — it produced a fake "X% OFF" ribbon on products no seller had
+            // actually discounted, and mixed lowestPrice with product.price, which can
+            // belong to a seller other than the cheapest one.
             const sellerBasePrice = product.lowestPrice ?? product.price;
             const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
-            const hasOffer = discountedPrice < sellerBasePrice;
-            // A discount is shown either as a seller promo (hasOffer: lowestFinalPrice
-            // below lowestPrice) OR when the seller's selling price is below the
-            // catalog price (sellerBasePrice < product.price). The ribbon + green theme
-            // must cover BOTH; the % is computed against the price actually struck
-            // through in the block below so the label always matches the numbers.
-            const ribbonOriginal = hasOffer ? sellerBasePrice : product.price;
-            const ribbonFinal = hasOffer ? discountedPrice : sellerBasePrice;
-            const showsDiscount = ribbonFinal < ribbonOriginal;
-            const savingsPct = ribbonOriginal > 0
+            const showsDiscount = discountedPrice < sellerBasePrice;
+            const ribbonOriginal = sellerBasePrice;
+            const ribbonFinal = discountedPrice;
+            const savingsPct = showsDiscount && ribbonOriginal > 0
               ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
               : 0;
             return (
@@ -538,7 +537,7 @@ export default function MarketView({
 
                   {/* Price */}
                   <div className={`mt-auto pt-2.5 border-t ${showsDiscount ? 'border-green-100' : 'border-surface-container'} mt-2`}>
-                    {hasOffer ? (
+                    {showsDiscount ? (
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
                         <span className="text-xl font-black text-green-700 leading-none">
@@ -550,27 +549,13 @@ export default function MarketView({
                       </div>
                     ) : (
                       <div className="flex items-baseline gap-1">
-                        {sellerBasePrice < product.price ? (
-                          <>
-                            <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-                            <span className="text-lg font-bold text-secondary">
-                              ₹{sellerBasePrice.toLocaleString('en-IN')}
-                            </span>
-                            <span className="text-[10px] text-outline line-through">
-                              ₹{product.price.toLocaleString('en-IN')}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-lg font-bold text-secondary">
-                              ₹{sellerBasePrice.toLocaleString('en-IN')}
-                            </span>
-                            {product.oldPrice && product.oldPrice > sellerBasePrice && (
-                              <span className="text-[10px] text-outline line-through">
-                                ₹{product.oldPrice}
-                              </span>
-                            )}
-                          </>
+                        <span className="text-lg font-bold text-secondary">
+                          ₹{sellerBasePrice.toLocaleString('en-IN')}
+                        </span>
+                        {product.oldPrice && product.oldPrice > sellerBasePrice && (
+                          <span className="text-[10px] text-outline line-through">
+                            ₹{product.oldPrice}
+                          </span>
                         )}
                       </div>
                     )}

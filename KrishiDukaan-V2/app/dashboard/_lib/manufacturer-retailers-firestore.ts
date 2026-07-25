@@ -340,6 +340,10 @@ export type CreateNetworkRetailerInput = {
   email?: string;
   address: NetworkRetailerAddress;
   geo: GeoPoint | null;
+  /** When true, the backend skips the retailer_onboarding WhatsApp notification.
+   *  Use for manual single-add flows where product_assignment_pending_signup already
+   *  serves as the onboarding message. Leave false/unset for CSV bulk import. */
+  skipOnboardingNotification?: boolean;
 };
 
 /**
@@ -408,6 +412,7 @@ export async function createNetworkRetailer(
     assignedSeat: false,
     seatAssignedAt: null,
     createdBy: input.manufacturerId,
+    skipOnboardingNotification: input.skipOnboardingNotification ?? false,
     addedAt: now,
     address: {
       line1:   input.address.line1.trim(),

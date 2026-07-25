@@ -21,6 +21,7 @@ export type AppScreen =
     | 'b2c_dashboard'
     | 'retailers'
     | 'worklist'
+    | 'khata'
     | 'dispatch'
     | 'pos'
     | 'inventory'
@@ -52,12 +53,12 @@ export type AppScreen =
 
 export type RolePermissions = Record<UserRole, Record<AppScreen, boolean>>;
 export const defaultPermissions: RolePermissions = {
-    admin: { dashboard: true, b2c_dashboard: true, online_dashboard: true, analytics: true, retailers: true, worklist: true, dispatch: true, pos: true, inventory: true, online_orders: true, order_history: true, settings: true, admin: true, manufacturers: true, invoice_templates: true, invoice_settings: true, schema_builder: true, manage_retailers: true, manage_store: true, krishidukan: true, loyalty: true, accounts: true, ar: true, ap: true, cash: true, credit: true, collections: true, disputes: true, promotions: true, contracts: true, finance_analytics: true },
-    analyst: { dashboard: true, b2c_dashboard: true, online_dashboard: true, analytics: true, retailers: true, worklist: true, dispatch: true, pos: true, inventory: true, online_orders: false, order_history: true, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: true, accounts: true, ar: true, ap: true, cash: true, credit: true, collections: true, disputes: true, promotions: true, contracts: true, finance_analytics: true },
-    sales: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: true, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: false, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
-    retailer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
-    manufacturer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
-    customer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false }
+    admin: { dashboard: true, b2c_dashboard: true, online_dashboard: true, analytics: true, retailers: true, worklist: true, khata: true, dispatch: true, pos: true, inventory: true, online_orders: true, order_history: true, settings: true, admin: true, manufacturers: true, invoice_templates: true, invoice_settings: true, schema_builder: true, manage_retailers: true, manage_store: true, krishidukan: true, loyalty: true, accounts: true, ar: true, ap: true, cash: true, credit: true, collections: true, disputes: true, promotions: true, contracts: true, finance_analytics: true },
+    analyst: { dashboard: true, b2c_dashboard: true, online_dashboard: true, analytics: true, retailers: true, worklist: true, khata: true, dispatch: true, pos: true, inventory: true, online_orders: false, order_history: true, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: true, accounts: true, ar: true, ap: true, cash: true, credit: true, collections: true, disputes: true, promotions: true, contracts: true, finance_analytics: true },
+    sales: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: true, khata: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: false, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
+    retailer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: true, khata: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
+    manufacturer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: false, khata: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false },
+    customer: { dashboard: false, b2c_dashboard: false, online_dashboard: false, analytics: false, retailers: false, worklist: false, khata: false, dispatch: false, pos: false, inventory: false, online_orders: false, order_history: false, settings: true, admin: false, manufacturers: false, invoice_templates: false, invoice_settings: false, schema_builder: false, manage_retailers: false, manage_store: false, krishidukan: false, loyalty: false, accounts: false, ar: false, ap: false, cash: false, credit: false, collections: false, disputes: false, promotions: false, contracts: false, finance_analytics: false }
 };
 
 interface AuthContextType {
@@ -70,8 +71,9 @@ interface AuthContextType {
     permissions: RolePermissions;
     loading: boolean;
     logout: () => Promise<void>;
-    // District-based access for sales role
+    // District-based and retailer-based access for sales role
     assignedDistricts: string[];
+    assignedRetailers: string[];
     // Module system
     enabledModules: string[];
     tenantPlan: string;
@@ -90,6 +92,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     logout: async () => { },
     assignedDistricts: [],
+    assignedRetailers: [],
     enabledModules: [],
     tenantPlan: 'free',
     modulesLoading: true,
@@ -110,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [permissions, setPermissions] = useState<RolePermissions>(defaultPermissions);
     const [loading, setLoading] = useState(true);
     const [assignedDistricts, setAssignedDistricts] = useState<string[]>([]);
+    const [assignedRetailers, setAssignedRetailers] = useState<string[]>([]);
     const [enabledModules, setEnabledModules] = useState<string[]>([]);
     const [tenantPlan, setTenantPlan] = useState<string>('free');
     const [modulesLoading, setModulesLoading] = useState(true);
@@ -158,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setTenantId(tId);
                     setLinkedId(lId);
                     setAssignedDistricts(userDoc.exists() ? (userDoc.data().assignedDistricts || []) : []);
+                    setAssignedRetailers(userDoc.exists() ? (userDoc.data().assignedRetailers || []) : []);
 
                     // Priority: Firestore name -> Auth displayName -> Email prefix
                     const resolvedName = userDoc.exists() 
@@ -260,6 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         setTenantData(null);
                     }
                     setAssignedDistricts([]);
+                    setAssignedRetailers([]);
                     setPermissions(defaultPermissions);
                 }
             } else {
@@ -268,6 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setTenantData(null);
                 setLinkedId(null);
                 setAssignedDistricts([]);
+                setAssignedRetailers([]);
                 setPermissions(defaultPermissions);
             }
             setCurrentUser(user);
@@ -298,6 +305,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         logout,
         assignedDistricts,
+        assignedRetailers,
         enabledModules,
         tenantPlan,
         modulesLoading,

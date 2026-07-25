@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Loader2,
-  IndianRupee, Package, Truck, ChevronRight, Link2,
+  IndianRupee, Package, Truck, ChevronRight, Link2, Search, X,
 } from 'lucide-react';
 import { getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -16,10 +16,13 @@ interface Supplier {
   address?: string;
   email?: string;
   phone?: string;
+  supplierType?: string;
   outstandingBalance: number;
   totalInvoiced?: number;
   totalPaid?: number;
 }
+
+type PartyFilter = 'all' | 'suppliers' | 'transporters';
 
 export default function SupplierLedgerPage() {
   const { tenantId } = useAuth();
@@ -28,6 +31,8 @@ export default function SupplierLedgerPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [search, setSearch] = useState('');
+  const [partyFilter, setPartyFilter] = useState<PartyFilter>('all');
 
   const loadSuppliers = async () => {
     if (!tenantId) return;
@@ -54,6 +59,19 @@ export default function SupplierLedgerPage() {
 
   const totalOutstanding = suppliers.reduce((s, sup) => s + (sup.outstandingBalance || 0), 0);
   const totalInvoiced = suppliers.reduce((s, sup) => s + (sup.totalInvoiced || 0), 0);
+
+  // Summary cards stay on the full set; only the list below is filtered.
+  const q = search.trim().toLowerCase();
+  const partyFiltered = partyFilter === 'all'
+    ? suppliers
+    : suppliers.filter(sup => (sup.supplierType === 'Transporter') === (partyFilter === 'transporters'));
+  const visibleSuppliers = q
+    ? partyFiltered.filter(sup =>
+        (sup.name || '').toLowerCase().includes(q) ||
+        (sup.phone || '').toLowerCase().includes(q) ||
+        (sup.email || '').toLowerCase().includes(q) ||
+        (sup.address || '').toLowerCase().includes(q))
+    : partyFiltered;
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem' }}>
@@ -95,6 +113,42 @@ export default function SupplierLedgerPage() {
         ))}
       </div>
 
+      {/* Party type filter */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+        {([
+          { key: 'all', label: 'All' },
+          { key: 'suppliers', label: 'Suppliers' },
+          { key: 'transporters', label: 'Transporters' },
+        ] as const).map(f => (
+          <button
+            key={f.key}
+            onClick={() => setPartyFilter(f.key)}
+            className={partyFilter === f.key ? 'btn btn-primary' : 'btn btn-secondary'}
+            style={{ padding: '0.35rem 0.9rem', fontSize: '0.8rem' }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '1rem', maxWidth: '420px' }}>
+        <Search size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+        <input
+          className="input-field"
+          placeholder="Search supplier by name, phone, email or address…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ paddingLeft: '2.4rem', paddingRight: '2.2rem', margin: 0, height: '40px' }}
+        />
+        {search && (
+          <button onClick={() => setSearch('')} title="Clear"
+            style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}>
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       {/* Supplier list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
         {loading && (
@@ -103,14 +157,23 @@ export default function SupplierLedgerPage() {
             <div>Loading suppliers…</div>
           </div>
         )}
-        {!loading && suppliers.length === 0 && (
+        {!loading && visibleSuppliers.length === 0 && (
           <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-tertiary)', borderRadius: '12px' }}>
             <Building2 size={40} style={{ margin: '0 auto 0.75rem', opacity: 0.25 }} />
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>No suppliers yet</div>
-            <div style={{ fontSize: '0.82rem' }}>Add your first supplier to get started.</div>
+            {suppliers.length === 0 ? (
+              <>
+                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>No suppliers yet</div>
+                <div style={{ fontSize: '0.82rem' }}>Add your first supplier to get started.</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>No suppliers match “{search}”</div>
+                <div style={{ fontSize: '0.82rem' }}>Try a different name, phone, email or address.</div>
+              </>
+            )}
           </div>
         )}
-        {suppliers.map(sup => (
+        {visibleSuppliers.map(sup => (
           <div
             key={sup.id}
             className="glass-panel"
@@ -145,9 +208,9 @@ export default function SupplierLedgerPage() {
             </div>
           </div>
         ))}
-        {!loading && suppliers.length > 0 && (
+        {!loading && visibleSuppliers.length > 0 && (
           <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
-            Double-click a supplier to open details
+            {q && `Showing ${visibleSuppliers.length} of ${suppliers.length} · `}Double-click a supplier to open details
           </p>
         )}
       </div>

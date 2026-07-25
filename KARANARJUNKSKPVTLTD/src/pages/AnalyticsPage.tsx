@@ -11,6 +11,7 @@ import {
 import {
     Activity, IndianRupee, ShoppingCart, TrendingUp,
     Layers, BarChart3, Target, Zap, Truck, Building2, Receipt, Wallet, Package,
+    Scale, Archive,
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -45,6 +46,14 @@ export function AnalyticsPage() {
     const [chartType, setChartType] = useState<'stacked' | 'bar'>('stacked');
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
+
+    // Position metrics — always all-time, not filtered by time range
+    const [positionData, setPositionData] = useState<{
+        supplierOutstanding: number;
+        retailerOutstanding: number;
+        inventoryValue: number;
+    } | null>(null);
+    const [positionLoading, setPositionLoading] = useState(true);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -92,6 +101,49 @@ export function AnalyticsPage() {
             }
         };
         fetchAll();
+    }, [tenantId]);
+
+    // Fetch position metrics independently — these are balance-sheet snapshots,
+    // not affected by the time range filter.
+    useEffect(() => {
+        if (!tenantId) return;
+        const fetchPosition = async () => {
+            setPositionLoading(true);
+            try {
+                const [suppliersSnap, retailersSnap, productsSnap] = await Promise.all([
+                    getDocs(getTenantCollection(db, tenantId, 'suppliers')),
+                    getDocs(getTenantCollection(db, tenantId, 'retailers')),
+                    getDocs(getTenantCollection(db, tenantId, 'products')),
+                ]);
+
+                const supplierOutstanding = suppliersSnap.docs.reduce((s, doc) => {
+                    return s + Number(doc.data().outstandingBalance ?? 0);
+                }, 0);
+
+                // Retailer outstanding: Total Sales − Total Payments Received
+                // Uses denormalized fields on each retailer doc (kept in sync by all invoice/payment mutations).
+                const retailerOutstanding = retailersSnap.docs.reduce((s, doc) => {
+                    const d = doc.data();
+                    const sales = Number(d.totalSales ?? 0);
+                    const paid = Number(d.totalPaid ?? 0);
+                    return s + Math.max(0, sales - paid);
+                }, 0);
+
+                // Inventory value: Farmer Selling Price × Loose Pieces only
+                const inventoryValue = productsSnap.docs.reduce((s, doc) => {
+                    const d = doc.data();
+                    const loose = Number(d.loosePieces ?? 0);
+                    return s + loose * Number(d.sellingPrice ?? 0);
+                }, 0);
+
+                setPositionData({ supplierOutstanding, retailerOutstanding, inventoryValue });
+            } catch (e) {
+                console.error('Position fetch error', e);
+            } finally {
+                setPositionLoading(false);
+            }
+        };
+        fetchPosition();
     }, [tenantId]);
 
     // ── Time range window — the one filtering engine every widget on this page uses ──
@@ -253,6 +305,10 @@ export function AnalyticsPage() {
         return <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--danger)' }}>Access Denied.</div>;
     }
 
+    const netPosition = positionData
+        ? positionData.retailerOutstanding + positionData.inventoryValue - positionData.supplierOutstanding
+        : 0;
+
     const KpiCard = ({ label, value, sub, icon: Icon, border, bg }: any) => (
         <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', borderLeft: `4px solid ${border}`, background: bg, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
@@ -299,6 +355,55 @@ export function AnalyticsPage() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* ── Primary Position Metrics (always all-time, independent of time range) ── */}
+            <div style={{ marginBottom: '2rem' }}>
+                <h2 style={{ fontSize: '0.8rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <Scale size={16} /> Current Position &nbsp;<span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--text-tertiary)', textTransform: 'none', letterSpacing: 0 }}>Balance-sheet snapshot · All time</span>
+                </h2>
+                {positionLoading ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                        {[0, 1, 2, 3].map(i => (
+                            <div key={i} className="glass-panel" style={{ padding: '1.25rem 1.5rem', height: '100px', opacity: 0.5, borderLeft: '4px solid var(--surface-border)' }} />
+                        ))}
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                        <KpiCard
+                            label="Supplier Outstanding"
+                            value={fmtINR(positionData?.supplierOutstanding ?? 0)}
+                            sub="Total payable to suppliers"
+                            icon={Truck}
+                            border="#ef4444"
+                            bg="rgba(239,68,68,0.07)"
+                        />
+                        <KpiCard
+                            label="Retailer Outstanding"
+                            value={fmtINR(positionData?.retailerOutstanding ?? 0)}
+                            sub="Total receivable from retailers"
+                            icon={Building2}
+                            border="#f97316"
+                            bg="rgba(249,115,22,0.07)"
+                        />
+                        <KpiCard
+                            label="Inventory Value"
+                            value={fmtINR(positionData?.inventoryValue ?? 0)}
+                            sub="Loose pcs × farmer selling price"
+                            icon={Archive}
+                            border="#8b5cf6"
+                            bg="rgba(139,92,246,0.07)"
+                        />
+                        <KpiCard
+                            label="Net Position"
+                            value={fmtINR(netPosition)}
+                            sub={netPosition >= 0 ? 'Healthy — assets exceed liabilities' : 'Liability exceeds assets'}
+                            icon={Scale}
+                            border={netPosition >= 0 ? '#10b981' : '#ef4444'}
+                            bg={netPosition >= 0 ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)'}
+                        />
+                    </div>
+                )}
             </div>
 
             {loading ? (

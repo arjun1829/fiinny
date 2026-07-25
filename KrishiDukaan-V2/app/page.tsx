@@ -40,6 +40,7 @@ import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from '
 
 import { Navbar } from '../components/shared/navbar';
 import Footer from '../components/shared/footer';
+import AppPromoModal from '../components/shared/AppPromoModal';
 import { StatusToast } from './components/shared/status-toast';
 import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
@@ -116,8 +117,6 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
-  const hasDashboardShortcut = !!user && (userRole === 'admin' || userRole === 'retailer' || userRole === 'manufacturer');
-  const dashboardHref = userRole === 'admin' ? '/admin' : '/dashboard';
   // Views below (ProfileView, SubscriptionView, Footer) only accept the
   // consumer-facing roles; map 'admin' to 'customer' for them.
   const consumerRole: 'customer' | 'retailer' | 'manufacturer' =
@@ -424,13 +423,16 @@ export default function App() {
     }
   }, [currentView, userRole, navigate, t]);
 
-  // Auto-accept invite for already-logged-in users who click an invite link.
-  // Fires exactly once per invite code: clears signupInviteCode immediately so no re-runs.
-  // Checks for account mismatch before attempting Firestore write.
-  useEffect(() => {
+  // Explicit invite acceptance for already-logged-in users who arrive via an invite link.
+  // Called only by the "Accept Invite" button — never auto-fires, so no race conditions.
+  const handleManualAcceptInvite = useCallback(async () => {
     if (!user || !signupInviteCode) return;
     const code = signupInviteCode;
-    setSignupInviteCode(null); // prevent re-run on re-render
+
+    // Clear invite code from state AND URL immediately before any async work.
+    // This prevents any re-render or URL change from re-triggering this path.
+    setSignupInviteCode(null);
+    window.history.replaceState(null, '', '/');
     setInviteAccept({ status: 'accepting' });
 
     const normalize10 = (p: string): string => {
@@ -441,52 +443,48 @@ export default function App() {
       return d;
     };
 
-    void (async () => {
-      try {
-        // One parallel round-trip: invite details + logged-in user's phone
-        const [inviteDetails, idxSnap] = await Promise.all([
-          fetchInviteDetailsForSignup(code),
-          getDoc(doc(db, 'uidIndex', user.uid)),
-        ]);
+    try {
+      const [inviteDetails, idxSnap] = await Promise.all([
+        fetchInviteDetailsForSignup(code),
+        getDoc(doc(db, 'uidIndex', user.uid)),
+      ]);
 
-        const rawUserPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? '') : '';
-        const userPhone10 = normalize10(rawUserPhone);
-        const invitePhone10 = inviteDetails?.retailerPhone ? normalize10(inviteDetails.retailerPhone) : '';
+      const rawUserPhone = idxSnap.exists() ? String(idxSnap.data().phone ?? '') : '';
+      const userPhone10 = normalize10(rawUserPhone);
+      const invitePhone10 = inviteDetails?.retailerPhone ? normalize10(inviteDetails.retailerPhone) : '';
 
-        // Detect phone mismatch before making any write — show Switch Account screen
-        if (
-          inviteDetails?.found &&
-          inviteDetails.claimable &&
-          invitePhone10 &&
-          userPhone10 &&
-          invitePhone10 !== userPhone10
-        ) {
-          setInviteAccept({
-            status: 'mismatch',
-            message: `This invite was sent to +91 ${invitePhone10}. You are signed in with +91 ${userPhone10}.`,
-            manufacturerName: inviteDetails.manufacturerName,
-            retailerShopName: inviteDetails.retailerShopName,
-          });
-          return;
-        }
-
-        const result = await acceptManufacturerInvite({ uid: user.uid, inviteCode: code });
-        if (!result.ok) {
-          const msg = (result as { ok: false; message: string }).message;
-          const isAlreadyUsed = /already|active/i.test(msg);
-          setInviteAccept({ status: isAlreadyUsed ? 'already_accepted' : 'error', message: msg });
-          return;
-        }
-        if (result.alreadyActive) {
-          setInviteAccept({ status: 'already_accepted' });
-        } else {
-          setInviteAccept({ status: 'success' });
-          setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
-        }
-      } catch {
-        setInviteAccept({ status: 'error', message: 'Could not accept invite. Please try again.' });
+      if (
+        inviteDetails?.found &&
+        inviteDetails.claimable &&
+        invitePhone10 &&
+        userPhone10 &&
+        invitePhone10 !== userPhone10
+      ) {
+        setInviteAccept({
+          status: 'mismatch',
+          message: `This invite was sent to +91 ${invitePhone10}. You are signed in with +91 ${userPhone10}.`,
+          manufacturerName: inviteDetails.manufacturerName,
+          retailerShopName: inviteDetails.retailerShopName,
+        });
+        return;
       }
-    })();
+
+      const result = await acceptManufacturerInvite({ uid: user.uid, inviteCode: code });
+      if (!result.ok) {
+        const msg = (result as { ok: false; message: string }).message;
+        const isAlreadyUsed = /already|active/i.test(msg);
+        setInviteAccept({ status: isAlreadyUsed ? 'already_accepted' : 'error', message: msg });
+        return;
+      }
+      if (result.alreadyActive) {
+        setInviteAccept({ status: 'already_accepted' });
+      } else {
+        setInviteAccept({ status: 'success' });
+        setTimeout(() => { window.location.href = '/dashboard'; }, 1800);
+      }
+    } catch {
+      setInviteAccept({ status: 'error', message: 'Could not accept invite. Please try again.' });
+    }
   }, [user, signupInviteCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redirect logged-in users away from signup when there is no invite to process.
@@ -677,7 +675,6 @@ export default function App() {
     });
 
     if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
-      // Keep invite code in state so the auto-accept effect can claim it after redirect
       navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
       window.location.href = '/dashboard';
@@ -1568,6 +1565,12 @@ export default function App() {
       case 'login':
         return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
       case 'signup':
+        // Signup is now unified into the login flow (phone → OTP → onboarding
+        // for new numbers). The standalone signup form remains ONLY for
+        // manufacturer invite links, which pre-fill and lock the phone number.
+        if (!signupInviteCode && !user) {
+          return <LoginView onBack={() => navigate('home')} onSuccess={handleAuthSuccess} />;
+        }
         // Already-logged-in user arrived via an invite link — show accept result instead of signup form.
         // (Redirect for logged-in users with no invite is handled in the useEffect above.)
         if (user) {
@@ -1579,7 +1582,33 @@ export default function App() {
                   <span className="font-black text-2xl text-primary">Krishi<span className="text-secondary">Dukan</span></span>
                 </div>
 
-                {(!inviteAccept || inviteAccept.status === 'accepting') && (
+                {/* Confirm screen — shown before user explicitly accepts the invite */}
+                {!inviteAccept && signupInviteCode && (
+                  <>
+                    <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                      <svg className="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-on-surface mb-2">Retailer Invite</h2>
+                    <p className="text-sm text-on-surface-variant mb-6">
+                      You have been invited to join a manufacturer&apos;s retailer network on KrishiDukan.
+                    </p>
+                    <button
+                      onClick={handleManualAcceptInvite}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-bold text-white hover:opacity-90 transition-opacity mb-3"
+                    >
+                      Accept Invite
+                    </button>
+                    <button
+                      onClick={() => navigate('home', { clearInvite: true })}
+                      className="text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
+                    >
+                      Decline
+                    </button>
+                  </>
+                )}
+
+                {/* Spinner shown only after the user has clicked Accept */}
+                {inviteAccept?.status === 'accepting' && (
                   <>
                     <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
                     <p className="font-semibold text-on-surface">Accepting your invite…</p>
@@ -1673,7 +1702,12 @@ export default function App() {
         return (
           <SignupView
             inviteCode={signupInviteCode}
-            onInviteConsumed={() => setSignupInviteCode(null)}
+            onInviteConsumed={() => {
+              setSignupInviteCode(null);
+              // Also remove the inviteCode from the URL immediately so the param
+              // cannot re-trigger anything if the component re-mounts.
+              window.history.replaceState(null, '', '/');
+            }}
             onBack={() => navigate('home', { clearInvite: true })}
             onNavigateToLogin={() => navigate('login')}
             onSuccess={handleAuthSuccess}
@@ -1806,6 +1840,9 @@ export default function App() {
         <GuidedTour steps={tourSteps} />
       ) : null}
 
+      {/* "Get the app" popup — first-time visitors only, skippable, home view only */}
+      {currentView === 'home' && !loading && !errorMsg ? <AppPromoModal /> : null}
+
       <StatusToast
         message={toastMsg}
         type={toastType}
@@ -1820,22 +1857,12 @@ export default function App() {
             { key: 'market', icon: ICONS.Market, label: t('market'), active: currentView === 'market', onClick: () => navigate('market') },
             { key: 'hub', icon: ICONS.Hub, label: t('hub'), active: currentView === 'hub', onClick: () => navigate('hub') },
             { key: 'map', icon: ICONS.Location, label: t('stores'), active: currentView === 'map', onClick: () => { setProductSearch(''); navigate('map'); } },
-            // Last item is always "Account" — behaviour depends on auth state
-            {
-              key: 'account',
-              icon: ICONS.Account,
-              label: t('account'),
-              active: currentView === 'profile' || currentView === 'login' || currentView === 'signup',
-              onClick: () => {
-                if (!user) {
-                  navigate('login');
-                } else if (hasDashboardShortcut) {
-                  window.location.href = dashboardHref;
-                } else {
-                  navigate('profile');
-                }
-              },
-            },
+            // AgriReels lives on its own Next.js route (not an internal SPA
+            // view), so it navigates with a real page load, same as the
+            // desktop nav's <a href="/reels">. Account moved into the mobile
+            // "More" menu (navbar.tsx) to make room for this in the primary
+            // bottom tabs, matching the native app's bottom nav.
+            { key: 'reels', icon: ICONS.Reels, label: 'Reels', active: false, onClick: () => { window.location.href = '/reels'; } },
           ].map((item) => (
             <button
               key={item.key}

@@ -11,6 +11,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
+import '../../../core/utils/format_count.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
@@ -30,6 +31,22 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   int _currentPage = 0;
   bool _initialized = false;
 
+  // Route-level visibility guard.
+  //
+  // The tab-index listener in build() only fires when the bottom-nav branch
+  // changes, which misses a screen pushed ON TOP of the reels tab: tapping a
+  // reel's seller profile (`/shop/...`) or its linked product (`/product/...`)
+  // pushes a root route while the tab index stays on reels, so nothing paused
+  // the video and its audio kept playing underneath the new screen.
+  //
+  // ReelsNavigatorObserver drives the same shared gate via NavigatorObserver
+  // callbacks, but those fire mid-navigation where a Riverpod write can be
+  // rejected (and is swallowed by its `catch`), so it can't be the only
+  // safeguard. Listening to the router settles after navigation completes and
+  // pauses the controllers directly — audio plays only while the top-most
+  // location is exactly /reels.
+  GoRouter? _router;
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +54,45 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_router == null) {
+      _router = GoRouter.of(context);
+      _router!.routerDelegate.addListener(_handleRouteChange);
+    }
+  }
+
+  void _handleRouteChange() {
+    if (!mounted) return;
+    const reelsTab = 4;
+    final path = _router!.routerDelegate.currentConfiguration.uri.path;
+    final visible =
+        path == '/reels' && ref.read(activeShellIndexProvider) == reelsTab;
+
+    // Pause/resume the controllers directly FIRST. This is what actually
+    // silences the audio, and it must not depend on the provider write below
+    // succeeding.
+    if (!visible) {
+      for (final c in _controllers.values) {
+        c.pause();
+      }
+    } else {
+      final reels = ref.read(reelsFeedProvider).value ?? [];
+      if (_currentPage < reels.length) {
+        _controllers[reels[_currentPage].id]?.play();
+      }
+    }
+
+    // Then keep the shared gate in sync, so a controller that finishes
+    // initialising while we're away can't start playing on its own.
+    try {
+      ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(visible);
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_handleRouteChange);
     WidgetsBinding.instance.removeObserver(this);
     for (final c in _controllers.values) {
       c.dispose();
@@ -57,6 +112,7 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
       // foregrounded the app while on a different tab and the reel must stay silent.
       const reelsTab = 4;
       if (ref.read(activeShellIndexProvider) != reelsTab) return;
+      if (!ref.read(reelsFeedPlaybackActiveProvider)) return;
       final reels = ref.read(reelsFeedProvider).value ?? [];
       if (_currentPage < reels.length) {
         _controllers[reels[_currentPage].id]?.play();
@@ -75,7 +131,14 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     controller.initialize().then((_) {
       if (!mounted) return;
       controller.setLooping(true);
-      if (index == _currentPage) controller.play();
+      if (index == _currentPage) {
+        const reelsTab = 4;
+        final isReelsTab = ref.read(activeShellIndexProvider) == reelsTab;
+        final isPlaybackActive = ref.read(reelsFeedPlaybackActiveProvider);
+        if (isReelsTab && isPlaybackActive) {
+          controller.play();
+        }
+      }
       setState(() {});
     });
   }
@@ -114,10 +177,28 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
     ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
       const reelsTab = 4;
       if (tabIndex != reelsTab) {
+        // Mark inactive FIRST so any late-initialising controllers don't sneak in.
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(false);
         for (final c in _controllers.values) {
           c.pause();
         }
       } else {
+        ref.read(reelsFeedPlaybackActiveProvider.notifier).setPlayable(true);
+        final reels = ref.read(reelsFeedProvider).value ?? [];
+        if (_currentPage < reels.length) {
+          _controllers[reels[_currentPage].id]?.play();
+        }
+      }
+    });
+
+    ref.listen<bool>(reelsFeedPlaybackActiveProvider, (_, isActive) {
+      if (!isActive) {
+        for (final c in _controllers.values) {
+          c.pause();
+        }
+      } else {
+        const reelsTab = 4;
+        if (ref.read(activeShellIndexProvider) != reelsTab) return;
         final reels = ref.read(reelsFeedProvider).value ?? [];
         if (_currentPage < reels.length) {
           _controllers[reels[_currentPage].id]?.play();
@@ -232,8 +313,34 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
                       ),
                       child: Row(
                         children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Back to Home',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(0);
+                              context.go('/');
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.storefront_rounded,
+                              color: Colors.white70,
+                            ),
+                            tooltip: 'Go to Marketplace',
+                            onPressed: () {
+                              ref
+                                  .read(activeShellIndexProvider.notifier)
+                                  .setIndex(1);
+                              context.go('/marketplace');
+                            },
+                          ),
                           Text(
-                            'AgriReels',
+                            'Reels',
                             style: AppTextStyles.heading2.copyWith(
                               color: Colors.white,
                               shadows: [
@@ -708,8 +815,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
         SnackBar(
           content: Text(
             wasReposted
-                ? 'Removed from your AgriReels profile.'
-                : 'Reposted to your AgriReels profile.',
+                ? 'Removed from your reels profile.'
+                : 'Reposted to your reels profile.',
           ),
         ),
       );
@@ -1059,11 +1166,7 @@ class _ReelPageState extends ConsumerState<_ReelPage>
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return count.toString();
-  }
+  String _formatCount(int count) => formatCount(count);
 }
 
 // ── Overlay helper widgets ────────────────────────────────────────────────────
