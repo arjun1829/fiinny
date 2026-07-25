@@ -1,5 +1,5 @@
 import '../../../../core/models/reel_model.dart';
-import '../../data/reel_ranker.dart';
+import '../ranking_context.dart';
 
 /// Contract every ranking signal implements.
 ///
