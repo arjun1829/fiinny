@@ -123,20 +123,43 @@ jobs:
           echo "$FIREBASE_IOS_PLIST_BASE64" | base64 --decode > ios/Runner/GoogleService-Info.plist
           test -s ios/Runner/GoogleService-Info.plist && echo "✅ GoogleService-Info.plist created"
 
-      - name: Add Google URL Scheme to Info.plist
+      - name: Add Google Sign-In URL scheme to Info.plist (additive)
         if: ${{ env.FIREBASE_IOS_PLIST_BASE64 != '' }}
         shell: bash
         run: |
           set -euxo pipefail
           GSP="ios/Runner/GoogleService-Info.plist"
           IP="ios/Runner/Info.plist"
-          RID=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$GSP")
-          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$IP" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$IP"
-          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$IP"
-          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor' "$IP"
-          /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$IP"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $RID" "$IP"
+          # Additive only. Info.plist already ships the Firebase phone-auth
+          # "app-<GOOGLE_APP_ID>" callback schemes committed in source; this
+          # step used to `Delete :CFBundleURLTypes` first, wiping those out
+          # on every CI build and reintroducing the PhoneAuthProvider
+          # .verifyPhoneNumber fatal (EXC_BREAKPOINT) on TestFlight even
+          # after the source-level fix landed. REVERSED_CLIENT_ID is only
+          # needed for Google Sign-In, not phone auth, so a missing key is
+          # not an error.
+          python3 <<PYEOF
+          import plistlib
+
+          with open("$GSP", "rb") as f:
+              rid = plistlib.load(f).get("REVERSED_CLIENT_ID")
+
+          if not rid:
+              print("No REVERSED_CLIENT_ID in GoogleService-Info.plist — skipping (only needed for Google Sign-In, not phone auth)")
+          else:
+              with open("$IP", "rb") as f:
+                  info = plistlib.load(f)
+              url_types = info.get("CFBundleURLTypes", [])
+              schemes = {s for entry in url_types for s in entry.get("CFBundleURLSchemes", [])}
+              if rid in schemes:
+                  print(f"REVERSED_CLIENT_ID scheme already present, skipping: {rid}")
+              else:
+                  url_types.append({"CFBundleTypeRole": "Editor", "CFBundleURLSchemes": [rid]})
+                  info["CFBundleURLTypes"] = url_types
+                  with open("$IP", "wb") as f:
+                      plistlib.dump(info, f)
+                  print(f"Appended REVERSED_CLIENT_ID scheme: {rid}")
+          PYEOF
 
       - name: Create Keychain & Import Certificate
         shell: bash
