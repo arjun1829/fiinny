@@ -11,7 +11,7 @@ import { syncSupplierTotals } from '../utils/supplierLedgerSync';
 import { postSupplierInvoiceToInventory, type PostedLine } from '../utils/inventoryPosting';
 import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { fmtINR } from '../utils/gstCalculator';
-import { calcPurchaseLine, calcPurchaseTotals, rateWithGstToWithoutGst, rateWithoutGstToWithGst } from '../utils/purchaseInvoiceCalc';
+import { calcPurchaseLine, calcPurchaseTotals, rateWithGstToWithoutGst, rateWithoutGstToWithGst, type PurchaseLineInput } from '../utils/purchaseInvoiceCalc';
 import ProductAutocomplete, { type ProductLite } from '../components/ProductAutocomplete';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -52,16 +52,17 @@ function computeLine(l: Line) {
   const gstPct = n(l.gstPct);
   // Derive rate excluding GST from the user-entered rate including GST
   const rateWithoutGst = rateWithGstToWithoutGst(n(l.rateWithGst), gstPct);
-  return calcPurchaseLine({
+  const input: PurchaseLineInput = {
     rateWithoutGst,
     gstPct,
     creditRate: n(l.creditRate),
     qtyPerBox: n(l.qtyPerBox),
     boxQty: n(l.boxQty),
-  });
+  };
+  return { ...input, ...calcPurchaseLine(input) };
 }
 
-function isActiveLine(l: Line) {
+function isActiveLine(l: { productName: string; boxQty: string | number }) {
   return l.productName.trim() !== '' || n(l.boxQty) > 0;
 }
 
@@ -225,11 +226,11 @@ export default function SupplierInvoicePage() {
     const rawLines = Array.isArray(d.lines) ? d.lines : [];
     if (rawLines.length > 0) {
       setLines(rawLines.map((l: Record<string, unknown>) => {
-        const gstPct = n(l.gstPct ?? 5);
+        const gstPct = n((l.gstPct as string | number | undefined) ?? 5);
         // New format stores rateWithGst directly; old format stored rateWithoutGst — convert forward.
         const rateWithGst = l.rateWithGst != null
           ? String(l.rateWithGst)
-          : String(rateWithoutGstToWithGst(n(l.rateWithoutGst ?? l.rate ?? 0), gstPct) || '');
+          : String(rateWithoutGstToWithGst(n((l.rateWithoutGst as string | number | undefined) ?? (l.rate as string | number | undefined) ?? 0), gstPct) || '');
         return {
           productId: String(l.productId ?? ''),
           productName: String(l.productName ?? l.description ?? ''),
