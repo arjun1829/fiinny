@@ -88,7 +88,7 @@ function isListable(r: SeoReel): boolean {
   return r.videoUrl.length > 0;
 }
 
-// ─── Slug helpers (same convention as product slugs: {kebab-title}-{docId}) ──
+// ─── Slug helpers (same convention as product slugs: {kebab-title}--{docId}) ─
 
 export function buildReelSlug(title: string, id: string): string {
   const base = title
@@ -99,11 +99,13 @@ export function buildReelSlug(title: string, id: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 70);
-  return base ? `${base}-${id}` : id;
+  return base ? `${base}--${id}` : id;
 }
 
 export function extractReelIdFromSlug(slug: string): string {
   const decoded = decodeURIComponent(slug).trim();
+  const sep = decoded.indexOf("--");
+  if (sep !== -1) return decoded.slice(sep + 2);
   const idx = decoded.lastIndexOf("-");
   return idx === -1 ? decoded : decoded.slice(idx + 1);
 }
