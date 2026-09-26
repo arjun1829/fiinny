@@ -131,6 +131,10 @@ class AuthRepository {
     /// {instagram, facebook, whatsapp, youtube} — same shape web writes as
     /// `socialLinks`. Pass null to leave the existing map untouched.
     Map<String, String>? socialLinks,
+    /// Shop coordinates from "Use my current location". Written as `geo` —
+    /// the GeoPoint the web profile writes and the store locator reads
+    /// first. Null leaves any existing pin untouched.
+    GeoPoint? geo,
   }) async {
     final isSeller = role == 'retailer' || role == 'manufacturer';
 
@@ -178,6 +182,7 @@ class AuthRepository {
         'website': ?website,
         if (bannerUrl != null && bannerUrl.isNotEmpty) 'banner': bannerUrl,
         'socialLinks': ?socialLinks,
+        'geo': ?geo,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -203,6 +208,7 @@ class AuthRepository {
         'website': ?website,
         if (bannerUrl != null && bannerUrl.isNotEmpty) 'banner': bannerUrl,
         'socialLinks': ?socialLinks,
+        'geo': ?geo,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
