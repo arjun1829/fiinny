@@ -2,9 +2,11 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
-# Firebase
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
+# Firebase / Play services: no blanket keeps. Both ship their own consumer
+# R8 rules inside the AARs, and the Flutter plugins talk to them through
+# method channels, not reflection. The old `-keep class ... { *; }` lines
+# stopped R8 renaming or stripping the whole SDKs — the main reason Play
+# Console reported a 40% obfuscation rate.
 
 # Razorpay
 -keepattributes *Annotation*
