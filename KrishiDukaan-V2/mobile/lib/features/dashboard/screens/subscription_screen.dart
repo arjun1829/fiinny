@@ -19,30 +19,13 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../cart/data/payment_service.dart' show PaymentService;
+import '../data/subscription_pricing.dart';
 import '../providers/dashboard_provider.dart';
 
 /// Firestore document holding the live pricing ladder — the same one the web
 /// admin Pricing screen writes and `api/payment/create-order` charges from.
 const _pricingCollection = 'settings';
 const _pricingDoc = 'pricing';
-
-/// Seats are sold in blocks of this size, and this is also the minimum buy.
-/// Must stay in sync with SEAT_STEP in app/lib/pricing.ts, which
-/// /api/payment/create-order enforces server-side.
-const _seatStep = 10;
-
-/// One-tap seat quantities offered under the input.
-const _seatPresets = [10, 100, 500];
-
-/// Snaps a requested seat count to the sale rule: at least [_seatStep], and
-/// always a whole multiple of it. Rounds UP rather than to nearest so a seller
-/// who needs 15 slots gets 20 and never ends up with fewer than they asked for.
-/// Mirrors normalizeSeatCount in app/lib/pricing.ts — the server runs the same
-/// rule, so the seat count priced here is the one actually charged.
-int _normalizeSeats(int raw) {
-  if (raw <= _seatStep) return _seatStep;
-  return ((raw + _seatStep - 1) ~/ _seatStep) * _seatStep;
-}
 
 /// The published legal documents a subscription is sold under.
 ///
@@ -54,140 +37,22 @@ const _termsPath = '/terms';
 const _sellerTermsPath = '/seller-terms';
 const _termsVersion = '2026-08-26';
 
-/// Fallback ladder, used only when the settings doc is missing or unreadable.
-///
-/// These are the values that used to be hardcoded here, so a failed read
-/// behaves exactly like the old build rather than showing the seller nothing.
-/// Anything else — including every price change made in admin — comes from
-/// Firestore at runtime. This screen must never be the reason a price the
-/// seller sees differs from the amount Razorpay captures.
-const _defaultPlans = [
-  _Duration(months: 1, label: '1 Month', pricePerSeat: 21),
-  _Duration(months: 3, label: '3 Months', pricePerSeat: 54, badge: 'SAVE 14%'),
-  _Duration(months: 6, label: '6 Months', pricePerSeat: 90, badge: 'SAVE 29%'),
-  _Duration(months: 12, label: '1 Year', pricePerSeat: 144, badge: 'BEST VALUE'),
-];
-
-String _durationLabel(int months) {
-  if (months == 12) return '1 Year';
-  if (months % 12 == 0) return '${months ~/ 12} Years';
-  return months == 1 ? '1 Month' : '$months Months';
-}
-
-class _Duration {
-  /// Ladder-unique key. A bundle and a per-listing rate can share a period, so
-  /// the period alone cannot identify a plan; this is what gets sent to
-  /// create-order as `planId`.
-  final String? id;
-  final int months;
-  final String label;
-  final String? badge;
-  final int pricePerSeat;
-
-  /// Flat price for the whole period, overriding [pricePerSeat] when set.
-  final int? flatPrice;
-
-  /// Listings a flat plan includes. Seats above this are clamped, not billed.
-  final int? includedListings;
-
-  /// Account roles allowed to buy this plan. Empty means everyone.
-  final List<String> roles;
-
-  const _Duration({
-    required this.months,
-    required this.label,
-    required this.pricePerSeat,
-    this.id,
-    this.badge,
-    this.flatPrice,
-    this.includedListings,
-    this.roles = const [],
-  });
-
-  /// Mirror of isPlanAllowed() in app/lib/pricing.ts. The binding check is the
-  /// server-side one in create-order; this only decides what to display.
-  bool allowsRole(String? role) {
-    if (roles.isEmpty) return true;
-    final r = (role ?? '').trim().toLowerCase();
-    return r.isNotEmpty && roles.contains(r);
-  }
-
-  String get key => id ?? '$months';
-
-  bool get isFlat => flatPrice != null;
-
-  /// Seats actually granted. Mirrors billableSeats() in app/lib/pricing.ts.
-  int billableSeats(int seats) {
-    final n = seats < 1 ? 1 : seats;
-    if (flatPrice != null && includedListings != null) {
-      return n < includedListings! ? n : includedListings!;
+/// The plan to reopen on a renewal: the Standard pack whose period and size
+/// match the expiring subscription, else the Custom plan for that period.
+SubscriptionPlan? _matchRenewal(
+  List<SubscriptionPlan> plans,
+  int months,
+  int? seats,
+) {
+  for (final p in plans) {
+    if (p.isStandard && p.months == months && p.includedListings == seats) {
+      return p;
     }
-    return n;
   }
-
-  /// Mirrors computeAmount() in app/lib/pricing.ts. Display only — the amount
-  /// actually recorded after payment comes back from verify/.
-  int totalPrice(int seats) =>
-      flatPrice ?? billableSeats(seats) * pricePerSeat;
-}
-
-/// Parse the settings/pricing document. Returns null (never a partial ladder)
-/// so callers fall back cleanly to [_defaultPlans].
-List<_Duration>? _parsePlans(Map<String, dynamic>? data) {
-  final raw = data?['durations'];
-  if (raw is! List || raw.isEmpty) return null;
-
-  final out = <_Duration>[];
-  final seen = <String>{};
-  for (final item in raw) {
-    if (item is! Map) return null;
-    final months = (item['months'] as num?)?.toInt();
-    final price = (item['pricePerSeat'] as num?)?.toInt();
-    if (months == null || months <= 0) return null;
-    if (price == null || price < 0) return null;
-
-    final flat = (item['flatPrice'] as num?)?.toInt();
-    final incl = (item['includedListings'] as num?)?.toInt();
-    // A flat price with no listing cap would sell unlimited listings for a flat
-    // fee. Reject the ladder rather than guess a cap.
-    if ((flat == null) != (incl == null)) return null;
-    if (flat != null && flat < 0) return null;
-    if (incl != null && incl <= 0) return null;
-
-    final rawId = item['id'];
-    final id = rawId is String && rawId.trim().isNotEmpty ? rawId.trim() : null;
-    final rawRoles = item['roles'];
-    var roles = const <String>[];
-    if (rawRoles != null) {
-      if (rawRoles is! List) return null;
-      final cleaned = rawRoles
-          .map((r) => (r ?? '').toString().trim().toLowerCase())
-          .where((r) => r.isNotEmpty)
-          .toSet()
-          .toList();
-      roles = cleaned;
-    }
-
-    final rawBadge = item['badge'];
-    final badge =
-        rawBadge is String && rawBadge.trim().isNotEmpty ? rawBadge.trim() : null;
-
-    final plan = _Duration(
-      id: id,
-      months: months,
-      label: _durationLabel(months),
-      pricePerSeat: price,
-      badge: badge,
-      flatPrice: flat,
-      includedListings: incl,
-      roles: roles,
-    );
-    if (!seen.add(plan.key)) return null;
-    out.add(plan);
+  for (final p in plans) {
+    if (!p.isStandard && !p.isFlat && p.months == months) return p;
   }
-
-  out.sort((a, b) => a.months.compareTo(b.months));
-  return out;
+  return null;
 }
 
 class SubscriptionScreen extends ConsumerStatefulWidget {
@@ -212,25 +77,21 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
   ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
-/// A promo code the seller has actually validated against Firestore — never
-/// constructed from raw typed text. create-order is only ever sent this
-/// [code], so a code that was typed but never successfully applied (or was
-/// edited after applying) can never reach the server.
-class _AppliedPromo {
-  final String code;
-  final int discountPct;
-  const _AppliedPromo({required this.code, required this.discountPct});
-}
-
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   late final AppRazorpay _razorpay;
-  int _seats = _seatStep;
+  int _seats = seatStep;
   late final TextEditingController _seatCtrl;
-  List<_Duration> _plans = _defaultPlans;
-  _Duration _duration = _defaultPlans[0];
+  List<SubscriptionPlan> _plans = defaultSubscriptionPlans;
+  // Standard is the default tab; its first plan is preselected.
+  PlanTier _tier = PlanTier.standard;
+  SubscriptionPlan _duration = defaultSubscriptionPlans.firstWhere(
+    (p) => p.isStandard,
+    orElse: () => defaultSubscriptionPlans.first,
+  );
   bool _loading = false;
   String? _error;
   String? _razorpayOrderId;
+
   /// Order amount in PAISE — see checkout_screen for why this is retained.
   int? _razorpayAmount;
 
@@ -238,9 +99,39 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   /// `promoCodes` collection create-order re-checks server-side, so what the
   /// seller sees here and what they are actually charged cannot drift.
   final _promoCtrl = TextEditingController();
-  _AppliedPromo? _promoApplied;
+  // The promoCodes/ doc once looked up. Whether it applies — and the reason
+  // when it doesn't — is re-evaluated against the CURRENT plan every build
+  // (evaluatePromo, the server's own rules), so switching Standard/Custom,
+  // period or seats updates the discount without another lookup.
+  Map<String, dynamic>? _promoDoc;
   bool _promoLoading = false;
-  String? _promoError;
+  // Lookup problems only (not found / network); eligibility comes from eval.
+  String? _promoLookupError;
+
+  bool get _hasTier => _plans.any((p) => p.tier == _tier);
+  bool get _showToggle =>
+      _plans.any((p) => p.isStandard) && _plans.any((p) => !p.isStandard);
+  List<SubscriptionPlan> get _tierPlans =>
+      _plans.where((p) => p.tier == _tier).toList();
+  int get _grantedSeats => _duration.billableSeats(_seats);
+
+  PromoEvaluation? get _promoEval => _promoDoc == null
+      ? null
+      : evaluatePromo(
+          _promoDoc,
+          months: _duration.months,
+          seatCount: _grantedSeats,
+        );
+
+  void _switchTier(PlanTier next) {
+    if (next == _tier) return;
+    final first = _plans.where((p) => p.tier == next);
+    if (first.isEmpty) return;
+    setState(() {
+      _tier = next;
+      _duration = first.first;
+    });
+  }
 
   @override
   void initState() {
@@ -255,16 +146,17 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     // blocks rule (e.g. 1 or 5), so it is normalized too — otherwise renewal
     // would show a price the server won't honour.
     final seats = widget.initialSeats;
-    if (seats != null && seats > 0) _seats = _normalizeSeats(seats);
+    if (seats != null && seats > 0) _seats = normalizeSeatCount(seats);
     _seatCtrl = TextEditingController(text: '$_seats');
 
+    // A renewal whose seats and period match a Standard pack reopens on that
+    // Standard plan; anything else reopens on the matching Custom period.
     final months = widget.initialMonths;
     if (months != null) {
-      for (final d in _plans) {
-        if (d.months == months) {
-          _duration = d;
-          break;
-        }
+      final match = _matchRenewal(_plans, months, seats);
+      if (match != null) {
+        _duration = match;
+        _tier = match.tier;
       }
     }
 
@@ -283,7 +175,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           .collection(_pricingCollection)
           .doc(_pricingDoc)
           .get();
-      final all = _parsePlans(snap.data());
+      final all = parseSubscriptionPlans(snap.data());
       if (all == null || all.isEmpty || !mounted) return;
       // Don't show a plan checkout would refuse: create-order rejects a plan the
       // account's role isn't allowed to buy.
@@ -292,14 +184,22 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       if (parsed.isEmpty) return;
       setState(() {
         _plans = parsed;
-        // Keep the selection valid if admin removed or renamed the chosen plan.
+        // Keep the tab and selection valid if admin removed or renamed plans:
+        // same plan if it still exists, else the renewal match, else the
+        // first plan of the current tab, else of whichever tab has plans.
+        if (!_hasTier) {
+          _tier = parsed.any((p) => p.isStandard)
+              ? PlanTier.standard
+              : PlanTier.custom;
+        }
+        final renewal = widget.initialMonths != null
+            ? _matchRenewal(parsed, widget.initialMonths!, widget.initialSeats)
+            : null;
         _duration = parsed.firstWhere(
           (p) => p.key == _duration.key,
-          orElse: () => parsed.firstWhere(
-            (p) => p.months == _duration.months && !p.isFlat,
-            orElse: () => parsed.first,
-          ),
+          orElse: () => renewal ?? parsed.firstWhere((p) => p.tier == _tier),
         );
+        _tier = _duration.tier;
       });
     } catch (_) {
       /* unreachable settings doc keeps the built-in ladder */
@@ -316,12 +216,13 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   /// Applies a new seat count and keeps the text field in step with it.
   void _setSeats(int raw) {
-    final next = _normalizeSeats(raw);
+    final next = normalizeSeatCount(raw);
     setState(() => _seats = next);
     if (_seatCtrl.text != '$next') {
       _seatCtrl.text = '$next';
-      _seatCtrl.selection =
-          TextSelection.collapsed(offset: _seatCtrl.text.length);
+      _seatCtrl.selection = TextSelection.collapsed(
+        offset: _seatCtrl.text.length,
+      );
     }
   }
 
@@ -334,8 +235,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   /// will not be honoured).
   void _onPromoTextChanged(String _) {
     setState(() {
-      _promoApplied = null;
-      _promoError = null;
+      _promoDoc = null;
+      _promoLookupError = null;
     });
   }
 
@@ -349,46 +250,33 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     setState(() {
       _promoLoading = true;
-      _promoError = null;
+      _promoLookupError = null;
+      _promoDoc = null;
     });
 
     try {
+      // Not filtered on `active`: a deactivated code should say so (same
+      // message as the web), not claim it doesn't exist.
       final snap = await FirebaseFirestore.instance
           .collection('promoCodes')
           .where('code', isEqualTo: code)
-          .where('active', isEqualTo: true)
           .limit(1)
           .get()
           .timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
 
-      if (snap.docs.isEmpty) {
-        setState(() {
-          _promoApplied = null;
-          _promoError = 'Invalid or expired promo code.';
-        });
-        return;
-      }
-
-      final pct = (snap.docs.first.data()['discountPercent'] as num?)?.toInt();
-      if (pct == null || pct <= 0) {
-        setState(() {
-          _promoApplied = null;
-          _promoError = 'This promo code has no active discount.';
-        });
-        return;
-      }
-
       setState(() {
-        _promoApplied = _AppliedPromo(code: code, discountPct: pct);
-        _promoError = null;
+        if (snap.docs.isEmpty) {
+          _promoLookupError = 'Invalid or expired promo code.';
+        } else {
+          _promoDoc = snap.docs.first.data();
+        }
       });
     } catch (_) {
       if (mounted) {
         setState(() {
-          _promoApplied = null;
-          _promoError = 'Could not validate promo code. Try again.';
+          _promoLookupError = 'Could not validate promo code. Try again.';
         });
       }
     } finally {
@@ -398,11 +286,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   /// What the seller was shown, and therefore accepted, by pressing Pay.
   Map<String, dynamic> _termsAcceptanceRecord() => {
-        'version': _termsVersion,
-        'documents': [_termsPath, _sellerTermsPath],
-        'acceptedAt': DateTime.now().toUtc().toIso8601String(),
-        'surface': 'mobile:subscription-checkout',
-      };
+    'version': _termsVersion,
+    'documents': [_termsPath, _sellerTermsPath],
+    'acceptedAt': DateTime.now().toUtc().toIso8601String(),
+    'surface': 'mobile:subscription-checkout',
+  };
 
   Future<void> _openLegalDoc(String path) async {
     final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
@@ -441,7 +329,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               if (!kIsWeb) 'x-client': 'mobile',
             },
             body: jsonEncode({
-              'seatCount': _seats,
+              // Granted seats: a Standard plan is always its full pack.
+              'seatCount': _grantedSeats,
               'durationMonths': _duration.months,
               'planId': _duration.key,
               'userId': user.uid,
@@ -449,7 +338,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               // _onPromoTextChanged. create-order re-validates it regardless
               // and computes the actual charge itself; this is what tells it
               // which code to check.
-              'promoCode': _promoApplied?.code,
+              // Only a code that applies to this exact selection.
+              'promoCode': (_promoEval?.applies ?? false)
+                  ? _promoEval!.code
+                  : null,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -460,16 +352,19 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         String? serverMessage;
         try {
           serverMessage =
-              (jsonDecode(res.body) as Map<String, dynamic>)['error'] as String?;
+              (jsonDecode(res.body) as Map<String, dynamic>)['error']
+                  as String?;
         } catch (_) {
           /* non-JSON body */
         }
         if (serverMessage != null && serverMessage.isNotEmpty) {
           throw Exception(serverMessage);
         }
-        throw Exception('Payment server error (${res.statusCode}). '
-            'Check that RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set '
-            'in your production environment.');
+        throw Exception(
+          'Payment server error (${res.statusCode}). '
+          'Check that RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set '
+          'in your production environment.',
+        );
       }
 
       final order = jsonDecode(res.body) as Map<String, dynamic>;
@@ -487,7 +382,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         'order_id': _razorpayOrderId,
         'name': 'KrishiDukan',
         'description':
-            '$_seats seat${_seats != 1 ? 's' : ''} · ${_duration.label}',
+            '${_duration.isStandard ? 'Standard · ' : ''}'
+            '$_grantedSeats listing${_grantedSeats != 1 ? 's' : ''} · ${_duration.label}',
         'prefill': {
           'contact': user.phone,
           'name': user.name,
@@ -538,7 +434,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         throw Exception('Payment verification failed');
       }
 
-      final verifiedSeatCount = (verifyData['seatCount'] as num?)?.toInt() ?? _seats;
+      final verifiedSeatCount =
+          (verifyData['seatCount'] as num?)?.toInt() ?? _grantedSeats;
 
       await _activateSubscription(
         razorpayOrderId: response.orderId,
@@ -548,6 +445,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         // Gateway-verified promo code from the order notes (via verify/), not
         // the checkout field — persisted for promo usage attribution.
         promoCode: (verifyData['promoCode'] as String?),
+        planTier: verifyData['planTier'] as String?,
+        planName: verifyData['planName'] as String?,
+        planId: verifyData['planId'] as String?,
       );
     } catch (e) {
       if (mounted) {
@@ -570,12 +470,27 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     required int seatCount,
     int? amountPaid,
     String? promoCode,
+
+    /// Plan identity from the Razorpay order's notes (via verify/ or
+    /// order-status) — the plan actually charged. Falls back to the screen's
+    /// selection only for orders created before these notes existed.
+    String? planTier,
+    String? planName,
+    String? planId,
   }) async {
     final normalizedPromo = (promoCode ?? '').trim().toUpperCase();
+    final tier = planTier == 'standard' || planTier == 'custom'
+        ? planTier!
+        : (_duration.isStandard ? 'standard' : 'custom');
+    final name = (planName ?? '').trim().isNotEmpty
+        ? planName!.trim()
+        : (tier == 'standard' ? 'Standard' : 'Custom');
     final user = ref.read(currentUserProvider).value!;
     final firebaseUser = FirebaseAuth.instance.currentUser!;
 
-    final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.phone);
+    final userDocRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.phone);
     final currentSeats = user.totalSeats;
     final seatsToAdd = seatCount;
 
@@ -583,7 +498,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     // If user is still 'consumer', upgrade to 'retailer' so canAccessDashboard
     // returns true after payment (consumers who pay should get seller access).
-    final roleUpdate = user.role == 'consumer' ? {'role': 'retailer'} : <String, dynamic>{};
+    final roleUpdate = user.role == 'consumer'
+        ? {'role': 'retailer'}
+        : <String, dynamic>{};
     batch.update(userDocRef, {
       'isPaid': true,
       'subscriptionStatus': 'paid',
@@ -608,6 +525,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       'amount': totalAmount,
       'seatCount': seatsToAdd,
       'durationMonths': _duration.months,
+      'planName': name,
+      'planTier': tier,
       'currency': 'INR',
       'razorpayOrderId': razorpayOrderId,
       'razorpayPaymentId': razorpayPaymentId,
@@ -621,7 +540,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       'ownerId': firebaseUser.uid,
       'ownerPhone': user.phone,
       'ownerType': user.role == 'manufacturer' ? 'manufacturer' : 'retailer',
-      'planName': 'Standard',
+      // Snapshotted, so editing or deleting the plan later never changes
+      // what this subscription says it was. Same fields the web writes.
+      'planName': name,
+      'planTier': tier,
+      'planId': planId ?? _duration.key,
       'seatsPurchased': seatsToAdd,
       'durationMonths': _duration.months,
       'amountPaid': totalAmount,
@@ -660,9 +583,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       );
       // New sellers complete their shop profile before landing on the
       // dashboard; existing users buying more seats go straight back.
-      context.go(widget.reason == 'new_account'
-          ? '/profile/edit?reason=new_account'
-          : '/dashboard');
+      context.go(
+        widget.reason == 'new_account'
+            ? '/profile/edit?reason=new_account'
+            : '/dashboard',
+      );
     }
   }
 
@@ -697,8 +622,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       // into the order's own notes at creation time) — without this, a
       // reconciled late-capture would fall back to the undiscounted full
       // price whenever a promo code had actually been applied at checkout.
-      final amountCharged =
-          (reconciliation.notes?['amountCharged'] as num?)?.toInt();
+      final amountCharged = (reconciliation.notes?['amountCharged'] as num?)
+          ?.toInt();
       try {
         await _activateSubscription(
           razorpayOrderId: orderId,
@@ -708,6 +633,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           // Promo code from the order's server-set notes, same source as
           // seatCount — keeps attribution correct on the reconciliation path.
           promoCode: (reconciliation.notes?['promoCode'] as String?),
+          planTier: reconciliation.notes?['planTier'] as String?,
+          planName: reconciliation.notes?['planName'] as String?,
+          planId: reconciliation.notes?['planId']?.toString(),
         );
         return; // _activateSubscription already navigated away on success.
       } catch (e) {
@@ -725,12 +653,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     // reflects reality — never log when checkFailed is true, since that
     // means we genuinely don't know the outcome.
     if (!reconciliation.checkFailed) {
-      unawaited(PaymentService().logFailedPayment(
-        r.message,
-        orderId: orderId,
-        amount: _razorpayAmount,
-        kind: 'subscription',
-      ));
+      unawaited(
+        PaymentService().logFailedPayment(
+          r.message,
+          orderId: orderId,
+          amount: _razorpayAmount,
+          kind: 'subscription',
+        ),
+      );
     }
 
     if (!mounted) return;
@@ -740,9 +670,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           // We genuinely don't know the outcome — never tell a seller who
           // might have been charged that their payment definitely failed.
           ? 'We could not confirm your payment status. If any amount was '
-              'deducted, it will be refunded automatically within 5-7 '
-              'business days. Please check back before retrying, or '
-              'contact support.'
+                'deducted, it will be refunded automatically within 5-7 '
+                'business days. Please check back before retrying, or '
+                'contact support.'
           : r.message;
     });
   }
@@ -770,9 +700,13 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                        color: color, fontWeight: FontWeight.w700)),
+                Text(
+                  title,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(subtitle, style: AppTextStyles.bodySmall),
               ],
@@ -788,22 +722,26 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     final userAsync = ref.watch(currentUserProvider);
     final isPaid = userAsync.value?.isPaid ?? false;
     final totalPrice = _duration.totalPrice(_seats);
-    // Math.floor(subtotal * pct / 100), same as web's discountAmt — and
-    // algebraically identical to create-order's own
-    // Math.ceil(subtotal * (1 - pct / 100)) for an integer subtotal, so the
-    // figure shown here always matches what Razorpay actually charges.
-    final discountAmount = _promoApplied != null
-        ? (totalPrice * _promoApplied!.discountPct / 100).floor()
-        : 0;
-    final finalPrice = totalPrice - discountAmount;
+    final granted = _grantedSeats;
+    // Evaluated against the current selection with the server's own rules,
+    // and discounted with the server's own formula (applyDiscount), so the
+    // figure shown here is exactly what Razorpay charges.
+    final promoEval = _promoEval;
+    final promoOk = promoEval?.applies ?? false;
+    final promoError = _promoLookupError ?? promoEval?.error;
+    final finalPrice = promoOk
+        ? applyDiscount(totalPrice, promoEval!.discountPercent)
+        : totalPrice;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Text('Subscription',
-            style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+        title: Text(
+          'Subscription',
+          style: AppTextStyles.heading2.copyWith(color: Colors.white),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -846,8 +784,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               decoration: BoxDecoration(
                 color: AppColors.success.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: AppColors.success.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
@@ -857,11 +796,16 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Active Subscription',
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.success)),
-                        Text('Your store is fully activated',
-                            style: AppTextStyles.bodySmall),
+                        Text(
+                          'Active Subscription',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.success,
+                          ),
+                        ),
+                        Text(
+                          'Your store is fully activated',
+                          style: AppTextStyles.bodySmall,
+                        ),
                       ],
                     ),
                   ),
@@ -872,172 +816,244 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           Text('Choose Your Plan', style: AppTextStyles.heading2),
           const SizedBox(height: 6),
           Text(
-            'Pay per seat. One seat = one product listing slot.',
-            style:
-                AppTextStyles.body.copyWith(color: AppColors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 24),
-
-          // ── Seat picker ───────────────────────────────────────────────────
-          _SectionCard(
-            title: 'Number of Seats',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: _seats > _seatStep
-                          ? () => _setSeats(_seats - _seatStep)
-                          : null,
-                      icon: const Icon(Icons.remove_circle_outline),
-                      color: AppColors.primary,
-                    ),
-                    // Typed entry — buying 100 seats used to mean 100 taps on +.
-                    SizedBox(
-                      width: 76,
-                      child: TextField(
-                        controller: _seatCtrl,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(5),
-                        ],
-                        style: AppTextStyles.heading2,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 8),
-                        ),
-                        // Snap to the 10-block rule only once editing ends, so
-                        // the field stays freely editable while typing (an
-                        // in-progress "1" of "100" must not jump to 10).
-                        onChanged: (v) {
-                          final n = int.tryParse(v);
-                          if (n != null) setState(() => _seats = _normalizeSeats(n));
-                        },
-                        onEditingComplete: () {
-                          _setSeats(int.tryParse(_seatCtrl.text) ?? _seatStep);
-                          FocusScope.of(context).unfocus();
-                        },
-                        onTapOutside: (_) {
-                          _setSeats(int.tryParse(_seatCtrl.text) ?? _seatStep);
-                          FocusScope.of(context).unfocus();
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _setSeats(_seats + _seatStep),
-                      icon: const Icon(Icons.add_circle_outline),
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '$_seats product listing slots',
-                        style: AppTextStyles.body
-                            .copyWith(color: AppColors.onSurfaceVariant),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    for (final n in _seatPresets) ...[
-                      Expanded(
-                        child: ChoiceChip(
-                          label: Text('$n seats'),
-                          selected: _seats == n,
-                          onSelected: (_) => _setSeats(n),
-                        ),
-                      ),
-                      if (n != _seatPresets.last) const SizedBox(width: 8),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sold in blocks of $_seatStep · minimum $_seatStep seats',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.onSurfaceVariant),
-                ),
-              ],
+            _tier == PlanTier.standard
+                ? 'A fixed plan for 100 products. Pick monthly or yearly.'
+                : 'Pay per product. One seat = one product listing slot.',
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 16),
 
-          // ── Duration picker ───────────────────────────────────────────────
-          _SectionCard(
-            title: 'Duration',
-            child: Column(
-              children: _plans.map((d) {
-                final selected = _duration.key == d.key;
-                return GestureDetector(
-                  onTap: () => setState(() => _duration = d),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.primaryContainer.withValues(alpha: 0.3)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: selected
-                            ? AppColors.primary
-                            : AppColors.divider,
-                        width: selected ? 2 : 1,
-                      ),
+          // ── Standard / Custom toggle ──────────────────────────────────────
+          // Hidden when the admin has left plans in only one tier.
+          if (_showToggle) ...[
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<PlanTier>(
+                segments: const [
+                  ButtonSegment(
+                    value: PlanTier.standard,
+                    label: Text('Standard'),
+                    icon: Icon(Icons.workspace_premium_outlined, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: PlanTier.custom,
+                    label: Text('Custom'),
+                    icon: Icon(Icons.tune, size: 18),
+                  ),
+                ],
+                selected: {_tier},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => _switchTier(s.first),
+                style: SegmentedButton.styleFrom(
+                  selectedBackgroundColor: AppColors.primary,
+                  selectedForegroundColor: Colors.white,
+                  foregroundColor: AppColors.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          if (_tier == PlanTier.standard) ...[
+            // ── Standard plan cards ─────────────────────────────────────────
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final p in _tierPlans) ...[
+                  Expanded(
+                    child: _StandardPlanCard(
+                      plan: p,
+                      selected: _duration.key == p.key,
+                      onTap: () => setState(() => _duration = p),
                     ),
-                    child: Row(
+                  ),
+                  if (p != _tierPlans.last) const SizedBox(width: 10),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+          ] else ...[
+            // ── Seat picker (per-listing plans only) ────────────────────────
+            if (!_duration.isFlat) ...[
+              _SectionCard(
+                title: 'Number of Seats',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Icon(
-                          selected
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          color: selected
-                              ? AppColors.primary
-                              : AppColors.onSurfaceVariant,
-                          size: 18,
+                        IconButton(
+                          onPressed: _seats > seatStep
+                              ? () => _setSeats(_seats - seatStep)
+                              : null,
+                          icon: const Icon(Icons.remove_circle_outline),
+                          color: AppColors.primary,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Text(d.label,
-                                  style: AppTextStyles.bodyMedium),
-                              if (d.badge != null) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.secondary,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(d.badge!,
-                                      style: AppTextStyles.caption.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700)),
-                                ),
-                              ],
+                        // Typed entry — buying 100 seats used to mean 100 taps on +.
+                        SizedBox(
+                          width: 76,
+                          child: TextField(
+                            controller: _seatCtrl,
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(5),
                             ],
+                            style: AppTextStyles.heading2,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            // Snap to the 10-block rule only once editing ends, so
+                            // the field stays freely editable while typing (an
+                            // in-progress "1" of "100" must not jump to 10).
+                            onChanged: (v) {
+                              final n = int.tryParse(v);
+                              if (n != null) {
+                                setState(() => _seats = normalizeSeatCount(n));
+                              }
+                            },
+                            onEditingComplete: () {
+                              _setSeats(
+                                int.tryParse(_seatCtrl.text) ?? seatStep,
+                              );
+                              FocusScope.of(context).unfocus();
+                            },
+                            onTapOutside: (_) {
+                              _setSeats(
+                                int.tryParse(_seatCtrl.text) ?? seatStep,
+                              );
+                              FocusScope.of(context).unfocus();
+                            },
                           ),
                         ),
-                        Text(
-                          CurrencyUtils.format(d.totalPrice(_seats).toDouble()),
-                          style: AppTextStyles.price,
+                        IconButton(
+                          onPressed: () => _setSeats(_seats + seatStep),
+                          icon: const Icon(Icons.add_circle_outline),
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '$_seats product listing slots',
+                            style: AppTextStyles.body.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                );
-              }).toList(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        for (final n in seatPresets) ...[
+                          Expanded(
+                            child: ChoiceChip(
+                              label: Text('$n seats'),
+                              selected: _seats == n,
+                              onSelected: (_) => _setSeats(n),
+                            ),
+                          ),
+                          if (n != seatPresets.last) const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sold in blocks of $seatStep · minimum $seatStep seats',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Duration picker (Custom plans) ────────────────────────────────
+            _SectionCard(
+              title: 'Duration',
+              child: Column(
+                children: _tierPlans.map((d) {
+                  final selected = _duration.key == d.key;
+                  return GestureDetector(
+                    onTap: () => setState(() => _duration = d),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primaryContainer.withValues(alpha: 0.3)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : AppColors.divider,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.onSurfaceVariant,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Text(d.label, style: AppTextStyles.bodyMedium),
+                                if (d.badge != null) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.secondary,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      d.badge!,
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Text(
+                            CurrencyUtils.format(
+                              d.totalPrice(_seats).toDouble(),
+                            ),
+                            style: AppTextStyles.price,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
+          ],
 
           // ── Promo code ───────────────────────────────────────────────────
           _SectionCard(
@@ -1055,7 +1071,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         inputFormatters: [
                           TextInputFormatter.withFunction(
                             (oldValue, newValue) => newValue.copyWith(
-                                text: newValue.text.toUpperCase()),
+                              text: newValue.text.toUpperCase(),
+                            ),
                           ),
                         ],
                         onChanged: _onPromoTextChanged,
@@ -1063,49 +1080,63 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                           hintText: 'Enter promo code',
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
                           border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
-                      onPressed: (_promoLoading || _promoCtrl.text.trim().isEmpty)
+                      onPressed:
+                          (_promoLoading || _promoCtrl.text.trim().isEmpty)
                           ? null
                           : _applyPromo,
                       style: FilledButton.styleFrom(
-                        backgroundColor:
-                            AppColors.primary.withValues(alpha: 0.1),
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.1,
+                        ),
                         foregroundColor: AppColors.primary,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                       ),
                       child: _promoLoading
                           ? const SizedBox(
                               height: 16,
                               width: 16,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.primary),
+                                strokeWidth: 2,
+                                color: AppColors.primary,
+                              ),
                             )
                           : const Text('Apply'),
                     ),
                   ],
                 ),
-                if (_promoApplied != null) ...[
+                if (promoOk) ...[
                   const SizedBox(height: 8),
                   Text(
-                    '✓ ${_promoApplied!.discountPct}% discount applied',
+                    '✓ ${formatPercent(promoEval!.discountPercent)} discount applied',
                     style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.primary, fontWeight: FontWeight.w700),
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
-                if (_promoError != null) ...[
+                if (promoError != null) ...[
                   const SizedBox(height: 8),
-                  Text(_promoError!,
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.error)),
+                  Text(
+                    promoError,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.error,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -1118,8 +1149,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             decoration: BoxDecoration(
               color: AppColors.primaryContainer.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
-              border:
-                  Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.2),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1128,12 +1160,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _duration.isFlat
+                      _duration.isStandard
+                          ? 'Standard · $granted products · ${_duration.label}'
+                          : _duration.isFlat
                           ? 'Up to ${_duration.includedListings} listings × ${_duration.label}'
                           : '$_seats seat${_seats != 1 ? 's' : ''} × ${_duration.label}',
                       style: AppTextStyles.bodySmall,
                     ),
-                    if (_promoApplied != null)
+                    if (promoOk)
                       Text(
                         CurrencyUtils.format(totalPrice.toDouble()),
                         style: AppTextStyles.bodySmall.copyWith(
@@ -1151,13 +1185,19 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                        _duration.isFlat
-                            ? 'bundle price'
-                            : '₹${_duration.pricePerSeat}/seat',
-                        style: AppTextStyles.caption),
-                    Text('one-time payment',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.onSurfaceVariant)),
+                      _duration.isStandard
+                          ? 'plan price'
+                          : _duration.isFlat
+                          ? 'bundle price'
+                          : '₹${_duration.pricePerSeat}/seat',
+                      style: AppTextStyles.caption,
+                    ),
+                    Text(
+                      'one-time payment',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1169,26 +1209,32 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           _SectionCard(
             title: "What's included",
             child: Column(
-              children: [
-                'Inventory management',
-                'Real-time order tracking',
-                'Discount management',
-                'Delivery settings',
-                'Analytics dashboard',
-                'Customer order notifications',
-              ]
-                  .map((f) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle,
-                                color: AppColors.success, size: 18),
-                            const SizedBox(width: 8),
-                            Text(f, style: AppTextStyles.body),
-                          ],
+              children:
+                  [
+                        'Inventory management',
+                        'Real-time order tracking',
+                        'Discount management',
+                        'Delivery settings',
+                        'Analytics dashboard',
+                        'Customer order notifications',
+                      ]
+                      .map(
+                        (f) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                color: AppColors.success,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(f, style: AppTextStyles.body),
+                            ],
+                          ),
                         ),
-                      ))
-                  .toList(),
+                      )
+                      .toList(),
             ),
           ),
           const SizedBox(height: 8),
@@ -1202,17 +1248,25 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   color: AppColors.error.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: AppColors.error.withValues(alpha: 0.3)),
+                    color: AppColors.error.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: AppColors.error, size: 18),
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.error,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                        child: Text(_error!,
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.error))),
+                      child: Text(
+                        _error!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1222,10 +1276,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: Text.rich(
               TextSpan(
-                style: AppTextStyles.caption
-                    .copyWith(color: AppColors.onSurfaceVariant, height: 1.5),
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                  height: 1.5,
+                ),
                 children: [
-                  const TextSpan(text: 'By proceeding, you agree to KrishiDukan’s '),
+                  const TextSpan(
+                    text: 'By proceeding, you agree to KrishiDukan’s ',
+                  ),
                   TextSpan(
                     text: 'Terms & Conditions',
                     style: AppTextStyles.caption.copyWith(
@@ -1269,9 +1327,12 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : Text(
-                      'Pay ${CurrencyUtils.format(finalPrice.toDouble())} · Unlock ${_duration.billableSeats(_seats)} seat${_duration.billableSeats(_seats) != 1 ? 's' : ''}',
+                      'Pay ${CurrencyUtils.format(finalPrice.toDouble())} · Unlock $granted product${granted != 1 ? 's' : ''}',
                       style: AppTextStyles.button,
                     ),
             ),
@@ -1281,16 +1342,121 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.lock_outline,
-                  size: 12, color: AppColors.onSurfaceVariant),
+              const Icon(
+                Icons.lock_outline,
+                size: 12,
+                color: AppColors.onSurfaceVariant,
+              ),
               const SizedBox(width: 4),
-              Text('Secured by Razorpay',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.onSurfaceVariant)),
+              Text(
+                'Secured by Razorpay',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 80),
         ],
+      ),
+    );
+  }
+}
+
+/// One Standard plan: period, price (with the struck "was" price when set)
+/// and the fixed product count. Mirrors the web's Standard cards.
+class _StandardPlanCard extends StatelessWidget {
+  final SubscriptionPlan plan;
+  final bool selected;
+  final VoidCallback onTap;
+  const _StandardPlanCard({
+    required this.plan,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final price = plan.flatPrice ?? 0;
+    final was = plan.compareAtPrice;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primaryContainer.withValues(alpha: 0.35)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.divider,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    plan.label,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                  color: selected
+                      ? AppColors.primary
+                      : AppColors.onSurfaceVariant,
+                ),
+              ],
+            ),
+            if (plan.badge != null) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.secondary,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  plan.badge!,
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            if (was != null && was > price)
+              Text(
+                CurrencyUtils.format(was.toDouble()),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+            Text(
+              CurrencyUtils.format(price.toDouble()),
+              style: AppTextStyles.priceLarge,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '/ ${plan.includedListings} products'
+              '${plan.months > 1 ? ' · ${CurrencyUtils.format((price / plan.months).roundToDouble())}/mo' : ''}',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1310,9 +1476,10 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 4,
-              offset: const Offset(0, 2)),
+            color: AppColors.cardShadow,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
