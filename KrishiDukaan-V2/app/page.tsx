@@ -540,6 +540,32 @@ export default function App() {
     }
   }, []);
 
+  // Guards ensureHubsLoaded so the full /hubs read happens at most once per
+  // session. Home used to read the entire hubs collection on every load just to
+  // populate the "Shop by Crop" strip, which falls back to a static list until
+  // real hubs arrive — so this read is now deferred until that section is
+  // actually reached (see HomeView's onHubsNeeded).
+  const hubsLoadedRef = useRef(false);
+
+  const ensureHubsLoaded = useCallback(async () => {
+    if (hubsLoadedRef.current) return;
+    hubsLoadedRef.current = true;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const fetchedHubs = await fetchHubs();
+      setHubs(fetchedHubs);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /hubs read fires exactly once, on
+        // demand (when the Shop-by-Crop section is reached) — never on home load.
+        console.info(`[hubs] lazy fetchHubs() → ${fetchedHubs.length} hubs in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load hubs:', err);
+      hubsLoadedRef.current = false; // allow a retry the next time the section is reached
+    }
+  }, []);
+
   // Single choke point for on-demand store loading. Watching currentView (rather
   // than hooking navigate) covers every entry path into a store-dependent view:
   // in-app navigation, direct deep links (route is applied via setCurrentView),
@@ -570,7 +596,11 @@ export default function App() {
       // now lazy-loaded once via ensureStoresLoaded() the first time the user opens
       // a store-dependent view (Stores/Map, Market, Product, Cart). See the
       // currentView effect below.
-      let fetchedHubs = await fetchHubs();
+      //
+      // Hubs are likewise NOT read here. The "Shop by Crop" strip renders from a
+      // static fallback until real hubs are needed, so the full /hubs read is now
+      // lazy — triggered by HomeView's onHubsNeeded when that section scrolls into
+      // view (see ensureHubsLoaded above).
 
       // An empty read is NOT a reason to write. This used to call
       // syncInitialData(PRODUCTS, STORES, INVENTORY), which had every visitor's
@@ -579,7 +609,6 @@ export default function App() {
       // empty result now renders as empty, which is the truth.
 
       setAllProducts(products);
-      setHubs(fetchedHubs);
 
       // Banners are a non-critical homepage enhancement — HomeView falls back
       // to its built-in default slides if this fails or returns empty, so a
@@ -1504,6 +1533,7 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -1919,6 +1949,7 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');

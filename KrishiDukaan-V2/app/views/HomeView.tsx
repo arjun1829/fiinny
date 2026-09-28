@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ICONS, CROPS, PRODUCTS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketplaceProduct } from '../../types/product';
@@ -14,6 +14,12 @@ import { BannerSlideVisual } from '../components/BannerSlide';
 interface HomeViewProps {
   products?: MarketplaceProduct[];
   hubs?: Hub[];
+  /**
+   * Called the first time the "Shop by Crop" section scrolls into view, so the
+   * parent can lazily read the /hubs collection only when it's actually needed.
+   * Until then the section renders from the static CROPS fallback.
+   */
+  onHubsNeeded?: () => void;
   /**
    * Banners from Firestore (Admin > Banners). When omitted/empty, HomeView
    * falls back to its built-in default slides so the homepage never renders
@@ -85,6 +91,7 @@ export default function HomeView({
   products = PRODUCTS,
   hubs = [],
   banners = [],
+  onHubsNeeded,
   onProductClick,
   onHubClick,
   onCategoryClick,
@@ -95,9 +102,35 @@ export default function HomeView({
 }: HomeViewProps) {
   const { t } = useI18n();
 
+  // Lazily trigger the parent's /hubs read the first time the "Shop by Crop"
+  // section is about to enter the viewport. The section renders from the static
+  // CROPS fallback until real hubs arrive, so nothing blocks on this. Fires once.
+  const shopByCropRef = useRef<HTMLElement | null>(null);
+  const hubsRequestedRef = useRef(false);
+  useEffect(() => {
+    if (hubsRequestedRef.current || !onHubsNeeded) return;
+    const el = shopByCropRef.current;
+    if (!el) return;
+    // No IntersectionObserver (very old browser / SSR edge) → just request now.
+    if (typeof IntersectionObserver === 'undefined') {
+      hubsRequestedRef.current = true;
+      onHubsNeeded();
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && !hubsRequestedRef.current) {
+        hubsRequestedRef.current = true;
+        onHubsNeeded();
+        observer.disconnect();
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onHubsNeeded]);
+
   // Prepare crop list for "Shop by Crop"
   // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
-  const displayCrops = hubs.length > 0 
+  const displayCrops = hubs.length > 0
     ? hubs.map(h => ({ 
         id: h.id, 
         name: h.name, 
@@ -344,7 +377,7 @@ export default function HomeView({
       </section>
 
       {/* Shop by Crop */}
-      <section data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+      <section ref={shopByCropRef} data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
         <div className="flex items-center gap-2 mb-6">
           <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('shopByCrop')}</h2>
           <HelperIcon
