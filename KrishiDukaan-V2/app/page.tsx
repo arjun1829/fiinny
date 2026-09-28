@@ -508,6 +508,56 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
+  // Guards ensureStoresLoaded so the full /retailers read happens at most once
+  // per session, no matter how many store-dependent views the user opens.
+  const storesLoadedRef = useRef(false);
+  const [storesLoading, setStoresLoading] = useState(false);
+
+  // Lazily fetch the full store/retailer list the FIRST time the user opens a
+  // store-dependent view (Stores/Map, Market, Product, Cart). Home never calls
+  // this — that read used to run unconditionally on every home load and was the
+  // single biggest source of Firestore reads. Idempotent: the ref is set before
+  // the await so concurrent navigations coalesce into one fetch.
+  const ensureStoresLoaded = useCallback(async () => {
+    if (storesLoadedRef.current) return;
+    storesLoadedRef.current = true;
+    setStoresLoading(true);
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const stores = await fetchStores();
+      setAllStores(stores);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /retailers read fires exactly once,
+        // on demand — and never on the home view.
+        console.info(`[stores] lazy fetchStores() → ${stores.length} stores in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load stores:', err);
+      storesLoadedRef.current = false; // allow a retry on the next store-view open
+    } finally {
+      setStoresLoading(false);
+    }
+  }, []);
+
+  // Single choke point for on-demand store loading. Watching currentView (rather
+  // than hooking navigate) covers every entry path into a store-dependent view:
+  // in-app navigation, direct deep links (route is applied via setCurrentView),
+  // and browser back/forward. 'home' and 'hub' never trigger it.
+  //
+  // Market and Product Detail are deliberately EXCLUDED:
+  //   • Market cards render from product-level data only (no retailer info), so
+  //     Market must never trigger the full /retailers read.
+  //   • Product Detail fetches ONLY the retailers that stock the open product,
+  //     paginated on demand (see ProductDetailView) — not the whole collection.
+  // Only the store picker (cart) and the locator (map) need the full list.
+  useEffect(() => {
+    const STORE_DEPENDENT_VIEWS = new Set(['cart', 'map']);
+    if (STORE_DEPENDENT_VIEWS.has(currentView)) {
+      void ensureStoresLoaded();
+    }
+  }, [currentView, ensureStoresLoaded]);
+
   const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
@@ -515,7 +565,11 @@ export default function App() {
       trackPageView('home');
 
       let products = await fetchMarketplaceProducts();
-      let stores = await fetchStores();
+      // NOTE: the full /retailers read (fetchStores) is deliberately NOT here.
+      // It ran on every home load and dominated Firestore reads (~20M). Stores are
+      // now lazy-loaded once via ensureStoresLoaded() the first time the user opens
+      // a store-dependent view (Stores/Map, Market, Product, Cart). See the
+      // currentView effect below.
       let fetchedHubs = await fetchHubs();
 
       // An empty read is NOT a reason to write. This used to call
@@ -525,7 +579,6 @@ export default function App() {
       // empty result now renders as empty, which is the truth.
 
       setAllProducts(products);
-      setAllStores(stores);
       setHubs(fetchedHubs);
 
       // Banners are a non-critical homepage enhancement — HomeView falls back
@@ -1481,7 +1534,6 @@ export default function App() {
             onGoToCart={() => navigate("cart")}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            storesWithDistance={storesWithDistance}
           />
         );
       case 'hub':
@@ -1508,6 +1560,7 @@ export default function App() {
           onBack={() => navigate('market')}
           onStoreClick={(storeId) => navigateToMap(storeId, selectedProductId)}
           storesWithDistance={storesWithDistance}
+          userCoords={coordinates}
           onProductClick={navigateToProduct}
           onViewSellerAll={(storeName) => {
             setProductSearch(storeName);
@@ -1635,6 +1688,7 @@ export default function App() {
             onBack={() => { setMapFilterProductId(null); navigate('home'); }}
             selectedStoreId={selectedStoreId}
             onStoreSelect={setSelectedStoreId}
+            loading={storesLoading}
             stores={mapFilterProductId
               ? (() => {
                   const prod = mergedProducts.find(p => p.id === mapFilterProductId);

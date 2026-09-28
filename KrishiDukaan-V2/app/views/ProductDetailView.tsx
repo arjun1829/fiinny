@@ -2,15 +2,15 @@ import { MarketplaceProduct } from "../../types/product";
 import { ICONS, PRODUCTS, STORES } from '../constants';
 import { CATEGORY_FIELDS, CHIPS_FIELDS, isStandardCategory, type ProductCategory, effectiveCategoryInfo } from '../dashboard/_lib/category-info';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { calcDiscount } from '../utils/discount';
 import { getBulkDiscountPct, getNextBulkTier, fmtPrice } from '../utils/discount';
 import type { BulkDiscountTier } from '../dashboard/_types/inventory';
 import { Tag, Layers, ChevronDown } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
-import { StoreWithDistance, storeStocksProduct } from '../utils/nearby';
+import { StoreWithDistance, storeStocksProduct, computeStoreDistances } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
-import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery } from '../firebase';
+import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery, fetchStoresForSellers, fetchAllProductSellers, type ProductSellerKey } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
 import { StatusToast } from '../components/shared/status-toast';
@@ -43,6 +43,9 @@ interface ProductDetailViewProps {
   /** Open Market filtered by category — used by the Similar Products "View All" CTA. */
   onCategoryClick?: (categoryId: string) => void;
   storesWithDistance?: StoreWithDistance[];
+  /** User coordinates, used to compute distance for the on-demand per-product
+   *  retailer list. Falls back to a neutral point when absent. */
+  userCoords?: { lat: number; lng: number };
   onAddToCart?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
   onAddToCartFromStore?: (product: MarketplaceProduct, store: any, price: number, variant?: { unit: string; price: number; stock?: number }) => void;
   onBuyNow?: (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => void;
@@ -654,6 +657,7 @@ export default function ProductDetailView({
   onViewBrand,
   onCategoryClick,
   storesWithDistance = [],
+  userCoords,
   onAddToCart,
   onAddToCartFromStore,
   onBuyNow,
@@ -757,6 +761,78 @@ export default function ProductDetailView({
     });
   }, []);
 
+  // ── Per-product retailer loading (ALL sellers, distance-sorted) ───────────
+  // Retailers are scoped to THIS product only (query on the product's seller
+  // copies — never the whole retailer collection), but we fetch the COMPLETE set,
+  // not a page: distance is computed in JS from lat/lng, so Firestore cannot order
+  // by it. Fetching all then sorting by distanceKm ASC is the only way to
+  // guarantee the genuinely nearest retailer is first. No limit()/startAfter().
+  //
+  // The owner's own listing (manufacturer, or a self-listing retailer) is known
+  // from the in-memory product, so it needs no query.
+  const ownerSeed = useMemo<ProductSellerKey>(() => ({
+    storeId: (product as any).ownerId || product.retailerId || product.manufacturerId || undefined,
+    storePhone: product.retailerPhone || product.manufacturerPhone || undefined,
+    storeName: product.store || undefined,
+    sellingPrice: typeof product.price === 'number' ? product.price : undefined,
+    variants: Array.isArray(product.variants) ? product.variants : undefined,
+    isOnline: product.isOnline,
+  }), [product]);
+
+  const [perProductStores, setPerProductStores] = useState<StoreWithDistance[]>([]);
+  const [sellersLoading, setSellersLoading] = useState(false);
+
+  const loadRetailers = useCallback(async () => {
+    setSellersLoading(true);
+    try {
+      // Every seller for this product (scoped by manufacturerProductId /
+      // originalProductId), no pagination.
+      const sellers = await fetchAllProductSellers(product.id, ownerSeed);
+
+      // De-dupe seller identities before the profile-enrichment reads.
+      const seen = new Set<string>();
+      const unique = sellers.filter((s) => {
+        const key = String(s.storePhone || s.storeId || '').trim();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const raw = await fetchStoresForSellers(unique);
+      // computeStoreDistances attaches distanceKm (Haversine) AND sorts ASC, so
+      // the whole list is nearest-first. De-dupe by resolved store id.
+      const withDistance = computeStoreDistances(raw, userCoords ?? { lat: 0, lng: 0 });
+      const ids = new Set<string>();
+      const deduped = withDistance.filter((s) => (ids.has(s.id) ? false : (ids.add(s.id), true)));
+      setPerProductStores(deduped);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.info(
+          `[product-stores] fetched ALL ${deduped.length} sellers for product ${product.id}; ` +
+          `sorted nearest-first (closest: ${deduped[0]?.distanceLabel ?? 'n/a'})`,
+        );
+      }
+    } catch (err) {
+      console.warn('[product-stores] retailer load failed:', err);
+    } finally {
+      setSellersLoading(false);
+    }
+  }, [product.id, ownerSeed, userCoords]);
+
+  // Load the full retailer set whenever the product changes.
+  useEffect(() => {
+    setPerProductStores([]);
+    void loadRetailers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id]);
+
+  // Recompute distances (and re-sort) in place when the user's location resolves,
+  // WITHOUT refetching — the initial load runs before geolocation settles.
+  useEffect(() => {
+    if (!userCoords) return;
+    setPerProductStores((prev) => (prev.length ? computeStoreDistances(prev, userCoords) : prev));
+  }, [userCoords?.lat, userCoords?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleShare = useCallback(async () => {
     const productUrl = `https://krishidukan.com/?view=product&product=${product.id}`;
 
@@ -825,7 +901,12 @@ export default function ProductDetailView({
 
   // Use storesWithDistance for computed distances, fallback to STORES constant
   const availableStores = useMemo(() => {
-    const sourceStores = storesWithDistance.length > 0 ? storesWithDistance : stores;
+    // Prefer the on-demand, paginated per-product retailer list. Fall back to a
+    // pre-loaded global list only if one was passed (legacy callers), then to the
+    // static STORES constant.
+    const sourceStores = perProductStores.length > 0
+      ? perProductStores
+      : storesWithDistance.length > 0 ? storesWithDistance : stores;
     const filtered = sourceStores.filter(store => {
       const storePhone = (store as any).phone as string | undefined;
       const storeUserId = (store as any).userId as string | undefined;
@@ -882,12 +963,13 @@ export default function ProductDetailView({
     }
     const deduped = Array.from(seen.values());
 
-    // Sort by distance if we have computed distances
-    if (storesWithDistance.length > 0) {
+    // Sort by distance if we have computed distances (per-product list always has
+    // them; the legacy global list did too).
+    if (perProductStores.length > 0 || storesWithDistance.length > 0) {
       return deduped.sort((a: any, b: any) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     }
     return deduped;
-  }, [product, storesWithDistance, stores]);
+  }, [product, perProductStores, storesWithDistance, stores]);
 
   // Fallback: if no store matched from pre-loaded list, fetch the retailer's profile
   // directly. This handles retailers who listed a product before saving their profile
@@ -1135,15 +1217,17 @@ export default function ProductDetailView({
   useEffect(() => {
     if (displayStores.length === 0) return;
     let cancelled = false;
+    // Only resolve online-delivery for stores not already checked — so paginating
+    // ("Show more retailers") queries the NEW batch's flags, never re-reads prior ones.
     const phones = displayStores
       .map((s) => (s as any).phone as string | undefined)
-      .filter((p): p is string => !!p);
+      .filter((p): p is string => !!p && !(p in storeOnlineMap));
     if (phones.length === 0) return;
     Promise.all(phones.map(async (phone) => {
       const isOnline = await fetchStoreOnlineDelivery(phone);
       return [phone, isOnline] as [string, boolean];
     })).then((results) => {
-      if (!cancelled) setStoreOnlineMap(Object.fromEntries(results));
+      if (!cancelled) setStoreOnlineMap((prev) => ({ ...prev, ...Object.fromEntries(results) }));
     });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1623,6 +1707,15 @@ export default function ProductDetailView({
                 ? <>{t('hideStores')} ▲</>
                 : <>{t('viewAllStores', { count: visibleStores.length })} ▼</>}
             </button>
+          )}
+
+          {/* All sellers for this product are loaded and distance-sorted at open —
+              no pagination. A brief loading row shows while the set is fetched. */}
+          {sellersLoading && perProductStores.length === 0 && (
+            <div className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-outline">
+              <span className="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+              {t('connectingFirebase')}
+            </div>
           )}
 
           {/* Delivery option — temporarily hidden (restore by uncommenting) */}

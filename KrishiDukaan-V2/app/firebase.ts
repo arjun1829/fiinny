@@ -575,6 +575,160 @@ export async function fetchStores(): Promise<Store[]> {
   }
 }
 
+/** One seller of a product. Identity + the seller's own denormalized price/variants
+ *  (carried so pricing survives even when the product's availability[] is incomplete). */
+export type ProductSellerKey = {
+  storeId?: string;
+  storePhone?: string;
+  storeName?: string;
+  sellingPrice?: number;
+  variants?: { unit: string; price: number; stock?: number }[];
+  isOnline?: boolean;
+};
+
+function sellerFromCopyDoc(d: Record<string, any>): ProductSellerKey {
+  return {
+    storeId: d.ownerId || d.retailerId || undefined,
+    storePhone: d.ownerPhone || d.retailerPhone || undefined,
+    storeName: d.store || undefined,
+    sellingPrice: typeof d.price === 'number' ? d.price : undefined,
+    variants: Array.isArray(d.variants) ? d.variants : undefined,
+    isOnline: d.isOnline === true || d.sellMode === 'online_delivery',
+  };
+}
+
+/**
+ * Fetch EVERY seller that stocks `rootProductId` — scoped to this product only,
+ * never the whole retailer/product universe. No limit(), no startAfter(): the
+ * caller needs the complete set so it can distance-sort it and truly put the
+ * nearest retailer first (a paged query ordered by document id cannot do that,
+ * because distance isn't a stored/orderable field — see the audit).
+ *
+ * Seller copies link to the canonical product through TWO fields depending on how
+ * they were created — `manufacturerProductId` (manufacturer-assigned) and
+ * `originalProductId` (admin-assigned / retailer copies) — so we run one query per
+ * field (the same two-field lookup as inventory-firestore.recomputeMaxDiscount()),
+ * plus the in-memory owner listing. Each sub-query is a single equality filter, so
+ * NO composite index is required; `isActive` is filtered client-side to keep it so.
+ */
+export async function fetchAllProductSellers(
+  rootProductId: string,
+  ownerSeed: ProductSellerKey | null,
+): Promise<ProductSellerKey[]> {
+  const sellers: ProductSellerKey[] = [];
+
+  // Owner's own listing (manufacturer or self-listing retailer) — known from the
+  // in-memory product, so it needs no query.
+  if (ownerSeed && (ownerSeed.storeId || ownerSeed.storePhone)) sellers.push(ownerSeed);
+
+  const runAll = async (field: 'manufacturerProductId' | 'originalProductId') => {
+    const snap = await getDocs(
+      query(collection(db, 'products'), where(field, '==', rootProductId)),
+    );
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, any>;
+      if (data.isActive === false) continue;
+      sellers.push(sellerFromCopyDoc(data));
+    }
+  };
+
+  await Promise.all([runAll('manufacturerProductId'), runAll('originalProductId')]);
+  return sellers;
+}
+
+/**
+ * Fetch the store profiles for a SPECIFIC set of product sellers — the on-demand,
+ * per-product counterpart to fetchStores(). Product Detail uses this to load only
+ * the retailers that actually stock the open product, one page (~20) at a time,
+ * instead of reading the entire /retailers collection.
+ *
+ * Reads are bounded and targeted:
+ *   • Each seller → at most a few getDoc()s (retailers/ → manufacturers/ → profiles/,
+ *     tried by phone then by id, first hit wins). A seller with no profile doc still
+ *     returns a usable Store built from its denormalized availability data.
+ *   • Ratings → ONE storeReviews query per ≤30 phones (chunked `in`), so reviews are
+ *     fetched only for THIS page's stores, never the whole review collection.
+ */
+export async function fetchStoresForSellers(sellers: ProductSellerKey[]): Promise<Store[]> {
+  const isPhone = (s?: string) => !!s && /^\+?\d{10,13}$/.test(s);
+
+  const stores = await Promise.all(
+    sellers.map(async (seller) => {
+      const keys = Array.from(
+        new Set([seller.storePhone, seller.storeId].filter((k): k is string => !!k)),
+      );
+      let data: Record<string, any> | null = null;
+      let docId = keys[0] ?? '';
+      outer: for (const key of keys) {
+        for (const col of ['retailers', 'manufacturers', 'profiles'] as const) {
+          const snap = await getDoc(doc(db, col, key)).catch(() => null);
+          if (snap?.exists()) { data = snap.data() as Record<string, any>; docId = snap.id; break outer; }
+        }
+      }
+      const d = data ?? {};
+      const addr = d.address;
+      const addrIsMap = addr && typeof addr === 'object';
+      const phone =
+        d.phone || (isPhone(docId) ? docId : undefined) || seller.storePhone || undefined;
+      return {
+        id: docId || seller.storeId || seller.storePhone || '',
+        retailerId: d.retailerId,
+        userId: d.uid || d.userId || undefined,
+        name: d.shopName || d.businessName || d.ownerName || d.name || seller.storeName || 'Retailer',
+        ownerName: d.ownerName,
+        phone,
+        logo: d.logo || undefined,
+        address: addrIsMap ? (addr.line1 ?? addr.address) : addr,
+        city: (addrIsMap ? addr.city : undefined) ?? d.city,
+        state: (addrIsMap ? addr.state : undefined) ?? d.state,
+        pincode: (addrIsMap ? addr.pincode : undefined) ?? d.pincode,
+        onlineDelivery: d.onlineDelivery === true,
+        distance: 'Nearby',
+        status: d.status || 'Active',
+        stock: [],
+        location: {
+          lat: d.geo?.latitude ?? d.geo?.lat ?? d.location?.latitude ?? d.location?.lat ?? 0,
+          lng: d.geo?.longitude ?? d.geo?.lng ?? d.location?.longitude ?? d.location?.lng ?? 0,
+        },
+        averageRating: typeof d.averageRating === 'number' ? d.averageRating : undefined,
+        totalReviews: typeof d.totalReviews === 'number' ? d.totalReviews : undefined,
+        // The seller's OWN denormalized price/variants from its product copy —
+        // used by resolveStoreVariant when the product's availability[] has no
+        // matching entry, so pricing survives regardless of merge completeness.
+        sellingPrice: typeof seller.sellingPrice === 'number' ? seller.sellingPrice : undefined,
+        variants: seller.variants,
+      } as Store & { retailerId?: string; userId?: string; city?: string; state?: string; pincode?: string; sellingPrice?: number; variants?: unknown };
+    }),
+  );
+
+  // Ratings for exactly these stores — chunked `in` queries on storePhone.
+  const phones = Array.from(
+    new Set(stores.map((s) => s.phone).filter((p): p is string => !!p)),
+  );
+  if (phones.length > 0) {
+    const agg = new Map<string, { sum: number; count: number }>();
+    for (let i = 0; i < phones.length; i += 30) {
+      const chunk = phones.slice(i, i + 30);
+      const snap = await getDocs(
+        query(collection(db, 'storeReviews'), where('storePhone', 'in', chunk)),
+      ).catch(() => null);
+      for (const rd of snap?.docs ?? []) {
+        const p = String(rd.data().storePhone || '');
+        const rating = Number(rd.data().rating || 0);
+        if (!p || !(rating > 0)) continue;
+        const cur = agg.get(p) ?? { sum: 0, count: 0 };
+        cur.sum += rating; cur.count += 1; agg.set(p, cur);
+      }
+    }
+    for (const s of stores) {
+      const a = s.phone ? agg.get(s.phone) : undefined;
+      if (a && a.count > 0) { s.averageRating = a.sum / a.count; s.totalReviews = a.count; }
+    }
+  }
+
+  return stores;
+}
+
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/\D/g, '');
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;

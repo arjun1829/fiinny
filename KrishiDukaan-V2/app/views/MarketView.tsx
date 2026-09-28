@@ -6,7 +6,6 @@ import { ICONS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { trackProductImpression } from '../firebase';
-import type { StoreWithDistance } from '../utils/nearby';
 import { useI18n } from '../i18n/I18nContext';
 import type { CartItem } from '../../types/order';
 import { Tag } from 'lucide-react';
@@ -22,7 +21,6 @@ interface MarketViewProps {
   onProductClick: (id: string) => void;
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
-  storesWithDistance?: StoreWithDistance[];
   onAddToCart?: (product: MarketplaceProduct) => void;
   onBuyNow?: (product: MarketplaceProduct) => void;
   cartItems?: CartItem[];
@@ -153,32 +151,17 @@ function inferBrand(name: string): string {
   return name.trim().split(/\s+/)[0] || 'Other';
 }
 
-function formatDistance(km: number, nearbyLabel: string): string {
-  if (!Number.isFinite(km)) return nearbyLabel;
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  if (km < 100) return `${km.toFixed(1)} km`;
-  return `${Math.round(km)} km`;
-}
-
 export default function MarketView({
   searchQuery = '',
   onProductClick,
   selectedCategory,
   onCategoryChange,
-  storesWithDistance = [],
   onAddToCart,
   onBuyNow,
   cartItems = [],
   onGoToCart,
 }: MarketViewProps) {
   const { t } = useI18n();
-  const DISTANCE_OPTIONS = useMemo(() => [
-    { label: t('anyDistance'), km: Infinity },
-    { label: t('within5km'), km: 5 },
-    { label: t('within25km'), km: 25 },
-    { label: t('within100km'), km: 100 },
-    { label: t('within500km'), km: 500 },
-  ], [t]);
   const trackedIds = useRef<Set<string>>(new Set());
 
   // ─── Infinite-scroll feed (server cursor pagination) ────────────────────────
@@ -488,8 +471,6 @@ export default function MarketView({
   ];
 
   const [filterOpen, setFilterOpen] = useState(false);
-  const [distanceOpen, setDistanceOpen] = useState(false);
-  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(Infinity);
   const [sortBy, setSortBy] = useState<SortKey>('default');
   const [brandFilter, setBrandFilter] = useState<string>('all');
   // Price ceiling is data-driven so the slider always spans the full catalogue and
@@ -510,22 +491,6 @@ export default function MarketView({
     if (!userSetPriceRef.current) setPriceMax(priceCeiling);
   }, [priceCeiling]);
 
-  const storeDistanceMap = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of storesWithDistance) m.set(s.id, s.distanceKm);
-    return m;
-  }, [storesWithDistance]);
-
-  const productDistance = (p: MarketplaceProduct): number => {
-    const candidates: number[] = [];
-    for (const a of p.availability || []) {
-      const d = storeDistanceMap.get(a.storeId);
-      if (typeof d === 'number' && Number.isFinite(d)) candidates.push(d);
-    }
-    if (!candidates.length) return Infinity;
-    return Math.min(...candidates);
-  };
-
   const brandOptions = useMemo(() => {
     const set = new Set<string>();
     for (const p of sourceProducts) set.add(inferBrand(p.name));
@@ -544,9 +509,6 @@ export default function MarketView({
     if (priceMax < priceCeiling) {
       list = list.filter((p) => (p.lowestPrice ?? p.price) <= priceMax);
     }
-    if (Number.isFinite(maxDistanceKm)) {
-      list = list.filter((p) => productDistance(p) <= maxDistanceKm);
-    }
     switch (sortBy) {
       case 'price-asc':
         list.sort((a, b) => (a.lowestPrice ?? a.price) - (b.lowestPrice ?? b.price));
@@ -564,10 +526,7 @@ export default function MarketView({
         break;
     }
     return list;
-  }, [sourceProducts, brandFilter, priceMax, priceCeiling, maxDistanceKm, sortBy, storeDistanceMap]);
-
-  const distanceLabel =
-    DISTANCE_OPTIONS.find((o) => o.km === maxDistanceKm)?.label || t('within5km');
+  }, [sourceProducts, brandFilter, priceMax, priceCeiling, sortBy]);
 
   const activeFilterCount =
     (brandFilter !== 'all' ? 1 : 0) +
@@ -605,10 +564,7 @@ export default function MarketView({
           {/* Filter */}
           <div className="relative flex items-center gap-1">
             <button
-              onClick={() => {
-                setFilterOpen((v) => !v);
-                setDistanceOpen(false);
-              }}
+              onClick={() => setFilterOpen((v) => !v)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm transition-colors border ${
                 filterOpen || activeFilterCount > 0
                   ? 'bg-primary text-white border-primary'
@@ -703,56 +659,6 @@ export default function MarketView({
             </AnimatePresence>
           </div>
 
-          {/* Distance */}
-          <div className="relative flex items-center gap-1">
-            <button
-              onClick={() => {
-                setDistanceOpen((v) => !v);
-                setFilterOpen(false);
-              }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm transition-colors border ${
-                Number.isFinite(maxDistanceKm)
-                  ? 'bg-secondary-container/30 text-on-surface border-secondary-container'
-                  : 'bg-white text-on-surface border-surface-container-highest'
-              }`}
-            >
-              <ICONS.Location className="w-4 h-4 text-secondary" />
-              {distanceLabel}
-              <ICONS.ChevronRight className="w-4 h-4 rotate-90" />
-            </button>
-            <HelperIcon
-              size="xs"
-              variant="ghost"
-              side="bottom"
-              textKey="marketDistance"
-              ariaLabel="Distance help"
-            />
-            <AnimatePresence>
-              {distanceOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="absolute right-0 top-full mt-2 w-[min(200px,calc(100vw-2rem))] md:w-[200px] bg-white rounded-2xl shadow-2xl border border-surface-container py-2 z-50"
-                >
-                  {DISTANCE_OPTIONS.map((o) => (
-                    <button
-                      key={o.label}
-                      onClick={() => {
-                        setMaxDistanceKm(o.km);
-                        setDistanceOpen(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 text-sm font-medium hover:bg-surface-container-low ${
-                        maxDistanceKm === o.km ? 'text-primary font-bold' : 'text-on-surface'
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
         </div>
       </div>
 
@@ -764,8 +670,6 @@ export default function MarketView({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {visibleProducts.length > 0 ? (
           visibleProducts.map((product, idx) => {
-            const dist = productDistance(product);
-            const distText = formatDistance(dist, t('nearby'));
             // lowestFinalPrice = min(sellingPrice × (1 − discountPct/100)) across all sellers.
             // lowestPrice      = min(sellingPrice) before discounts.
             // "X% OFF" only appears for a GENUINE seller-configured discount — a seller's
@@ -834,24 +738,17 @@ export default function MarketView({
                 </div>
 
                 <div className={`p-3 md:p-4 flex flex-col flex-1 ${showsDiscount ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
-                  {/* Store badge + out-of-stock */}
-                  <div className="flex items-center justify-between gap-1 mb-2">
-                    <div onClick={(e) => e.stopPropagation()} className="self-start min-w-0">
-                      <HelperTooltip side="bottom" textKey="marketNearbyStore">
-                        <div className="flex items-center gap-1.5 text-secondary bg-secondary/5 px-2 py-0.5 rounded-lg cursor-help max-w-full">
-                          <ICONS.Market className="w-3 h-3 shrink-0" />
-                          <span className="text-[10px] font-bold tracking-tight truncate">
-                            {product.store} • {distText}
-                          </span>
-                        </div>
-                      </HelperTooltip>
-                    </div>
-                    {product.stock && product.stock.toLowerCase().includes('out') && (
+                  {/* Out-of-stock badge (product-level). Retailer/store name + distance
+                      were removed from Market cards — that data required a full
+                      /retailers read on Market open; it now lives on Product Detail,
+                      fetched on demand per product. */}
+                  {product.stock && product.stock.toLowerCase().includes('out') && (
+                    <div className="flex justify-end mb-2">
                       <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-red-500 border border-red-200 bg-red-50 px-1.5 py-0.5 rounded-full">
                         Out of Stock
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Product name */}
                   <h3 className="font-bold text-on-surface line-clamp-2 leading-tight group-hover:text-primary transition-colors">
