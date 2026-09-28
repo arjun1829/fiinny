@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 // Team ID D9JTVVB85F (Apple Developer → Membership). Bundle id must match
 // PRODUCT_BUNDLE_IDENTIFIER in ios/Runner.xcodeproj/project.pbxproj exactly —
 // already confirmed to match.
-const APPLE_APP_ID = "D9JTVVB85F.com.karanarjuntechnologies.KrishiDukan";
+const APPLE_APP_ID = "D9JTVVB85F.com.karanarjuntechnologies.krishidukaanApp";
 
 const AASA = {
   applinks: {

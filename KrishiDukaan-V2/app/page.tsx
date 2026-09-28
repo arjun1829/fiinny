@@ -110,11 +110,7 @@ export default function App() {
   const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 });
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [maxDistance, setMaxDistance] = useState(1000);
-  const [showFilters, setShowFilters] = useState(false);
-  const [inStockOnly, setInStockOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'none' | 'price-low' | 'price-high'>('none');
-  
+
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
@@ -909,35 +905,6 @@ export default function App() {
     });
   }, [storesWithDistance, productSearch]);
 
-  const marketProducts = useMemo(() => {
-    let filtered = searchedProducts;
-    
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(
-        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
-      );
-    }
-
-    if (maxDistance < 1000) { 
-      filtered = filtered.filter((product) => (product as any).distanceKm <= maxDistance);
-    }
-
-    if (inStockOnly) {
-      filtered = filtered.filter((product) => {
-        const stock = product.stock.toLowerCase();
-        return stock === 'in stock' || stock === 'fast selling' || stock === 'trending';
-      });
-    }
-
-    if (sortBy === 'price-low') {
-      filtered = [...filtered].sort((a, b) => a.price - b.price);
-    } else if (sortBy === 'price-high') {
-      filtered = [...filtered].sort((a, b) => b.price - a.price);
-    }
-
-    return filtered;
-  }, [searchedProducts, selectedCategory, maxDistance, inStockOnly, sortBy]);
-
   const navigateToProduct = (id: string) => {
     navigate('product', { productId: id });
   };
@@ -1506,7 +1473,7 @@ export default function App() {
       case 'market':
         return (
           <MarketView
-            products={marketProducts}
+            searchQuery={productSearch}
             onProductClick={navigateToProduct}
             onAddToCart={addToCart}
             onBuyNow={handleBuyNow}
@@ -1933,7 +1900,6 @@ export default function App() {
         externalUser={user}
         externalUserRole={userRole}
         externalUserProfile={userProfile}
-        allProducts={allProducts}
         allStores={allStores}
         onProductClick={navigateToProduct}
         onStoreClick={navigateToMap}

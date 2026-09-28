@@ -93,10 +93,17 @@ service cloud.firestore {
     // handling both E164 (+919876543210) and 10-digit (9876543210) formats.
     // This is the fix for the invite-acceptance "Missing or insufficient permissions" error:
     // retailerDocId is stored as a 10-digit phone, but myPhone() returns E164.
+    //
+    // replace() takes an RE2 regex, so the prefix is '^[+]91'. It was written
+    // as '+91' — an invalid pattern ('+' with nothing to repeat) that made that
+    // clause throw on every evaluation. It failed closed (an erroring `||`
+    // branch counts as false), so nothing was ever over-permitted; the owner's
+    // own alternate phone format was just silently denied.
     function phoneMatches(storedPhone) {
       return storedPhone == myPhone() ||
-             storedPhone == myPhone().replace('+91', '') ||
-             ('+91' + storedPhone) == myPhone();
+             storedPhone == myPhone().replace('^[+]91', '') ||
+             ('+91' + storedPhone) == myPhone() ||
+             storedPhone == ('+91' + myPhone());
     }
 
     // ─── uidIndex ────────────────────────────────────────────────────────────
@@ -294,6 +301,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Server-only configuration (e.g. the reassignment-expiry cron secret).
+    // Unlike settings/, which is public-read, no client may read or write this.
+    match /_serverConfig/{docId} {
+      allow read, write: if false;
+    }
+
     // ─── promoCodes ──────────────────────────────────────────────────────────
     // Subscription discount codes. These had NO rule at all, and with no
     // catch-all match Firestore denied every read — so SubscriptionView's
@@ -345,6 +358,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ─── sellerOffers ─────────────────────────────────────────────────────────
+    // Reassignment offers: an order another seller rejected, offered to this
+    // seller for 24h (app/lib/order-reassignment.ts). Keyed by the seller's
+    // 10-digit phone in the PATH, not a field: a list rule can only be proven
+    // from the path here, so a field-based rule would have to allow any
+    // signed-in user to list every seller's offers. Server-written only;
+    // accept/decline go through /api/orders/reassignment.
+    match /sellerOffers/{sellerKey}/offers/{orderId} {
+      allow read: if isAdmin() || (isAuthed() && myPhone().replace('^[+]91', '') == sellerKey);
+      allow write: if false;
+    }
+
     // ─── enquiries ────────────────────────────────────────────────────────────
     // A lost sale, fanned out to the sellers who could still win it: when a
     // checkout is abandoned or fails, the scheduled sweep in
@@ -365,7 +390,7 @@ service cloud.firestore {
       allow get: if isAdmin() || (isAuthed() && (
         phoneMatches(resource.data.sellerPhone) ||
         (resource.data.sellerPhones is list &&
-          resource.data.sellerPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+          resource.data.sellerPhones.hasAny([myPhone(), myPhone().replace('^[+]91', '')]))
       ));
       // LIST (query): resource.data is NOT available during query evaluation,
       // same as notifications — the query is always filtered by
@@ -374,7 +399,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthed()
         && (phoneMatches(resource.data.sellerPhone) ||
             (resource.data.sellerPhones is list &&
-              resource.data.sellerPhones.hasAny([myPhone(), myPhone().replace('+91', '')])))
+              resource.data.sellerPhones.hasAny([myPhone(), myPhone().replace('^[+]91', '')])))
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'sellerNote', 'contactedAt', 'updatedAt']));
       allow create, delete: if false;
@@ -407,10 +432,24 @@ service cloud.firestore {
         resource.data.sellerId == request.auth.uid
       ));
 
+      // Seller status updates. Three guards beyond ownership:
+      //  - Not while 'reassigning': during the 24h window the order belongs to
+      //    nobody. The seller who rejected it is still sellerPhone until someone
+      //    accepts, and must not be able to flip it back.
+      //  - No 'rejected': rejection moves money (refund, transfer reversal,
+      //    reassignment offers) and goes only through /api/orders/reject. Both
+      //    apps already send it there; a bare write used to skip the refund.
+      //  - Never the fields that decide who is paid or who the order belongs
+      //    to — those are written only by the server.
       allow update: if isAdmin() || (isAuthed() && (
         resource.data.sellerPhone == myPhone() ||
         resource.data.sellerId == request.auth.uid
-      ) && request.resource.data.status in ['placed','accepted','dispatched','out_for_delivery','delivered','rejected'])
+      ) && resource.data.status != 'reassigning'
+        && request.resource.data.status in ['placed','accepted','dispatched','out_for_delivery','delivered']
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'reassignment', 'routeTransfer', 'routeRelease', 'payment',
+          'sellerPhone', 'sellerId', 'customerId', 'customerPhone'
+        ]))
         // Allow customer to update payment field on their own order
         || (isAuthed() && (
           resource.data.customerId == request.auth.uid ||
@@ -435,7 +474,7 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
- 
+
     // ─── adminLogs ───────────────────────────────────────────────────────────
     match /adminLogs/{docId} {
       allow read: if isAdmin();
@@ -558,7 +597,7 @@ service cloud.firestore {
         resource.data.retailerId == request.auth.uid ||
         retailerId == request.auth.uid ||
         resource.data.phone == myPhone() ||
-        resource.data.phone == myPhone().replace('+91', '') ||
+        resource.data.phone == myPhone().replace('^[+]91', '') ||
         resource.data.manufacturerId == request.auth.uid ||
         resource.data.manufacturerPhone == myPhone()
       ));
@@ -896,7 +935,7 @@ service cloud.firestore {
       allow get: if isAdmin() || (isAuthed() && (
         phoneMatches(resource.data.recipientPhone) ||
         (resource.data.recipientPhones is list &&
-          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('^[+]91', '')]))
       ));
       // LIST (query): resource.data is NOT available during query evaluation.
       // Allow any authenticated user — the query is always filtered by
@@ -905,12 +944,12 @@ service cloud.firestore {
       allow update: if isAuthed()
         && (phoneMatches(resource.data.recipientPhone) ||
             (resource.data.recipientPhones is list &&
-              resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')])))
+              resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('^[+]91', '')])))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isAdmin() || (isAuthed() && (
         phoneMatches(resource.data.recipientPhone) ||
         (resource.data.recipientPhones is list &&
-          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('+91', '')]))
+          resource.data.recipientPhones.hasAny([myPhone(), myPhone().replace('^[+]91', '')]))
       ));
       allow create: if isAdmin();
     }
