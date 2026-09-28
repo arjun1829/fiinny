@@ -1,6 +1,7 @@
 import Razorpay from "razorpay";
 import { getAdminDb } from "./firebase-admin";
 import { grossFor, type OrderLike } from "../dashboard/_lib/seller-earnings";
+import { reverseOrderSellerTransfer } from "./route-transfers";
 
 /**
  * Shared core for every refund path — admin's manual refund, a seller/admin
@@ -80,8 +81,35 @@ export async function refundOrder(params: {
   }
 
   // ── 1. Reverse the seller's transfer, if money already went out ─────────
+  //
+  // Two kinds of seller transfer can exist, and only one is recorded on the
+  // order:
+  //   - payment.transferId — a manual balance payout (api/admin/payout-transfer),
+  //     only ever made after delivery.
+  //   - a Route transfer on the payment itself — the HELD transfer checkout
+  //     creates for a seller with a linked account, or the one written when an
+  //     order is reassigned. Never recorded as payment.transferId, which is why
+  //     rejecting or cancelling a linked seller's order used to refund the
+  //     customer from the platform's own balance while the seller's transfer
+  //     sat on hold untouched.
   let reversalId: string | null = null;
-  if (payment.transferId) {
+  if (!payment.transferId) {
+    const route = await reverseOrderSellerTransfer(
+      orderId,
+      order,
+      Math.round(refundAmount * 100),
+    );
+    if (route.ok === false) {
+      // Same posture as the balance-payout reversal below: refunding while the
+      // seller still holds the money leaves the platform short.
+      return {
+        ok: false,
+        status: 502,
+        error: route.error + " No refund was issued — resolve this before retrying.",
+      };
+    }
+    reversalId = route.reversalId;
+  } else {
     try {
       const reversal = (await razorpay.transfers.reverse(payment.transferId, {
         amount: Math.round(refundAmount * 100),

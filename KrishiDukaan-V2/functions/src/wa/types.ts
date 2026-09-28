@@ -24,6 +24,7 @@ export type WaTemplate =
   | "payment_failed_app_update"
   | "retailer_seat_promotion"
   | "enquiry_notification"
+  | "order_reassign_offer"
   | "new_product_reminder"
   | "kyc_pending"
   | "kyc_success"

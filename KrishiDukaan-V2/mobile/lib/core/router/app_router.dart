@@ -483,7 +483,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/orders',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const _RootBackFallback(child: SellerOrdersScreen()),
+        // ?tab=requests — the order-offer notification and WhatsApp alert
+        // land on the Requests tab (same query web's /dashboard/orders reads).
+        builder: (_, state) => _RootBackFallback(
+          child: SellerOrdersScreen(
+            initialTab: state.uri.queryParameters['tab'],
+          ),
+        ),
       ),
       GoRoute(
         path: '/dashboard/subscription',
@@ -526,7 +532,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/enquiry',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const _RootBackFallback(child: EnquiryScreen()),
+        // ?id= — from the enquiry notification: that buyer is shown first.
+        builder: (_, state) => _RootBackFallback(
+          child: EnquiryScreen(focusId: state.uri.queryParameters['id']),
+        ),
       ),
       GoRoute(
         path: '/dashboard/reels',

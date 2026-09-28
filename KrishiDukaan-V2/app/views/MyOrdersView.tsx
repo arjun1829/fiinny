@@ -27,6 +27,7 @@ const STATUS_BADGE_KEY: Record<string, string> = {
   out_for_delivery: "orderStatusOutForDelivery",
   delivered:        "orderStatusDelivered",
   rejected:         "orderStatusRejected",
+  reassigning:      "orderStatusReassigning",
 };
 
 function formatDate(createdAt: unknown): string {
@@ -50,7 +51,8 @@ function OrderTimeline({ status, t }: { status: string; t: Translate }) {
 
   // "accepted" is its own step now, so it is no longer folded into
   // out_for_delivery — that would have shown the parcel as already on its way.
-  const currentIdx = STATUS_ORDER.indexOf(status as OrderStatus);
+  // A reassigning order is still "placed" for delivery progress.
+  const currentIdx = STATUS_ORDER.indexOf((status === "reassigning" ? "placed" : status) as OrderStatus);
 
   return (
     <div className="flex items-start gap-0">
@@ -151,6 +153,7 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
                 order.status === "out_for_delivery" ? "bg-blue-100 text-blue-700" :
                 order.status === "accepted"         ? "bg-blue-100 text-blue-700" :
                 order.status === "dispatched"       ? "bg-indigo-100 text-indigo-700" :
+                order.status === "reassigning"      ? "bg-orange-100 text-orange-700" :
                                                       "bg-surface-container text-on-surface-variant"
               }`}>
                 {STATUS_BADGE_KEY[order.status] ? (t as Translate)(STATUS_BADGE_KEY[order.status]!) : order.status.replace(/_/g, " ")}

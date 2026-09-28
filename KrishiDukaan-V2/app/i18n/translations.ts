@@ -1154,6 +1154,7 @@ export const translations = {
     orderStatusOutForDelivery: 'Out for delivery',
     orderStatusDelivered: 'Delivered',
     orderStatusRejected: 'Rejected',
+    orderStatusReassigning: 'Finding another seller',
     reviewsRealFeedback: 'Real feedback from customers on your products.',
 
     // ─── Add Product / Inventory Form ───
@@ -3004,6 +3005,7 @@ export const translations = {
     orderStatusOutForDelivery: 'डिलिव्हरीसाठी बाहेर',
     orderStatusDelivered: 'डिलिव्हर झाली',
     orderStatusRejected: 'नाकारली',
+    orderStatusReassigning: 'दुसरा विक्रेता शोधत आहोत',
     reviewsRealFeedback: 'तुमच्या उत्पादनांवरील ग्राहकांचा खरा अभिप्राय.',
 
     // ─── Add Product / Inventory Form ───
@@ -4855,6 +4857,7 @@ export const translations = {
     orderStatusOutForDelivery: 'डिलीवरी के लिए निकला',
     orderStatusDelivered: 'डिलीवर हो गया',
     orderStatusRejected: 'अस्वीकार किया',
+    orderStatusReassigning: 'दूसरा विक्रेता खोज रहे हैं',
     reviewsRealFeedback: 'आपके उत्पादों पर ग्राहकों की असली प्रतिक्रिया.',
 
     // ─── Add Product / Inventory Form ───

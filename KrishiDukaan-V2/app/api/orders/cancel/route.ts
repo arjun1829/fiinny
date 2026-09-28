@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { refundOrder } from "../../../lib/order-refund";
+import { finalizeReassignmentRefund } from "../../../lib/order-reassignment";
 
 /**
  * POST /api/orders/cancel
@@ -60,6 +61,22 @@ export async function POST(req: NextRequest) {
     // field firestore.rules checks for the customer-owned update clauses.
     if (order.customerId !== auth.uid) {
       return NextResponse.json({ error: "This is not your order." }, { status: 403 });
+    }
+
+    // While another seller is being found, cancelling goes through the same
+    // locked exit as the 24h expiry — so a cancel can never race an accept
+    // into "refunded AND reassigned".
+    if (order.status === "reassigning") {
+      const closed = await finalizeReassignmentRefund(orderId, {
+        finalStatus: "cancelled",
+        reason: (reason ?? "").trim() || "Cancelled by customer",
+        trigger: "customer_cancel",
+        customerUid: auth.uid,
+      });
+      if (closed.ok === false) {
+        return NextResponse.json({ error: closed.error }, { status: closed.status });
+      }
+      return NextResponse.json({ ok: true, orderId, refunded: closed.refunded });
     }
 
     if (order.status !== "placed" && order.status !== "accepted") {

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/utils/order_status_label.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
 import '../providers/orders_provider.dart';
@@ -127,30 +128,68 @@ class OrderDetailScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Seller info
-                Text('Seller', style: AppTextStyles.heading3),
-                const SizedBox(height: 8),
-                _SectionCard(
-                  child: Row(
-                    children: [
-                      const Icon(Icons.store_outlined,
-                          color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(order.sellerName,
-                            style: AppTextStyles.bodyMedium),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.phone_outlined,
-                            color: AppColors.primary),
-                        onPressed: () => launchUrl(
-                          Uri.parse('tel:${order.sellerId}'),
+                // The original seller rejected this order and it is being
+                // offered to other sellers — explain the wait, and that
+                // cancelling (below) refunds straight away.
+                if (order.status == 'reassigning') ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.sync, color: AppColors.warning),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'The seller couldn\'t fulfil this order, so we are '
+                            'finding another seller for you. If no one takes it '
+                            'within 24 hours you will be refunded in full. You '
+                            'can also cancel now for an immediate refund.',
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.onSurface),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
+                ],
+
+                // Seller info — hidden while reassigning: the seller named on
+                // the order is the one who rejected it.
+                if (order.status != 'reassigning') ...[
+                  Text('Seller', style: AppTextStyles.heading3),
+                  const SizedBox(height: 8),
+                  _SectionCard(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.store_outlined,
+                            color: AppColors.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(order.sellerName,
+                              style: AppTextStyles.bodyMedium),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.phone_outlined,
+                              color: AppColors.primary),
+                          onPressed: () => launchUrl(
+                            Uri.parse('tel:${order.sellerId}'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                ],
 
                 // Delivery address
                 Text('Delivery Address', style: AppTextStyles.heading3),
@@ -176,8 +215,12 @@ class OrderDetailScreen extends ConsumerWidget {
                 // Self-service cancel — only while the seller hasn't
                 // dispatched yet, matching the seller's own reject window
                 // (seller_orders_screen.dart) and the check the server
-                // enforces (POST /api/orders/cancel).
-                if (order.status == 'placed' || order.status == 'accepted') ...[
+                // enforces (POST /api/orders/cancel). Also while the order is
+                // being offered to other sellers: the server closes the offers
+                // and refunds in one step.
+                if (order.status == 'placed' ||
+                    order.status == 'accepted' ||
+                    order.status == 'reassigning') ...[
                   const SizedBox(height: 16),
                   _CancelOrderButton(
                     orderId: order.id,
@@ -204,6 +247,7 @@ class OrderDetailScreen extends ConsumerWidget {
       'delivered' => AppColors.statusDelivered,
       'rejected' => AppColors.statusCancelled,
       'cancelled' => AppColors.statusCancelled,
+      'reassigning' => AppColors.warning,
       _ => AppColors.onSurfaceVariant,
     };
     return Container(
@@ -214,7 +258,7 @@ class OrderDetailScreen extends ConsumerWidget {
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
-        status[0].toUpperCase() + status.substring(1),
+        orderStatusLabel(status),
         style: AppTextStyles.caption
             .copyWith(color: color, fontWeight: FontWeight.w600),
       ),

@@ -15,7 +15,10 @@ import '../providers/enquiry_provider.dart';
 /// under Payments; this is it handed to the person who can actually act on
 /// it, with the buyer's number one tap from a phone call.
 class EnquiryScreen extends ConsumerStatefulWidget {
-  const EnquiryScreen({super.key});
+  /// Enquiry to show first and highlight — set when the seller opened this
+  /// screen from that enquiry's notification.
+  final String? focusId;
+  const EnquiryScreen({super.key, this.focusId});
 
   @override
   ConsumerState<EnquiryScreen> createState() => _EnquiryScreenState();
@@ -24,10 +27,13 @@ class EnquiryScreen extends ConsumerStatefulWidget {
 enum _Tab { open, contacted, closed, all }
 
 class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
-  _Tab _tab = _Tab.open;
+  // Opened from a notification: show every status, so the tapped enquiry is
+  // visible even if it was already marked contacted on another device.
+  late _Tab _tab = widget.focusId != null ? _Tab.all : _Tab.open;
   String? _busyId;
 
   bool _matches(EnquiryModel e) {
+    if (e.id == widget.focusId) return true;
     switch (_tab) {
       case _Tab.open:
         return e.status == EnquiryStatus.open;
@@ -58,13 +64,18 @@ class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
     }
   }
 
+  // launchUrl is tried directly rather than gated on canLaunchUrl: on
+  // Android 11+ canLaunchUrl answers false for any scheme the manifest's
+  // <queries> doesn't list, which blocked calls on builds before that fix.
   Future<void> _call(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else if (mounted) {
+    bool ok = false;
+    try {
+      ok = await launchUrl(uri);
+    } catch (_) {}
+    if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the dialler')),
+        SnackBar(content: Text('Could not open the dialler. Number: $phone')),
       );
     }
   }
@@ -77,9 +88,11 @@ class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
       "but the payment didn't go through. Can I help you complete it?",
     );
     final uri = Uri.parse('https://wa.me/$number?text=$text');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
+    bool ok = false;
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open WhatsApp')),
       );
@@ -104,6 +117,7 @@ class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
               tab: _tab,
               matches: _matches,
               busyId: _busyId,
+              focusId: widget.focusId,
               onTabChanged: (t) => setState(() => _tab = t),
               onCall: _call,
               onWhatsapp: _whatsapp,
@@ -118,6 +132,7 @@ class _Body extends ConsumerWidget {
   final _Tab tab;
   final bool Function(EnquiryModel) matches;
   final String? busyId;
+  final String? focusId;
   final ValueChanged<_Tab> onTabChanged;
   final Future<void> Function(String) onCall;
   final Future<void> Function(EnquiryModel) onWhatsapp;
@@ -128,6 +143,7 @@ class _Body extends ConsumerWidget {
     required this.tab,
     required this.matches,
     required this.busyId,
+    this.focusId,
     required this.onTabChanged,
     required this.onCall,
     required this.onWhatsapp,
@@ -149,6 +165,9 @@ class _Body extends ConsumerWidget {
       data: (all) {
         if (all.isEmpty) return const _EmptyState();
         final visible = all.where(matches).toList();
+        // The enquiry a notification pointed at goes first.
+        final fi = visible.indexWhere((e) => e.id == focusId);
+        if (fi > 0) visible.insert(0, visible.removeAt(fi));
         int countOf(_Tab t) {
           switch (t) {
             case _Tab.open:
@@ -195,6 +214,7 @@ class _Body extends ConsumerWidget {
                       itemBuilder: (_, i) => _EnquiryCard(
                         enquiry: visible[i],
                         busy: busyId == visible[i].id,
+                        highlighted: visible[i].id == focusId,
                         onCall: onCall,
                         onWhatsapp: onWhatsapp,
                         onStatus: onStatus,
@@ -236,6 +256,7 @@ String _ago(DateTime? d) {
 class _EnquiryCard extends StatelessWidget {
   final EnquiryModel enquiry;
   final bool busy;
+  final bool highlighted;
   final Future<void> Function(String) onCall;
   final Future<void> Function(EnquiryModel) onWhatsapp;
   final Future<void> Function(EnquiryModel, EnquiryStatus) onStatus;
@@ -243,6 +264,7 @@ class _EnquiryCard extends StatelessWidget {
   const _EnquiryCard({
     required this.enquiry,
     required this.busy,
+    this.highlighted = false,
     required this.onCall,
     required this.onWhatsapp,
     required this.onStatus,
@@ -257,7 +279,10 @@ class _EnquiryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(
+          color: highlighted ? AppColors.primary : AppColors.divider,
+          width: highlighted ? 2 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

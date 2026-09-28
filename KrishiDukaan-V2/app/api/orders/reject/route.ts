@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { refundOrder } from "../../../lib/order-refund";
+import { startReassignment } from "../../../lib/order-reassignment";
 
 /**
  * POST /api/orders/reject
@@ -90,6 +91,31 @@ export async function POST(req: NextRequest) {
         { error: `Cannot reject an order that is already ${order.status}.` },
         { status: 409 },
       );
+    }
+
+    // First rejection → offer the order to every other seller who sells all of
+    // it online, for 24h, before refunding (lib/order-reassignment.ts). One
+    // round only: an order that was already reassigned once is refunded now.
+    if (!order.reassignment) {
+      const start = await startReassignment({
+        orderId,
+        order,
+        reason: rejectReason,
+        rejectedByUid: auth.uid,
+      });
+      if (start.ok === false) {
+        return NextResponse.json({ error: start.error }, { status: start.status });
+      }
+      if (start.reassigning) {
+        return NextResponse.json({
+          ok: true,
+          orderId,
+          reassigning: true,
+          candidates: start.candidates,
+          refunded: false,
+        });
+      }
+      // No eligible sellers: fall through to the immediate refund below.
     }
 
     const payment = (order.payment ?? {}) as { razorpayPaymentId?: string; refundId?: string };

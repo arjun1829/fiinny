@@ -12,6 +12,7 @@ type WaTemplate =
   | "product_assignment_pending_signup"
   | "manufacturer_network_summary"
   | "enquiry_notification"
+  | "order_reassign_offer"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;

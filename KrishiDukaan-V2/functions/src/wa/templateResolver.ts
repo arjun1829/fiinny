@@ -81,6 +81,12 @@ export function resolveTemplateComponents(
         ),
       ];
 
+    case "order_reassign_offer":
+      // Sent to every seller offered an order another seller rejected.
+      // {{1}} = product ("X +N more"), {{2}} = delivery area (city pincode)
+      // Static URL button: https://krishidukan.com/dashboard/orders?tab=requests
+      return [body(p("product"), p("area") || "your area")];
+
     case "order_confirmation_customer":
       // Sent to the CUSTOMER immediately after order placement.
       // Body:   {{1}} = customerName

@@ -6,6 +6,11 @@ import {
   PAYOUT_HOLD_DAYS,
   type OrderLike,
 } from "../../../dashboard/_lib/seller-earnings";
+import {
+  fetchPaymentTransfers,
+  matchSellerTransfer,
+  outstandingPaise,
+} from "../../../lib/route-transfers";
 
 /**
  * Releases due seller earnings as Razorpay Route transfers.
@@ -189,7 +194,55 @@ export async function POST(req: NextRequest) {
       const summary = computeSellerEarnings(
         orders.map((o) => ({ id: o.id, ...(o.data as object) }) as OrderLike),
       );
-      const dueRows = summary.rows.filter((r) => r.state === "due");
+      const candidateRows = summary.rows.filter((r) => r.state === "due");
+      if (candidateRows.length === 0) continue;
+
+      // An order whose payment already carries a live Route transfer to this
+      // seller is paid by Razorpay itself (checkout's held transfer, released
+      // on delivery by functions/src/route-release.ts, or the one written when
+      // an order is reassigned). Paying it again here was a real double-pay:
+      // this run only skipped payment.transferId, which Route transfers never
+      // set. Asked of Razorpay per order, not inferred from Firestore fields.
+      const dueRows: typeof candidateRows = [];
+      const routeManaged: string[] = [];
+      for (const row of candidateRows) {
+        const data = orders.find((o) => o.id === row.orderId)?.data;
+        const paymentId = String(data?.payment?.razorpayPaymentId ?? "").trim();
+        if (!paymentId) {
+          dueRows.push(row);
+          continue;
+        }
+        try {
+          const transfers = await fetchPaymentTransfers(paymentId);
+          const t = matchSellerTransfer(
+            transfers,
+            [seller, String(data?.sellerPhone ?? ""), String(data?.sellerId ?? "")],
+            data?.routeTransfer?.id ? String(data.routeTransfer.id) : null,
+          );
+          if (t && outstandingPaise(t) > 0) routeManaged.push(row.orderId);
+          else dueRows.push(row);
+        } catch (e) {
+          // Unknown Route state is not a reason to pay: skipping only delays
+          // this order to the next run, paying could pay it twice.
+          results.push({
+            seller,
+            orders: [row.orderId],
+            amount: 0,
+            status: "skipped",
+            reason:
+              "Could not check Route transfers: " + (e instanceof Error ? e.message : String(e)),
+          });
+        }
+      }
+      if (routeManaged.length > 0) {
+        results.push({
+          seller,
+          orders: routeManaged,
+          amount: 0,
+          status: "skipped",
+          reason: "Paid by a Razorpay Route transfer on the payment",
+        });
+      }
       if (dueRows.length === 0) continue;
 
       const amount = Math.round(dueRows.reduce((sum, r) => sum + r.net, 0) * 100) / 100;

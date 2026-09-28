@@ -26,6 +26,11 @@ String? routeForNotification(String? type, Map<String, dynamic> data) {
   switch (type) {
     case 'order':
       return '/dashboard/orders';
+    // Another seller rejected an order this seller could fulfil. Lands on the
+    // Requests tab, same as the web's /dashboard/orders?tab=requests that the
+    // WhatsApp alert links to.
+    case 'order_offer':
+      return '/dashboard/orders?tab=requests';
     case 'order_update':
       final id = str('orderId');
       return id != null ? '/orders/$id' : '/orders';
@@ -41,8 +46,12 @@ String? routeForNotification(String? type, Map<String, dynamic> data) {
     // list is the useful landing place — it carries the buyer's number and
     // the follow-up actions. Mirrors web's /dashboard/enquiry, which the
     // WhatsApp alert for the same event links to.
+    // Carries the enquiry id so the screen opens with that buyer on top.
     case 'enquiry':
-      return '/dashboard/enquiry';
+      final id = str('enquiryId');
+      return id != null
+          ? '/dashboard/enquiry?id=${Uri.encodeComponent(id)}'
+          : '/dashboard/enquiry';
 
     // Seller added or was assigned a product, and low-stock alerts, both open
     // the inventory list scrolled to (and editing) that product.
@@ -114,6 +123,23 @@ class NotificationService {
 
   bool _initialized = false;
 
+  // A tap that LAUNCHED the app (getInitialMessage) arrives while the splash
+  // screen is still up — and splash then calls `context.go('/')`, which
+  // replaces the whole stack and silently threw the pushed screen away. That
+  // is why tapping a notification with the app closed only ever opened Home.
+  // Such a route is parked here until splash has navigated, then pushed.
+  static String? _pendingLaunchRoute;
+  static bool _launchSettled = false;
+
+  /// Called by the splash screen right after it navigates to the first real
+  /// screen. Opens the notification that launched the app, if any.
+  static void onLaunchSettled(GoRouter router) {
+    _launchSettled = true;
+    final route = _pendingLaunchRoute;
+    _pendingLaunchRoute = null;
+    if (route != null) router.push(route);
+  }
+
   Future<void> initialize(String userPhone, {GoRouter? router}) async {
     if (_initialized) return;
     _initialized = true;
@@ -170,7 +196,13 @@ class NotificationService {
         initial.data['type'] as String?,
         initial.data,
       );
-      if (route != null) router.push(route);
+      if (route != null) {
+        if (_launchSettled) {
+          router.push(route);
+        } else {
+          _pendingLaunchRoute = route;
+        }
+      }
     }
 
     // Save (and refresh) FCM token in Firestore

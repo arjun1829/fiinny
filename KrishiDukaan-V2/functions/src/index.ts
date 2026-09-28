@@ -23,6 +23,7 @@ export {
 } from "./notifications/inventory";
 export { sendStoreAnalyticsDigest } from "./notifications/digest";
 export { raiseAbandonedCheckoutEnquiries } from "./notifications/enquiries";
+export { notifySellerOfOrderOffer, expireOrderReassignments } from "./notifications/reassignment";
 export {
   remindIncompleteProfiles,
   remindIncompletePayoutDetails,
@@ -891,6 +892,10 @@ export const notifyCustomerOnOrderStatus = onDocumentWritten(
       delivered: [
         "Order delivered 🎉",
         `Your order for ${itemSummary} was delivered`,
+      ],
+      reassigning: [
+        "Finding another seller 🔄",
+        `${store} couldn't fulfil your order for ${itemSummary}. We're asking other sellers now — if nobody takes it within 24 hours, you'll be refunded automatically.`,
       ],
       rejected: [
         "Order declined ❌",

@@ -23,7 +23,10 @@ export type OrderStatus =
   | "out_for_delivery"
   | "delivered"
   | "rejected"
-  | "cancelled";
+  | "cancelled"
+  /** The original seller rejected; the order is offered to other sellers for
+   *  24h before the customer is refunded (app/lib/order-reassignment.ts). */
+  | "reassigning";
 
 /** Progression order, shared by every timeline and "can advance to" check. */
 export const ORDER_STATUS_FLOW: OrderStatus[] = [

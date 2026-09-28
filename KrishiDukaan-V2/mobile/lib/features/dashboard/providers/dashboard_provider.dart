@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 import '../data/dashboard_repository.dart';
+import '../data/order_offers_repository.dart';
 import '../data/store_analytics.dart';
 import '../../../core/data/product_schema_repository.dart';
 import '../../../core/models/subscription_model.dart';
@@ -25,6 +26,14 @@ final myListingsProvider =
 final sellerOrdersProvider =
     StreamProvider.family<List<OrderModel>, String>((ref, phone) {
   return _repo.watchSellerOrders(phone);
+});
+
+final orderOffersRepoProvider = Provider((_) => OrderOffersRepository());
+
+/// Orders other sellers rejected, open for this seller to take (Requests tab).
+final openOrderOffersProvider =
+    StreamProvider.family<List<OrderOfferModel>, String>((ref, phone) {
+  return ref.watch(orderOffersRepoProvider).watchOpenOffers(phone);
 });
 
 final deliverySettingsProvider =

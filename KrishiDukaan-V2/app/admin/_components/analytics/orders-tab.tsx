@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   out_for_delivery: "Out for delivery",
   delivered: "Delivered",
   rejected: "Rejected",
+  reassigning: "Reassigning",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -33,6 +34,7 @@ const STATUS_COLOR: Record<string, string> = {
   out_for_delivery: "bg-amber-500",
   delivered: "bg-green-500",
   rejected: "bg-red-500",
+  reassigning: "bg-orange-400",
 };
 
 export function OrdersTab() {

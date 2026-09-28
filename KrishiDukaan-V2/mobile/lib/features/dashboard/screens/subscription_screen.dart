@@ -212,6 +212,16 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
   ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
+/// A promo code the seller has actually validated against Firestore — never
+/// constructed from raw typed text. create-order is only ever sent this
+/// [code], so a code that was typed but never successfully applied (or was
+/// edited after applying) can never reach the server.
+class _AppliedPromo {
+  final String code;
+  final int discountPct;
+  const _AppliedPromo({required this.code, required this.discountPct});
+}
+
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   late final AppRazorpay _razorpay;
   int _seats = _seatStep;
@@ -223,6 +233,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   String? _razorpayOrderId;
   /// Order amount in PAISE — see checkout_screen for why this is retained.
   int? _razorpayAmount;
+
+  /// Promo code — mirrors web's SubscriptionView. Validated against the same
+  /// `promoCodes` collection create-order re-checks server-side, so what the
+  /// seller sees here and what they are actually charged cannot drift.
+  final _promoCtrl = TextEditingController();
+  _AppliedPromo? _promoApplied;
+  bool _promoLoading = false;
+  String? _promoError;
 
   @override
   void initState() {
@@ -292,6 +310,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   void dispose() {
     _razorpay.clear();
     _seatCtrl.dispose();
+    _promoCtrl.dispose();
     super.dispose();
   }
 
@@ -303,6 +322,77 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       _seatCtrl.text = '$next';
       _seatCtrl.selection =
           TextSelection.collapsed(offset: _seatCtrl.text.length);
+    }
+  }
+
+  /// Clears whatever the promo field previously resolved to and refreshes the
+  /// Apply button's enabled state. Called on every keystroke — without the
+  /// clear, changing "SAVE20" to "SAVE2" would keep showing the SAVE20
+  /// discount applied while Pay quietly charges full price (create-order only
+  /// trusts a code it can re-validate itself, so a stale/edited code is simply
+  /// ignored server-side, but the UI must not keep claiming a discount that
+  /// will not be honoured).
+  void _onPromoTextChanged(String _) {
+    setState(() {
+      _promoApplied = null;
+      _promoError = null;
+    });
+  }
+
+  /// Validates the typed code against the same `promoCodes` collection
+  /// create-order re-checks — mirrors web's applyPromo exactly, including its
+  /// three distinct failure messages, so a seller sees the same outcome on
+  /// either platform for the same code.
+  Future<void> _applyPromo() async {
+    final code = _promoCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    setState(() {
+      _promoLoading = true;
+      _promoError = null;
+    });
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('promoCodes')
+          .where('code', isEqualTo: code)
+          .where('active', isEqualTo: true)
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (snap.docs.isEmpty) {
+        setState(() {
+          _promoApplied = null;
+          _promoError = 'Invalid or expired promo code.';
+        });
+        return;
+      }
+
+      final pct = (snap.docs.first.data()['discountPercent'] as num?)?.toInt();
+      if (pct == null || pct <= 0) {
+        setState(() {
+          _promoApplied = null;
+          _promoError = 'This promo code has no active discount.';
+        });
+        return;
+      }
+
+      setState(() {
+        _promoApplied = _AppliedPromo(code: code, discountPct: pct);
+        _promoError = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _promoApplied = null;
+          _promoError = 'Could not validate promo code. Try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _promoLoading = false);
     }
   }
 
@@ -355,6 +445,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               'durationMonths': _duration.months,
               'planId': _duration.key,
               'userId': user.uid,
+              // Only an already-validated code, never the raw text box — see
+              // _onPromoTextChanged. create-order re-validates it regardless
+              // and computes the actual charge itself; this is what tells it
+              // which code to check.
+              'promoCode': _promoApplied?.code,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -598,11 +693,18 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     if (reconciliation.captured && reconciliation.paymentId != null) {
       final seatCount =
           (reconciliation.notes?['seatCount'] as num?)?.toInt() ?? _seats;
+      // Same field /verify's amountPaid comes from (create-order stamps it
+      // into the order's own notes at creation time) — without this, a
+      // reconciled late-capture would fall back to the undiscounted full
+      // price whenever a promo code had actually been applied at checkout.
+      final amountCharged =
+          (reconciliation.notes?['amountCharged'] as num?)?.toInt();
       try {
         await _activateSubscription(
           razorpayOrderId: orderId,
           razorpayPaymentId: reconciliation.paymentId!,
           seatCount: seatCount,
+          amountPaid: amountCharged,
           // Promo code from the order's server-set notes, same source as
           // seatCount — keeps attribution correct on the reconciliation path.
           promoCode: (reconciliation.notes?['promoCode'] as String?),
@@ -686,6 +788,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     final userAsync = ref.watch(currentUserProvider);
     final isPaid = userAsync.value?.isPaid ?? false;
     final totalPrice = _duration.totalPrice(_seats);
+    // Math.floor(subtotal * pct / 100), same as web's discountAmt — and
+    // algebraically identical to create-order's own
+    // Math.ceil(subtotal * (1 - pct / 100)) for an integer subtotal, so the
+    // figure shown here always matches what Razorpay actually charges.
+    final discountAmount = _promoApplied != null
+        ? (totalPrice * _promoApplied!.discountPct / 100).floor()
+        : 0;
+    final finalPrice = totalPrice - discountAmount;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -929,6 +1039,79 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           ),
           const SizedBox(height: 16),
 
+          // ── Promo code ───────────────────────────────────────────────────
+          _SectionCard(
+            title: 'Promo Code',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _promoCtrl,
+                        textCapitalization: TextCapitalization.characters,
+                        inputFormatters: [
+                          TextInputFormatter.withFunction(
+                            (oldValue, newValue) => newValue.copyWith(
+                                text: newValue.text.toUpperCase()),
+                          ),
+                        ],
+                        onChanged: _onPromoTextChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Enter promo code',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: (_promoLoading || _promoCtrl.text.trim().isEmpty)
+                          ? null
+                          : _applyPromo,
+                      style: FilledButton.styleFrom(
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.1),
+                        foregroundColor: AppColors.primary,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                      ),
+                      child: _promoLoading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.primary),
+                            )
+                          : const Text('Apply'),
+                    ),
+                  ],
+                ),
+                if (_promoApplied != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '✓ ${_promoApplied!.discountPct}% discount applied',
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary, fontWeight: FontWeight.w700),
+                  ),
+                ],
+                if (_promoError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_promoError!,
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.error)),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // ── Price summary ─────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
@@ -950,8 +1133,16 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                           : '$_seats seat${_seats != 1 ? 's' : ''} × ${_duration.label}',
                       style: AppTextStyles.bodySmall,
                     ),
+                    if (_promoApplied != null)
+                      Text(
+                        CurrencyUtils.format(totalPrice.toDouble()),
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
                     Text(
-                      CurrencyUtils.format(totalPrice.toDouble()),
+                      CurrencyUtils.format(finalPrice.toDouble()),
                       style: AppTextStyles.priceLarge,
                     ),
                   ],
@@ -1080,7 +1271,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : Text(
-                      'Pay ${CurrencyUtils.format(totalPrice.toDouble())} · Unlock ${_duration.billableSeats(_seats)} seat${_duration.billableSeats(_seats) != 1 ? 's' : ''}',
+                      'Pay ${CurrencyUtils.format(finalPrice.toDouble())} · Unlock ${_duration.billableSeats(_seats)} seat${_duration.billableSeats(_seats) != 1 ? 's' : ''}',
                       style: AppTextStyles.button,
                     ),
             ),

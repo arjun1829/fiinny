@@ -36,6 +36,7 @@ const STATUS_CONFIG: Record<
   delivered:        { label: "Delivered",        color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
   rejected:         { label: "Rejected",         color: "text-red-700",   bg: "bg-red-50 border-red-200",       icon: XCircle },
   cancelled:        { label: "Cancelled",        color: "text-red-700",   bg: "bg-red-50 border-red-200",       icon: XCircle },
+  reassigning:      { label: "Finding another seller", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", icon: Clock },
 };
 
 function formatDate(createdAt: unknown): string {
@@ -67,7 +68,9 @@ function OrderProgressBar({ status }: { status: OrderStatus }) {
 
   // "accepted" is a real step in the flow now, so it is no longer remapped onto
   // out_for_delivery — doing that would show the parcel as further along than it is.
-  const currentIdx = STATUS_FLOW.indexOf(status);
+  // While another seller is being found the order is still just "placed" as
+  // far as delivery progress goes — the banner above explains why.
+  const currentIdx = STATUS_FLOW.indexOf(status === "reassigning" ? "placed" : status);
 
   return (
     <div className="flex items-center gap-0 w-full">
@@ -422,12 +425,20 @@ export default function MyOrdersPage() {
                         </div>
                       )}
 
+                      {order.status === "reassigning" && (
+                        <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs text-orange-800">
+                          The original seller couldn&apos;t fulfil this order, so we&apos;re asking other
+                          sellers who stock it. If nobody takes it within 24 hours, you&apos;ll be refunded
+                          automatically — or cancel now for an immediate refund.
+                        </div>
+                      )}
+
                       {/* Progress bar */}
                       <OrderProgressBar status={order.status} />
 
                       {/* Cancel + download invoice */}
                       <div className="flex justify-end gap-2 pt-1">
-                        {(order.status === "placed" || order.status === "accepted") && (
+                        {(order.status === "placed" || order.status === "accepted" || order.status === "reassigning") && (
                           <button
                             type="button"
                             disabled={cancellingId === order.id}

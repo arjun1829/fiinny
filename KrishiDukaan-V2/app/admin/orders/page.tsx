@@ -43,6 +43,7 @@ const STATUS_META: Record<OrderStatus, { label: string; badge: string }> = {
   delivered:        { label: "Delivered",        badge: "bg-green-100 text-green-700" },
   rejected:         { label: "Rejected",         badge: "bg-red-100 text-red-700" },
   cancelled:        { label: "Cancelled",        badge: "bg-red-100 text-red-700" },
+  reassigning:      { label: "Reassigning",      badge: "bg-orange-100 text-orange-700" },
 };
 
 const PAYMENT_META: Record<PaymentStatus, { label: string; badge: string }> = {

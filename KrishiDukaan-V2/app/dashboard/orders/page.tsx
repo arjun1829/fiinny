@@ -18,6 +18,7 @@ import {
   IndianRupee,
   Download,
   Lock,
+  RefreshCw,
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
@@ -25,6 +26,8 @@ import { formatCustomerAddress, normalizeOrderItems, orderGrandTotal } from "../
 import { ORDER_STATUS_FLOW, type OrderDoc, type OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
 import { openInvoice } from "../../utils/invoice-generator";
+import { OrderRequestsPanel } from "../_components/order-requests-panel";
+import { fetchOpenOffers } from "../_lib/order-offers";
 
 // Progression shown to the seller. Imported rather than redeclared so the
 // seller view, the customer view and the "can advance to" checks cannot drift.
@@ -38,6 +41,7 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: str
   delivered:        { label: "Delivered",         color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
   rejected:         { label: "Rejected",         color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
   cancelled:        { label: "Cancelled",        color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
+  reassigning:      { label: "Offered to other sellers", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", icon: RefreshCw },
 };
 
 // One step forward at a time, so the customer's tracking timeline reflects what
@@ -62,10 +66,13 @@ const NEXT_ACTIONS: Record<OrderStatus, { next: OrderStatus; label: string; colo
   delivered: [],
   rejected:  [],
   cancelled: [],
+  // Out of this seller's hands: it's being offered to others for 24h, and
+  // firestore.rules refuses any seller write to it until someone accepts.
+  reassigning: [],
 };
 
 type FilterTab = "all" | "placed" | "accepted" | "dispatched" | "out_for_delivery" | "delivered" | "rejected" | "cancelled";
-type ViewTab = "orders" | "payments";
+type ViewTab = "orders" | "payments" | "requests";
 
 function formatDate(createdAt: unknown): string {
   try {
@@ -362,6 +369,8 @@ export default function OrdersPage() {
   const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionInfo, setActionInfo] = useState<string | null>(null);
+  const [requestCount, setRequestCount] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
   const [sellerInfo, setSellerInfo] = useState<{ name: string; phone: string; gstin: string } | null>(null);
@@ -385,6 +394,20 @@ export default function OrdersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "requests") {
+      setActiveViewTab("requests");
+    }
+  }, []);
+
+  // Badge count before the tab is opened.
+  useEffect(() => {
+    if (!sellerInfo?.phone) return;
+    fetchOpenOffers(sellerInfo.phone)
+      .then((rows) => setRequestCount(rows.length))
+      .catch(() => undefined);
+  }, [sellerInfo?.phone]);
 
   useEffect(() => {
     if (!effectiveUid || !effectiveProfile) return;
@@ -439,6 +462,13 @@ export default function OrdersPage() {
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Could not reject the order.");
+        setActionInfo(
+          json.reassigning
+            ? `Order offered to ${json.candidates} other seller${json.candidates === 1 ? "" : "s"} who sell this online. If none accepts within 24 hours, the customer is refunded automatically.`
+            : json.refunded
+              ? "Order rejected and the customer refunded."
+              : "Order rejected.",
+        );
         if (uid && sellerType) await load(uid, sellerType, sellerProfile);
       } catch (e) {
         setActionError(e instanceof Error ? e.message : "Could not reject the order.");
@@ -493,6 +523,11 @@ export default function OrdersPage() {
       {actionError && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {actionError}
+        </div>
+      )}
+      {actionInfo && (
+        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {actionInfo}
         </div>
       )}
 
@@ -561,9 +596,33 @@ export default function OrdersPage() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveViewTab("requests")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                activeViewTab === "requests"
+                  ? "bg-white text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Requests
+              {requestCount > 0 && (
+                <span className="ml-1 bg-orange-100 text-orange-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                  {requestCount}
+                </span>
+              )}
+            </button>
           </div>
 
-          {activeViewTab === "payments" ? (
+          {activeViewTab === "requests" ? (
+            <OrderRequestsPanel
+              sellerPhone={sellerInfo?.phone ?? ""}
+              onCountChange={setRequestCount}
+              onAccepted={() => {
+                if (uid && sellerType) void load(uid, sellerType, sellerProfile);
+              }}
+            />
+          ) : activeViewTab === "payments" ? (
             /* ── PAYMENTS TAB ── */
             <div className="space-y-4">
               {/* Summary cards */}
