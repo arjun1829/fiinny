@@ -75,6 +75,47 @@ export interface DurationPrice {
    * declares the rule; the client filtering it drives is a courtesy.
    */
   roles?: string[];
+  /**
+   * Which of the two plan families the checkout shows this row under.
+   *
+   *   standard — a packaged plan: a fixed price for a fixed number of listings
+   *              (flatPrice + includedListings are REQUIRED). The seller picks a
+   *              period, never a quantity.
+   *   custom   — the original self-serve ladder: a price per listing, seller
+   *              picks how many. Also any legacy bundle row with no tier.
+   *
+   * Absent means custom, so every ladder saved before tiers existed keeps
+   * behaving exactly as it did. See tierOf().
+   */
+  tier?: PlanTier;
+  /**
+   * Optional "was" price in rupees, shown struck through next to the real
+   * price (e.g. Standard Yearly: ~~14,400~~ 11,000). DISPLAY ONLY — nothing is
+   * ever charged from it; computeAmount() never reads it.
+   */
+  compareAtPrice?: number;
+}
+
+/** The two plan families on the subscription page (Standard / Custom toggle). */
+export type PlanTier = "standard" | "custom";
+
+/** Tier of a ladder row. Rows saved before tiers existed are custom. */
+export function tierOf(d: DurationPrice): PlanTier {
+  return d.tier === "standard" ? "standard" : "custom";
+}
+
+/** The ladder rows shown under one tier of the toggle, in period order. */
+export function plansForTier(durations: DurationPrice[], tier: PlanTier): DurationPrice[] {
+  return durations.filter((d) => tierOf(d) === tier);
+}
+
+/**
+ * Plan name stored on the subscription record ("Standard" / "Custom").
+ * Snapshotted at purchase, so a later edit or delete of the ladder row never
+ * changes what an old subscription says it was.
+ */
+export function planNameFor(d: DurationPrice): string {
+  return tierOf(d) === "standard" ? "Standard" : "Custom";
 }
 
 /**
@@ -82,6 +123,28 @@ export interface DurationPrice {
  * fallback only — the live prices come from Firestore.
  */
 export const DEFAULT_DURATIONS: DurationPrice[] = [
+  // Standard — packaged 100-listing plans (the toggle's default tab).
+  // pricePerSeat is only the per-listing equivalent, kept so every row stays a
+  // valid ladder entry; the flat price is what is charged.
+  {
+    id: "standard-monthly",
+    tier: "standard",
+    months: 1,
+    pricePerSeat: 21,
+    flatPrice: 2100,
+    includedListings: 100,
+  },
+  {
+    id: "standard-yearly",
+    tier: "standard",
+    months: 12,
+    pricePerSeat: 110,
+    flatPrice: 11000,
+    includedListings: 100,
+    compareAtPrice: 14400,
+    badge: "Save 24%",
+  },
+  // Custom — price per listing; the seller picks the quantity.
   { months: 1, pricePerSeat: 21 },
   { months: 3, pricePerSeat: 54, badge: "Save 14%" },
   { months: 6, pricePerSeat: 90, badge: "Save 29%" },
@@ -138,10 +201,31 @@ export function parseDurations(raw: unknown): DurationPrice[] | null {
       roles = cleaned.length ? Array.from(new Set(cleaned)) : undefined;
     }
 
+    // Tier: absent = custom. An unknown value is a data error, not "custom" —
+    // saving a typo must fail loudly rather than move a plan between tabs.
+    const rawTier = (item as DurationPrice)?.tier as unknown;
+    let tier: PlanTier | undefined;
+    if (rawTier !== undefined && rawTier !== null && rawTier !== "") {
+      if (rawTier !== "standard" && rawTier !== "custom") return null;
+      tier = rawTier;
+    }
+    // A Standard plan IS a fixed price for a fixed number of listings; without
+    // both it would silently fall back to per-listing billing.
+    if (tier === "standard" && flat === undefined) return null;
+
+    const rawCompare = (item as DurationPrice)?.compareAtPrice as unknown;
+    let compareAtPrice: number | undefined;
+    if (rawCompare !== undefined && rawCompare !== null && rawCompare !== "") {
+      compareAtPrice = Number(rawCompare);
+      if (!Number.isInteger(compareAtPrice) || compareAtPrice <= 0) return null;
+    }
+
     out.push({
       ...(id ? { id } : {}),
+      ...(tier === "standard" ? { tier } : {}),
       months,
       pricePerSeat: price,
+      ...(compareAtPrice !== undefined ? { compareAtPrice } : {}),
       ...(roles ? { roles } : {}),
       ...(typeof badge === "string" && badge.trim() ? { badge: badge.trim() } : {}),
       ...(flat !== undefined ? { flatPrice: flat, includedListings: incl } : {}),
@@ -184,7 +268,10 @@ export function planFor(
   if (Number.isFinite(months)) {
     // Period match must never silently pick a bundle: a client that only knows
     // about per-listing pricing would show one price and be charged another.
-    const byMonths = durations.find((d) => d.months === months && !isFlatPlan(d));
+    // Nor a Standard plan, for the same reason.
+    const byMonths = durations.find(
+      (d) => d.months === months && !isFlatPlan(d) && tierOf(d) === "custom",
+    );
     if (byMonths) return byMonths;
   }
   return null;
@@ -195,7 +282,10 @@ export function priceFor(
   durations: DurationPrice[],
   months: number,
 ): number | null {
-  return durations.find((d) => d.months === months)?.pricePerSeat ?? null;
+  return (
+    durations.find((d) => d.months === months && tierOf(d) === "custom")
+      ?.pricePerSeat ?? null
+  );
 }
 
 /** Per-month equivalent, for display only ("₹12/month" on a yearly plan). */
@@ -407,6 +497,11 @@ export function computeAmount(d: DurationPrice, seats: number): number {
  */
 export function billableSeats(d: DurationPrice, seats: number): number {
   const n = Math.max(1, Math.floor(Number(seats)) || 1);
+  // A Standard plan is one fixed pack: it always grants its full listing
+  // count, whatever quantity the client happened to send.
+  if (tierOf(d) === "standard" && typeof d.includedListings === "number") {
+    return d.includedListings;
+  }
   if (typeof d.flatPrice === "number" && typeof d.includedListings === "number") {
     return Math.min(n, d.includedListings);
   }
@@ -443,4 +538,25 @@ export function isFlatPlan(d: DurationPrice): boolean {
 export function applyDiscount(subtotal: number, discountPercent: number): number {
   const discounted = Math.ceil(subtotal * (1 - discountPercent / 100));
   return Math.max(0, discounted);
+}
+
+/**
+ * The plan name to SHOW for a subscription record.
+ *
+ * Before Standard plans existed, every self-serve checkout (web and app) saved
+ * `planName: "Standard"` even though each one was a per-listing purchase — i.e.
+ * what is now called Custom. Records written since carry `planTier`, so only a
+ * record WITHOUT planTier that says "Standard" is that legacy mislabel.
+ * Admin-assigned names ("Admin Assigned", named plans) pass through unchanged.
+ */
+export function subscriptionPlanLabel(sub: {
+  planName?: unknown;
+  planTier?: unknown;
+  isCustom?: unknown;
+}): string {
+  const name = typeof sub.planName === "string" ? sub.planName.trim() : "";
+  if (sub.planTier === "standard") return name || "Standard";
+  if (sub.planTier === "custom" || sub.isCustom === true) return name || "Custom";
+  if (!name || name === "Standard") return "Custom";
+  return name;
 }

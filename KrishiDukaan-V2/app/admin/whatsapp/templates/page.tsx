@@ -11,6 +11,7 @@ import Link from "next/link";
 import { cn } from "../../../dashboard/_lib/cn";
 import { PendingSignupPanel, type PendingPanelManufacturer } from "../../_components/pending-signup-panel";
 import { getUsers, getSubscriptions } from "../../_lib/admin-data";
+import { subscriptionPlanLabel } from "../../../lib/pricing";
 import { collection, doc, getDocs, query, where, serverTimestamp, writeBatch } from "firebase/firestore";
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -621,7 +622,7 @@ function SubscriptionExpiryFlow() {
           phone,
           ownerName,
           businessName,
-          planName: sub.planName || (sub.isCustom ? "Custom" : "Standard"),
+          planName: subscriptionPlanLabel(sub),
           seatsPurchased: sub.seatsPurchased ?? 0,
           expiryDate: expiry,
           daysRemaining: Math.ceil(ms / 86400000),

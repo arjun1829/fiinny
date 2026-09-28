@@ -19,7 +19,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { auth } from "../../firebase";
-import { DEFAULT_DURATIONS, type DurationPrice } from "../../lib/pricing";
+import { DEFAULT_DURATIONS, tierOf, type DurationPrice } from "../../lib/pricing";
+
+/** A ladder-unique id for a newly added Standard row (standard-2, -3, …). */
+function newStandardId(rows: DurationPrice[]): string {
+  const taken = new Set(rows.map((r) => r.id).filter(Boolean));
+  for (let n = rows.length + 1; ; n++) {
+    const id = `standard-${n}`;
+    if (!taken.has(id)) return id;
+  }
+}
 
 /** Standard billing periods offered by the subscription ladder. */
 const PLAN_OPTIONS: { months: number; label: string }[] = [
@@ -207,7 +216,15 @@ export default function AdminPricingPage() {
     try {
       const res = await authedFetch("/api/admin/pricing", {
         method: "PUT",
-        body: JSON.stringify({ durations: rows }),
+        // A Standard row's per-listing figure is derived, not typed: it only
+        // keeps the row a valid ladder entry and feeds per-month labels.
+        body: JSON.stringify({
+          durations: rows.map((r) =>
+            tierOf(r) === "standard" && r.flatPrice && r.includedListings
+              ? { ...r, pricePerSeat: Math.max(1, Math.round(r.flatPrice / r.includedListings)) }
+              : r,
+          ),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -410,9 +427,10 @@ export default function AdminPricingPage() {
         <section className="pt-8">
           <h1 className="text-xl font-black text-on-surface">Subscription pricing</h1>
           <p className="mt-1.5 text-sm text-on-surface-variant">
-            The per-listing price sellers pay at checkout. Changing this updates the
-            checkout, the seller dashboard and the public <code>/sell</code> page —
-            all three read this one setting.
+            What sellers pay at checkout, on web and in the app. Saving updates the
+            website checkout, the mobile app, the seller dashboard and the public{" "}
+            <code>/sell</code> page — all of them read this one setting. Past
+            subscriptions keep the plan and price they were bought at.
           </p>
 
           {usingDefaults ? (
@@ -422,124 +440,222 @@ export default function AdminPricingPage() {
             </div>
           ) : null}
 
-          <div className="mt-5 space-y-3">
-            <p className="mb-3 text-xs text-on-surface-variant">
-              Leave <strong>₹ flat</strong> empty for a normal per-listing price. Fill it in to
-              sell a bundle — the seller pays that one amount for up to{" "}
-              <strong>Listings incl.</strong> listings, and the per-listing price is ignored.
-              {" "}Use <strong>Who can buy</strong> to keep a plan off the wrong account type —
-              a retailer bundle left open to everyone lets a manufacturer buy it instead of a
-              volume contract.
-            </p>
-            {rows.map((r, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-1 gap-3 rounded-2xl border border-surface-container bg-white p-4 sm:grid-cols-[110px_130px_130px_130px_minmax(140px,260px)_150px_auto]"
-              >
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    Months
+          {(["standard", "custom"] as const).map((tk) => {
+            const tierRows = rows
+              .map((r, i) => ({ r, i }))
+              .filter(({ r }) => tierOf(r) === tk);
+            const isStd = tk === "standard";
+            return (
+              <div key={tk} className="mt-6">
+                <h2 className="text-sm font-black uppercase tracking-widest text-on-surface">
+                  {isStd ? "Standard plans" : "Custom plans"}
+                  <span className="ml-2 rounded-full bg-surface-container-low px-2 py-0.5 text-[11px] text-on-surface-variant">
+                    {tierRows.length}
                   </span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={r.months}
-                    onChange={(e) => setRow(i, { months: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    ₹ per listing
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={r.pricePerSeat}
-                    onChange={(e) => setRow(i, { pricePerSeat: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    ₹ flat (bundle)
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="—"
-                    value={r.flatPrice ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value.trim();
-                      setRow(i, v === ""
-                        ? { flatPrice: undefined, includedListings: undefined }
-                        : { flatPrice: Number(v), includedListings: r.includedListings ?? 50 });
-                    }}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    Listings incl.
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    placeholder="—"
-                    disabled={r.flatPrice === undefined}
-                    value={r.includedListings ?? ""}
-                    onChange={(e) => setRow(i, { includedListings: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2 disabled:bg-surface-container/40"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    Badge (optional)
-                  </span>
-                  <input
-                    value={r.badge ?? ""}
-                    placeholder="Save 14%"
-                    onChange={(e) => setRow(i, { badge: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
-                    Who can buy
-                  </span>
-                  <select
-                    value={r.roles?.length ? r.roles[0] : ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setRow(i, { roles: v ? [v] : undefined });
-                    }}
-                    className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
-                  >
-                    <option value="">Everyone</option>
-                    <option value="retailer">Retailers only</option>
-                    <option value="manufacturer">Manufacturers only</option>
-                  </select>
-                </label>
+                </h2>
+                <p className="mb-3 mt-1 text-xs text-on-surface-variant">
+                  {isStd ? (
+                    <>
+                      The default tab at checkout. A fixed price for a fixed number of products —
+                      the seller only picks the period. <strong>Was ₹</strong> is shown struck
+                      through next to the price (display only, never charged). Remove every
+                      Standard plan to hide the Standard tab.
+                    </>
+                  ) : (
+                    <>
+                      The seller picks how many products (in blocks of 10) and pays per product.
+                      Leave <strong>₹ flat</strong> empty for a normal per-product price, or fill it
+                      in to sell a bundle of up to <strong>Listings incl.</strong> products.
+                    </>
+                  )}{" "}
+                  Use <strong>Who can buy</strong> to keep a plan off the wrong account type.
+                </p>
+                {tierRows.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-surface-container px-4 py-5 text-center text-sm text-on-surface-variant">
+                    No {isStd ? "Standard" : "Custom"} plans — this tab is hidden at checkout.
+                  </div>
+                ) : null}
+                <div className="space-y-3">
+                  {tierRows.map(({ r, i }) => (
+                    <div
+                      key={i}
+                      className={`grid grid-cols-1 gap-3 rounded-2xl border border-surface-container bg-white p-4 ${
+                        isStd
+                          ? "sm:grid-cols-[100px_130px_120px_120px_minmax(120px,200px)_150px_auto]"
+                          : "sm:grid-cols-[100px_120px_130px_120px_minmax(120px,220px)_150px_auto]"
+                      }`}
+                    >
+                      <label className="text-sm">
+                        <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                          Months
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={r.months}
+                          onChange={(e) => setRow(i, { months: Number(e.target.value) })}
+                          className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                        />
+                      </label>
+                      {isStd ? (
+                        <>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              ₹ price
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.flatPrice ?? ""}
+                              onChange={(e) => setRow(i, { flatPrice: Number(e.target.value) })}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                            />
+                          </label>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              Products
+                            </span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={r.includedListings ?? ""}
+                              onChange={(e) => setRow(i, { includedListings: Number(e.target.value) })}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                            />
+                          </label>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              Was ₹ (optional)
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="—"
+                              value={r.compareAtPrice ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value.trim();
+                                setRow(i, { compareAtPrice: v === "" ? undefined : Number(v) });
+                              }}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              ₹ per listing
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={r.pricePerSeat}
+                              onChange={(e) => setRow(i, { pricePerSeat: Number(e.target.value) })}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                            />
+                          </label>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              ₹ flat (bundle)
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="—"
+                              value={r.flatPrice ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value.trim();
+                                setRow(i, v === ""
+                                  ? { flatPrice: undefined, includedListings: undefined }
+                                  : { flatPrice: Number(v), includedListings: r.includedListings ?? 50 });
+                              }}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                            />
+                          </label>
+                          <label className="text-sm">
+                            <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                              Listings incl.
+                            </span>
+                            <input
+                              type="number"
+                              min={1}
+                              placeholder="—"
+                              disabled={r.flatPrice === undefined}
+                              value={r.includedListings ?? ""}
+                              onChange={(e) => setRow(i, { includedListings: Number(e.target.value) })}
+                              className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2 disabled:bg-surface-container/40"
+                            />
+                          </label>
+                        </>
+                      )}
+                      <label className="text-sm">
+                        <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                          Badge (optional)
+                        </span>
+                        <input
+                          value={r.badge ?? ""}
+                          placeholder={isStd ? "Save 24%" : "Save 14%"}
+                          onChange={(e) => setRow(i, { badge: e.target.value })}
+                          className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                        />
+                      </label>
+                      <label className="text-sm">
+                        <span className="block text-[10px] font-black uppercase tracking-wide text-on-surface-variant">
+                          Who can buy
+                        </span>
+                        <select
+                          value={r.roles?.length ? r.roles[0] : ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setRow(i, { roles: v ? [v] : undefined });
+                          }}
+                          className="mt-1 w-full rounded-lg border border-surface-container px-3 py-2"
+                        >
+                          <option value="">Everyone</option>
+                          <option value="retailer">Retailers only</option>
+                          <option value="manufacturer">Manufacturers only</option>
+                        </select>
+                      </label>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(
+                            "Remove this plan? Sellers stop seeing it after you save. Subscriptions already bought on it are not affected.",
+                          )) return;
+                          setRows((x) => x.filter((_, j) => j !== i));
+                        }}
+                        disabled={rows.length <= 1}
+                        className="self-end rounded-lg px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-40"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
                 <button
-                  onClick={() => setRows((x) => x.filter((_, j) => j !== i))}
-                  disabled={rows.length <= 1}
-                  className="self-end rounded-lg px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-40"
+                  onClick={() =>
+                    setRows((r) => [
+                      ...r,
+                      isStd
+                        ? {
+                            id: newStandardId(r),
+                            tier: "standard" as const,
+                            months: 1,
+                            pricePerSeat: 0,
+                            flatPrice: 0,
+                            includedListings: 100,
+                          }
+                        : { months: 1, pricePerSeat: 0 },
+                    ])
+                  }
+                  className="mt-3 rounded-xl border border-surface-container px-4 py-2 text-sm font-bold text-on-surface"
                 >
-                  Remove
+                  {isStd ? "Add Standard plan" : "Add Custom duration"}
                 </button>
               </div>
-            ))}
-          </div>
+            );
+          })}
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              onClick={() =>
-                setRows((r) => [...r, { months: 1, pricePerSeat: 0 }])
-              }
-              className="rounded-xl border border-surface-container px-4 py-2 text-sm font-bold text-on-surface"
-            >
-              Add duration
-            </button>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               onClick={savePricing}
               disabled={saving}
@@ -763,6 +879,11 @@ export default function AdminPricingPage() {
                     (leave all unchecked = valid for every plan)
                   </span>
                 </span>
+                <p className="mb-2 text-xs text-on-surface-variant">
+                  By billing period — a code valid for Yearly works on both Standard Yearly and
+                  Custom 1-year. Seat limits are checked against the products the plan grants
+                  (100 for Standard).
+                </p>
                 <div className="flex flex-wrap gap-3">
                   {PLAN_OPTIONS.map((opt) => (
                     <label key={opt.months} className="flex items-center gap-1.5 cursor-pointer select-none">

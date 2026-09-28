@@ -14,6 +14,8 @@ import {
   parseDurations,
   planFor,
   planKey,
+  planNameFor,
+  tierOf,
   type DurationPrice,
 } from '../../../lib/pricing';
 
@@ -180,7 +182,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Falling back to the first plan the caller is actually allowed to buy.
+    // The client named a plan that is no longer on the ladder — an admin edited
+    // or deleted it while this checkout was open. Refuse rather than fall back:
+    // the fallback below is the first plan on the ladder (now a Standard
+    // bundle), which would charge a different amount than the screen showed.
+    if (!requestedPlan && (planId != null || durationMonths != null)) {
+      return NextResponse.json(
+        { error: 'This plan has just been updated. Please refresh the page and choose your plan again.' },
+        { status: 409 },
+      );
+    }
+
+    // No plan named at all: the first plan the caller is allowed to buy.
     const allowed = durations.filter((d) => isPlanAllowed(d, callerRole));
     if (allowed.length === 0) {
       return NextResponse.json(
@@ -196,7 +209,10 @@ export async function POST(request: Request) {
     // cannot be turned into unlimited listings by sending a large seatCount.
     const grantedSeats = billableSeats(plan, seats);
 
-    const promoResult = await resolveDiscount(promoCode, seats, months);
+    // Promo min/max-seat rules are checked against what is actually granted —
+    // a Standard plan is always its included listings, whatever count the
+    // client sent.
+    const promoResult = await resolveDiscount(promoCode, grantedSeats, months);
     if (promoResult.error) {
       return NextResponse.json({ error: promoResult.error }, { status: 422 });
     }
@@ -217,6 +233,10 @@ export async function POST(request: Request) {
         promoCode:      promoCode || '',
         unitPrice,
         planId: planKey(plan),
+        // Snapshotted onto the subscription record via verify/, so it keeps
+        // saying Standard or Custom even if this ladder row is later edited.
+        planTier: tierOf(plan),
+        planName: planNameFor(plan),
         discountPercent,
         // The rupee amount actually charged. verify/ reads this back off the
         // order so the record written afterwards can never be re-derived from a
@@ -235,12 +255,12 @@ export async function POST(request: Request) {
       userId:          String(userId || ''),
       amount:          baseAmount,
       subtotal:        subtotal,
-      seatCount:       seats,
+      seatCount:       grantedSeats,
       durationMonths:  months,
       promoCode:       promoCode || null,
       discountPercent: discountPercent,
       source:          request.headers.get('x-client') === 'mobile' ? 'mobile' : 'web',
-      note:            `Subscription — ${seats} seat(s), ${months} month(s)`,
+      note:            `${planNameFor(plan)} subscription — ${grantedSeats} listing(s), ${months} month(s)`,
     });
 
     return NextResponse.json({
@@ -249,6 +269,8 @@ export async function POST(request: Request) {
       durationMonths: months,
       unitPrice,
       planId:         planKey(plan),
+      planTier:       tierOf(plan),
+      planName:       planNameFor(plan),
       amountCharged:  baseAmount,
       discountPercent,
       // Return the key used to create this order so the mobile always opens

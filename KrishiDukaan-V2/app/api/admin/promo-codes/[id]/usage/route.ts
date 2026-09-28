@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "../../../../../lib/firebase-admin";
 import { requireAdmin } from "../../../../../lib/admin-auth";
+import { subscriptionPlanLabel } from "../../../../../lib/pricing";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -92,7 +93,7 @@ export async function GET(request: Request, { params }: Ctx) {
           name: await resolveName(db, ownerPhone, ownerId),
           ownerPhone,
           ownerType: d.ownerType != null ? String(d.ownerType) : null,
-          planName: d.planName != null ? String(d.planName) : null,
+          planName: subscriptionPlanLabel(d),
           durationMonths:
             typeof d.durationMonths === "number" ? d.durationMonths : null,
           seatsPurchased:

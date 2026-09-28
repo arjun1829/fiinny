@@ -50,12 +50,22 @@ export async function POST(request: Request) {
       // web and mobile.
       await markAttemptPaid(razorpay_order_id, razorpay_payment_id ?? null);
 
+      // Plan identity, also from the gateway's notes. Orders created before
+      // Standard plans existed carry none: those were all per-listing
+      // (Custom) purchases.
+      const planTier = order.notes?.planTier === 'standard' ? 'standard' : 'custom';
+      const planName = String(order.notes?.planName ?? '').trim() ||
+        (planTier === 'standard' ? 'Standard' : 'Custom');
+
       return NextResponse.json({
         status: 'ok',
         seatCount: verifiedSeatCount,
         durationMonths: verifiedMonths,
         amountPaid,
         promoCode: verifiedPromoCode || null,
+        planId: order.notes?.planId != null ? String(order.notes.planId) : null,
+        planTier,
+        planName,
       });
     } else {
       return NextResponse.json({ status: 'failed' }, { status: 400 });

@@ -19,7 +19,9 @@ import {
   normalizeSeatCount,
   planKey,
   parseDurations,
+  tierOf,
   type DurationPrice,
+  type PlanTier,
 } from '../lib/pricing';
 import { LEGAL_ROUTES, TERMS_VERSION } from '../lib/legal-constants';
 import { authedJsonHeaders } from "../lib/authed-fetch";
@@ -47,7 +49,14 @@ type DurationOption = {
   /** Set on bundle plans ("Rs 4,999 for 50 listings"); overrides pricePerSeat. */
   flatPrice?: number;
   includedListings?: number;
+  /** Standard (fixed 100-listing pack) or Custom (per listing). */
+  tier: PlanTier;
+  /** Struck-through "was" price. Display only. */
+  compareAtPrice?: number;
 };
+
+/** "₹11,000" — Indian digit grouping for rupee amounts. */
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
 /** "1 Month" / "3 Months" / "1 Year" from a month count. */
 function durationLabel(months: number): string {
@@ -59,8 +68,13 @@ function durationLabel(months: number): string {
 const toOption = (d: DurationPrice): DurationOption => ({
   id: planKey(d),
   months: d.months,
-  label: durationLabel(d.months),
+  // Standard cards read as Monthly / Yearly; Custom keeps period labels.
+  label: tierOf(d) === 'standard' && (d.months === 1 || d.months === 12)
+    ? (d.months === 1 ? 'Monthly' : 'Yearly')
+    : durationLabel(d.months),
   pricePerSeat: d.pricePerSeat,
+  tier: tierOf(d),
+  ...(d.compareAtPrice ? { compareAtPrice: d.compareAtPrice } : {}),
   ...(d.badge ? { badge: d.badge } : {}),
   ...(d.flatPrice !== undefined
     ? { flatPrice: d.flatPrice, includedListings: d.includedListings }
@@ -83,7 +97,11 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const [seatCount,    setSeatCount]    = useState<number>(SEAT_STEP);
   const [seatInput,    setSeatInput]    = useState(String(SEAT_STEP));
   const [options,      setOptions]      = useState<DurationOption[]>(DURATION_OPTIONS);
-  const [duration,     setDuration]     = useState<DurationOption>(DURATION_OPTIONS[0]!);
+  // Standard is the default tab; the first plan of the tab is preselected.
+  const [tier,         setTier]         = useState<PlanTier>('standard');
+  const [duration,     setDuration]     = useState<DurationOption>(
+    DURATION_OPTIONS.find((o) => o.tier === 'standard') ?? DURATION_OPTIONS[0]!,
+  );
   const [promoCode,    setPromoCode]    = useState('');
   // The raw promoCodes/ document once a code has been looked up. Eligibility and
   // the discount are NOT stored — they are derived from this doc against the
@@ -118,8 +136,16 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         if (!visible.length) return;
         const next = visible.map(toOption);
         setOptions(next);
-        // Keep the selection valid if the admin removed the chosen period.
-        setDuration((cur) => next.find((o) => o.months === cur.months) ?? next[0]!);
+        // Keep the tab and selection valid if the admin removed plans: fall back
+        // to whichever tier still has plans, then to that tier's first plan.
+        const hasStandard = next.some((o) => o.tier === 'standard');
+        const nextTier: PlanTier = hasStandard ? 'standard' : 'custom';
+        setTier((cur) => (next.some((o) => o.tier === cur) ? cur : nextTier));
+        setDuration((cur) =>
+          next.find((o) => o.id === cur.id) ??
+          next.find((o) => o.tier === (next.some((x) => x.tier === cur.tier) ? cur.tier : nextTier)) ??
+          next[0]!,
+        );
       } catch {
         /* keep the defaults */
       }
@@ -141,12 +167,24 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   // shown and what Razorpay bills cannot drift.
   const grantedSeats = billableSeats(duration, seatCount);
   const baseTotal   = computeAmount(duration, seatCount);
+  const isStandard  = duration.tier === 'standard';
+
+  // Plans shown under the current tab, and whether the toggle is needed at all
+  // (an admin may have removed every plan of one tier).
+  const tierOptions = options.filter((o) => o.tier === tier);
+  const showToggle  = options.some((o) => o.tier === 'standard') && options.some((o) => o.tier === 'custom');
+  const switchTier  = (next: PlanTier) => {
+    if (next === tier) return;
+    setTier(next);
+    const first = options.find((o) => o.tier === next);
+    if (first) setDuration(first);
+  };
 
   // Re-evaluate the entered code against the CURRENT selection every render —
   // the same shared rule set the server enforces in create-order — so switching
   // plan/cycle or changing seats instantly updates the discount and the reason.
   const promoEval = promoDoc
-    ? evaluatePromo(promoDoc, { months: duration.months, seatCount })
+    ? evaluatePromo(promoDoc, { months: duration.months, seatCount: grantedSeats })
     : null;
   const promoOk = !!promoEval && !promoEval.error;
   const appliedDiscountPct = promoOk ? promoEval!.discountPercent : 0;
@@ -234,7 +272,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
         body: JSON.stringify({
-          seatCount,
+          seatCount: grantedSeats,
           durationMonths: duration.months,
           planId: duration.id,
           // Only send a code that currently qualifies for this exact selection;
@@ -258,7 +296,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         amount: order.amount,
         currency: order.currency,
         name: 'KrishiDukan',
-        description: `${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`,
+        description: `${isStandard ? 'Standard · ' : ''}${grantedSeats} listing${grantedSeats !== 1 ? 's' : ''} · ${duration.label}`,
         order_id: order.id,
         handler: async function (paymentResponse: any) {
           setVerifying(true);
@@ -293,7 +331,13 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               // Gateway-verified promo code (from order notes), relayed straight
               // from verify/ — not the checkout input — so attribution matches
               // what was actually charged.
-              verifyData.promoCode ?? null);
+              verifyData.promoCode ?? null,
+              // Plan identity from the gateway's order notes (see verify/).
+              {
+                planId: verifyData.planId ?? duration.id ?? null,
+                planTier: verifyData.planTier ?? duration.tier,
+                planName: verifyData.planName ?? null,
+              });
 
             if (!updateResult.paymentLogged) {
               setVerifying(false);
@@ -318,9 +362,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 body: JSON.stringify({
                   userEmail:         profileEmail,
                   userName:          profile?.name || user.displayName || '',
-                  seatsPurchased:    verifyData.seatCount || seatCount,
-                  amountPaid:        finalTotal,
-                  planName:          'Standard',
+                  seatsPurchased:    verifyData.seatCount || grantedSeats,
+                  amountPaid:        verifyData.amountPaid ?? finalTotal,
+                  planName:          verifyData.planName || (isStandard ? 'Standard' : 'Custom'),
                   startDate:         now.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
                   expiryDate:        expiry.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
                   razorpayPaymentId: paymentResponse.razorpay_payment_id,
@@ -350,7 +394,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         logFailedPayment(user.uid, response.error, {
           orderId: order.id,
           amount: order.amount,
-          seatCount,
+          seatCount: grantedSeats,
           durationMonths: duration.months,
         }).catch(console.error);
       });
@@ -452,7 +496,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                     <li className="flex items-start gap-3 bg-primary/5 border border-primary/15 rounded-xl p-3 mt-1">
                       <span className="text-lg leading-none mt-0.5 shrink-0">🛒</span>
                       <span className="text-sm font-bold text-primary leading-snug">
-                        {t('listUpTo', { seats: seatCount })} · {duration.label}
+                        {t('listUpTo', { seats: grantedSeats })} · {duration.label}
                       </span>
                     </li>
                   </ul>
@@ -507,85 +551,160 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               {/* ── Right: Payment config ────────────────────────────────── */}
               <div className="min-w-0 p-6 md:p-8 flex flex-col gap-5">
 
-                {/* Duration selector */}
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Duration</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {options.map((opt) => (
+                {/* Plan type toggle — Standard (default) / Custom. Hidden when
+                    the admin has left only one tier with plans. */}
+                {showToggle && (
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface-container p-1" role="tablist" aria-label="Plan type">
+                    {(['standard', 'custom'] as const).map((tk) => (
                       <button
-                        key={opt.months}
+                        key={tk}
                         type="button"
-                        onClick={() => setDuration(opt)}
+                        role="tab"
+                        aria-selected={tier === tk}
+                        onClick={() => switchTier(tk)}
                         className={[
-                          'relative flex flex-col items-start p-3 rounded-xl border text-left transition-all',
-                          duration.months === opt.months
-                            ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                          'rounded-lg py-2 text-xs font-black uppercase tracking-widest transition-all',
+                          tier === tk
+                            ? 'bg-white text-primary shadow-sm'
+                            : 'text-on-surface-variant hover:text-on-surface',
                         ].join(' ')}
                       >
-                        {opt.badge && (
-                          <span className={`absolute -top-2 right-2 rounded-full px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider ${opt.badge === 'Best Value' ? 'bg-amber-500' : 'bg-primary'}`}>
-                            {opt.badge}
-                          </span>
-                        )}
-                        <span className="text-xs font-bold text-on-surface">{opt.label}</span>
-                        <span className="text-[10px] text-on-surface-variant mt-0.5">₹{opt.pricePerSeat}/listing</span>
+                        {tk === 'standard' ? 'Standard' : 'Custom'}
                       </button>
                     ))}
                   </div>
-                </div>
+                )}
 
-                {/* Listing count stepper */}
-                <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/40">
-                  <div className="flex justify-between items-center">
+                {tier === 'standard' ? (
+                  /* Standard — fixed 100-product packs; pick a period only. */
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Choose your plan</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {tierOptions.map((opt) => {
+                        const selected = duration.id === opt.id;
+                        const price = opt.flatPrice ?? 0;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDuration(opt)}
+                            className={[
+                              'relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all',
+                              selected
+                                ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/30'
+                                : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                            ].join(' ')}
+                          >
+                            {opt.badge && (
+                              <span className="absolute -top-2 right-2 rounded-full bg-amber-500 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white">
+                                {opt.badge}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-on-surface">{opt.label}</span>
+                            <span className="mt-1 flex items-baseline gap-1.5">
+                              {opt.compareAtPrice && opt.compareAtPrice > price && (
+                                <span className="text-[11px] text-on-surface-variant line-through">{rupees(opt.compareAtPrice)}</span>
+                              )}
+                              <span className="text-lg font-black text-on-surface">{rupees(price)}</span>
+                            </span>
+                            <span className="text-[10px] font-semibold text-on-surface-variant mt-0.5">
+                              / {opt.includedListings} products
+                              {opt.months > 1 && ` · ${rupees(Math.round(price / opt.months))}/mo`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Duration selector */}
                     <div>
-                      <p className="text-sm font-bold text-on-surface">{t('numberOfSeats')}</p>
-                      <p className="text-[10px] text-on-surface-variant mt-0.5">
-                        {SEAT_STEP} listings पासून सुरुवात · {SEAT_STEP} च्या पटीत
-                      </p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Duration</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {tierOptions.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDuration(opt)}
+                            className={[
+                              'relative flex flex-col items-start p-3 rounded-xl border text-left transition-all',
+                              duration.id === opt.id
+                                ? 'border-primary bg-primary/5 shadow-sm'
+                                : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                            ].join(' ')}
+                          >
+                            {opt.badge && (
+                              <span className={`absolute -top-2 right-2 rounded-full px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider ${opt.badge === 'Best Value' ? 'bg-amber-500' : 'bg-primary'}`}>
+                                {opt.badge}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-on-surface">{opt.label}</span>
+                            <span className="text-[10px] text-on-surface-variant mt-0.5">
+                              {opt.flatPrice !== undefined
+                                ? `${rupees(opt.flatPrice)} · ${opt.includedListings} listings`
+                                : `₹${opt.pricePerSeat}/listing`}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-white rounded-xl p-1 border border-outline-variant/20 shadow-sm">
-                      <button
-                        onClick={() => adjustSeats(-1)}
-                        disabled={seatCount <= SEAT_STEP}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold disabled:opacity-30 disabled:hover:bg-transparent"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        min={SEAT_STEP}
-                        max={10000}
-                        step={SEAT_STEP}
-                        value={seatInput}
-                        onChange={(e) => handleSeatInput(e.target.value)}
-                        onBlur={commitSeatInput}
-                        className="text-base font-black w-16 text-center bg-transparent h-8 text-on-surface outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        onClick={() => adjustSeats(1)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold"
-                      >
-                        +
-                      </button>
+                    {/* Listing count stepper — per-listing plans only; a bundle
+                        has a fixed listing count. */}
+                    {duration.flatPrice === undefined && (
+                    <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/40">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-sm font-bold text-on-surface">{t('numberOfSeats')}</p>
+                          <p className="text-[10px] text-on-surface-variant mt-0.5">
+                            {SEAT_STEP} listings पासून सुरुवात · {SEAT_STEP} च्या पटीत
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-white rounded-xl p-1 border border-outline-variant/20 shadow-sm">
+                          <button
+                            onClick={() => adjustSeats(-1)}
+                            disabled={seatCount <= SEAT_STEP}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold disabled:opacity-30 disabled:hover:bg-transparent"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={SEAT_STEP}
+                            max={10000}
+                            step={SEAT_STEP}
+                            value={seatInput}
+                            onChange={(e) => handleSeatInput(e.target.value)}
+                            onBlur={commitSeatInput}
+                            className="text-base font-black w-16 text-center bg-transparent h-8 text-on-surface outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            onClick={() => adjustSeats(1)}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        {SEAT_PRESETS.map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => selectSeatPreset(n)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                              seatCount === n
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-white text-on-surface border-outline-variant/40 hover:bg-surface-container'
+                            }`}
+                          >
+                            {n} seats
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    {SEAT_PRESETS.map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => selectSeatPreset(n)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                          seatCount === n
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-white text-on-surface border-outline-variant/40 hover:bg-surface-container'
-                        }`}
-                      >
-                        {n} seats
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                    )}
+                  </>
+                )}
 
                 {/* Promo code */}
                 <div>
@@ -630,15 +749,17 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{t('totalPrice')}</span>
                     {promoOk && (
-                      <span className="text-xs text-on-surface-variant line-through">₹{baseTotal}.00</span>
+                      <span className="text-xs text-on-surface-variant line-through">{rupees(baseTotal)}</span>
                     )}
                   </div>
                   <div className="flex items-end justify-between">
-                    <span className="text-3xl font-black text-on-surface tracking-tight">₹{finalTotal}.00</span>
+                    <span className="text-3xl font-black text-on-surface tracking-tight">{rupees(finalTotal)}</span>
                     <span className="text-[10px] text-on-surface-variant bg-white border border-outline-variant/20 rounded-lg px-2 py-1 font-semibold">
-                      {duration.flatPrice !== undefined
-                        ? `₹${duration.flatPrice} · up to ${duration.includedListings} listings · ${duration.label}`
-                        : `₹${duration.pricePerSeat} × ${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
+                      {isStandard
+                        ? `Standard · ${grantedSeats} products · ${duration.label}`
+                        : duration.flatPrice !== undefined
+                          ? `${rupees(duration.flatPrice)} · up to ${duration.includedListings} listings · ${duration.label}`
+                          : `₹${duration.pricePerSeat} × ${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
                     </span>
                   </div>
                 </div>
@@ -659,9 +780,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 >
                   {loading
                     ? t('processing')
-                    : seatCount === 1
-                      ? `आजच List करा — ₹${finalTotal} · ${duration.label}`
-                      : `List ${seatCount} Products for ₹${finalTotal} · ${duration.label}`
+                    : grantedSeats === 1
+                      ? `आजच List करा — ${rupees(finalTotal)} · ${duration.label}`
+                      : `List ${grantedSeats} Products for ${rupees(finalTotal)} · ${duration.label}`
                   }
                 </button>
 

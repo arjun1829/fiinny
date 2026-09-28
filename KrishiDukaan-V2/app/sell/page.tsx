@@ -6,8 +6,11 @@ import { getClientDb } from "../lib/firebase-client-server";
 import {
   DEFAULT_DURATIONS,
   PRICING_DOC_PATH,
+  isFlatPlan,
   parseDurations,
   perMonthLabel,
+  tierOf,
+  type DurationPrice,
 } from "../lib/pricing";
 import {
   LEGAL_ROUTES,
@@ -117,7 +120,7 @@ function planLabel(months: number): string {
   return months === 1 ? "1 Month" : `${months} Months`;
 }
 
-async function loadPlans(): Promise<Plan[]> {
+async function loadLadder(): Promise<DurationPrice[]> {
   let durations = DEFAULT_DURATIONS;
   try {
     const snap = await getDoc(
@@ -127,6 +130,19 @@ async function loadPlans(): Promise<Plan[]> {
   } catch (err) {
     console.warn("[/sell] pricing read failed, using defaults:", err);
   }
+  return durations;
+}
+
+/**
+ * The per-listing (Custom) ladder — what the seat-model copy and the price
+ * headline describe. Standard packs and bundles are not per-listing prices,
+ * so they are listed separately (loadStandardPlans) rather than distorting
+ * "cheapest per listing" maths here.
+ */
+async function loadPlans(): Promise<Plan[]> {
+  const durations = (await loadLadder()).filter(
+    (d) => tierOf(d) === "custom" && !isFlatPlan(d),
+  );
   return durations.map((d) => ({
     label: planLabel(d.months),
     months: d.months,
@@ -134,6 +150,31 @@ async function loadPlans(): Promise<Plan[]> {
     perMonth: perMonthLabel(d),
     ...(d.badge ? { badge: d.badge } : {}),
   }));
+}
+
+type StandardPlan = {
+  id: string;
+  label: string;
+  months: number;
+  price: number;
+  products: number;
+  compareAt?: number;
+  badge?: string;
+};
+
+/** Standard packs (fixed price for a fixed number of products). */
+async function loadStandardPlans(): Promise<StandardPlan[]> {
+  return (await loadLadder())
+    .filter((d) => tierOf(d) === "standard" && d.flatPrice !== undefined)
+    .map((d) => ({
+      id: d.id ?? String(d.months),
+      label: d.months === 1 ? "Monthly" : d.months === 12 ? "Yearly" : planLabel(d.months),
+      months: d.months,
+      price: d.flatPrice!,
+      products: d.includedListings ?? 0,
+      ...(d.compareAtPrice ? { compareAt: d.compareAtPrice } : {}),
+      ...(d.badge ? { badge: d.badge } : {}),
+    }));
 }
 
 /**
@@ -274,7 +315,11 @@ function buildFaqs(plans: Plan[], fees: PublicFeeRates): { q: string; a: string 
 }
 
 export default async function SellPage() {
-  const [PLANS, fees] = await Promise.all([loadPlans(), loadPublicFeeRates()]);
+  const [PLANS, STANDARD, fees] = await Promise.all([
+    loadPlans(),
+    loadStandardPlans(),
+    loadPublicFeeRates(),
+  ]);
   const FAQS = buildFaqs(PLANS, fees);
   const INCLUDED = buildIncluded(fees);
   const { entry, best, bestPerMonth } = headline(PLANS);
@@ -436,6 +481,47 @@ export default async function SellPage() {
             a seat in the same way, and your dashboard always shows your current
             seat position.
           </p>
+
+          {STANDARD.length > 0 ? (
+            <div className="mt-8">
+              <h3 className="text-center text-sm font-black uppercase tracking-widest text-on-surface">
+                Standard plans
+              </h3>
+              <div className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2">
+                {STANDARD.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-2xl border border-primary/40 bg-white p-5 flex flex-col"
+                  >
+                    <div className="flex items-center justify-between gap-2 min-h-[24px]">
+                      <p className="text-sm font-black text-on-surface">{p.label}</p>
+                      {p.badge ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
+                          {p.badge}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-4 flex items-baseline gap-2">
+                      {p.compareAt && p.compareAt > p.price ? (
+                        <span className="text-base text-on-surface-variant line-through">
+                          ₹{p.compareAt.toLocaleString("en-IN")}
+                        </span>
+                      ) : null}
+                      <span className="text-3xl font-black text-on-surface">
+                        ₹{p.price.toLocaleString("en-IN")}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      for {p.products} product listings
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <h3 className="mt-10 text-center text-sm font-black uppercase tracking-widest text-on-surface">
+                Custom — pay per product
+              </h3>
+            </div>
+          ) : null}
 
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {PLANS.map((p) => (

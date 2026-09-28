@@ -15,6 +15,7 @@ import { SearchableDropdown } from "../_components/searchable-dropdown";
 import { getSubscriptions, getUsers, getPlans, invalidateUsers, invalidateSubscriptions } from "../_lib/admin-data";
 import { PLAN_FEATURE_CATALOG, featureLabel } from "../_lib/plan-features";
 import { FinanceOverview } from "../_components/analytics/finance-overview";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 
 // Thin wrapper around the new server-validated admin routes (plan CRUD,
 // subscription assign/edit/cancel) — these mutate pricing/entitlements
@@ -846,7 +847,7 @@ export default function AdminSubscriptionsPage() {
                     <p className="text-[11px] sm:text-xs text-on-surface-variant font-mono truncate">{sub.ownerPhone || sub.ownerId || "—"}</p>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${sub.isCustom ? "bg-purple-50 text-purple-700 border border-purple-200" : "bg-surface-container text-on-surface-variant"}`}>
-                        <Package className="h-2.5 w-2.5" /> {sub.planName || (sub.isCustom ? "Custom" : "Standard")}
+                        <Package className="h-2.5 w-2.5" /> {subscriptionPlanLabel(sub)}
                       </span>
                       {sub.basePlanPrice != null && Number(sub.basePlanPrice) !== Number(sub.amountPaid) && (
                         <span className="text-[10px] text-on-surface-variant">

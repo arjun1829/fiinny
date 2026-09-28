@@ -1124,9 +1124,20 @@ export async function updateSubscriptionStatus(
    * input field — only the gateway-verified value flows through here.
    */
   promoCode?: string | null,
+  /**
+   * Which plan was bought — from verify/, which reads it off the Razorpay
+   * order's notes (stamped by create-order), so it is the plan actually
+   * charged, not whatever the checkout screen currently has selected.
+   * Snapshotted on the subscription so a later edit or delete of the ladder
+   * row never changes what this subscription says it was.
+   */
+  plan?: { planId?: string | null; planTier?: string | null; planName?: string | null } | null,
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
   const timestamp = serverTimestamp();
   const normalizedPromo = String(promoCode ?? '').trim().toUpperCase();
+  const planTier = plan?.planTier === 'standard' ? 'standard' : 'custom';
+  const planName = String(plan?.planName ?? '').trim() ||
+    (planTier === 'standard' ? 'Standard' : 'Custom');
 
   // Resolve uid → phone. Try uidIndex first; then scan users/{uid} directly (works for
   // admin-created / email-based accounts that have no uidIndex entry).
@@ -1183,6 +1194,8 @@ export async function updateSubscriptionStatus(
         amount: totalAmount,
         seatCount: seatsToAdd,
         durationMonths,
+        planName,
+        planTier,
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
@@ -1201,7 +1214,9 @@ export async function updateSubscriptionStatus(
         ownerId: uid,
         ownerPhone: phone ?? uid,
         ownerType: role,
-        planName: 'Standard',
+        planName,
+        planTier,
+        ...(plan?.planId ? { planId: String(plan.planId) } : {}),
         seatsPurchased: seatsToAdd,
         durationMonths,
         amountPaid: totalAmount,
