@@ -179,6 +179,76 @@ function SlabRow({
   );
 }
 
+function slabSetHasErrors(slabs: WeightSlab[]): boolean {
+  return slabs.some((s, i) => validateSlab(s, slabs, i) !== null);
+}
+
+// ─── Slab List (add / edit / remove a set of weight slabs) ─────────────────────
+
+function SlabList({
+  slabs,
+  setSlabs,
+  disabled,
+  t,
+}: {
+  slabs: SlabDraft[];
+  setSlabs: React.Dispatch<React.SetStateAction<SlabDraft[]>>;
+  disabled: boolean;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const addSlab = () => {
+    const lastMax = slabs.length > 0 ? slabs[slabs.length - 1].maxKg : 0;
+    setSlabs((prev) => [...prev, { minKg: lastMax, maxKg: lastMax + 5, charge: 0 }]);
+  };
+  const updateSlab = (i: number, patch: Partial<WeightSlab>) =>
+    setSlabs((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  const deleteSlab = (i: number) =>
+    setSlabs((prev) => prev.filter((_, idx) => idx !== i));
+
+  const hasErrors = slabSetHasErrors(slabs as WeightSlab[]);
+
+  return (
+    <>
+      {slabs.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 py-8 text-center text-sm text-on-surface-variant">
+          {t('deliveryNoSlabs')}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 mb-3">
+          {slabs.map((slab, i) => (
+            <SlabRow
+              key={i}
+              slab={slab}
+              index={i}
+              allSlabs={slabs}
+              isOnly={slabs.length <= 1}
+              onChange={(patch) => updateSlab(i, patch)}
+              onDelete={() => deleteSlab(i)}
+              disabled={disabled}
+            />
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={addSlab}
+        className="flex items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2.5 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors"
+      >
+        <Plus className="h-4 w-4" /> {t('deliveryAddSlab')}
+      </button>
+
+      {hasErrors && (
+        <p className="mt-2 flex items-center gap-1 text-xs font-medium text-red-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {t('deliveryFixSlabErrors')}
+        </p>
+      )}
+    </>
+  );
+}
+
 // ─── State Picker ─────────────────────────────────────────────────────────────
 
 function StatePicker({
@@ -293,7 +363,13 @@ export function DeliverySettingsPage() {
   const [storedOnlineDeliveryEnabled, setStoredOnlineDeliveryEnabled] = useState(true);
 
   // Section 2: weight slabs
+  // `slabs` — the single set used for `states` coverage (and legacy pan-India).
   const [slabs, setSlabs] = useState<SlabDraft[]>([]);
+  // Pan-India: separate within-state and outside-state slab sets.
+  const [inStateSlabs, setInStateSlabs] = useState<SlabDraft[]>([]);
+  const [outStateSlabs, setOutStateSlabs] = useState<SlabDraft[]>([]);
+  // Seller's own state — decides what "Within State" means. Shown to the seller.
+  const [sellerState, setSellerState] = useState<string>("");
 
   // Section 3: coverage
   const [coverageType, setCoverageType] = useState<CoverageType>("pan_india");
@@ -312,14 +388,29 @@ export function DeliverySettingsPage() {
         setProfileOnlineDelivery(hasOnlineDelivery);
         setSellerPhone(phone || null);
 
+        // Seller's state from their profile (nested address wins, then top-level).
+        const profileState = String(
+          (profile as any)?.address?.state ?? (profile as any)?.state ?? "",
+        ).trim();
+
         if (phone) {
           const settings = await fetchDeliverySettings(phone);
           if (settings) {
             setStoredOnlineDeliveryEnabled(settings.onlineDeliveryEnabled);
             setSlabs(settings.weightSlabs);
+            // Legacy pan-India docs carry only weightSlabs — seed the in-state
+            // editor from it so the seller starts from what they already had.
+            setInStateSlabs(settings.inStateSlabs.length ? settings.inStateSlabs : settings.weightSlabs);
+            setOutStateSlabs(settings.outStateSlabs);
             setCoverageType(settings.coverageType);
             setSelectedStates(settings.states);
+            // Prefer the freshest profile state; fall back to the stored value.
+            setSellerState(profileState || settings.sellerState || "");
+          } else {
+            setSellerState(profileState);
           }
+        } else {
+          setSellerState(profileState);
         }
       } catch {
         // ignore
@@ -329,26 +420,14 @@ export function DeliverySettingsPage() {
     })();
   }, [effectiveUid, effectiveProfile]);
 
-  // ── Slab helpers ───────────────────────────────────────────────────────────
-  const addSlab = () => {
-    const lastMax = slabs.length > 0 ? slabs[slabs.length - 1].maxKg : 0;
-    setSlabs((prev) => [
-      ...prev,
-      { minKg: lastMax, maxKg: lastMax + 5, charge: 0 },
-    ]);
-  };
-
-  const updateSlab = (i: number, patch: Partial<WeightSlab>) =>
-    setSlabs((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-
-  const deleteSlab = (i: number) =>
-    setSlabs((prev) => prev.filter((_, idx) => idx !== i));
-
   // ── Validation ─────────────────────────────────────────────────────────────
-  const slabErrors = slabs.map((s, i) =>
-    validateSlab(s as WeightSlab, slabs as WeightSlab[], i),
-  );
-  const hasSlabErrors = slabErrors.some(Boolean);
+  // Which slab sets are active depends on coverage: states-coverage validates
+  // the single `slabs`; pan-India validates both in/out-of-state sets.
+  const hasSlabErrors =
+    coverageType === "states"
+      ? slabSetHasErrors(slabs as WeightSlab[])
+      : slabSetHasErrors(inStateSlabs as WeightSlab[]) ||
+        slabSetHasErrors(outStateSlabs as WeightSlab[]);
 
   const coverageInvalid =
     coverageType === "states" && selectedStates.length === 0;
@@ -368,6 +447,9 @@ export function DeliverySettingsPage() {
           coverageType,
           states: coverageType === "states" ? selectedStates : [],
           weightSlabs: slabs as WeightSlab[],
+          inStateSlabs: inStateSlabs as WeightSlab[],
+          outStateSlabs: outStateSlabs as WeightSlab[],
+          sellerState,
         },
       );
       setStatus({ type: "ok", text: t('deliverySavedSuccess') });
@@ -379,7 +461,7 @@ export function DeliverySettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [sellerPhone, canSave, storedOnlineDeliveryEnabled, coverageType, selectedStates, slabs, t]);
+  }, [sellerPhone, canSave, storedOnlineDeliveryEnabled, coverageType, selectedStates, slabs, inStateSlabs, outStateSlabs, sellerState, t]);
 
   // Auto-dismiss success
   useEffect(() => {
@@ -454,41 +536,38 @@ export function DeliverySettingsPage() {
           </p>
         </div>
 
-        {slabs.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 py-8 text-center text-sm text-on-surface-variant">
-            {t('deliveryNoSlabs')}
+        {coverageType === "pan_india" ? (
+          <div className="flex flex-col gap-5">
+            {/* Seller-state banner so "Within State" is unambiguous */}
+            <div className="flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low/60 px-3 py-2.5">
+              <MapPin className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+              <p className="text-xs text-on-surface-variant">
+                {sellerState
+                  ? t('deliverySellerStateInfo', { state: sellerState })
+                  : t('deliverySellerStateMissing')}
+              </p>
+            </div>
+
+            {/* Within-State slabs */}
+            <div>
+              <p className="mb-2 text-sm font-bold text-on-surface">
+                {sellerState
+                  ? t('deliveryWithinStateTitleNamed', { state: sellerState })
+                  : t('deliveryWithinStateTitle')}
+              </p>
+              <SlabList slabs={inStateSlabs} setSlabs={setInStateSlabs} disabled={saving} t={t} />
+            </div>
+
+            {/* Outside-State slabs */}
+            <div className="border-t border-outline-variant/20 pt-5">
+              <p className="mb-2 text-sm font-bold text-on-surface">
+                {t('deliveryOutsideStateTitle')}
+              </p>
+              <SlabList slabs={outStateSlabs} setSlabs={setOutStateSlabs} disabled={saving} t={t} />
+            </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-2 mb-3">
-            {slabs.map((slab, i) => (
-              <SlabRow
-                key={i}
-                slab={slab}
-                index={i}
-                allSlabs={slabs}
-                isOnly={slabs.length <= 1}
-                onChange={(patch) => updateSlab(i, patch)}
-                onDelete={() => deleteSlab(i)}
-                disabled={saving}
-              />
-            ))}
-          </div>
-        )}
-
-        <button
-          type="button"
-          disabled={saving}
-          onClick={addSlab}
-          className="flex items-center gap-2 rounded-xl border border-dashed border-outline-variant/50 bg-white px-4 py-2.5 text-sm text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors"
-        >
-          <Plus className="h-4 w-4" /> {t('deliveryAddSlab')}
-        </button>
-
-        {hasSlabErrors && (
-          <p className="mt-2 flex items-center gap-1 text-xs font-medium text-red-600">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            {t('deliveryFixSlabErrors')}
-          </p>
+          <SlabList slabs={slabs} setSlabs={setSlabs} disabled={saving} t={t} />
         )}
       </Section>
 

@@ -126,6 +126,9 @@ export async function assignProductToRetailer(
       ? src.categoryInfo : null,
     gstApplicable: src.gstApplicable === true,
     gstRate: typeof src.gstRate === "number" ? src.gstRate : 0,
+    gstIncluded: src.gstIncluded !== false, // default included (business rule)
+    extraDeliveryCharge: typeof src.extraDeliveryCharge === "number" ? src.extraDeliveryCharge : 0,
+    freeDelivery: src.freeDelivery === true,
     composition: Array.isArray(src.composition) ? src.composition : null,
     benefits: Array.isArray(src.benefits) ? src.benefits : null,
     application: src.application ? String(src.application) : null,
@@ -477,6 +480,9 @@ export async function bulkAssignProductsToRetailer(
         ? src.categoryInfo : null,
       gstApplicable: src.gstApplicable === true,
       gstRate: typeof src.gstRate === "number" ? src.gstRate : 0,
+      gstIncluded: src.gstIncluded !== false, // default included (business rule)
+      extraDeliveryCharge: typeof src.extraDeliveryCharge === "number" ? src.extraDeliveryCharge : 0,
+      freeDelivery: src.freeDelivery === true,
       composition: Array.isArray(src.composition) ? src.composition : null,
       benefits: Array.isArray(src.benefits) ? src.benefits : null,
       application: src.application ? String(src.application) : null,

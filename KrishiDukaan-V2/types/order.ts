@@ -60,7 +60,13 @@ export type CartItem = {
   variantUnit?: string;
   /** GST — copied from the product at add-to-cart time */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
 };
 
 /**
@@ -119,8 +125,11 @@ export type OrderItem = {
   variantUnit?: string;
   /** GST per unit — persisted for invoice generation */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
-  gstAmount?: number; // GST per unit = price * gstRate / 100
+  gstRate?: number;
+  /** GST per unit. Exclusive: price*rate/100. Inclusive: component backed out of price. */
+  gstAmount?: number;
+  /** When true, gstAmount was already inside `price` and was NOT added to the total. */
+  gstIncluded?: boolean;
 };
 
 /**
@@ -229,10 +238,27 @@ export type OrderDoc = {
   mrpSubtotal?: number;
   /** Sum of price * qty across all items (after discounts, excl. GST) */
   subtotal: number;
-  /** Sum of all per-line GST amounts */
+  /** Sum of all per-line GST amounts (both included and excluded lines) — for the invoice. */
   totalGst?: number;
-  /** Weight-based delivery charge from seller's delivery settings */
+  /** Portion of GST that was ADDED to the payable total (excluded-GST lines only). 0 for
+   *  all-inclusive orders. `grandTotal = subtotal + deliveryCharge + totalGstAdded`. */
+  totalGstAdded?: number;
+  /** Actual delivery charge added to the payable total (0 when free delivery applied). */
   deliveryCharge?: number;
+  /**
+   * Frozen delivery breakdown as charged, so the invoice never recomputes from
+   * current slab settings and historical invoices stay correct.
+   *   slab   — weight-slab component actually applied (0 if free)
+   *   extra  — per-product extra actually applied (0 if free)
+   *   free   — Free Delivery overrode the charge (every item shipped free)
+   *   waived — what would have been charged, shown struck-through as "FREE" (0 if not free)
+   */
+  deliveryBreakdown?: {
+    slab: number;
+    extra: number;
+    free: boolean;
+    waived: number;
+  };
   /** subtotal + deliveryCharge + totalGst */
   grandTotal?: number;
   /** Same value under the name the Flutter checkout writes. Read via orderGrandTotal(). */

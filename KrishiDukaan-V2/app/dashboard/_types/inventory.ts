@@ -35,7 +35,15 @@ export interface ProductDoc {
 
   /** GST fields */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
 
   /** Category-specific structured information (new schema). */
   categoryInfo?: Record<string, string | string[]>;
@@ -142,7 +150,16 @@ export interface InventoryRow {
 
   // ── GST ───────────────────────────────────────────────────────────────────
   gstApplicable: boolean;
-  gstRate: 0 | 5 | 12 | 18 | 28;
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded: boolean;
+
+  // ── Delivery ──────────────────────────────────────────────────────────────
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery: boolean;
 
   // ── Lifecycle / ownership ───────────────────────────────────────────────────
   isActive: boolean;

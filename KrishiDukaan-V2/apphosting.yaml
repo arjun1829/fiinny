@@ -91,6 +91,15 @@ env:
   - variable: FIREBASE_PRIVATE_KEY
     secret: FIREBASE_PRIVATE_KEY
 
+  # ─── Google Analytics 4 (Data API) ─────────────────────────────────────────
+  # Numeric GA4 property id for the Admin Analytics → Engagement tab (DAU/MAU).
+  # Find it in GA4 Admin → Property Settings → "PROPERTY ID" (a number, NOT the
+  # G-XXXX measurement id). The Firebase Admin service account above must be
+  # granted at least "Viewer" on this GA4 property (GA4 Admin → Property access
+  # management) for the Data API to return data.
+  - variable: GA4_PROPERTY_ID
+    value: "" # TODO: set to the numeric GA4 property id, e.g. "123456789"
+
   # ─── WhatsApp Cloud API ────────────────────────────────────────────────────
   # Store via: firebase apphosting:secrets:set WA_ACCESS_TOKEN
   #            firebase apphosting:secrets:set WA_PHONE_NUMBER_ID

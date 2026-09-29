@@ -474,7 +474,7 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
- 
+
     // ─── adminLogs ───────────────────────────────────────────────────────────
     match /adminLogs/{docId} {
       allow read: if isAdmin();

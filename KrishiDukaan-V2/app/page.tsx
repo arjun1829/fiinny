@@ -37,6 +37,7 @@ import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
+import { computeLinePricing } from './utils/gst';
 import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
 
 import { Navbar } from '../components/shared/navbar';
@@ -60,6 +61,33 @@ type UserProfile = {
 
 const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
+
+/**
+ * Resolve the RETAILER-SPECIFIC commercial settings (GST + delivery) for the cart
+ * line. When the buyer has picked a store, its availability entry is authoritative —
+ * absence of a field there means that seller doesn't apply it (e.g. no GST), so we
+ * must NOT fall back to the master product. The canonical `product.*` is used only
+ * when no per-seller entry exists at all. Returns a partial CartItem to spread.
+ */
+function resolveSellerCommercial(
+  entry: NonNullable<MarketplaceProduct["availability"]>[number] | undefined,
+  product: MarketplaceProduct,
+): Partial<CartItem> {
+  const hasEntry = !!entry;
+  const gstApplicable = hasEntry ? entry!.gstApplicable === true : product.gstApplicable === true;
+  const gstRate = hasEntry ? entry!.gstRate : product.gstRate;
+  // Business default is INCLUDED — a line is only exclusive when explicitly false.
+  // Always propagate the boolean (not just when true) so exclusive GST survives all
+  // the way to the cart/checkout calculation instead of defaulting back to included.
+  const gstIncluded = hasEntry ? entry!.gstIncluded !== false : product.gstIncluded !== false;
+  const extraDeliveryCharge = hasEntry ? entry!.extraDeliveryCharge : product.extraDeliveryCharge;
+  const freeDelivery = hasEntry ? entry!.freeDelivery === true : product.freeDelivery === true;
+  return {
+    ...(gstApplicable && gstRate ? { gstApplicable: true, gstRate, gstIncluded } : {}),
+    ...(extraDeliveryCharge && extraDeliveryCharge > 0 ? { extraDeliveryCharge } : {}),
+    ...(freeDelivery ? { freeDelivery: true } : {}),
+  };
+}
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
 // Falls back to a "not found" message if the manufacturer has no slug set up yet.
@@ -110,11 +138,7 @@ export default function App() {
   const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 });
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [maxDistance, setMaxDistance] = useState(1000);
-  const [showFilters, setShowFilters] = useState(false);
-  const [inStockOnly, setInStockOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'none' | 'price-low' | 'price-high'>('none');
-  
+
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
@@ -512,6 +536,82 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
+  // Guards ensureStoresLoaded so the full /retailers read happens at most once
+  // per session, no matter how many store-dependent views the user opens.
+  const storesLoadedRef = useRef(false);
+  const [storesLoading, setStoresLoading] = useState(false);
+
+  // Lazily fetch the full store/retailer list the FIRST time the user opens a
+  // store-dependent view (Stores/Map, Market, Product, Cart). Home never calls
+  // this — that read used to run unconditionally on every home load and was the
+  // single biggest source of Firestore reads. Idempotent: the ref is set before
+  // the await so concurrent navigations coalesce into one fetch.
+  const ensureStoresLoaded = useCallback(async () => {
+    if (storesLoadedRef.current) return;
+    storesLoadedRef.current = true;
+    setStoresLoading(true);
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const stores = await fetchStores();
+      setAllStores(stores);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /retailers read fires exactly once,
+        // on demand — and never on the home view.
+        console.info(`[stores] lazy fetchStores() → ${stores.length} stores in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load stores:', err);
+      storesLoadedRef.current = false; // allow a retry on the next store-view open
+    } finally {
+      setStoresLoading(false);
+    }
+  }, []);
+
+  // Guards ensureHubsLoaded so the full /hubs read happens at most once per
+  // session. Home used to read the entire hubs collection on every load just to
+  // populate the "Shop by Crop" strip, which falls back to a static list until
+  // real hubs arrive — so this read is now deferred until that section is
+  // actually reached (see HomeView's onHubsNeeded).
+  const hubsLoadedRef = useRef(false);
+
+  const ensureHubsLoaded = useCallback(async () => {
+    if (hubsLoadedRef.current) return;
+    hubsLoadedRef.current = true;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const fetchedHubs = await fetchHubs();
+      setHubs(fetchedHubs);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /hubs read fires exactly once, on
+        // demand (when the Shop-by-Crop section is reached) — never on home load.
+        console.info(`[hubs] lazy fetchHubs() → ${fetchedHubs.length} hubs in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load hubs:', err);
+      hubsLoadedRef.current = false; // allow a retry the next time the section is reached
+    }
+  }, []);
+
+  // Single choke point for on-demand store loading. Watching currentView (rather
+  // than hooking navigate) covers every entry path into a store-dependent view:
+  // in-app navigation, direct deep links (route is applied via setCurrentView),
+  // and browser back/forward. 'home' and 'hub' never trigger it.
+  //
+  // Market and Product Detail are deliberately EXCLUDED:
+  //   • Market cards render from product-level data only (no retailer info), so
+  //     Market must never trigger the full /retailers read.
+  //   • Product Detail fetches ONLY the retailers that stock the open product,
+  //     paginated on demand (see ProductDetailView) — not the whole collection.
+  // Only the store picker (cart) and the locator (map) need the full list.
+  useEffect(() => {
+    const STORE_DEPENDENT_VIEWS = new Set(['cart', 'map']);
+    if (STORE_DEPENDENT_VIEWS.has(currentView)) {
+      void ensureStoresLoaded();
+    }
+  }, [currentView, ensureStoresLoaded]);
+
   const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
@@ -519,8 +619,16 @@ export default function App() {
       trackPageView('home');
 
       let products = await fetchMarketplaceProducts();
-      let stores = await fetchStores();
-      let fetchedHubs = await fetchHubs();
+      // NOTE: the full /retailers read (fetchStores) is deliberately NOT here.
+      // It ran on every home load and dominated Firestore reads (~20M). Stores are
+      // now lazy-loaded once via ensureStoresLoaded() the first time the user opens
+      // a store-dependent view (Stores/Map, Market, Product, Cart). See the
+      // currentView effect below.
+      //
+      // Hubs are likewise NOT read here. The "Shop by Crop" strip renders from a
+      // static fallback until real hubs are needed, so the full /hubs read is now
+      // lazy — triggered by HomeView's onHubsNeeded when that section scrolls into
+      // view (see ensureHubsLoaded above).
 
       // An empty read is NOT a reason to write. This used to call
       // syncInitialData(PRODUCTS, STORES, INVENTORY), which had every visitor's
@@ -529,8 +637,6 @@ export default function App() {
       // empty result now renders as empty, which is the truth.
 
       setAllProducts(products);
-      setAllStores(stores);
-      setHubs(fetchedHubs);
 
       // Banners are a non-critical homepage enhancement — HomeView falls back
       // to its built-in default slides if this fails or returns empty, so a
@@ -909,35 +1015,6 @@ export default function App() {
     });
   }, [storesWithDistance, productSearch]);
 
-  const marketProducts = useMemo(() => {
-    let filtered = searchedProducts;
-    
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(
-        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
-      );
-    }
-
-    if (maxDistance < 1000) { 
-      filtered = filtered.filter((product) => (product as any).distanceKm <= maxDistance);
-    }
-
-    if (inStockOnly) {
-      filtered = filtered.filter((product) => {
-        const stock = product.stock.toLowerCase();
-        return stock === 'in stock' || stock === 'fast selling' || stock === 'trending';
-      });
-    }
-
-    if (sortBy === 'price-low') {
-      filtered = [...filtered].sort((a, b) => a.price - b.price);
-    } else if (sortBy === 'price-high') {
-      filtered = [...filtered].sort((a, b) => b.price - a.price);
-    }
-
-    return filtered;
-  }, [searchedProducts, selectedCategory, maxDistance, inStockOnly, sortBy]);
-
   const navigateToProduct = (id: string) => {
     navigate('product', { productId: id });
   };
@@ -1023,7 +1100,8 @@ export default function App() {
           qty: 1,
           sellMode: "pending" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // GST + delivery are retailer-specific and resolved when a store is chosen
+          // (see onAssignStore). A pending line has no seller yet, so none are set.
         },
       ];
     });
@@ -1056,6 +1134,9 @@ export default function App() {
       customerName: checkoutInfo.customerName,
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
+      // The finalized delivery-address state — decides in/out-of-state slabs so
+      // the order's persisted delivery charge matches what the server charged.
+      customerDeliveryState: checkoutInfo.addressState.trim(),
       items: readyItems,
       payment: paymentDetails,
     });
@@ -1064,6 +1145,13 @@ export default function App() {
       ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
       : "";
     setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+
+    // Don't leave the customer on the checkout page — take them to their orders.
+    // A global toast carries the confirmation across the navigation, and a short
+    // beat lets the success state register before the view switches to /?view=orders.
+    setToastMsg(`✅ Payment successful! ${orderIds.length} order${orderIds.length > 1 ? "s" : ""} placed.`);
+    setToastType("success");
+    setTimeout(() => navigate("orders"), 1200);
   };
 
   const placeOrders = async (grandTotal?: number) => {
@@ -1090,13 +1178,33 @@ export default function App() {
       return;
     }
 
-    // grandTotal includes delivery charges computed by CartView's useDeliveryEstimates hook.
-    // Fall back to product subtotal if grandTotal wasn't passed (shouldn't happen).
+    // grandTotal (from CartView) = discounted subtotal + added GST (exclusive-GST
+    // lines) + delivery. The server now computes delivery independently (state-aware,
+    // from authoritative slabs) and MUST NOT trust a client delivery figure — so we
+    // send the exclusive-GST-added portion on its own (clientGstAdded) and let the
+    // server rebuild the payable total as serverSubtotal + serverDelivery + GST.
+    // clientDelivery is still sent as a last-resort fallback only.
     const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
+    // Exclusive GST that is charged ON TOP of the price (inclusive GST is already in
+    // the price and never added). Same helper the Cart/order/invoice use.
+    const clientGstAdded = Number(
+      readyItems.reduce((sum, item) => {
+        const pricing = computeLinePricing({
+          unitPrice: item.price,
+          qty: item.qty,
+          gstApplicable: item.gstApplicable,
+          gstRate: item.gstRate,
+          gstIncluded: item.gstIncluded,
+        });
+        return sum + (pricing.included ? 0 : pricing.gstTotal);
+      }, 0).toFixed(2),
+    );
     const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
-    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
+    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal - clientGstAdded);
+    // The customer's finalized delivery-address state decides in/out-of-state slabs.
+    const customerDeliveryState = checkoutInfo.addressState.trim();
 
-    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGrandTotal:", clientGrandTotal);
+    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGstAdded:", clientGstAdded, "clientGrandTotal:", clientGrandTotal, "state:", customerDeliveryState);
     console.log("[Checkout] readyItems:", readyItems.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantUnit: i.variantUnit, sellerPhone: i.sellerPhone })));
 
     setCheckoutLoading(true);
@@ -1125,11 +1233,16 @@ export default function App() {
             sellerId:    i.sellerId,
             sellerPhone: i.sellerPhone,
             qty:         i.qty,
+            // variantUnit drives the server's weight-based slab lookup.
+            variantUnit: i.variantUnit,
           })),
           userId:          user.uid,
           clientSubtotal,
           clientDelivery,
+          clientGstAdded,
           clientGrandTotal,
+          // Server picks the in/out-of-state slab from this vs the seller's state.
+          customerDeliveryState,
           note: `Cart: ${readyItems.length} item(s)`,
           // Sent BEFORE payment so the server already holds everything needed
           // to rebuild this order if the post-payment write below never runs
@@ -1370,7 +1483,8 @@ export default function App() {
           qty: 1,
           sellMode: "online_delivery" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // Retailer-specific GST + delivery from the SELECTED store's listing.
+          ...resolveSellerCommercial(availEntry, product),
         },
       ];
     });
@@ -1484,6 +1598,7 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -1506,7 +1621,7 @@ export default function App() {
       case 'market':
         return (
           <MarketView
-            products={marketProducts}
+            searchQuery={productSearch}
             onProductClick={navigateToProduct}
             onAddToCart={addToCart}
             onBuyNow={handleBuyNow}
@@ -1514,7 +1629,6 @@ export default function App() {
             onGoToCart={() => navigate("cart")}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            storesWithDistance={storesWithDistance}
           />
         );
       case 'hub':
@@ -1541,6 +1655,7 @@ export default function App() {
           onBack={() => navigate('market')}
           onStoreClick={(storeId) => navigateToMap(storeId, selectedProductId)}
           storesWithDistance={storesWithDistance}
+          userCoords={coordinates}
           onProductClick={navigateToProduct}
           onViewSellerAll={(storeName) => {
             setProductSearch(storeName);
@@ -1594,9 +1709,29 @@ export default function App() {
               );
               const resolvedSellerPhone: string | undefined = (assignedStore as any)?.phone || undefined;
 
+              // Resolve the chosen store's OWN GST + delivery from its availability
+              // entry (retailer-specific). This overrides anything the line carried.
               setCartItems((prev) => {
                 const pendingItem = prev.find(item => cartItemKey(item) === itemKey);
                 if (!pendingItem) return prev;
+
+                const productForItem = mergedProducts.find(p => p.id === pendingItem.productId);
+                const assignEntry = productForItem?.availability?.find(
+                  (a) =>
+                    (sellerId && a.storeId === sellerId) ||
+                    (resolvedSellerPhone && (a.storePhone === resolvedSellerPhone || a.storeId === resolvedSellerPhone)),
+                );
+                // Absent fields mean this seller doesn't apply them — clear stale values.
+                const commercial: Partial<CartItem> = productForItem
+                  ? resolveSellerCommercial(assignEntry, productForItem)
+                  : {};
+                const commercialReset = {
+                  gstApplicable: commercial.gstApplicable,
+                  gstRate: commercial.gstRate,
+                  gstIncluded: commercial.gstIncluded,
+                  extraDeliveryCharge: commercial.extraDeliveryCharge,
+                  freeDelivery: commercial.freeDelivery,
+                };
 
                 // An "online_delivery" line is the SAME cart entry only when it shares
                 // the product, the newly-chosen seller AND the same package size.
@@ -1626,6 +1761,8 @@ export default function App() {
                         ...(storePrice != null ? { price: storePrice } : {}),
                         ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
                         ...(originalPrice != null ? { originalPrice } : { originalPrice: undefined }),
+                        // Retailer-specific GST + delivery (cleared if this seller has none).
+                        ...commercialReset,
                       }
                     : item
                 );
@@ -1668,6 +1805,7 @@ export default function App() {
             onBack={() => { setMapFilterProductId(null); navigate('home'); }}
             selectedStoreId={selectedStoreId}
             onStoreSelect={setSelectedStoreId}
+            loading={storesLoading}
             stores={mapFilterProductId
               ? (() => {
                   const prod = mergedProducts.find(p => p.id === mapFilterProductId);
@@ -1898,6 +2036,7 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -1933,7 +2072,6 @@ export default function App() {
         externalUser={user}
         externalUserRole={userRole}
         externalUserProfile={userProfile}
-        allProducts={allProducts}
         allStores={allStores}
         onProductClick={navigateToProduct}
         onStoreClick={navigateToMap}

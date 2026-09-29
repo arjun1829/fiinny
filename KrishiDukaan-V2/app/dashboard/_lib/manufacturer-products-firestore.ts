@@ -43,7 +43,14 @@ export type ManufacturerProductInput = {
   categoryInfo?: Record<string, string | string[]>;
   /** GST configuration for this product. */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
   /** Whether this product is available for online home delivery. Defaults to online_delivery. */
   sellMode?: "online_delivery" | "offline_store_only";
   /** Optional YouTube video URL for product demonstration. Stored as-is; never upload to Storage. */
@@ -129,6 +136,11 @@ export async function createManufacturerProduct(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? true) : false,
+    // Delivery — per-product surcharge on top of the global weight-slab charge
+    extraDeliveryCharge: input.extraDeliveryCharge ?? 0,
+    freeDelivery: input.freeDelivery ?? false,
     // Note: legacy fertilizer flat fields (nitrogen, phosphorus, etc.) are no longer
     // written here — category-specific data lives in categoryInfo only.
   });
@@ -275,6 +287,16 @@ export async function updateManufacturerProduct(
   if (input.gstApplicable !== undefined) {
     patch.gstApplicable = input.gstApplicable;
     patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    patch.gstIncluded = input.gstApplicable ? (input.gstIncluded ?? true) : false;
+  }
+  if (input.extraDeliveryCharge !== undefined) {
+    patch.extraDeliveryCharge = Number.isFinite(input.extraDeliveryCharge)
+      ? Math.max(0, input.extraDeliveryCharge)
+      : 0;
+  }
+  if (input.freeDelivery !== undefined) {
+    patch.freeDelivery = input.freeDelivery;
   }
   // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   await updateDoc(ref, patch);

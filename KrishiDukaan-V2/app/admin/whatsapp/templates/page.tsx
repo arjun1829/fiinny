@@ -1485,12 +1485,25 @@ function NewProductReminderFlow() {
       // dashboard/_lib/subscriptions-firestore.ts — no new fields are introduced.
       // Prior new_product_reminder sends are read from the existing waNotifications
       // history (same source the KYC flows use) — no separate tracking is added.
-      const [users, subs, seatSnap, notifSnap] = await Promise.all([
+      const [users, subs, seatSnap, notifSnap, uidIdxSnap] = await Promise.all([
         getUsers(),
         getSubscriptions(),
         getDocs(collection(db, "retailerSeatListings")),
         getDocs(query(collection(db, "waNotifications"), where("template", "==", "new_product_reminder"))),
+        getDocs(collection(db, "uidIndex")),
       ]);
+
+      // phone (normalized) → Auth UID. Self-serve seat listings are keyed by
+      // ownerId = Auth UID with ownerPhone = null (see inventory-firestore
+      // addProductToInventory), so without the UID a retailer's used seats
+      // resolve to 0 and every retailer looks 100% vacant. The retailer's own
+      // page avoids this via fetchSeatListingsForOwner's uidIndex lookup; we do
+      // the same in bulk by inverting uidIndex once here.
+      const phoneToUid = new Map<string, string>();
+      uidIdxSnap.docs.forEach((d) => {
+        const phone = (d.data() as { phone?: string }).phone;
+        if (phone) phoneToUid.set(toE164(String(phone)), d.id);
+      });
 
       // Active seat listings: status "active" AND not yet expired.
       const activeListings = seatSnap.docs
@@ -1532,7 +1545,14 @@ function NewProductReminderFlow() {
         const keys = new Set<string>();
         for (const k of [u.uid, u.phone, u.id]) if (k) keys.add(String(k));
         for (const k of [u.phone, u.id]) {
-          if (k && isValidIndianPhone(String(k))) keys.add(toE164(String(k)));
+          if (k && isValidIndianPhone(String(k))) {
+            const e164 = toE164(String(k));
+            keys.add(e164);
+            // Resolve the Auth UID from uidIndex so UID-keyed self-serve seat
+            // listings match even when the user doc has no `uid` field.
+            const uid = phoneToUid.get(e164);
+            if (uid) keys.add(uid);
+          }
         }
         if (keys.size === 0) continue;
 
@@ -1570,9 +1590,14 @@ function NewProductReminderFlow() {
         });
       }
 
-      // Most vacant seats first, then by name.
+      // Primary sort: highest vacant PERCENTAGE first (100% vacant → nearly full),
+      // matching the page's "Vacant %" criterion. Ties break by absolute vacant
+      // seats, then by name.
+      const vacantPct = (r: NewProdRow) =>
+        r.allocatedSeats > 0 ? r.vacantSeats / r.allocatedSeats : 0;
       built.sort(
         (a, b) =>
+          vacantPct(b) - vacantPct(a) ||
           b.vacantSeats - a.vacantSeats ||
           (a.businessName || a.shopName || a.ownerName || a.phone).localeCompare(
             b.businessName || b.shopName || b.ownerName || b.phone,
@@ -1966,12 +1991,23 @@ function NewProductReminderFlow() {
                       </td>
                       <td className="px-3 py-2.5 text-right text-xs text-gray-700 tabular-nums">{r.allocatedSeats}</td>
                       <td className="px-3 py-2.5 text-right text-xs text-gray-700 tabular-nums">{r.usedSeats}</td>
+                      <td className="px-3 py-2.5 text-right text-xs text-gray-700 tabular-nums">{r.vacantSeats}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold bg-primary/10 text-primary tabular-nums">
-                          {r.vacantSeats}
+                        <span
+                          className={cn(
+                            "inline-block text-xs px-2 py-0.5 rounded-full font-bold tabular-nums",
+                            vacantPct === 100
+                              ? "bg-emerald-100 text-emerald-700"
+                              : vacantPct >= 50
+                              ? "bg-primary/10 text-primary"
+                              : vacantPct >= 20
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-gray-100 text-gray-500",
+                          )}
+                        >
+                          {vacantPct}%
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-right text-xs text-gray-700 tabular-nums">{vacantPct}%</td>
                       <td className="px-3 py-2.5 hidden sm:table-cell text-xs text-gray-500">
                         {formatLastNotification(r.lastNotifiedAt)}
                       </td>
