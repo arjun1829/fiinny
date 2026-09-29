@@ -19,6 +19,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../cart/data/payment_service.dart' show PaymentService;
+import '../data/referral_service.dart';
 import '../data/subscription_pricing.dart';
 import '../providers/dashboard_provider.dart';
 
@@ -66,11 +67,22 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
   final int? initialSeats;
   final int? initialMonths;
 
+  /// Sales / marketing referral link (krishidukan.com/subscribe?ref=…):
+  /// the code to apply, and optionally the offer's plan (a ladder key — only
+  /// honoured if that exact plan is currently offered) with seats in
+  /// [initialSeats].
+  final String? referralCode;
+  final String? offerPlanId;
+  final bool fromReferralLink;
+
   const SubscriptionScreen({
     super.key,
     this.reason,
     this.initialSeats,
     this.initialMonths,
+    this.referralCode,
+    this.offerPlanId,
+    this.fromReferralLink = false,
   });
 
   @override
@@ -108,11 +120,27 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   // Lookup problems only (not found / network); eligibility comes from eval.
   String? _promoLookupError;
 
+  /// Referral — only a server-validated code is shown as applied or sent.
+  final _referralCtrl = TextEditingController();
+  String? _referralCode;
+  String? _referralOwner;
+  String? _referralError;
+  bool _referralChecking = false;
+  /// Set when an offer link's plan is no longer on the ladder.
+  String? _offerNote;
+  bool _offerResolved = false;
+
   bool get _hasTier => _plans.any((p) => p.tier == _tier);
   bool get _showToggle =>
       _plans.any((p) => p.isStandard) && _plans.any((p) => !p.isStandard);
-  List<SubscriptionPlan> get _tierPlans =>
-      _plans.where((p) => p.tier == _tier).toList();
+  // Standard cards run longest period first (Yearly left, Monthly right),
+  // matching the web; Custom keeps its short-to-long order.
+  List<SubscriptionPlan> get _tierPlans => _plans
+      .where((p) => p.tier == _tier)
+      .toList()
+    ..sort((a, b) => _tier == PlanTier.standard
+        ? b.months.compareTo(a.months)
+        : a.months.compareTo(b.months));
   int get _grantedSeats => _duration.billableSeats(_seats);
 
   PromoEvaluation? get _promoEval => _promoDoc == null
@@ -160,7 +188,91 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       }
     }
 
+    // An offer link's plan, against the built-in ladder for now; re-checked
+    // against the live ladder once it loads (_resolveOffer).
+    _applyOffer(_plans);
+
+    final code = widget.referralCode;
+    if (code != null && code.trim().isNotEmpty) {
+      _referralCtrl.text = ReferralService.normalize(code);
+      if (widget.fromReferralLink) {
+        ReferralService.logEvent(code, 'open',
+            uid: FirebaseAuth.instance.currentUser?.uid,
+            plan: widget.offerPlanId);
+      }
+      _applyReferral();
+    }
+
     _loadPlans();
+  }
+
+  /// Selects the offer link's plan if it is on [plans]. Seats only matter for
+  /// a per-listing Custom plan and are snapped to the 10-block rule, so a link
+  /// can never produce a quantity that isn't sold.
+  bool _applyOffer(List<SubscriptionPlan> plans) {
+    final id = widget.offerPlanId;
+    if (id == null || id.isEmpty) return false;
+    final match = plans.where((p) => p.key == id);
+    if (match.isEmpty) return false;
+    _duration = match.first;
+    _tier = match.first.tier;
+    final seats = widget.initialSeats;
+    if (!_duration.isStandard && !_duration.isFlat && seats != null && seats > 0) {
+      _seats = normalizeSeatCount(seats);
+      _seatCtrl.text = '$_seats';
+    }
+    return true;
+  }
+
+  /// Once the live ladder is known (or known to be absent): honour the offer
+  /// if its plan is really offered, otherwise say so and let them choose.
+  void _resolveOffer() {
+    if (_offerResolved || !mounted) return;
+    _offerResolved = true;
+    final id = widget.offerPlanId;
+    if (id == null || id.isEmpty) return;
+    setState(() {
+      if (!_applyOffer(_plans)) {
+        _offerNote =
+            'The plan in your link is no longer offered — please choose a plan below.';
+      }
+    });
+  }
+
+  Future<void> _applyReferral() async {
+    final raw = _referralCtrl.text;
+    if (raw.trim().isEmpty) return;
+    setState(() {
+      _referralChecking = true;
+      _referralError = null;
+    });
+    final r = await ReferralService.validate(raw);
+    if (!mounted) return;
+    setState(() {
+      _referralChecking = false;
+      if (r.valid) {
+        _referralCode = r.code;
+        _referralOwner = r.ownerName;
+      } else {
+        _referralCode = null;
+        _referralOwner = null;
+        _referralError = r.error;
+      }
+    });
+    if (r.valid) {
+      ReferralService.logEvent(r.code!, 'checkout_view',
+          uid: FirebaseAuth.instance.currentUser?.uid,
+          plan: widget.offerPlanId);
+    }
+  }
+
+  void _removeReferral() {
+    setState(() {
+      _referralCode = null;
+      _referralOwner = null;
+      _referralError = null;
+      _referralCtrl.clear();
+    });
   }
 
   /// Pull the live ladder from settings/pricing.
@@ -178,8 +290,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       final all = parseSubscriptionPlans(snap.data());
       if (all == null || all.isEmpty || !mounted) return;
       // Don't show a plan checkout would refuse: create-order rejects a plan the
-      // account's role isn't allowed to buy.
-      final role = ref.read(currentUserProvider).value?.role;
+      // account's role isn't allowed to buy. A consumer buys as a retailer —
+      // paying upgrades them (same rule as create-order).
+      final rawRole = ref.read(currentUserProvider).value?.role;
+      final role =
+          rawRole == 'consumer' || rawRole == 'customer' ? 'retailer' : rawRole;
       final parsed = all.where((p) => p.allowsRole(role)).toList();
       if (parsed.isEmpty) return;
       setState(() {
@@ -203,6 +318,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       });
     } catch (_) {
       /* unreachable settings doc keeps the built-in ladder */
+    } finally {
+      _resolveOffer();
     }
   }
 
@@ -211,6 +328,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     _razorpay.clear();
     _seatCtrl.dispose();
     _promoCtrl.dispose();
+    _referralCtrl.dispose();
     super.dispose();
   }
 
@@ -342,6 +460,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               'promoCode': (_promoEval?.applies ?? false)
                   ? _promoEval!.code
                   : null,
+              // Server-validated above; create-order re-checks it too.
+              'referralCode': _referralCode,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -448,6 +568,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         planTier: verifyData['planTier'] as String?,
         planName: verifyData['planName'] as String?,
         planId: verifyData['planId'] as String?,
+        referralCode: verifyData['referralCode'] as String?,
       );
     } catch (e) {
       if (mounted) {
@@ -477,7 +598,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     String? planTier,
     String? planName,
     String? planId,
+    /// From the order notes — create-order only stamps a validated code.
+    String? referralCode,
   }) async {
+    final refCode = (referralCode ?? '').trim().toUpperCase();
     final normalizedPromo = (promoCode ?? '').trim().toUpperCase();
     final tier = planTier == 'standard' || planTier == 'custom'
         ? planTier!
@@ -498,7 +622,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     // If user is still 'consumer', upgrade to 'retailer' so canAccessDashboard
     // returns true after payment (consumers who pay should get seller access).
-    final roleUpdate = user.role == 'consumer'
+    final roleUpdate = user.role == 'consumer' || user.role == 'customer'
         ? {'role': 'retailer'}
         : <String, dynamic>{};
     batch.update(userDocRef, {
@@ -527,6 +651,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       'durationMonths': _duration.months,
       'planName': name,
       'planTier': tier,
+      if (refCode.isNotEmpty) 'referralCode': refCode,
       'currency': 'INR',
       'razorpayOrderId': razorpayOrderId,
       'razorpayPaymentId': razorpayPaymentId,
@@ -555,6 +680,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       // Promo attribution — written only when a gateway-verified code was used.
       // Absent field = no promo, matching the web write in app/firebase.ts.
       if (normalizedPromo.isNotEmpty) 'promoCode': normalizedPromo,
+      // Sales attribution — only when a validated code was used at checkout.
+      if (refCode.isNotEmpty) 'referralCode': refCode,
       'startDate': Timestamp.fromDate(now),
       'expiryDate': Timestamp.fromDate(expiry),
       'createdAt': FieldValue.serverTimestamp(),
@@ -636,6 +763,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           planTier: reconciliation.notes?['planTier'] as String?,
           planName: reconciliation.notes?['planName'] as String?,
           planId: reconciliation.notes?['planId']?.toString(),
+          referralCode: reconciliation.notes?['referralCode']?.toString(),
         );
         return; // _activateSubscription already navigated away on success.
       } catch (e) {
@@ -827,6 +955,13 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
           // ── Standard / Custom toggle ──────────────────────────────────────
           // Hidden when the admin has left plans in only one tier.
+          if (_offerNote != null)
+            _noticeBanner(
+              icon: Icons.info_outline,
+              color: AppColors.warning,
+              title: 'Offer changed',
+              subtitle: _offerNote!,
+            ),
           if (_showToggle) ...[
             SizedBox(
               width: double.infinity,
@@ -1054,6 +1189,95 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             ),
             const SizedBox(height: 16),
           ],
+
+          // ── Referral code ────────────────────────────────────────────────
+          _SectionCard(
+            title: 'Referral Code (optional)',
+            child: _referralCode != null
+                ? Row(
+                    children: [
+                      const Icon(Icons.verified, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$_referralCode'
+                          '${(_referralOwner ?? '').isNotEmpty ? ' · Referred by $_referralOwner' : ''}',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _removeReferral,
+                        child: const Text('Remove'),
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _referralCtrl,
+                              textCapitalization: TextCapitalization.characters,
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(20),
+                                TextInputFormatter.withFunction(
+                                  (oldValue, newValue) => newValue.copyWith(
+                                      text: newValue.text
+                                          .toUpperCase()
+                                          .replaceAll(RegExp(r'[^A-Z0-9]'), '')),
+                                ),
+                              ],
+                              onChanged: (_) => setState(() => _referralError = null),
+                              decoration: InputDecoration(
+                                hintText: 'Code from your KrishiDukan representative',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 12),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: (_referralChecking ||
+                                    _referralCtrl.text.trim().isEmpty)
+                                ? null
+                                : _applyReferral,
+                            style: FilledButton.styleFrom(
+                              backgroundColor:
+                                  AppColors.primary.withValues(alpha: 0.1),
+                              foregroundColor: AppColors.primary,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 14),
+                            ),
+                            child: _referralChecking
+                                ? const SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: AppColors.primary),
+                                  )
+                                : const Text('Apply'),
+                          ),
+                        ],
+                      ),
+                      if (_referralError != null) ...[
+                        const SizedBox(height: 8),
+                        Text(_referralError!,
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.error)),
+                      ],
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 16),
 
           // ── Promo code ───────────────────────────────────────────────────
           _SectionCard(
