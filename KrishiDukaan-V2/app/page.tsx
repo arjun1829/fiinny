@@ -37,6 +37,7 @@ import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
+import { computeLinePricing } from './utils/gst';
 import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
 
 import { Navbar } from '../components/shared/navbar';
@@ -1133,6 +1134,9 @@ export default function App() {
       customerName: checkoutInfo.customerName,
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
+      // The finalized delivery-address state — decides in/out-of-state slabs so
+      // the order's persisted delivery charge matches what the server charged.
+      customerDeliveryState: checkoutInfo.addressState.trim(),
       items: readyItems,
       payment: paymentDetails,
     });
@@ -1174,17 +1178,33 @@ export default function App() {
       return;
     }
 
-    // grandTotal (from CartView) = discounted subtotal + added GST (exclusive-GST lines)
-    // + delivery. Fall back to product subtotal if it wasn't passed (shouldn't happen).
-    // clientDelivery is the remainder over the product subtotal, so it carries BOTH the
-    // delivery charge and any exclusive GST that must be added to the payable amount —
-    // this keeps the Razorpay amount equal to what the cart displayed and to the order's
-    // grandTotal (which breaks the same figures out into deliveryCharge + totalGstAdded).
+    // grandTotal (from CartView) = discounted subtotal + added GST (exclusive-GST
+    // lines) + delivery. The server now computes delivery independently (state-aware,
+    // from authoritative slabs) and MUST NOT trust a client delivery figure — so we
+    // send the exclusive-GST-added portion on its own (clientGstAdded) and let the
+    // server rebuild the payable total as serverSubtotal + serverDelivery + GST.
+    // clientDelivery is still sent as a last-resort fallback only.
     const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
+    // Exclusive GST that is charged ON TOP of the price (inclusive GST is already in
+    // the price and never added). Same helper the Cart/order/invoice use.
+    const clientGstAdded = Number(
+      readyItems.reduce((sum, item) => {
+        const pricing = computeLinePricing({
+          unitPrice: item.price,
+          qty: item.qty,
+          gstApplicable: item.gstApplicable,
+          gstRate: item.gstRate,
+          gstIncluded: item.gstIncluded,
+        });
+        return sum + (pricing.included ? 0 : pricing.gstTotal);
+      }, 0).toFixed(2),
+    );
     const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
-    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
+    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal - clientGstAdded);
+    // The customer's finalized delivery-address state decides in/out-of-state slabs.
+    const customerDeliveryState = checkoutInfo.addressState.trim();
 
-    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGrandTotal:", clientGrandTotal);
+    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGstAdded:", clientGstAdded, "clientGrandTotal:", clientGrandTotal, "state:", customerDeliveryState);
     console.log("[Checkout] readyItems:", readyItems.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantUnit: i.variantUnit, sellerPhone: i.sellerPhone })));
 
     setCheckoutLoading(true);
@@ -1213,11 +1233,16 @@ export default function App() {
             sellerId:    i.sellerId,
             sellerPhone: i.sellerPhone,
             qty:         i.qty,
+            // variantUnit drives the server's weight-based slab lookup.
+            variantUnit: i.variantUnit,
           })),
           userId:          user.uid,
           clientSubtotal,
           clientDelivery,
+          clientGstAdded,
           clientGrandTotal,
+          // Server picks the in/out-of-state slab from this vs the seller's state.
+          customerDeliveryState,
           note: `Cart: ${readyItems.length} item(s)`,
           // Sent BEFORE payment so the server already holds everything needed
           // to rebuild this order if the post-payment write below never runs

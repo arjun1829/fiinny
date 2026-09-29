@@ -1310,6 +1310,7 @@ export async function fetchRetailerInventory(retailerId: string): Promise<any[]>
 
 import { parseVariantWeightKg } from "./utils/weight";
 import { computeLinePricing } from "./utils/gst";
+import { resolveDeliverySlabs, chargeFromSlabs } from "./utils/delivery";
 
 async function fetchSellerGstin(
   sellerId: string,
@@ -1348,7 +1349,8 @@ async function fetchSellerDeliveryCharge(
   sellerId: string,
   totalWeightKg: number,
   directPhone?: string,
-): Promise<number> {
+  customerState?: string,
+): Promise<{ charge: number; deliveryType: "in_state" | "out_state" | "default" }> {
   try {
     // Resolve seller phone using the three-path strategy
     let phone: string | null = directPhone || null;
@@ -1363,25 +1365,18 @@ async function fetchSellerDeliveryCharge(
       phone = sellerId;
     }
 
-    if (!phone) return 0;
+    if (!phone) return { charge: 0, deliveryType: "default" };
 
     const settingsSnap = await getDoc(doc(db, "deliverySettings", phone));
-    if (!settingsSnap.exists()) return 0;
+    if (!settingsSnap.exists()) return { charge: 0, deliveryType: "default" };
 
-    const slabs = settingsSnap.data().weightSlabs as
-      | { minKg: number; maxKg: number; charge: number }[]
-      | undefined;
-    if (!slabs?.length) return 0;
-
-    const sorted = [...slabs].sort((a, b) => a.minKg - b.minKg);
-    for (const slab of sorted) {
-      if (totalWeightKg >= slab.minKg && totalWeightKg < slab.maxKg) return slab.charge;
-    }
-    // Open-ended last slab (covers weights above all configured maxKg values)
-    const last = sorted[sorted.length - 1];
-    if (last && totalWeightKg >= last.minKg) return last.charge;
+    // State-aware: pan-India sellers resolve in/out-of-state slabs from the
+    // customer's delivery state vs their own; legacy docs fall back to weightSlabs.
+    const { slabs, deliveryType } = resolveDeliverySlabs(settingsSnap.data(), customerState);
+    if (!slabs.length) return { charge: 0, deliveryType };
+    return { charge: chargeFromSlabs(totalWeightKg, slabs), deliveryType };
   } catch { /* silent */ }
-  return 0;
+  return { charge: 0, deliveryType: "default" };
 }
 
 export async function createOrdersFromCart(params: {
@@ -1389,6 +1384,8 @@ export async function createOrdersFromCart(params: {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  /** Finalized delivery-address state — decides in/out-of-state delivery slabs. */
+  customerDeliveryState?: string;
   items: CartItem[];
   payment?: {
     razorpayOrderId: string;
@@ -1399,7 +1396,7 @@ export async function createOrdersFromCart(params: {
     paidAt: string;
   };
 }): Promise<string[]> {
-  const { customerId, customerName, customerPhone, customerAddress, items, payment } = params;
+  const { customerId, customerName, customerPhone, customerAddress, customerDeliveryState, items, payment } = params;
   if (!items.length) return [];
 
   const groups = new Map<string, CartItem[]>();
@@ -1499,10 +1496,12 @@ export async function createOrdersFromCart(params: {
     // when the seller's document ID is already their phone).
     const sellerPhoneHint = groupItems[0]?.sellerPhone;
 
-    const [slabDeliveryCharge, sellerGstNumber] = await Promise.all([
-      fetchSellerDeliveryCharge(sellerId, chargeableWeightKg, sellerPhoneHint),
+    const [deliveryResult, sellerGstNumber] = await Promise.all([
+      fetchSellerDeliveryCharge(sellerId, chargeableWeightKg, sellerPhoneHint, customerDeliveryState),
       fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
     ]);
+    const slabDeliveryCharge = deliveryResult.charge;
+    const deliveryType = deliveryResult.deliveryType;
 
     // Per-product surcharge, added once per (non-free) line item on top of the weight-slab charge.
     const extraDeliveryCharge = Number(
@@ -1518,7 +1517,7 @@ export async function createOrdersFromCart(params: {
     const isFreeDeliveryOrder = groupItems.length > 0 && chargeableItems.length === 0;
     let deliveryWaived = 0;
     if (isFreeDeliveryOrder) {
-      const slabOnFullWeight = await fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint);
+      const { charge: slabOnFullWeight } = await fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint, customerDeliveryState);
       const extraAll = Number(
         groupItems.reduce(
           (sum, item) => sum + (item.extraDeliveryCharge && item.extraDeliveryCharge > 0 ? item.extraDeliveryCharge : 0),
@@ -1539,6 +1538,10 @@ export async function createOrdersFromCart(params: {
       extra: isFreeDeliveryOrder ? 0 : extraDeliveryCharge,
       free: isFreeDeliveryOrder,
       waived: deliveryWaived,
+      // Which slab set applied (in/out-of-state) and the state that decided it.
+      // "default" = legacy single-slab seller or state undetermined.
+      deliveryType,
+      ...(customerDeliveryState ? { customerDeliveryState } : {}),
     };
 
     // Included GST is already inside the price; only EXCLUDED GST is added here.
@@ -1554,6 +1557,7 @@ export async function createOrdersFromCart(params: {
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       customerAddress: customerAddress.trim(),
+      ...(customerDeliveryState ? { customerDeliveryState } : {}),
       sellerId,
       sellerType,
       ...(sellerPhoneHint ? { sellerPhone: sellerPhoneHint } : {}),
