@@ -97,6 +97,17 @@ const toOption = (d: DurationPrice): DurationOption => ({
  */
 const DURATION_OPTIONS: DurationOption[] = DEFAULT_DURATIONS.map(toOption);
 
+/**
+ * Plans of one tab in display order — Standard longest period first (Yearly
+ * left, Monthly right), Custom short to long. The default selection is always
+ * the FIRST card shown, so what is preselected is what sits on the left.
+ */
+function tierInDisplayOrder(opts: DurationOption[], tier: PlanTier): DurationOption[] {
+  return opts
+    .filter((o) => o.tier === tier)
+    .sort((a, b) => (tier === 'standard' ? b.months - a.months : a.months - b.months));
+}
+
 export default function SubscriptionView({ user, role, onSuccess, onLogout }: SubscriptionViewProps) {
   const { t } = useI18n();
   const [loading,      setLoading]      = useState(false);
@@ -107,7 +118,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   // Standard is the default tab; the first plan of the tab is preselected.
   const [tier,         setTier]         = useState<PlanTier>('standard');
   const [duration,     setDuration]     = useState<DurationOption>(
-    DURATION_OPTIONS.find((o) => o.tier === 'standard') ?? DURATION_OPTIONS[0]!,
+    tierInDisplayOrder(DURATION_OPTIONS, 'standard')[0] ?? DURATION_OPTIONS[0]!,
   );
   const [promoCode,    setPromoCode]    = useState('');
   // The raw promoCodes/ document once a code has been looked up. Eligibility and
@@ -163,7 +174,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         setTier((cur) => (next.some((o) => o.tier === cur) ? cur : nextTier));
         setDuration((cur) =>
           next.find((o) => o.id === cur.id) ??
-          next.find((o) => o.tier === (next.some((x) => x.tier === cur.tier) ? cur.tier : nextTier)) ??
+          tierInDisplayOrder(next, next.some((x) => x.tier === cur.tier) ? cur.tier : nextTier)[0] ??
           next[0]!,
         );
       } catch {
@@ -273,14 +284,12 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   // (an admin may have removed every plan of one tier).
   // Standard cards run longest period first (Yearly left, Monthly right);
   // Custom keeps its short-to-long ladder order.
-  const tierOptions = options
-    .filter((o) => o.tier === tier)
-    .sort((a, b) => (tier === 'standard' ? b.months - a.months : a.months - b.months));
+  const tierOptions = tierInDisplayOrder(options, tier);
   const showToggle  = options.some((o) => o.tier === 'standard') && options.some((o) => o.tier === 'custom');
   const switchTier  = (next: PlanTier) => {
     if (next === tier) return;
     setTier(next);
-    const first = options.find((o) => o.tier === next);
+    const first = tierInDisplayOrder(options, next)[0];
     if (first) setDuration(first);
   };
 

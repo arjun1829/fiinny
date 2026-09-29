@@ -56,6 +56,17 @@ SubscriptionPlan? _matchRenewal(
   return null;
 }
 
+/// Plans of one tab in display order — Standard longest period first (Yearly
+/// left, Monthly right), Custom short to long. Defaults always pick the FIRST
+/// card shown, so the preselected plan is the one on the left. Mirrors the
+/// web's tierInDisplayOrder.
+List<SubscriptionPlan> _inDisplayOrder(
+        List<SubscriptionPlan> plans, PlanTier tier) =>
+    plans.where((p) => p.tier == tier).toList()
+      ..sort((a, b) => tier == PlanTier.standard
+          ? b.months.compareTo(a.months)
+          : a.months.compareTo(b.months));
+
 class SubscriptionScreen extends ConsumerStatefulWidget {
   /// 'new_account' → just signed up; 'paywall' → bounced off the dashboard;
   /// 'renewal' → opened from a subscription_expiry notification.
@@ -94,12 +105,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   int _seats = seatStep;
   late final TextEditingController _seatCtrl;
   List<SubscriptionPlan> _plans = defaultSubscriptionPlans;
-  // Standard is the default tab; its first plan is preselected.
+  // Standard is the default tab; the first card shown (Yearly) is preselected.
   PlanTier _tier = PlanTier.standard;
-  SubscriptionPlan _duration = defaultSubscriptionPlans.firstWhere(
-    (p) => p.isStandard,
-    orElse: () => defaultSubscriptionPlans.first,
-  );
+  SubscriptionPlan _duration =
+      _inDisplayOrder(defaultSubscriptionPlans, PlanTier.standard).firstOrNull ??
+          defaultSubscriptionPlans.first;
   bool _loading = false;
   String? _error;
   String? _razorpayOrderId;
@@ -135,12 +145,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       _plans.any((p) => p.isStandard) && _plans.any((p) => !p.isStandard);
   // Standard cards run longest period first (Yearly left, Monthly right),
   // matching the web; Custom keeps its short-to-long order.
-  List<SubscriptionPlan> get _tierPlans => _plans
-      .where((p) => p.tier == _tier)
-      .toList()
-    ..sort((a, b) => _tier == PlanTier.standard
-        ? b.months.compareTo(a.months)
-        : a.months.compareTo(b.months));
+  List<SubscriptionPlan> get _tierPlans => _inDisplayOrder(_plans, _tier);
   int get _grantedSeats => _duration.billableSeats(_seats);
 
   PromoEvaluation? get _promoEval => _promoDoc == null
@@ -153,7 +158,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   void _switchTier(PlanTier next) {
     if (next == _tier) return;
-    final first = _plans.where((p) => p.tier == next);
+    final first = _inDisplayOrder(_plans, next);
     if (first.isEmpty) return;
     setState(() {
       _tier = next;
@@ -312,7 +317,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             : null;
         _duration = parsed.firstWhere(
           (p) => p.key == _duration.key,
-          orElse: () => renewal ?? parsed.firstWhere((p) => p.tier == _tier),
+          orElse: () => renewal ?? _inDisplayOrder(parsed, _tier).first,
         );
         _tier = _duration.tier;
       });
