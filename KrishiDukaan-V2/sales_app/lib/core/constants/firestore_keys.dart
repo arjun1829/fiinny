@@ -19,6 +19,9 @@ class Collections {
   /// Field expense claims. New in this app.
   static const salesExpenses = 'salesExpenses';
 
+  /// One doc per free-text note a rep leaves against a dealer. New in this app.
+  static const dealerNotes = 'dealerNotes';
+
   static const users = 'users';
   static const uidIndex = 'uidIndex';
 }

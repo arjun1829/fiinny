@@ -307,6 +307,41 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ─── referralCodes ───────────────────────────────────────────────────────
+    // Sales / marketing referral codes (app/lib/referrals.ts). Written only by
+    // /api/admin/referral-codes (admin SDK). Readable by admins and by the
+    // sales-app user the code is assigned to — not public: checkout validates
+    // a typed code through /api/referral/validate instead.
+    match /referralCodes/{code} {
+      allow read: if isAdmin() || (isAuthed() && resource.data.ownerUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // ─── referralEvents ──────────────────────────────────────────────────────
+    // Top of the referral funnel: "open" (link opened, may be signed out) and
+    // "checkout_view" (a signed-in user saw checkout with the code applied).
+    // Create-only, shape-checked, and the code must exist, so junk codes can't
+    // be written. A uid, when present, must be the caller's own. Money never
+    // depends on these — started/paid come from server-written paymentAttempts.
+    match /referralEvents/{eventId} {
+      allow create: if request.resource.data.keys().hasOnly(['code', 'type', 'platform', 'uid', 'plan', 'at'])
+        && request.resource.data.code is string
+        && request.resource.data.code.matches('^[A-Z0-9]{3,20}$')
+        && exists(/databases/$(database)/documents/referralCodes/$(request.resource.data.code))
+        && request.resource.data.type in ['open', 'checkout_view']
+        && request.resource.data.platform in ['web', 'android', 'ios']
+        && request.resource.data.at == request.time
+        && (!('plan' in request.resource.data) || request.resource.data.plan == null
+            || (request.resource.data.plan is string && request.resource.data.plan.size() <= 40))
+        && (
+          request.resource.data.type == 'open'
+            ? (!('uid' in request.resource.data) || request.resource.data.uid == null
+               || (isAuthed() && request.resource.data.uid == request.auth.uid))
+            : (isAuthed() && request.resource.data.uid == request.auth.uid)
+        );
+      allow read, update, delete: if isAdmin();
+    }
+
     // ─── promoCodes ──────────────────────────────────────────────────────────
     // Subscription discount codes. These had NO rule at all, and with no
     // catch-all match Firestore denied every read — so SubscriptionView's
@@ -1144,6 +1179,25 @@ service cloud.firestore {
       allow update: if isAuthed()
                        && resource.data.salesExecutiveId == request.auth.uid;
       allow delete: if isAdmin();
+    }
+
+// ─── dealerNotes ──────────────────────────────────────────────────────────
+    // One free-text note a sales executive leaves against a dealer — a
+    // conversation log, not a structured field. New in the sales app.
+    // Reads are OWNER-SCOPED, same rationale as dealerVisits above: every
+    // client query already filters where('dealerId','==',...) AND is only ever
+    // run by the signed-in rep looking at their own notes, so owner-scoping
+    // matches the only read path that exists.
+    // Unlike dealerVisits, delete is NOT admin-only: the rep who wrote a note
+    // is expected to be able to remove it themselves. Notes are immutable once
+    // created (no edit flow), so there is no update rule.
+    match /dealerNotes/{noteId} {
+      allow read:   if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
+      allow create: if isSalesExec()
+                       && request.resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
     }
 
     // ─── salesAttendance ──────────────────────────────────────────────────────

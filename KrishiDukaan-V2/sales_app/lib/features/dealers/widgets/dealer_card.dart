@@ -17,6 +17,7 @@ class DealerCard extends StatefulWidget {
     required this.onMarkVisited,
     required this.onEdit,
     required this.onDeactivate,
+    required this.onDetail,
   });
 
   final Dealer dealer;
@@ -29,6 +30,11 @@ class DealerCard extends StatefulWidget {
   final VoidCallback onMarkVisited;
   final VoidCallback onEdit;
   final VoidCallback onDeactivate;
+
+  /// Opens the dealer detail page. Wired only to the name/owner text below —
+  /// not the whole card — so it never competes with Call, Directions, Edit,
+  /// Remove or Mark as Visited, each of which is its own tap target.
+  final VoidCallback onDetail;
 
   @override
   State<DealerCard> createState() => _DealerCardState();
@@ -50,45 +56,37 @@ class _DealerCardState extends State<DealerCard> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      height: 44,
-                      width: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.09),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.storefront_rounded,
-                        size: 21,
-                        color: AppColors.primary,
-                      ),
-                    ),
+                    _Avatar(imageUrl: d.imageUrl),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            d.shopName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.onSurface,
+                      child: InkWell(
+                        onTap: widget.onDetail,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              d.shopName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.onSurface,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            d.ownerName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              color: AppColors.onSurfaceVariant,
+                            const SizedBox(height: 2),
+                            Text(
+                              d.ownerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                color: AppColors.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -381,4 +379,123 @@ class _VDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Container(width: 1, height: 34, color: AppColors.divider);
+}
+
+/// Dealer photo when one exists, falling back to the plain icon avatar
+/// otherwise — including when the URL is missing, malformed, or fails to load,
+/// so a bad reference never breaks the card.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.imageUrl});
+
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl;
+    if (url == null || url.isEmpty) return const _FallbackIcon();
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _ImagePreviewDialog(imageUrl: url),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.network(
+          url,
+          height: 44,
+          width: 44,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const _FallbackIcon(),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full, uncropped view of a dealer photo. Opened only when a photo exists —
+/// the caller never wires this up for the fallback icon.
+class _ImagePreviewDialog extends StatelessWidget {
+  const _ImagePreviewDialog({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(12),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Tapping the backdrop dismisses, same as the barrier itself —
+          // InteractiveViewer would otherwise swallow the tap.
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              behavior: HitTestBehavior.opaque,
+            ),
+          ),
+          InteractiveViewer(
+            minScale: 1,
+            maxScale: 4,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'This photo could not be loaded.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 13.5),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Material(
+              color: Colors.black54,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                customBorder: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 20,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FallbackIcon extends StatelessWidget {
+  const _FallbackIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      width: 44,
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Icon(
+        Icons.storefront_rounded,
+        size: 21,
+        color: AppColors.primary,
+      ),
+    );
+  }
 }

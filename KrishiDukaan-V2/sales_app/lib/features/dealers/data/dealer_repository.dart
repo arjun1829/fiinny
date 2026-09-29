@@ -1,13 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../../../core/constants/firestore_keys.dart';
+import '../../expenses/data/bill_image.dart';
 import 'dealer.dart';
 
 class DealerRepository {
-  DealerRepository({FirebaseFirestore? db})
-    : _db = db ?? FirebaseFirestore.instance;
+  DealerRepository({FirebaseFirestore? db, FirebaseStorage? storage})
+    : _db = db ?? FirebaseFirestore.instance,
+      _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseFirestore _db;
+  final FirebaseStorage _storage;
 
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection(Collections.dealers);
@@ -27,7 +31,21 @@ class DealerRepository {
     return list;
   }
 
-  Future<String> create(String uid, DealerInput input) async {
+  /// A single dealer by id, or null when it doesn't exist — used by the
+  /// detail page, which links here from a list item that already has this id.
+  Future<Dealer?> byId(String dealerId) async {
+    final doc = await _col.doc(dealerId).get();
+    return doc.exists ? Dealer.fromDoc(doc) : null;
+  }
+
+  /// Creates the dealer first, then uploads the photo under the new document's
+  /// id — same ordering as expense bills, so a failed upload still leaves a
+  /// usable dealer behind instead of losing what the rep typed.
+  Future<String> create(
+    String uid,
+    DealerInput input, {
+    BillImage? image,
+  }) async {
     final now = FieldValue.serverTimestamp();
     final ref = await _col.add({
       'shopName': input.shopName.trim(),
@@ -42,7 +60,12 @@ class DealerRepository {
       'createdBy': uid,
       'createdAt': now,
       'updatedAt': now,
+      if (input.interest != null) 'interest': input.interest!.name,
     });
+
+    if (image != null) {
+      await attachImage(uid: uid, dealerId: ref.id, image: image);
+    }
     return ref.id;
   }
 
@@ -57,6 +80,9 @@ class DealerRepository {
           ? null
           : GeoPoint(input.geo!.lat, input.geo!.lng),
       'updatedAt': FieldValue.serverTimestamp(),
+      // Omitted (not written as null) when unset, so leaving the picker
+      // untouched on an edit never clobbers a previously recorded interest.
+      if (input.interest != null) 'interest': input.interest!.name,
     });
   }
 
@@ -65,6 +91,30 @@ class DealerRepository {
   Future<void> deactivate(String dealerId) async {
     await _col.doc(dealerId).update({
       'active': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Uploads the dealer photo and patches the doc with its URL/path. The
+  /// filename is fixed per dealer (not per-upload), so replacing a photo on
+  /// edit overwrites the same Storage object instead of leaving the old one
+  /// orphaned. The Firestore doc is only touched after the upload succeeds, so
+  /// a failed upload never disturbs an existing photo reference.
+  Future<void> attachImage({
+    required String uid,
+    required String dealerId,
+    required BillImage image,
+  }) async {
+    final path = 'dealers/$dealerId/photo${image.extension}';
+    final ref = _storage.ref(path);
+    await ref.putData(
+      image.bytes,
+      SettableMetadata(contentType: image.contentType),
+    );
+    final url = await ref.getDownloadURL();
+    await _col.doc(dealerId).update({
+      'imageUrl': url,
+      'imagePath': path,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
