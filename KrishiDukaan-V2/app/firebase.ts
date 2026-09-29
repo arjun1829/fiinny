@@ -1309,6 +1309,7 @@ export async function fetchRetailerInventory(retailerId: string): Promise<any[]>
 }
 
 import { parseVariantWeightKg } from "./utils/weight";
+import { gstAmountPerUnit } from "./utils/gst";
 
 async function fetchSellerGstin(
   sellerId: string,
@@ -1418,7 +1419,13 @@ export async function createOrdersFromCart(params: {
     const normalizedItems = groupItems.map((item) => {
       const lineTotal = Number((item.price * item.qty).toFixed(2));
       const gstApplicable = item.gstApplicable === true && !!item.gstRate;
-      const gstAmount = gstApplicable ? Number((item.price * (item.gstRate as number) / 100).toFixed(2)) : 0;
+      // Default to INCLUDED (business rule) unless the line explicitly says excluded.
+      const gstIncluded = gstApplicable && item.gstIncluded !== false;
+      // Included: component backed out of the inclusive price (NOT added).
+      // Excluded: charged on top of the price (added exactly once to the total).
+      const gstAmount = gstApplicable
+        ? gstAmountPerUnit(item.price, Number(item.gstRate), gstIncluded)
+        : 0;
       const base: Record<string, unknown> = {
         productId: item.productId,
         name: item.name,
@@ -1426,7 +1433,7 @@ export async function createOrdersFromCart(params: {
         qty: item.qty,
         lineTotal,
         ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
-        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount } : {}),
+        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount, gstIncluded } : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;
@@ -1450,8 +1457,19 @@ export async function createOrdersFromCart(params: {
         return sum + (item.originalPrice - item.price) * item.qty;
       }, 0).toFixed(2)
     );
+    // Total GST for the invoice / reporting (both included and excluded lines).
     const totalGst = Number(
       normalizedItems.reduce((sum, row) => {
+        const gstAmt = (row.gstAmount as number | undefined) ?? 0;
+        return sum + gstAmt * (row.qty as number);
+      }, 0).toFixed(2)
+    );
+    // Only EXCLUDED GST is added to the payable total; included GST is already in
+    // the price. For all-inclusive orders (the default) this is 0 — grand total
+    // stays subtotal + delivery.
+    const totalGstAdded = Number(
+      normalizedItems.reduce((sum, row) => {
+        if (row.gstIncluded !== false) return sum; // included → not added
         const gstAmt = (row.gstAmount as number | undefined) ?? 0;
         return sum + gstAmt * (row.qty as number);
       }, 0).toFixed(2)
@@ -1463,16 +1481,62 @@ export async function createOrdersFromCart(params: {
         .toFixed(3),
     );
 
+    // Free-delivery products contribute NO weight and NO charge to the delivery fee.
+    const chargeableItems = groupItems.filter((item) => !item.freeDelivery);
+    const chargeableWeightKg = Number(
+      chargeableItems
+        .reduce((sum, item) => sum + item.qty * parseVariantWeightKg(item.variantUnit), 0)
+        .toFixed(3),
+    );
+
     // Use the phone stored on CartItems (avoids UID→phone round-trip that fails
     // when the seller's document ID is already their phone).
     const sellerPhoneHint = groupItems[0]?.sellerPhone;
 
-    const [deliveryCharge, sellerGstNumber] = await Promise.all([
-      fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint),
+    const [slabDeliveryCharge, sellerGstNumber] = await Promise.all([
+      fetchSellerDeliveryCharge(sellerId, chargeableWeightKg, sellerPhoneHint),
       fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
     ]);
 
-    const grandTotal = Number((subtotal + deliveryCharge + totalGst).toFixed(2));
+    // Per-product surcharge, added once per (non-free) line item on top of the weight-slab charge.
+    const extraDeliveryCharge = Number(
+      chargeableItems.reduce(
+        (sum, item) => sum + (item.extraDeliveryCharge && item.extraDeliveryCharge > 0 ? item.extraDeliveryCharge : 0),
+        0,
+      ).toFixed(2),
+    );
+
+    // Free Delivery overrides the slab + extra when EVERY item ships free. We still
+    // record what would have been charged (waived) so the invoice can show
+    // "Rs.220 FREE" rather than hiding the concession.
+    const isFreeDeliveryOrder = groupItems.length > 0 && chargeableItems.length === 0;
+    let deliveryWaived = 0;
+    if (isFreeDeliveryOrder) {
+      const slabOnFullWeight = await fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint);
+      const extraAll = Number(
+        groupItems.reduce(
+          (sum, item) => sum + (item.extraDeliveryCharge && item.extraDeliveryCharge > 0 ? item.extraDeliveryCharge : 0),
+          0,
+        ).toFixed(2),
+      );
+      deliveryWaived = Number((slabOnFullWeight + extraAll).toFixed(2));
+    }
+
+    const deliveryCharge = isFreeDeliveryOrder
+      ? 0
+      : Number((slabDeliveryCharge + extraDeliveryCharge).toFixed(2));
+
+    // Persisted delivery breakdown — the invoice renders straight from these actual
+    // figures and never recomputes from current slab settings.
+    const deliveryBreakdown = {
+      slab: isFreeDeliveryOrder ? 0 : slabDeliveryCharge,
+      extra: isFreeDeliveryOrder ? 0 : extraDeliveryCharge,
+      free: isFreeDeliveryOrder,
+      waived: deliveryWaived,
+    };
+
+    // Included GST is already inside the price; only EXCLUDED GST is added here.
+    const grandTotal = Number((subtotal + deliveryCharge + totalGstAdded).toFixed(2));
     const sellerName = groupItems[0]?.sellerName ?? "";
 
     // Derive invoiceNumber from the document ref ID (generated before addDoc)
@@ -1494,7 +1558,9 @@ export async function createOrdersFromCart(params: {
       subtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
       ...(totalGst > 0 ? { totalGst } : {}),
+      ...(totalGstAdded > 0 ? { totalGstAdded } : {}),
       deliveryCharge,
+      deliveryBreakdown,
       grandTotal,
       totalWeightKg,
       invoiceNumber,

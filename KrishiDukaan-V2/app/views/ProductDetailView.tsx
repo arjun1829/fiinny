@@ -726,6 +726,8 @@ export default function ProductDetailView({
           effectiveDiscountPct: 0,
           maxDiscountPct: 0,
           gstApplicable: d.gstApplicable === true,
+          freeDelivery: d.freeDelivery === true ? true : undefined,
+          extraDeliveryCharge: typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0 ? d.extraDeliveryCharge : undefined,
           categoryInfo: (d.categoryInfo && typeof d.categoryInfo === 'object' && !Array.isArray(d.categoryInfo))
             ? d.categoryInfo as Record<string, string | string[]>
             : undefined,
@@ -1471,10 +1473,12 @@ export default function ProductDetailView({
                         <span className="text-[10px] font-bold text-on-surface-variant flex items-center gap-1 whitespace-nowrap">
                           <ICONS.Location className="w-3 h-3 shrink-0" />{(store as any).distanceLabel || store.distance || t('nearby')}
                         </span>
-                        <span className="flex items-center gap-1 whitespace-nowrap">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(store.status || '').includes('Open') ? 'bg-green-500' : 'bg-red-400'}`} />
-                          <span className="text-[10px] font-bold text-on-surface-variant">{(store.status || t('active')).split('•')[0].trim()}</span>
-                        </span>
+                        {/* Free delivery reflects THIS store's own listing, not the master. */}
+                        {(availability?.freeDelivery ?? (product.freeDelivery && !availability)) && availability?.isOnline !== false && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 text-green-700 px-1.5 py-0.5 text-[9px] font-black whitespace-nowrap shrink-0">
+                            <ICONS.Delivery className="w-2.5 h-2.5" />{t('freeDeliveryLabel')}
+                          </span>
+                        )}
                         {(() => {
                           const live = storePhone ? liveStoreRatings[storePhone] : undefined;
                           const avg = live ? live.avg : ((store as any).averageRating ?? 0);

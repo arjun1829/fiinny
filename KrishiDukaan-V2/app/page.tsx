@@ -61,6 +61,30 @@ type UserProfile = {
 const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
 
+/**
+ * Resolve the RETAILER-SPECIFIC commercial settings (GST + delivery) for the cart
+ * line. When the buyer has picked a store, its availability entry is authoritative —
+ * absence of a field there means that seller doesn't apply it (e.g. no GST), so we
+ * must NOT fall back to the master product. The canonical `product.*` is used only
+ * when no per-seller entry exists at all. Returns a partial CartItem to spread.
+ */
+function resolveSellerCommercial(
+  entry: NonNullable<MarketplaceProduct["availability"]>[number] | undefined,
+  product: MarketplaceProduct,
+): Partial<CartItem> {
+  const hasEntry = !!entry;
+  const gstApplicable = hasEntry ? entry!.gstApplicable === true : product.gstApplicable === true;
+  const gstRate = hasEntry ? entry!.gstRate : product.gstRate;
+  const gstIncluded = hasEntry ? entry!.gstIncluded === true : product.gstIncluded === true;
+  const extraDeliveryCharge = hasEntry ? entry!.extraDeliveryCharge : product.extraDeliveryCharge;
+  const freeDelivery = hasEntry ? entry!.freeDelivery === true : product.freeDelivery === true;
+  return {
+    ...(gstApplicable && gstRate ? { gstApplicable: true, gstRate, ...(gstIncluded ? { gstIncluded: true } : {}) } : {}),
+    ...(extraDeliveryCharge && extraDeliveryCharge > 0 ? { extraDeliveryCharge } : {}),
+    ...(freeDelivery ? { freeDelivery: true } : {}),
+  };
+}
+
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
 // Falls back to a "not found" message if the manufacturer has no slug set up yet.
 function BrandPageRedirect({ phone }: { phone: string }) {
@@ -1072,7 +1096,8 @@ export default function App() {
           qty: 1,
           sellMode: "pending" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // GST + delivery are retailer-specific and resolved when a store is chosen
+          // (see onAssignStore). A pending line has no seller yet, so none are set.
         },
       ];
     });
@@ -1113,6 +1138,13 @@ export default function App() {
       ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
       : "";
     setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+
+    // Don't leave the customer on the checkout page — take them to their orders.
+    // A global toast carries the confirmation across the navigation, and a short
+    // beat lets the success state register before the view switches to /?view=orders.
+    setToastMsg(`✅ Payment successful! ${orderIds.length} order${orderIds.length > 1 ? "s" : ""} placed.`);
+    setToastType("success");
+    setTimeout(() => navigate("orders"), 1200);
   };
 
   const placeOrders = async (grandTotal?: number) => {
@@ -1419,7 +1451,8 @@ export default function App() {
           qty: 1,
           sellMode: "online_delivery" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // Retailer-specific GST + delivery from the SELECTED store's listing.
+          ...resolveSellerCommercial(availEntry, product),
         },
       ];
     });
@@ -1644,9 +1677,29 @@ export default function App() {
               );
               const resolvedSellerPhone: string | undefined = (assignedStore as any)?.phone || undefined;
 
+              // Resolve the chosen store's OWN GST + delivery from its availability
+              // entry (retailer-specific). This overrides anything the line carried.
               setCartItems((prev) => {
                 const pendingItem = prev.find(item => cartItemKey(item) === itemKey);
                 if (!pendingItem) return prev;
+
+                const productForItem = mergedProducts.find(p => p.id === pendingItem.productId);
+                const assignEntry = productForItem?.availability?.find(
+                  (a) =>
+                    (sellerId && a.storeId === sellerId) ||
+                    (resolvedSellerPhone && (a.storePhone === resolvedSellerPhone || a.storeId === resolvedSellerPhone)),
+                );
+                // Absent fields mean this seller doesn't apply them — clear stale values.
+                const commercial: Partial<CartItem> = productForItem
+                  ? resolveSellerCommercial(assignEntry, productForItem)
+                  : {};
+                const commercialReset = {
+                  gstApplicable: commercial.gstApplicable,
+                  gstRate: commercial.gstRate,
+                  gstIncluded: commercial.gstIncluded,
+                  extraDeliveryCharge: commercial.extraDeliveryCharge,
+                  freeDelivery: commercial.freeDelivery,
+                };
 
                 // An "online_delivery" line is the SAME cart entry only when it shares
                 // the product, the newly-chosen seller AND the same package size.
@@ -1676,6 +1729,8 @@ export default function App() {
                         ...(storePrice != null ? { price: storePrice } : {}),
                         ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
                         ...(originalPrice != null ? { originalPrice } : { originalPrice: undefined }),
+                        // Retailer-specific GST + delivery (cleared if this seller has none).
+                        ...commercialReset,
                       }
                     : item
                 );

@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt, Youtube } from "lucide-react";
+import NextLink from "next/link";
+import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt, Youtube, Truck, Settings2 } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
 import { compressImage } from "../../utils/compressImage";
 import { updateManufacturerProduct, toggleProductActive, syncPriceToRetailers } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
+import { fetchDeliverySettings, calculateDeliveryCharge } from "../_lib/delivery-settings-firestore";
+import type { WeightSlab } from "../_types/delivery-settings";
 import type { InventoryRow } from "../_types/inventory";
+import { useEffectiveUser } from "../_context/effective-user-context";
+import { parseVariantWeightKg } from "../../utils/weight";
+import { gstAmountPerUnit } from "../../utils/gst";
 import { useI18n } from "../../i18n/I18nContext";
 import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
@@ -24,7 +30,6 @@ import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom
 const CATEGORIES = PRODUCT_CATEGORIES;
 
 const GST_RATES = [0, 5, 12, 18, 28] as const;
-type GstRate = typeof GST_RATES[number];
 
 const UNIT_TYPES = [
   { value: "g",      label: "gm",     display: "gm" },
@@ -451,10 +456,32 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   const [message, setMessage]         = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [updateRetailerPrices, setUpdateRetailerPrices] = useState(true);
   const [gstApplicable, setGstApplicable] = useState<boolean>(row.gstApplicable ?? false);
-  const [gstRate, setGstRate]             = useState<GstRate>(row.gstRate ?? 0);
+  const [gstRate, setGstRate]             = useState<number>(row.gstRate ?? 0);
+  // "Custom" GST mode is active when the stored rate isn't one of the predefined slabs.
+  const [gstCustom, setGstCustom]         = useState<boolean>(
+    (row.gstApplicable ?? false) && !(GST_RATES as readonly number[]).includes(row.gstRate ?? 0),
+  );
   const [sellMode, setSellMode]           = useState<"online_delivery" | "offline_store_only">(
     row.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
   );
+  const [extraDeliveryCharge, setExtraDeliveryCharge] = useState<string>(
+    row.extraDeliveryCharge && row.extraDeliveryCharge > 0 ? String(row.extraDeliveryCharge) : "",
+  );
+  const [freeDelivery, setFreeDelivery] = useState<boolean>(row.freeDelivery ?? false);
+
+  // Seller's global weight-slab delivery settings — used to preview the delivery
+  // charge for each pack size. Fetched once from deliverySettings/{phone}.
+  const { profile: effectiveProfile } = useEffectiveUser();
+  const [deliverySlabs, setDeliverySlabs] = useState<WeightSlab[] | null>(null);
+  useEffect(() => {
+    const phone = String((effectiveProfile as any)?.phone ?? "").trim();
+    if (!phone) { setDeliverySlabs([]); return; }
+    let cancelled = false;
+    void fetchDeliverySettings(phone).then((s) => {
+      if (!cancelled) setDeliverySlabs(s?.weightSlabs ?? []);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveProfile]);
 
   const [videoUrl, setVideoUrl] = useState<string>((row as any).videoUrl ?? "");
   const [composition, setComposition] = useState<CompositionEntry[]>(
@@ -554,6 +581,14 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
     const effectiveSellMode: "online_delivery" | "offline_store_only" =
       accountDeliveryEnabled !== false ? sellMode : "offline_store_only";
     const effectiveGstApplicable = accountDeliveryEnabled !== false ? gstApplicable : false;
+    // Free delivery / extra charge only apply to online-delivery products.
+    const deliveryConfigurable = accountDeliveryEnabled !== false && effectiveSellMode === "online_delivery";
+    const effectiveFreeDelivery = deliveryConfigurable ? freeDelivery : false;
+    // A free-delivery product carries no extra charge.
+    const parsedExtraDelivery =
+      deliveryConfigurable && !effectiveFreeDelivery
+        ? Math.max(0, Number(extraDeliveryCharge) || 0)
+        : 0;
 
     setSaving(true);
     setMessage(null);
@@ -583,6 +618,10 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
         gstApplicable: effectiveGstApplicable,
         gstRate: effectiveGstApplicable ? gstRate : 0,
+        // GST is always included in the product price (never charged separately).
+        gstIncluded: effectiveGstApplicable,
+        extraDeliveryCharge: parsedExtraDelivery,
+        freeDelivery: effectiveFreeDelivery,
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
@@ -644,6 +683,40 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
       setToggling(false);
     }
   };
+
+  // ── Delivery & GST preview ───────────────────────────────────────────────
+  // Per-pack-size delivery charge: global weight slab (by variant weight) + the
+  // product-level extra surcharge. Mirrors the cart's calculation exactly.
+  // Free delivery zeroes both the slab charge and the extra surcharge.
+  const extraDeliveryNum = freeDelivery ? 0 : Math.max(0, Number(extraDeliveryCharge) || 0);
+  const slabsReady = deliverySlabs !== null;
+  const deliveryPreview = variants.map((v) => {
+    const unit = buildUnit(v);
+    const weightKg = parseVariantWeightKg(unit);
+    const slabCharge = !freeDelivery && weightKg > 0 && deliverySlabs?.length
+      ? calculateDeliveryCharge(weightKg, deliverySlabs)
+      : 0;
+    return {
+      unit,
+      weightKg,
+      slabCharge,
+      total: Number((slabCharge + extraDeliveryNum).toFixed(2)),
+      price: Number(v.price) || 0,
+    };
+  });
+
+  // Representative breakdown uses the first pack size.
+  // GST is ALWAYS included in the product price (never charged separately), so the
+  // GST amount is the component backed out of the inclusive price and is NOT added
+  // to the final price.
+  const base = deliveryPreview[0];
+  const basePrice = base?.price ?? 0;
+  const baseGstAmount = gstApplicable && gstRate > 0
+    ? gstAmountPerUnit(basePrice, gstRate, true)
+    : 0;
+  const baseDelivery = sellMode === "online_delivery" ? (base?.total ?? 0) : 0;
+  const baseFinal = Number((basePrice + baseDelivery).toFixed(2));
+  const rupee = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <>
@@ -882,6 +955,111 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
               </div>
 
+              {/* Delivery-charge configuration — only when Online Delivery = Yes */}
+              {sellMode === "online_delivery" && (
+                <div className="rounded-xl border border-outline-variant/25 bg-white px-4 py-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-on-surface flex items-center gap-1.5">
+                      <Truck className="h-4 w-4 text-primary" /> Delivery charge
+                    </p>
+                    <NextLink
+                      href="/dashboard/delivery"
+                      target="_blank"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" /> Edit Delivery Settings
+                    </NextLink>
+                  </div>
+
+                  {/* Free Delivery toggle */}
+                  <div className="flex items-center justify-between gap-2 border-t border-outline-variant/15 pt-3">
+                    <div>
+                      <p className="text-sm font-medium text-on-surface">Free Delivery</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5">Ship this product free — buyers pay ₹0 delivery for it.</p>
+                    </div>
+                    <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                      {([true, false] as const).map((v) => (
+                        <button key={String(v)} type="button" disabled={saving}
+                          onClick={() => setFreeDelivery(v)}
+                          className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                            freeDelivery === v ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
+                          }`}
+                        >
+                          {v ? "Yes" : "No"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {freeDelivery ? (
+                    <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
+                      Free delivery is on — this product adds ₹0 to the buyer&apos;s delivery charge,
+                      overriding the weight slab and any extra charge.
+                    </div>
+                  ) : (
+                    <>
+                      {!slabsReady ? (
+                        <p className="text-xs text-on-surface-variant flex items-center gap-1.5">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading delivery settings…
+                        </p>
+                      ) : (
+                        <>
+                          {!deliverySlabs?.length && (
+                            <p className="text-xs text-amber-700">
+                              No delivery weight slabs configured. Buyers won&apos;t be charged a
+                              weight-based fee until you set them in Delivery Settings.
+                            </p>
+                          )}
+                          <div className="flex flex-col gap-1.5">
+                            {deliveryPreview.map((d, i) => (
+                              <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                                <span className="font-medium text-on-surface-variant">
+                                  {d.unit || `Pack ${i + 1}`}
+                                  {d.weightKg > 0
+                                    ? <span className="text-on-surface-variant/60"> · {d.weightKg} kg</span>
+                                    : <span className="text-on-surface-variant/60"> · weight n/a</span>}
+                                </span>
+                                <span className="font-semibold text-on-surface">
+                                  {d.weightKg > 0 || extraDeliveryNum > 0
+                                    ? rupee(d.total)
+                                    : "—"}
+                                  {extraDeliveryNum > 0 && d.weightKg > 0 && (
+                                    <span className="text-on-surface-variant/60 font-normal"> ({rupee(d.slabCharge)} + {rupee(extraDeliveryNum)})</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Extra (product-level) delivery charge */}
+                      <label className="flex flex-col gap-1 text-xs pt-1">
+                        <span className="font-medium text-on-surface">Extra Delivery Charge for this product (₹)</span>
+                        <div className="relative w-40">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">₹</span>
+                          <input
+                            type="text" inputMode="decimal" disabled={saving}
+                            placeholder="0"
+                            value={extraDeliveryCharge}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/[^\d.]/g, "");
+                              const parts = raw.split(".");
+                              setExtraDeliveryCharge(parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : ""));
+                            }}
+                            onBlur={(e) => { const n = parseFloat(e.target.value); setExtraDeliveryCharge(!isNaN(n) && n > 0 ? String(n) : ""); }}
+                            className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest pl-7 pr-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                          />
+                        </div>
+                        <span className="text-[10px] text-on-surface-variant">
+                          Added on top of the weight-slab charge above. Leave empty to use only the global delivery settings.
+                        </span>
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* GST toggle */}
               <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
                 <div>
@@ -891,7 +1069,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
                   {([true, false] as const).map((v) => (
                     <button key={String(v)} type="button" disabled={saving}
-                      onClick={() => { setGstApplicable(v); if (!v) setGstRate(0); }}
+                      onClick={() => { setGstApplicable(v); if (!v) { setGstRate(0); setGstCustom(false); } }}
                       className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
                         gstApplicable === v
                           ? "bg-primary text-white"
@@ -910,9 +1088,9 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                   <div className="flex flex-wrap gap-2">
                     {GST_RATES.map((rate) => (
                       <button key={rate} type="button" disabled={saving}
-                        onClick={() => setGstRate(rate)}
+                        onClick={() => { setGstCustom(false); setGstRate(rate); }}
                         className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
-                          gstRate === rate
+                          !gstCustom && gstRate === rate
                             ? "border-primary bg-primary text-white shadow-sm"
                             : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
                         }`}
@@ -920,8 +1098,36 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                         {rate}%
                       </button>
                     ))}
+                    <button type="button" disabled={saving}
+                      onClick={() => { setGstCustom(true); }}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                        gstCustom
+                          ? "border-primary bg-primary text-white shadow-sm"
+                          : "border-outline-variant/40 bg-white text-on-surface-variant hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      Custom
+                    </button>
                   </div>
-                  {gstApplicable && gstRate === 0 && (
+
+                  {gstCustom && (
+                    <div className="relative w-32">
+                      <input
+                        type="text" inputMode="decimal" disabled={saving}
+                        placeholder="e.g. 3"
+                        value={gstRate ? String(gstRate) : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^\d.]/g, "");
+                          const n = parseFloat(raw);
+                          setGstRate(!isNaN(n) ? Math.min(100, Math.max(0, n)) : 0);
+                        }}
+                        className="w-full rounded-xl border border-primary/30 bg-primary/5 pl-3 pr-7 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-on-surface-variant">%</span>
+                    </div>
+                  )}
+
+                  {gstRate === 0 && (
                     <p className="text-xs text-amber-700 flex items-center gap-1">
                       0% GST selected — confirm this product is exempt or zero-rated.
                     </p>
@@ -929,9 +1135,51 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
               )}
 
+              {/* GST is always included in the product price — never charged separately. */}
               {gstApplicable && gstRate > 0 && (
                 <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
-                  GST at <span className="font-bold">{gstRate}%</span> will be recorded for this product.
+                  GST at <span className="font-bold">{gstRate}%</span> is included in the product price
+                  and is not charged separately.
+                </div>
+              )}
+
+              {/* ── Price Breakdown (representative — first pack size) ── */}
+              {(sellMode === "online_delivery" || (gstApplicable && gstRate > 0)) && basePrice > 0 && (
+                <div className="rounded-xl bg-primary/5 border border-primary/15 px-4 py-3 space-y-1.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                    Price breakdown{base?.unit ? ` · ${base.unit}` : ""}
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-on-surface">
+                    <span>Product Price</span>
+                    <span className="font-semibold">{rupee(basePrice)}</span>
+                  </div>
+                  {gstApplicable && gstRate > 0 && (
+                    <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                      <span>GST ({gstRate}% incl. in price)</span>
+                      <span className="font-semibold">({rupee(baseGstAmount)})</span>
+                    </div>
+                  )}
+                  {sellMode === "online_delivery" && (
+                    <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                      <span>+ Delivery Charge</span>
+                      <span className="font-semibold">
+                        {freeDelivery
+                          ? <span className="text-primary">Free</span>
+                          : base && (base.weightKg > 0 || extraDeliveryNum > 0) ? `+ ${rupee(baseDelivery)}` : "—"}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between border-t border-primary/15 pt-1.5 text-sm">
+                    <span className="font-bold text-on-surface">
+                      {sellMode === "online_delivery" ? "Final Online Delivery Price" : "Final Price"}
+                    </span>
+                    <span className="font-black text-primary">{rupee(baseFinal)}</span>
+                  </div>
+                  {gstApplicable && gstRate > 0 && (
+                    <p className="text-[10px] text-on-surface-variant pt-0.5">
+                      GST shown in brackets is already part of the product price and is not added again.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

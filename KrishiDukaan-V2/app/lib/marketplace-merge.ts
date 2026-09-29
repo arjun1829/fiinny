@@ -66,9 +66,15 @@ export function mapMarketplaceDoc(
     availability: data.availability || undefined,
     source: data.source ? String(data.source) : undefined,
     gstApplicable: data.gstApplicable === true,
-    gstRate: [0, 5, 12, 18, 28].includes(Number(data.gstRate))
-      ? (Number(data.gstRate) as 0 | 5 | 12 | 18 | 28)
+    // Predefined slab or a custom seller-entered rate — accept any non-negative number.
+    gstRate: (typeof data.gstRate === "number" || typeof data.gstRate === "string") && Number(data.gstRate) >= 0
+      ? Number(data.gstRate)
       : undefined,
+    gstIncluded: data.gstIncluded === true,
+    extraDeliveryCharge: typeof data.extraDeliveryCharge === "number" && data.extraDeliveryCharge > 0
+      ? data.extraDeliveryCharge
+      : undefined,
+    freeDelivery: data.freeDelivery === true ? true : undefined,
     averageRating: typeof data.averageRating === "number" ? data.averageRating : undefined,
     totalReviews: typeof data.totalReviews === "number" ? data.totalReviews : undefined,
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
@@ -109,6 +115,22 @@ export function mapMarketplaceDoc(
  * `allMapped` must already be mapped via mapMarketplaceDoc and filtered for
  * isActive. For paginated callers, pass one page of COMPLETE name-groups.
  */
+/**
+ * The retailer-specific commercial settings that must travel with each seller's
+ * availability entry (so cart/checkout use the retailer's own config, never the
+ * master product's). Undefined values are stripped so they don't clobber a
+ * canonical fallback when absent.
+ */
+function sellerCommercial(p: MarketplaceProduct) {
+  return {
+    ...(p.gstApplicable === true ? { gstApplicable: true } : {}),
+    ...(typeof p.gstRate === "number" ? { gstRate: p.gstRate } : {}),
+    ...(p.gstIncluded === true ? { gstIncluded: true } : {}),
+    ...(typeof p.extraDeliveryCharge === "number" && p.extraDeliveryCharge > 0 ? { extraDeliveryCharge: p.extraDeliveryCharge } : {}),
+    ...(p.freeDelivery === true ? { freeDelivery: true } : {}),
+  };
+}
+
 export function mergeMarketplaceProducts(
   allMapped: MarketplaceProduct[],
   ratingAgg: RatingAgg,
@@ -217,6 +239,7 @@ export function mergeMarketplaceProducts(
         isOnline: secondary.isOnline,
         discountPct: secondaryDiscountPct > 0 ? secondaryDiscountPct : undefined,
         variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
+        ...sellerCommercial(secondary),
       });
     }
 
@@ -263,6 +286,7 @@ export function mergeMarketplaceProducts(
           isOnline: copy.isOnline,
           discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
           variants: Array.isArray(copy.variants) ? copy.variants : undefined,
+          ...sellerCommercial(copy),
         },
       ];
       byName.set(key, {
@@ -290,6 +314,8 @@ export function mergeMarketplaceProducts(
       if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
       if (Array.isArray(copy.variants)) existing.variants = copy.variants;
       if (copyDiscountPct > 0) existing.discountPct = copyDiscountPct;
+      // This seller's own commercial settings always come from its copy doc.
+      Object.assign(existing, sellerCommercial(copy));
     } else {
       av.push({
         storeId: copyStoreId,
@@ -300,6 +326,7 @@ export function mergeMarketplaceProducts(
         isOnline: copy.isOnline,
         discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
         variants: Array.isArray(copy.variants) ? copy.variants : undefined,
+        ...sellerCommercial(copy),
       });
     }
     const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
@@ -369,6 +396,7 @@ export function mergeMarketplaceProducts(
             sellingPrice: p.price,
             isOnline: p.isOnline,
             variants: Array.isArray(p.variants) ? p.variants : undefined,
+            ...sellerCommercial(p),
           },
         ];
 

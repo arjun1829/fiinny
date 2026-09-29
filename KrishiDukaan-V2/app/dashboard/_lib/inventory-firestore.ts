@@ -128,11 +128,15 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
     variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
-    // GST fields
+    // GST fields — gstRate may be a predefined slab or a custom rate.
     gstApplicable: data.gstApplicable === true,
-    gstRate: ([0, 5, 12, 18, 28] as const).includes(data.gstRate as 0 | 5 | 12 | 18 | 28)
-      ? (data.gstRate as 0 | 5 | 12 | 18 | 28)
+    gstRate: typeof data.gstRate === "number" && data.gstRate >= 0 ? data.gstRate : 0,
+    gstIncluded: data.gstIncluded === true,
+    // Delivery — per-product surcharge on top of the seller's weight-slab charge.
+    extraDeliveryCharge: typeof data.extraDeliveryCharge === "number" && data.extraDeliveryCharge > 0
+      ? data.extraDeliveryCharge
       : 0,
+    freeDelivery: data.freeDelivery === true,
   };
 }
 
@@ -455,6 +459,9 @@ export async function fetchRetailerInventoryRows(
         sellMode: p.sellMode ?? "online_delivery",
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
+        gstIncluded: p.gstIncluded ?? false,
+        extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
+        freeDelivery: p.freeDelivery ?? false,
         assignedByManufacturer: inv.assignedByManufacturer === true,
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
@@ -566,6 +573,9 @@ export async function fetchManufacturerCatalogueRows(
       sellMode: p.sellMode ?? "online_delivery",
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
+      gstIncluded: p.gstIncluded ?? false,
+      extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
+      freeDelivery: p.freeDelivery ?? false,
       assignedByManufacturer: false,
       source: p.source ?? "manufacturer_inventory",
       ownerId: p.ownerId,
@@ -651,7 +661,14 @@ export type AddProductInventoryInput = {
   customFields?: { title: string; value: string }[];
   /** GST configuration for this product. */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
   /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
@@ -740,6 +757,10 @@ export async function createProductAndInventory(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
+    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? false) : false,
+    // Delivery — per-product surcharge on top of the global weight-slab charge
+    extraDeliveryCharge: input.extraDeliveryCharge ?? 0,
+    freeDelivery: input.freeDelivery ?? false,
     // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 

@@ -12,6 +12,7 @@ import { HelperIcon } from "../../components/helpers";
 import { ShieldCheck, CreditCard, Lock } from "lucide-react";
 import { calcDiscount } from "../utils/discount";
 import { parseVariantWeightKg } from "../utils/weight";
+import { gstAmountPerUnit } from "../utils/gst";
 
 type AddressField = "customerName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
 
@@ -139,6 +140,7 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
 
       await Promise.all(
         Array.from(groups.entries()).map(async ([sellerId, items]) => {
+          // Total shipment weight (all items) — shown as the estimate to the buyer.
           const weightKg = Number(
             items
               .reduce((s, i) => s + i.qty * parseVariantWeightKg(i.variantUnit), 0)
@@ -146,11 +148,27 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
           );
           weights[sellerId] = weightKg;
 
-          console.log("[DeliveryEstimate] seller:", sellerId, "weightKg:", weightKg, "items:", items.map(i => `${i.name}×${i.qty} ${i.variantUnit ?? ""}`));
+          // Free-delivery products contribute NO weight and NO charge to the fee.
+          const chargeableItems = items.filter((i) => !i.freeDelivery);
+          const chargeableWeightKg = Number(
+            chargeableItems
+              .reduce((s, i) => s + i.qty * parseVariantWeightKg(i.variantUnit), 0)
+              .toFixed(3),
+          );
 
-          if (weightKg === 0) {
-            console.log("[DeliveryEstimate] weight=0, no delivery charge applied");
-            charges[sellerId] = 0;
+          // Per-product delivery surcharge — added once per (non-free) line item, on
+          // top of whatever the seller's weight slab resolves to (including free / 0).
+          const extra = Number(
+            chargeableItems
+              .reduce((s, i) => s + (i.extraDeliveryCharge && i.extraDeliveryCharge > 0 ? i.extraDeliveryCharge : 0), 0)
+              .toFixed(2),
+          );
+
+          console.log("[DeliveryEstimate] seller:", sellerId, "weightKg:", weightKg, "chargeableKg:", chargeableWeightKg, "extra:", extra, "items:", items.map(i => `${i.name}×${i.qty} ${i.variantUnit ?? ""}${i.freeDelivery ? " [free]" : ""}`));
+
+          if (chargeableWeightKg === 0) {
+            console.log("[DeliveryEstimate] no chargeable weight, only per-product extra applied");
+            charges[sellerId] = extra;
             return;
           }
 
@@ -182,7 +200,7 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
 
             if (!phone) {
               console.warn("[DeliveryEstimate] could not resolve phone for seller:", sellerId);
-              charges[sellerId] = 0;
+              charges[sellerId] = extra;
               return;
             }
 
@@ -190,7 +208,7 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
             console.log("[DeliveryEstimate] deliverySettings doc exists:", settingsSnap.exists(), "for phone:", phone);
 
             if (!settingsSnap.exists()) {
-              charges[sellerId] = 0;
+              charges[sellerId] = extra;
               return;
             }
 
@@ -199,12 +217,12 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
               | undefined;
             console.log("[DeliveryEstimate] slabs:", JSON.stringify(slabs));
 
-            if (!slabs?.length) { charges[sellerId] = 0; return; }
+            if (!slabs?.length) { charges[sellerId] = extra; return; }
 
             const sorted = [...slabs].sort((a, b) => a.minKg - b.minKg);
             let charge = 0;
             for (const slab of sorted) {
-              if (weightKg >= slab.minKg && weightKg < slab.maxKg) {
+              if (chargeableWeightKg >= slab.minKg && chargeableWeightKg < slab.maxKg) {
                 charge = slab.charge;
                 console.log("[DeliveryEstimate] matched slab:", slab, "→ charge:", charge);
                 break;
@@ -213,18 +231,18 @@ function useDeliveryEstimates(readyItems: CartItem[]): DeliveryEstimate {
             // Open-ended last slab (above all configured ranges)
             if (!charge) {
               const last = sorted[sorted.length - 1];
-              if (last && weightKg >= last.minKg) {
+              if (last && chargeableWeightKg >= last.minKg) {
                 charge = last.charge;
                 console.log("[DeliveryEstimate] last-slab fallback:", last, "→ charge:", charge);
               }
             }
             if (!charge) {
-              console.warn("[DeliveryEstimate] no slab matched weightKg=", weightKg, "slabs:", sorted);
+              console.warn("[DeliveryEstimate] no slab matched chargeableWeightKg=", chargeableWeightKg, "slabs:", sorted);
             }
-            charges[sellerId] = charge;
+            charges[sellerId] = Number((charge + extra).toFixed(2));
           } catch (err) {
             console.error("[DeliveryEstimate] fetch error:", err);
-            charges[sellerId] = 0;
+            charges[sellerId] = extra;
           }
         }),
       );
@@ -607,11 +625,18 @@ function CartItemCard({
         <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover border border-surface-container shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-bold text-on-surface truncate">{item.name}</p>
-          {item.variantUnit && (
-            <span className="inline-flex items-center text-[10px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full mt-0.5">
-              {item.variantUnit}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+            {item.variantUnit && (
+              <span className="inline-flex items-center text-[10px] font-bold text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
+                {item.variantUnit}
+              </span>
+            )}
+            {item.freeDelivery && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                <ICONS.Delivery className="w-3 h-3" /> {t('freeDeliveryLabel')}
+              </span>
+            )}
+          </div>
 
           {!isPending && (
             <div className="mt-1 flex flex-col gap-1">
@@ -758,14 +783,17 @@ export default function CartView({
   }, 0);
   const discountedSubtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
   const totalDiscounts = mrpSubtotal - discountedSubtotal;
-  const totalGst = readyItems.reduce((sum, item) => {
+  // GST is ALWAYS included in the product price and is never charged separately,
+  // so it is not added to the payable total. Compute the included component only
+  // for transparency in the summary.
+  const totalGstIncluded = readyItems.reduce((sum, item) => {
     if (!item.gstApplicable || !item.gstRate) return sum;
-    return sum + item.price * item.qty * item.gstRate / 100;
+    return sum + gstAmountPerUnit(item.price, item.gstRate, true) * item.qty;
   }, 0);
   // grandTotal is undefined while delivery is being estimated to avoid showing stale figures
   const grandTotal = estimatingDelivery
     ? undefined
-    : discountedSubtotal + deliveryCharge + totalGst;
+    : discountedSubtotal + deliveryCharge;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -1066,14 +1094,12 @@ export default function CartView({
             </p>
           )}
 
-          {/* Total GST — only when any item has GST */}
-          {canCheckout && totalGst > 0 && (
-            <div className="flex items-center justify-between text-sm text-on-surface-variant">
-              <span className="inline-flex items-center gap-1">
-                {t('cartTotalGst')}
-              </span>
-              <span className="font-semibold text-on-surface">
-                ₹{totalGst.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {/* GST is included in the prices — informational only, never added to the total */}
+          {canCheckout && totalGstIncluded > 0 && (
+            <div className="flex items-center justify-between text-[11px] text-on-surface-variant/80">
+              <span>{t('cartGstIncluded')}</span>
+              <span>
+                ₹{totalGstIncluded.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           )}
