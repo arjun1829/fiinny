@@ -131,7 +131,7 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     // GST fields — gstRate may be a predefined slab or a custom rate.
     gstApplicable: data.gstApplicable === true,
     gstRate: typeof data.gstRate === "number" && data.gstRate >= 0 ? data.gstRate : 0,
-    gstIncluded: data.gstIncluded === true,
+    gstIncluded: data.gstIncluded !== false, // default included (business rule)
     // Delivery — per-product surcharge on top of the seller's weight-slab charge.
     extraDeliveryCharge: typeof data.extraDeliveryCharge === "number" && data.extraDeliveryCharge > 0
       ? data.extraDeliveryCharge
@@ -459,7 +459,7 @@ export async function fetchRetailerInventoryRows(
         sellMode: p.sellMode ?? "online_delivery",
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
-        gstIncluded: p.gstIncluded ?? false,
+        gstIncluded: p.gstIncluded ?? true, // default included (business rule)
         extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
         freeDelivery: p.freeDelivery ?? false,
         assignedByManufacturer: inv.assignedByManufacturer === true,
@@ -573,7 +573,7 @@ export async function fetchManufacturerCatalogueRows(
       sellMode: p.sellMode ?? "online_delivery",
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
-      gstIncluded: p.gstIncluded ?? false,
+      gstIncluded: p.gstIncluded ?? true, // default included (business rule)
       extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
       freeDelivery: p.freeDelivery ?? false,
       assignedByManufacturer: false,
@@ -757,7 +757,8 @@ export async function createProductAndInventory(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
-    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? false) : false,
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? true) : false,
     // Delivery — per-product surcharge on top of the global weight-slab charge
     extraDeliveryCharge: input.extraDeliveryCharge ?? 0,
     freeDelivery: input.freeDelivery ?? false,

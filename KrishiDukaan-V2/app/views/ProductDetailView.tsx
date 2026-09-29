@@ -1801,6 +1801,12 @@ export default function ProductDetailView({
           const { currentPrice, mrp, discountPct, savings, hasOffer, isLowestNearby } = variantPricing;
           const showStrikethrough = mrp > currentPrice;
 
+          // GST note — product-level settings (per-seller overrides apply at cart).
+          // Inclusive: GST already inside the shown price. Exclusive: added at checkout.
+          const gstRateNum = Number(product.gstRate) || 0;
+          const gstApplicableForDisplay = product.gstApplicable === true && gstRateNum > 0;
+          const gstIncludedForDisplay = product.gstIncluded !== false; // business default: included
+
           // Add-to-Cart / Buy Now carry the SELECTED size at its best store-configured
           // price (mrp = lowest per-store original for this size). The existing cart +
           // discount engine then applies the store discount, matching the price shown.
@@ -1851,6 +1857,13 @@ export default function ProductDetailView({
                     <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
                   )}
                 </div>
+              )}
+              {gstApplicableForDisplay && (
+                <span className={`text-[11px] font-semibold ${gstIncludedForDisplay ? 'text-on-surface-variant' : 'text-amber-700'}`}>
+                  {gstIncludedForDisplay
+                    ? t('pdpGstIncluded', { rate: gstRateNum })
+                    : t('pdpGstExtra', { rate: gstRateNum })}
+                </span>
               )}
               {displayStock !== undefined && displayStock > 0 && displayStock <= 20 && (
                 <span className="mb-1 text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">

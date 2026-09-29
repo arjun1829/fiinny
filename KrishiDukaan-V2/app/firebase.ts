@@ -1309,7 +1309,7 @@ export async function fetchRetailerInventory(retailerId: string): Promise<any[]>
 }
 
 import { parseVariantWeightKg } from "./utils/weight";
-import { gstAmountPerUnit } from "./utils/gst";
+import { computeLinePricing } from "./utils/gst";
 
 async function fetchSellerGstin(
   sellerId: string,
@@ -1417,23 +1417,29 @@ export async function createOrdersFromCart(params: {
     const [sellerType, sellerId] = key.split(":") as [SellerType, string];
 
     const normalizedItems = groupItems.map((item) => {
-      const lineTotal = Number((item.price * item.qty).toFixed(2));
-      const gstApplicable = item.gstApplicable === true && !!item.gstRate;
-      // Default to INCLUDED (business rule) unless the line explicitly says excluded.
-      const gstIncluded = gstApplicable && item.gstIncluded !== false;
-      // Included: component backed out of the inclusive price (NOT added).
-      // Excluded: charged on top of the price (added exactly once to the total).
-      const gstAmount = gstApplicable
-        ? gstAmountPerUnit(item.price, Number(item.gstRate), gstIncluded)
-        : 0;
+      // Authoritative pricing — item.price is the post-discount unit price, so GST
+      // is computed on the discounted price. Inclusive backs the component out;
+      // exclusive adds it on top. Same helper the Cart and invoice use.
+      const pricing = computeLinePricing({
+        unitPrice: item.price,
+        qty: item.qty,
+        gstApplicable: item.gstApplicable,
+        gstRate: item.gstRate,
+        gstIncluded: item.gstIncluded,
+      });
+      // `lineTotal` persisted here is the NET (pre-added-GST) value; subtotal sums
+      // these and added GST is tracked separately via totalGstAdded (see below), so
+      // the invoice can reconstruct exactly what was charged.
       const base: Record<string, unknown> = {
         productId: item.productId,
         name: item.name,
         price: item.price,
         qty: item.qty,
-        lineTotal,
+        lineTotal: pricing.net,
         ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
-        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount, gstIncluded } : {}),
+        ...(pricing.applicable
+          ? { gstApplicable: true, gstRate: item.gstRate, gstAmount: pricing.gstPerUnit, gstIncluded: pricing.included }
+          : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;

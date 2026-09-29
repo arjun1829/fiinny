@@ -136,7 +136,8 @@ export async function createManufacturerProduct(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
-    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? false) : false,
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? true) : false,
     // Delivery — per-product surcharge on top of the global weight-slab charge
     extraDeliveryCharge: input.extraDeliveryCharge ?? 0,
     freeDelivery: input.freeDelivery ?? false,
@@ -286,7 +287,8 @@ export async function updateManufacturerProduct(
   if (input.gstApplicable !== undefined) {
     patch.gstApplicable = input.gstApplicable;
     patch.gstRate = input.gstApplicable ? (input.gstRate ?? 0) : 0;
-    patch.gstIncluded = input.gstApplicable ? (input.gstIncluded ?? false) : false;
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    patch.gstIncluded = input.gstApplicable ? (input.gstIncluded ?? true) : false;
   }
   if (input.extraDeliveryCharge !== undefined) {
     patch.extraDeliveryCharge = Number.isFinite(input.extraDeliveryCharge)

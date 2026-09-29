@@ -70,7 +70,9 @@ export function mapMarketplaceDoc(
     gstRate: (typeof data.gstRate === "number" || typeof data.gstRate === "string") && Number(data.gstRate) >= 0
       ? Number(data.gstRate)
       : undefined,
-    gstIncluded: data.gstIncluded === true,
+    // Default included (business rule); false only when explicitly set exclusive.
+    // Gated by gstApplicable downstream, so the default is harmless for non-GST products.
+    gstIncluded: data.gstIncluded !== false,
     extraDeliveryCharge: typeof data.extraDeliveryCharge === "number" && data.extraDeliveryCharge > 0
       ? data.extraDeliveryCharge
       : undefined,
@@ -125,7 +127,8 @@ function sellerCommercial(p: MarketplaceProduct) {
   return {
     ...(p.gstApplicable === true ? { gstApplicable: true } : {}),
     ...(typeof p.gstRate === "number" ? { gstRate: p.gstRate } : {}),
-    ...(p.gstIncluded === true ? { gstIncluded: true } : {}),
+    // Carry the explicit boolean when GST applies so exclusive (false) is preserved.
+    ...(p.gstApplicable === true ? { gstIncluded: p.gstIncluded !== false } : {}),
     ...(typeof p.extraDeliveryCharge === "number" && p.extraDeliveryCharge > 0 ? { extraDeliveryCharge: p.extraDeliveryCharge } : {}),
     ...(p.freeDelivery === true ? { freeDelivery: true } : {}),
   };

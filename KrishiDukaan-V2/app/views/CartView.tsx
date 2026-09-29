@@ -12,7 +12,7 @@ import { HelperIcon } from "../../components/helpers";
 import { ShieldCheck, CreditCard, Lock } from "lucide-react";
 import { calcDiscount } from "../utils/discount";
 import { parseVariantWeightKg } from "../utils/weight";
-import { gstAmountPerUnit } from "../utils/gst";
+import { computeLinePricing } from "../utils/gst";
 
 type AddressField = "customerName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
 
@@ -783,17 +783,30 @@ export default function CartView({
   }, 0);
   const discountedSubtotal = readyItems.reduce((sum, item) => sum + item.price * item.qty, 0);
   const totalDiscounts = mrpSubtotal - discountedSubtotal;
-  // GST is ALWAYS included in the product price and is never charged separately,
-  // so it is not added to the payable total. Compute the included component only
-  // for transparency in the summary.
-  const totalGstIncluded = readyItems.reduce((sum, item) => {
-    if (!item.gstApplicable || !item.gstRate) return sum;
-    return sum + gstAmountPerUnit(item.price, item.gstRate, true) * item.qty;
-  }, 0);
-  // grandTotal is undefined while delivery is being estimated to avoid showing stale figures
+  // GST via the shared authoritative calculation (same helper as checkout/order/invoice),
+  // computed on each item's post-discount price. Two buckets:
+  //  - totalGstIncluded: GST already inside the price (informational only, NOT added).
+  //  - totalGstAdded: GST charged ON TOP for exclusive-GST lines — added to the payable total.
+  const { totalGstIncluded, totalGstAdded } = readyItems.reduce(
+    (acc, item) => {
+      const pricing = computeLinePricing({
+        unitPrice: item.price,
+        qty: item.qty,
+        gstApplicable: item.gstApplicable,
+        gstRate: item.gstRate,
+        gstIncluded: item.gstIncluded,
+      });
+      if (pricing.included) acc.totalGstIncluded += pricing.gstTotal;
+      else acc.totalGstAdded += pricing.gstTotal;
+      return acc;
+    },
+    { totalGstIncluded: 0, totalGstAdded: 0 },
+  );
+  // grandTotal is undefined while delivery is being estimated to avoid showing stale figures.
+  // Only EXCLUSIVE (added) GST increases the payable total; included GST is already in the price.
   const grandTotal = estimatingDelivery
     ? undefined
-    : discountedSubtotal + deliveryCharge;
+    : discountedSubtotal + totalGstAdded + deliveryCharge;
 
   // Address parsing — same logic as Dashboard → Profile Edit (extractAddressFields),
   // extended to also fill the cart's Area / District fields. Maps a Google place /
@@ -1094,7 +1107,17 @@ export default function CartView({
             </p>
           )}
 
-          {/* GST is included in the prices — informational only, never added to the total */}
+          {/* Exclusive GST — charged ON TOP of the price, so it's a real line added to the total */}
+          {canCheckout && totalGstAdded > 0 && (
+            <div className="flex items-center justify-between text-sm text-on-surface-variant">
+              <span>{t('cartGstAdded')}</span>
+              <span className="font-semibold text-on-surface">
+                + ₹{totalGstAdded.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          {/* Inclusive GST — already inside the price, informational only, never added to the total */}
           {canCheckout && totalGstIncluded > 0 && (
             <div className="flex items-center justify-between text-[11px] text-on-surface-variant/80">
               <span>{t('cartGstIncluded')}</span>

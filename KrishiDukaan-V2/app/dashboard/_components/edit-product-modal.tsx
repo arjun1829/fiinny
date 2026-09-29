@@ -13,7 +13,8 @@ import type { WeightSlab } from "../_types/delivery-settings";
 import type { InventoryRow } from "../_types/inventory";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import { parseVariantWeightKg } from "../../utils/weight";
-import { gstAmountPerUnit } from "../../utils/gst";
+import { computeLinePricing } from "../../utils/gst";
+import { calcDiscount, calcDiscountFixed } from "../../utils/discount";
 import { useI18n } from "../../i18n/I18nContext";
 import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
@@ -457,6 +458,8 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   const [updateRetailerPrices, setUpdateRetailerPrices] = useState(true);
   const [gstApplicable, setGstApplicable] = useState<boolean>(row.gstApplicable ?? false);
   const [gstRate, setGstRate]             = useState<number>(row.gstRate ?? 0);
+  // Default true — GST is included in the product price unless the seller explicitly marks it exclusive.
+  const [gstIncluded, setGstIncluded]     = useState<boolean>(row.gstIncluded ?? true);
   // "Custom" GST mode is active when the stored rate isn't one of the predefined slabs.
   const [gstCustom, setGstCustom]         = useState<boolean>(
     (row.gstApplicable ?? false) && !(GST_RATES as readonly number[]).includes(row.gstRate ?? 0),
@@ -618,8 +621,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : {},
         gstApplicable: effectiveGstApplicable,
         gstRate: effectiveGstApplicable ? gstRate : 0,
-        // GST is always included in the product price (never charged separately).
-        gstIncluded: effectiveGstApplicable,
+        gstIncluded: effectiveGstApplicable ? gstIncluded : false,
         extraDeliveryCharge: parsedExtraDelivery,
         freeDelivery: effectiveFreeDelivery,
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
@@ -711,11 +713,30 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   // to the final price.
   const base = deliveryPreview[0];
   const basePrice = base?.price ?? 0;
-  const baseGstAmount = gstApplicable && gstRate > 0
-    ? gstAmountPerUnit(basePrice, gstRate, true)
-    : 0;
+
+  // Discount — reuse the same calc functions as Cart/Checkout so numbers match exactly.
+  // effectiveDiscountPct / effectiveDiscountAmt come from row (inventory doc) and are
+  // already date-gated: they are 0 when no active discount applies.
+  const discountPctFromRow = row.effectiveDiscountPct ?? 0;
+  const discountAmtFromRow = row.effectiveDiscountAmt ?? 0;
+  const { finalPrice: discountedBasePrice, discountAmt: discountAmount } =
+    row.discountType === "fixed_amount" && discountAmtFromRow > 0
+      ? calcDiscountFixed(basePrice, discountAmtFromRow)
+      : calcDiscount(basePrice, discountPctFromRow);
+  const hasDiscount = discountAmount > 0;
+
+  // GST via the shared authoritative calculation (same helper as Cart/Checkout/Order/
+  // Invoice), computed on the discounted price. Inclusive: backed out (informational,
+  // not added). Exclusive: added on top. pricing.lineTotal already folds that in.
+  const pricing = computeLinePricing({
+    unitPrice: discountedBasePrice,
+    gstApplicable,
+    gstRate,
+    gstIncluded,
+  });
+  const baseGstAmount = pricing.gstPerUnit;
   const baseDelivery = sellMode === "online_delivery" ? (base?.total ?? 0) : 0;
-  const baseFinal = Number((basePrice + baseDelivery).toFixed(2));
+  const baseFinal = Number((pricing.lineTotal + baseDelivery).toFixed(2));
   const rupee = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
@@ -1082,6 +1103,28 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
               </div>
 
+              {/* GST Included toggle — shown when GST is applicable */}
+              {gstApplicable && (
+                <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-on-surface">GST included in price?</p>
+                    <p className="text-xs text-on-surface-variant mt-0.5">Is GST already included in the product price you entered?</p>
+                  </div>
+                  <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
+                    {([true, false] as const).map((v) => (
+                      <button key={String(v)} type="button" disabled={saving}
+                        onClick={() => setGstIncluded(v)}
+                        className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                          gstIncluded === v ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
+                        }`}
+                      >
+                        {v ? "Yes" : "No"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {gstApplicable && (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-on-surface">GST Rate <span className="text-red-500">*</span></span>
@@ -1135,28 +1178,55 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
               )}
 
-              {/* GST is always included in the product price — never charged separately. */}
               {gstApplicable && gstRate > 0 && (
                 <div className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-xs text-primary/80">
-                  GST at <span className="font-bold">{gstRate}%</span> is included in the product price
-                  and is not charged separately.
+                  {gstIncluded
+                    ? <>GST at <span className="font-bold">{gstRate}%</span> is included in the product price and is not charged separately.</>
+                    : <>GST at <span className="font-bold">{gstRate}%</span> will be charged on top of the product price.</>
+                  }
                 </div>
               )}
 
               {/* ── Price Breakdown (representative — first pack size) ── */}
-              {(sellMode === "online_delivery" || (gstApplicable && gstRate > 0)) && basePrice > 0 && (
+              {(sellMode === "online_delivery" || (gstApplicable && gstRate > 0) || hasDiscount) && basePrice > 0 && (
                 <div className="rounded-xl bg-primary/5 border border-primary/15 px-4 py-3 space-y-1.5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">
                     Price breakdown{base?.unit ? ` · ${base.unit}` : ""}
                   </p>
+                  {/* Original price — always shown; labelled "Original Price" when discounted */}
                   <div className="flex items-center justify-between text-xs text-on-surface">
-                    <span>Product Price</span>
-                    <span className="font-semibold">{rupee(basePrice)}</span>
+                    <span>{hasDiscount ? "Original Price" : "Product Price"}</span>
+                    <span className={`font-semibold ${hasDiscount ? "line-through text-on-surface-variant" : ""}`}>
+                      {rupee(basePrice)}
+                    </span>
                   </div>
+                  {/* Discount row — same calc as Cart's calcDiscount / calcDiscountFixed */}
+                  {hasDiscount && (
+                    <>
+                      <div className="flex items-center justify-between text-xs text-green-700">
+                        <span>
+                          – Discount
+                          {row.discountType === "fixed_amount"
+                            ? ""
+                            : discountPctFromRow > 0 ? ` (${discountPctFromRow}%)` : ""}
+                        </span>
+                        <span className="font-semibold">–{rupee(discountAmount)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-on-surface border-t border-primary/10 pt-1">
+                        <span className="font-semibold">Discounted Price</span>
+                        <span className="font-semibold">{rupee(discountedBasePrice)}</span>
+                      </div>
+                    </>
+                  )}
+                  {/* GST — calculated on the discounted price */}
                   {gstApplicable && gstRate > 0 && (
                     <div className="flex items-center justify-between text-xs text-on-surface-variant">
-                      <span>GST ({gstRate}% incl. in price)</span>
-                      <span className="font-semibold">({rupee(baseGstAmount)})</span>
+                      <span>
+                        {gstIncluded ? `GST (${gstRate}% incl. in price)` : `+ GST (${gstRate}%)`}
+                      </span>
+                      <span className="font-semibold">
+                        {gstIncluded ? `(${rupee(baseGstAmount)})` : `+ ${rupee(baseGstAmount)}`}
+                      </span>
                     </div>
                   )}
                   {sellMode === "online_delivery" && (
@@ -1175,7 +1245,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                     </span>
                     <span className="font-black text-primary">{rupee(baseFinal)}</span>
                   </div>
-                  {gstApplicable && gstRate > 0 && (
+                  {gstApplicable && gstRate > 0 && gstIncluded && (
                     <p className="text-[10px] text-on-surface-variant pt-0.5">
                       GST shown in brackets is already part of the product price and is not added again.
                     </p>

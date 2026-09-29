@@ -60,9 +60,11 @@ function toStoredItem(item: CartItem): StoredCartItem {
     ...(item.originalPrice != null ? { originalPrice: item.originalPrice } : {}),
     ...(item.discountPct != null && item.discountPct > 0 ? { discountPct: item.discountPct } : {}),
     // Persist the retailer-specific commercial settings captured at add/assign time.
+    // Store gstIncluded as an explicit boolean whenever GST applies (default included,
+    // false only when exclusive) so the inclusive/exclusive state survives a reload.
     ...(item.gstApplicable ? { gstApplicable: true } : {}),
     ...(item.gstRate != null ? { gstRate: item.gstRate } : {}),
-    ...(item.gstIncluded ? { gstIncluded: true } : {}),
+    ...(item.gstApplicable ? { gstIncluded: item.gstIncluded !== false } : {}),
     ...(item.extraDeliveryCharge != null && item.extraDeliveryCharge > 0 ? { extraDeliveryCharge: item.extraDeliveryCharge } : {}),
     ...(item.freeDelivery ? { freeDelivery: true } : {}),
   };
@@ -162,7 +164,8 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
       gstApplicable: d.gstApplicable === true,
       // Predefined slab or a custom seller-entered rate — accept any non-negative number.
       gstRate: Number.isFinite(gstRateNum) && gstRateNum >= 0 ? gstRateNum : undefined,
-      gstIncluded: d.gstIncluded === true,
+      // Default included (business rule); false only when explicitly set exclusive.
+      gstIncluded: d.gstIncluded !== false,
       extraDeliveryCharge: typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0
         ? d.extraDeliveryCharge
         : undefined,
@@ -201,7 +204,8 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
   const commercialFromDoc = (d: Record<string, unknown>): SellerCommercial => ({
     ...(d.gstApplicable === true ? { gstApplicable: true } : {}),
     ...(typeof d.gstRate === 'number' && d.gstRate >= 0 ? { gstRate: d.gstRate } : {}),
-    ...(d.gstIncluded === true ? { gstIncluded: true } : {}),
+    // Default included; carry explicit false so exclusive GST is preserved.
+    ...(d.gstApplicable === true ? { gstIncluded: d.gstIncluded !== false } : {}),
     ...(typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0 ? { extraDeliveryCharge: d.extraDeliveryCharge } : {}),
     ...(d.freeDelivery === true ? { freeDelivery: true } : {}),
   });
@@ -443,7 +447,8 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
       const persistedCommercial: SellerCommercial = {
         ...(item.gstApplicable ? { gstApplicable: true } : {}),
         ...(item.gstRate != null ? { gstRate: item.gstRate } : {}),
-        ...(item.gstIncluded ? { gstIncluded: true } : {}),
+        // Preserve explicit false (exclusive) — not just true.
+        ...(item.gstIncluded !== undefined ? { gstIncluded: item.gstIncluded } : {}),
         ...(item.extraDeliveryCharge != null && item.extraDeliveryCharge > 0 ? { extraDeliveryCharge: item.extraDeliveryCharge } : {}),
         ...(item.freeDelivery ? { freeDelivery: true } : {}),
       };
@@ -455,7 +460,8 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
       const canonicalCommercial: SellerCommercial = {
         ...(product.gstApplicable ? { gstApplicable: true } : {}),
         ...(product.gstRate != null ? { gstRate: product.gstRate } : {}),
-        ...(product.gstIncluded ? { gstIncluded: true } : {}),
+        // product.gstIncluded is already the correctly-defaulted boolean (see ProductCache).
+        ...(product.gstApplicable ? { gstIncluded: product.gstIncluded } : {}),
         ...(product.extraDeliveryCharge ? { extraDeliveryCharge: product.extraDeliveryCharge } : {}),
         ...(product.freeDelivery ? { freeDelivery: true } : {}),
       };

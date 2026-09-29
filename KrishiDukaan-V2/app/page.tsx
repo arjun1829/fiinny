@@ -75,11 +75,14 @@ function resolveSellerCommercial(
   const hasEntry = !!entry;
   const gstApplicable = hasEntry ? entry!.gstApplicable === true : product.gstApplicable === true;
   const gstRate = hasEntry ? entry!.gstRate : product.gstRate;
-  const gstIncluded = hasEntry ? entry!.gstIncluded === true : product.gstIncluded === true;
+  // Business default is INCLUDED — a line is only exclusive when explicitly false.
+  // Always propagate the boolean (not just when true) so exclusive GST survives all
+  // the way to the cart/checkout calculation instead of defaulting back to included.
+  const gstIncluded = hasEntry ? entry!.gstIncluded !== false : product.gstIncluded !== false;
   const extraDeliveryCharge = hasEntry ? entry!.extraDeliveryCharge : product.extraDeliveryCharge;
   const freeDelivery = hasEntry ? entry!.freeDelivery === true : product.freeDelivery === true;
   return {
-    ...(gstApplicable && gstRate ? { gstApplicable: true, gstRate, ...(gstIncluded ? { gstIncluded: true } : {}) } : {}),
+    ...(gstApplicable && gstRate ? { gstApplicable: true, gstRate, gstIncluded } : {}),
     ...(extraDeliveryCharge && extraDeliveryCharge > 0 ? { extraDeliveryCharge } : {}),
     ...(freeDelivery ? { freeDelivery: true } : {}),
   };
@@ -1171,8 +1174,12 @@ export default function App() {
       return;
     }
 
-    // grandTotal includes delivery charges computed by CartView's useDeliveryEstimates hook.
-    // Fall back to product subtotal if grandTotal wasn't passed (shouldn't happen).
+    // grandTotal (from CartView) = discounted subtotal + added GST (exclusive-GST lines)
+    // + delivery. Fall back to product subtotal if it wasn't passed (shouldn't happen).
+    // clientDelivery is the remainder over the product subtotal, so it carries BOTH the
+    // delivery charge and any exclusive GST that must be added to the payable amount —
+    // this keeps the Razorpay amount equal to what the cart displayed and to the order's
+    // grandTotal (which breaks the same figures out into deliveryCharge + totalGstAdded).
     const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
     const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
     const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
