@@ -20,6 +20,14 @@ final dealersProvider = FutureProvider<List<Dealer>>((ref) async {
   return ref.watch(dealerRepositoryProvider).active();
 });
 
+/// A single dealer by id — backs the detail page.
+final dealerByIdProvider = FutureProvider.family<Dealer?, String>((
+  ref,
+  dealerId,
+) async {
+  return ref.watch(dealerRepositoryProvider).byId(dealerId);
+});
+
 /// dealerId -> the rep's most recent visit to it.
 final lastVisitByDealerProvider = FutureProvider<Map<String, DealerVisit>>((
   ref,

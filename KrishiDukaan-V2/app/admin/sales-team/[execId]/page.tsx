@@ -3,15 +3,18 @@
 /**
  * Sales Team → single executive activity (read-only, admin-only).
  *
- * Reuses the EXISTING /sales daily-session, visit, route and distance data and
- * components — nothing new is tracked or stored:
+ * Reuses the EXISTING /sales daily-session, visit, route, distance and dealer
+ * data and components — nothing new is tracked or stored:
  *   - fetchAllSessions / fetchVisitsForDate / fetchAllVisitsForExec (services)
- *   - DaySessionCard / SessionSummary / RouteMap / VisitTimeline (components)
+ *   - fetchDealersByExec (dealers-service)
+ *   - DaySessionCard / SessionSummary / RouteMap / VisitTimeline / AdminDealerCard (components)
  *
  * Admin-read is possible because dealerVisits & dealers already grant isAdmin()
  * reads, and daySessions now does too (see firestore.rules). This is a VIEW
  * only: no writes are performed, so an admin can inspect an exec's sessions,
- * routes and distances without any risk of performing sales actions as them.
+ * routes, distances and dealers without any risk of performing sales actions
+ * as them — the Dealers Added section below has no create/edit/delete/upload
+ * affordance, unlike the rep-facing DealerCard it deliberately does not reuse.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,10 +24,12 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, Contact, Eye, MapPin, Store, CalendarDays, Route, Clock } from "lucide-react";
 import { fetchAllSessions, type DaySession } from "../../../sales/day-session-service";
 import { fetchAllVisitsForExec, fetchVisitsForDate, type DealerVisit } from "../../../sales/dealers/dealer-visit-service";
+import { fetchDealersByExec, type Dealer } from "../../../sales/dealers/dealers-service";
 import { getUsers } from "../../_lib/admin-data";
 import DaySessionCard from "../../../../components/sales/DaySessionCard";
 import SessionSummary from "../../../../components/sales/SessionSummary";
 import VisitTimeline from "../../../../components/sales/VisitTimeline";
+import AdminDealerCard from "../../../../components/sales/AdminDealerCard";
 
 // RouteMap uses the Google Maps JS SDK — client-only, same as the /sales portal.
 const RouteMap = dynamic(() => import("../../../../components/sales/RouteMap"), {
@@ -82,6 +87,7 @@ export default function AdminSalesExecActivityPage() {
   const [execEmail, setExecEmail] = useState("");
   const [sessions, setSessions] = useState<DaySession[]>([]);
   const [visitCountByDate, setVisitCountByDate] = useState<Map<string, number>>(new Map());
+  const [dealers, setDealers] = useState<Dealer[]>([]);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [loadError, setLoadError] = useState("");
 
@@ -96,10 +102,11 @@ export default function AdminSalesExecActivityPage() {
       setPageState("loading");
       setLoadError("");
       try {
-        const [users, allSessions, allVisits] = await Promise.all([
+        const [users, allSessions, allVisits, execDealers] = await Promise.all([
           getUsers().catch(() => [] as any[]),
           fetchAllSessions(execId),
           fetchAllVisitsForExec(execId),
+          fetchDealersByExec(execId),
         ]);
         if (cancelled) return;
         const exec = users.find((u: any) => String(u.uid || u.id) === execId);
@@ -107,6 +114,7 @@ export default function AdminSalesExecActivityPage() {
         setExecEmail(String(exec?.email ?? "").trim());
         setSessions(allSessions);
         setVisitCountByDate(buildVisitCountByDate(allVisits));
+        setDealers(execDealers);
         setPageState("ready");
       } catch (e) {
         if (cancelled) return;
@@ -284,6 +292,28 @@ export default function AdminSalesExecActivityPage() {
                         visitCount={visitCountByDate.get(session.date) ?? 0}
                         onClick={() => void openSession(session)}
                       />
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* ── Dealers added ───────────────────────────────────────── */}
+              <section>
+                <p className="mb-3 text-xs font-black uppercase tracking-widest text-on-surface-variant">
+                  Dealers Added {dealers.length > 0 && `(${dealers.length})`}
+                </p>
+                {dealers.length === 0 ? (
+                  <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-10 text-center">
+                    <Store className="mx-auto mb-2 h-6 w-6 text-outline" />
+                    <p className="text-sm font-semibold text-on-surface">No dealers added yet</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      This executive hasn&apos;t added any dealers in the field app.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {dealers.map((dealer) => (
+                      <AdminDealerCard key={dealer.id} dealer={dealer} />
                     ))}
                   </div>
                 )}

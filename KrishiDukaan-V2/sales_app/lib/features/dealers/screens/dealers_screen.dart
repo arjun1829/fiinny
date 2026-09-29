@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/utils/ist_date.dart';
 import '../../../core/widgets/state_views.dart';
@@ -176,6 +178,8 @@ class DealersScreen extends ConsumerWidget {
                         onMarkVisited: () => _markVisited(context, ref, dealer),
                         onEdit: () => _editDealer(context, ref, dealer),
                         onDeactivate: () => _deactivate(context, ref, dealer),
+                        onDetail: () =>
+                            context.go('${Routes.dealers}/${dealer.id}'),
                       );
                     },
                   ),
@@ -196,12 +200,14 @@ class DealersScreen extends ConsumerWidget {
     // Grabbed before the first await: the sheet and the write both suspend, and
     // the context may be gone by the time we want to confirm the result.
     final messenger = ScaffoldMessenger.of(context);
-    final input = await DealerFormSheet.show(context);
-    if (input == null) return;
+    final draft = await DealerFormSheet.show(context);
+    if (draft == null) return;
     try {
-      await ref.read(dealerRepositoryProvider).create(uid, input);
+      await ref
+          .read(dealerRepositoryProvider)
+          .create(uid, draft.input, image: draft.image);
       ref.invalidate(dealersProvider);
-      _toast(messenger, '${input.shopName} added');
+      _toast(messenger, '${draft.input.shopName} added');
     } catch (_) {
       _toast(messenger, 'Could not save the dealer. Please try again.');
     }
@@ -212,11 +218,21 @@ class DealersScreen extends ConsumerWidget {
     WidgetRef ref,
     Dealer dealer,
   ) async {
+    final uid = ref.read(currentUidProvider);
+    if (uid == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    final input = await DealerFormSheet.show(context, initial: dealer);
-    if (input == null) return;
+    final draft = await DealerFormSheet.show(context, initial: dealer);
+    if (draft == null) return;
     try {
-      await ref.read(dealerRepositoryProvider).update(dealer.id, input);
+      final repo = ref.read(dealerRepositoryProvider);
+      await repo.update(dealer.id, draft.input);
+      if (draft.image != null) {
+        await repo.attachImage(
+          uid: uid,
+          dealerId: dealer.id,
+          image: draft.image!,
+        );
+      }
       ref.invalidate(dealersProvider);
       _toast(messenger, 'Dealer updated');
     } catch (_) {
