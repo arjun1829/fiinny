@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { getAdminAuth, getAdminDb } from '../../../lib/firebase-admin';
 import { recordAttempt } from '../../../lib/payment-attempts';
+import { resolveActiveReferralCode } from '../../../lib/referrals';
 import {
   DEFAULT_DURATIONS,
   PRICING_DOC_PATH,
@@ -151,10 +152,13 @@ async function resolveDiscount(
 
 export async function POST(request: Request) {
   try {
-    const { seatCount, durationMonths, planId, promoCode, userId } = await request.json();
+    const { seatCount, durationMonths, planId, promoCode, referralCode, userId } = await request.json();
 
     const durations = await loadDurations();
-    const callerRole = await resolveCallerRole(request);
+    // A customer / consumer buying a subscription becomes a retailer on
+    // payment (web and app both upgrade the role), so they buy as one.
+    const rawRole = await resolveCallerRole(request);
+    const callerRole = rawRole === 'customer' || rawRole === 'consumer' ? 'retailer' : rawRole;
 
     // Seats sell in blocks of 10 with a 10-seat minimum. Enforced here as well
     // as in the purchase UIs so the rule holds even for a request that didn't
@@ -217,6 +221,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: promoResult.error }, { status: 422 });
     }
     const discountPercent = promoResult.discountPercent;
+
+    // Sales / marketing attribution. An unknown or paused code is dropped, not
+    // refused — a rep's code must never be why a seller can't pay.
+    const referral = await resolveActiveReferralCode(referralCode);
     const subtotal = computeAmount(plan, grantedSeats);
     const baseAmount = discountPercent
       ? applyDiscount(subtotal, discountPercent)
@@ -237,6 +245,9 @@ export async function POST(request: Request) {
         // saying Standard or Custom even if this ladder row is later edited.
         planTier: tierOf(plan),
         planName: planNameFor(plan),
+        // verify/ relays this to the subscription record; paymentAttempts
+        // (below) is the server-side source the referral stats read.
+        referralCode: referral?.code ?? '',
         discountPercent,
         // The rupee amount actually charged. verify/ reads this back off the
         // order so the record written afterwards can never be re-derived from a
@@ -259,6 +270,7 @@ export async function POST(request: Request) {
       durationMonths:  months,
       promoCode:       promoCode || null,
       discountPercent: discountPercent,
+      referralCode:    referral?.code ?? null,
       source:          request.headers.get('x-client') === 'mobile' ? 'mobile' : 'web',
       note:            `${planNameFor(plan)} subscription — ${grantedSeats} listing(s), ${months} month(s)`,
     });
@@ -271,6 +283,7 @@ export async function POST(request: Request) {
       planId:         planKey(plan),
       planTier:       tierOf(plan),
       planName:       planNameFor(plan),
+      referralCode:   referral?.code ?? null,
       amountCharged:  baseAmount,
       discountPercent,
       // Return the key used to create this order so the mobile always opens

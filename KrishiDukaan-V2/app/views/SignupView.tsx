@@ -22,6 +22,8 @@ interface SignupViewProps {
   onBack: () => void;
   onNavigateToLogin: () => void;
   onSuccess: (user: any, profile: any) => void;
+  /** Preselected role — "retailer" when arriving from a sales referral link. */
+  defaultRole?: "customer" | "retailer" | "manufacturer";
 }
 
 export default function SignupView({
@@ -30,12 +32,13 @@ export default function SignupView({
   onBack,
   onNavigateToLogin,
   onSuccess,
+  defaultRole,
 }: SignupViewProps) {
   const { t } = useI18n();
 
   // Shared state
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"customer" | "retailer" | "manufacturer">("customer");
+  const [role, setRole] = useState<"customer" | "retailer" | "manufacturer">(defaultRole ?? "customer");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteDetails, setInviteDetails] = useState<SignupInviteDetails | null>(null);

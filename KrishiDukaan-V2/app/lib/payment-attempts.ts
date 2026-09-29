@@ -85,6 +85,11 @@ export type RecordAttemptInput = {
   durationMonths?: number;
   promoCode?: string | null;
   discountPercent?: number;
+  /**
+   * Validated, active referral code (lib/referrals.ts) — set only by
+   * create-order after checking it, so attribution can't be client-forged.
+   */
+  referralCode?: string | null;
   note?: string;
 };
 
@@ -160,6 +165,7 @@ export async function recordAttempt(input: RecordAttemptInput): Promise<void> {
           durationMonths: input.durationMonths ?? null,
           promoCode: input.promoCode ?? null,
           discountPercent: input.discountPercent ?? null,
+          referralCode: input.referralCode ?? null,
 
           note: input.note ?? null,
           source: input.source,

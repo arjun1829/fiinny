@@ -26,6 +26,13 @@ import {
 import { LEGAL_ROUTES, TERMS_VERSION } from '../lib/legal-constants';
 import { authedJsonHeaders } from "../lib/authed-fetch";
 import { ProductListingCard } from "../../components/shared/ProductListingCard";
+import {
+  clearPendingReferral,
+  logReferralEvent,
+  readPendingReferral,
+  savePendingReferral,
+  validateReferralCode,
+} from '../lib/referral-client';
 
 interface SubscriptionViewProps {
   user: any;
@@ -113,6 +120,19 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const [promoLookupError, setPromoLookupError] = useState<string | null>(null);
   const [error,        setError]        = useState<string | null>(null);
 
+  // Sales / marketing referral (lib/referrals.ts). Applied from a /subscribe
+  // link (kept in localStorage across login) or typed by the buyer. Only a
+  // server-validated code is ever shown as applied or sent to create-order.
+  const [referralInput,    setReferralInput]    = useState('');
+  const [referral,         setReferral]         = useState<{ code: string; ownerName: string } | null>(null);
+  const [referralError,    setReferralError]    = useState<string | null>(null);
+  const [referralChecking, setReferralChecking] = useState(false);
+  // Plan / seats from a rep's offer link, applied once the live ladder is in.
+  const [offer,        setOffer]        = useState<{ plan?: string; seats?: number } | null>(null);
+  const [offerApplied, setOfferApplied] = useState(false);
+  const [offerNote,    setOfferNote]    = useState<string | null>(null);
+  const [pricingReady, setPricingReady] = useState(false);
+
   const premiumRole: PremiumRole = role === 'manufacturer' ? 'manufacturer' : 'retailer';
   const isRetailer = premiumRole === 'retailer';
 
@@ -148,10 +168,90 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         );
       } catch {
         /* keep the defaults */
+      } finally {
+        if (!cancelled) setPricingReady(true);
       }
     })();
     return () => { cancelled = true; };
   }, [premiumRole]);
+
+  // Pick up a referral: the URL (?ref= on this page) wins, else the pending
+  // one saved by /subscribe before login. Validated server-side before it is
+  // shown as applied.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('ref');
+    if (fromUrl) {
+      savePendingReferral({
+        code: fromUrl,
+        plan: params.get('plan'),
+        seats: Number(params.get('seats') ?? '') || null,
+      });
+    }
+    const pending = readPendingReferral();
+    if (!pending) return;
+    setReferralInput(pending.code);
+    if (pending.plan || pending.seats) setOffer({ plan: pending.plan, seats: pending.seats });
+    let cancelled = false;
+    validateReferralCode(pending.code).then((r) => {
+      if (cancelled) return;
+      if (r.valid) setReferral({ code: r.code!, ownerName: r.ownerName ?? '' });
+      else setReferralError(r.error ?? 'This referral code is not valid.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // "Reached checkout" funnel event, once the code is confirmed.
+  useEffect(() => {
+    if (referral && user?.uid) {
+      logReferralEvent(referral.code, 'checkout_view', { uid: user.uid, plan: offer?.plan ?? null });
+    }
+  }, [referral, user?.uid, offer?.plan]);
+
+  // Apply the offer link's plan and seats — only if that exact plan is on the
+  // live ladder for this account. A rep can only ever point at what admin
+  // offers; anything else falls back to the normal choice with a note.
+  useEffect(() => {
+    if (!offer || offerApplied) return;
+    const match = offer.plan ? options.find((o) => o.id === offer.plan) : undefined;
+    if (match) {
+      setTier(match.tier);
+      setDuration(match);
+      if (match.tier === 'custom' && match.flatPrice === undefined && offer.seats) {
+        const n = normalizeSeatCount(offer.seats);
+        setSeatCount(n);
+        setSeatInput(String(n));
+      }
+      setOfferApplied(true);
+      setOfferNote(null);
+    } else if (pricingReady) {
+      setOfferApplied(true);
+      if (offer.plan) setOfferNote('The plan in your link is no longer offered — please choose a plan below.');
+    }
+  }, [offer, offerApplied, options, pricingReady]);
+
+  const applyReferral = async () => {
+    const code = referralInput.trim().toUpperCase();
+    if (!code) return;
+    setReferralChecking(true);
+    setReferralError(null);
+    const r = await validateReferralCode(code);
+    setReferralChecking(false);
+    if (r.valid) {
+      setReferral({ code: r.code!, ownerName: r.ownerName ?? '' });
+      savePendingReferral({ code: r.code! });
+    } else {
+      setReferral(null);
+      setReferralError(r.error ?? 'This referral code is not valid.');
+    }
+  };
+
+  const removeReferral = () => {
+    setReferral(null);
+    setReferralInput('');
+    setReferralError(null);
+    clearPendingReferral();
+  };
 
 
   const content = {
@@ -171,7 +271,11 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
 
   // Plans shown under the current tab, and whether the toggle is needed at all
   // (an admin may have removed every plan of one tier).
-  const tierOptions = options.filter((o) => o.tier === tier);
+  // Standard cards run longest period first (Yearly left, Monthly right);
+  // Custom keeps its short-to-long ladder order.
+  const tierOptions = options
+    .filter((o) => o.tier === tier)
+    .sort((a, b) => (tier === 'standard' ? b.months - a.months : a.months - b.months));
   const showToggle  = options.some((o) => o.tier === 'standard') && options.some((o) => o.tier === 'custom');
   const switchTier  = (next: PlanTier) => {
     if (next === tier) return;
@@ -279,6 +383,8 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
           // create-order re-validates it and would 422 an ineligible one,
           // needlessly blocking a seller who left a stale code in the box.
           promoCode: promoOk ? promoEval!.code : null,
+          // Validated above; create-order re-checks it before stamping it.
+          referralCode: referral?.code ?? null,
           userId: user.uid,
         }),
       });
@@ -337,7 +443,10 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 planId: verifyData.planId ?? duration.id ?? null,
                 planTier: verifyData.planTier ?? duration.tier,
                 planName: verifyData.planName ?? null,
+                referralCode: verifyData.referralCode ?? null,
               });
+            // Used — the next purchase is credited only if a code is applied again.
+            clearPendingReferral();
 
             if (!updateResult.paymentLogged) {
               setVerifying(false);
@@ -551,6 +660,12 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               {/* ── Right: Payment config ────────────────────────────────── */}
               <div className="min-w-0 p-6 md:p-8 flex flex-col gap-5">
 
+                {offerNote && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-800">
+                    {offerNote}
+                  </div>
+                )}
+
                 {/* Plan type toggle — Standard (default) / Custom. Hidden when
                     the admin has left only one tier with plans. */}
                 {showToggle && (
@@ -742,6 +857,48 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                     <p className="mt-1.5 text-xs font-semibold text-primary">✓ {appliedDiscountPct}% discount applied</p>
                   )}
                   {promoError && <p className="mt-1.5 text-xs text-red-600">{promoError}</p>}
+                </div>
+
+                {/* Referral code — which sales / marketing person helped. */}
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
+                    Referral code <span className="normal-case font-semibold">(optional)</span>
+                  </p>
+                  {referral ? (
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
+                      <span className="text-xs font-semibold text-primary">
+                        ✓ {referral.code}{referral.ownerName ? ` · Referred by ${referral.ownerName}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={removeReferral}
+                        className="text-xs font-bold text-on-surface-variant hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Code from your KrishiDukan representative"
+                        value={referralInput}
+                        onChange={(e) => { setReferralInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); setReferralError(null); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyReferral(); } }}
+                        maxLength={20}
+                        className="flex-1 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-xs font-medium text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 uppercase placeholder:normal-case"
+                      />
+                      <button
+                        type="button"
+                        onClick={applyReferral}
+                        disabled={referralChecking || !referralInput.trim()}
+                        className="rounded-xl bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                      >
+                        {referralChecking ? '…' : 'Apply'}
+                      </button>
+                    </div>
+                  )}
+                  {referralError && <p className="mt-1.5 text-xs text-red-600">{referralError}</p>}
                 </div>
 
                 {/* Price summary */}

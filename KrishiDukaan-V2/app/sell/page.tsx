@@ -166,6 +166,8 @@ type StandardPlan = {
 async function loadStandardPlans(): Promise<StandardPlan[]> {
   return (await loadLadder())
     .filter((d) => tierOf(d) === "standard" && d.flatPrice !== undefined)
+    // Longest period first — Yearly left, Monthly right, as at checkout.
+    .sort((a, b) => b.months - a.months)
     .map((d) => ({
       id: d.id ?? String(d.months),
       label: d.months === 1 ? "Monthly" : d.months === 12 ? "Yearly" : planLabel(d.months),

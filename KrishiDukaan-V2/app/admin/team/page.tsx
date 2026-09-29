@@ -48,6 +48,7 @@ const SECTION_LABELS: Record<AdminSection, string> = {
   blog: "Blog",
   team: "Team",
   salesTeam: "Sales Team",
+  referrals: "Referrals",
 };
 
 const inputCls =

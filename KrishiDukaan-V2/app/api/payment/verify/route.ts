@@ -66,6 +66,8 @@ export async function POST(request: Request) {
         planId: order.notes?.planId != null ? String(order.notes.planId) : null,
         planTier,
         planName,
+        // Validated by create-order before it was stamped on the order.
+        referralCode: String(order.notes?.referralCode ?? '').trim() || null,
       });
     } else {
       return NextResponse.json({ status: 'failed' }, { status: 400 });

@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
 import type { Banner } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
+import { readPendingReferral } from './lib/referral-client';
 import { fetchInviteDetailsForSignup } from './lib/invite/fetch-invite-for-signup';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -179,7 +180,11 @@ export default function App() {
     // this view through navigation, but 'subscription' is in VALID_VIEWS, so
     // ?view=subscription would render the retailer pitch to them — SubscriptionView
     // treats every non-manufacturer role as a retailer.
-    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer') {
+    // Exception: someone who arrived from a sales referral link may buy as a
+    // customer — paying upgrades them to retailer (updateSubscriptionStatus),
+    // same as the mobile app.
+    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer'
+        && !(userRole && readPendingReferral())) {
       return 'home';
     }
     if (userRole === 'retailer' && view === 'become-retailer') {
@@ -706,6 +711,17 @@ export default function App() {
       totalSeats: profile.totalSeats || 0,
       productCount: profile.productCount || 0
     });
+
+    // Arrived from a sales referral link: straight to checkout, whatever the
+    // role — an already-paid seller gets the buy-more page instead.
+    if (readPendingReferral()) {
+      if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
+        window.location.href = '/dashboard/upgrade';
+      } else {
+        navigate('subscription', { replace: true });
+      }
+      return;
+    }
 
     if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
       navigate('subscription', { replace: true });
@@ -1865,6 +1881,7 @@ export default function App() {
         return (
           <SignupView
             inviteCode={signupInviteCode}
+            defaultRole={typeof window !== 'undefined' && readPendingReferral() ? 'retailer' : undefined}
             onInviteConsumed={() => {
               setSignupInviteCode(null);
               // Also remove the inviteCode from the URL immediately so the param

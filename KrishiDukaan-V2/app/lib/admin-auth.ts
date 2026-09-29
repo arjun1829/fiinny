@@ -100,3 +100,37 @@ export async function requireAdmin(request: Request): Promise<AdminCaller | Next
 
   return { uid, phone };
 }
+
+/**
+ * Admin, or a team account granted [section] (users/{uid}.role === "team" with
+ * the section in adminSections — the same grant the admin sidebar uses). For
+ * routes behind a section a team member can be given, so granting the section
+ * actually works instead of showing the page and failing every request.
+ */
+export async function requireSection(
+  request: Request,
+  section: string,
+): Promise<AdminCaller | NextResponse> {
+  const authed = await requireAuthed(request);
+  if (authed instanceof NextResponse) return authed;
+  try {
+    const adminDb = getAdminDb();
+    const idx = await adminDb.collection("uidIndex").doc(authed.uid).get();
+    const phone = idx.exists ? String(idx.data()?.phone ?? "") || null : null;
+    const docs = await Promise.all([
+      adminDb.collection("users").doc(authed.uid).get(),
+      ...(phone ? [adminDb.collection("users").doc(phone).get()] : []),
+    ]);
+    for (const d of docs) {
+      const u = d.exists ? d.data() ?? {} : {};
+      if (u.role === "admin") return { uid: authed.uid, phone };
+      if (u.role === "team" && Array.isArray(u.adminSections) && u.adminSections.includes(section)) {
+        return { uid: authed.uid, phone };
+      }
+    }
+  } catch (e) {
+    console.error("[requireSection] lookup failed:", e);
+    return NextResponse.json({ error: "Server could not verify access." }, { status: 500 });
+  }
+  return NextResponse.json({ error: "Forbidden — you don't have access to this section." }, { status: 403 });
+}
