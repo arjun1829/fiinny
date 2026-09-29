@@ -635,7 +635,10 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         parsedVariants[0].price !== row.price ||
         JSON.stringify(parsedVariants.map((v) => ({ unit: v.unit, price: v.price }))) !==
         JSON.stringify((row.variants ?? []).map((v: { unit: string; price: number }) => ({ unit: v.unit, price: v.price })));
-      if (updateRetailerPrices && priceChanged) {
+      // Never cascade from an assigned copy: row.productId is the copy's id, not
+      // the master's, so this both matches nothing and must not fan out to siblings.
+      const isAssignedCopy = row.assignedByManufacturer || row.source === "manufacturer_assigned";
+      if (updateRetailerPrices && priceChanged && !isAssignedCopy) {
         await syncPriceToRetailers(row.productId, parsedVariants[0].price, parsedVariants);
       }
 
