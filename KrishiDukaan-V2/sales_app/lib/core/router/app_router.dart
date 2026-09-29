@@ -12,6 +12,8 @@ import '../../features/day_session/screens/sessions_screen.dart';
 import '../../features/dealers/screens/dealers_screen.dart';
 import '../../features/expenses/screens/expenses_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/referrals/screens/offer_link_screen.dart';
+import '../../features/referrals/screens/referrals_screen.dart';
 import '../../features/reports/screens/reports_screen.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/app_shell.dart';
@@ -108,6 +110,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'profile',
                     builder: (_, _) => const ProfileScreen(),
+                  ),
+                  GoRoute(
+                    path: 'referrals',
+                    builder: (_, _) => const ReferralsScreen(),
+                    routes: [
+                      GoRoute(
+                        path: 'offer',
+                        builder: (_, s) => OfferLinkScreen(
+                          code: s.uri.queryParameters['code'] ?? '',
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
