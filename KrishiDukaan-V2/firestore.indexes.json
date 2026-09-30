@@ -1342,16 +1342,16 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "retryCount",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "createdAt",
           "order": "DESCENDING"
         },
         {
+          "fieldPath": "retryCount",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "__name__",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         }
       ],
       "density": "SPARSE_ALL"

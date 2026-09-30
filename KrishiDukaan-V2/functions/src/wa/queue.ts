@@ -72,15 +72,15 @@ async function dispatchNotification(n: WaNotification): Promise<string> {
 export async function processPendingNotifications(batchSize = 10): Promise<void> {
   const db = getDb();
   const cutoff = admin.firestore.Timestamp.fromMillis(
-    Date.now() - 10 * 24 * 60 * 60 * 1000
+    Date.now() - 7 * 24 * 60 * 60 * 1000
   );
 
   const snap = await db
     .collection(COLLECTION)
     .where("status", "==", "pending")
     .where("createdAt", ">=", cutoff)
-    .orderBy("retryCount", "asc")
     .orderBy("createdAt", "desc")
+    .orderBy("retryCount", "asc")
     .limit(batchSize)
     .get();
 

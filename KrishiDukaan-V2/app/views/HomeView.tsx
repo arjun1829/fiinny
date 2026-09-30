@@ -26,6 +26,14 @@ interface HomeViewProps {
    * empty before any banners are migrated in.
    */
   banners?: Banner[];
+  /**
+   * Latest reels for the home rail. Owned by the parent (page.tsx) and passed in
+   * so they survive HomeView's remount on every Home⇄detail navigation — HomeView
+   * used to fetch these itself on mount, which re-hit /api/reels on every return
+   * to Home. Kept alongside banners/products, which are already parent-owned.
+   */
+  reels?: any[];
+  reelsLoading?: boolean;
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
@@ -91,6 +99,8 @@ export default function HomeView({
   products = PRODUCTS,
   hubs = [],
   banners = [],
+  reels = [],
+  reelsLoading = false,
   onHubsNeeded,
   onProductClick,
   onHubClick,
@@ -237,17 +247,6 @@ export default function HomeView({
     return () => clearInterval(id);
   }, [slides.length]);
 
-  const [reels, setReels] = useState<any[]>([]);
-  const [reelsLoading, setReelsLoading] = useState(true);
-  useEffect(() => {
-    fetch("/api/reels?limit=10")
-      .then((r) => r.json())
-      .then((data) => {
-        setReels(data.reels ?? []);
-        setReelsLoading(false);
-      })
-      .catch(() => setReelsLoading(false));
-  }, []);
 
   const goToSlideCta = (s: Slide) => {
     if (s.onCta === 'powerPlus') {
@@ -462,7 +461,7 @@ export default function HomeView({
       <section className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 bg-white shadow-sm border-y border-surface-container mt-6">
         <div className="flex justify-between items-end mb-6">
           <div className="flex items-center gap-2">
-            <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('trendingNearYou')}</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('topPicks')}</h2>
             <HelperIcon
               size="sm"
               variant="ghost"
@@ -574,7 +573,7 @@ export default function HomeView({
             );
           }) : (
             <div className="col-span-full py-10 text-center bg-surface-container-low rounded-3xl border border-dashed border-surface-container">
-              <p className="text-on-surface-variant font-medium">{t('noTrending')}</p>
+              <p className="text-on-surface-variant font-medium">{t('noTopPicks')}</p>
             </div>
           )}
         </div>

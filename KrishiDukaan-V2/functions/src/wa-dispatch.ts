@@ -61,8 +61,18 @@ export const retryWaNotifications = onSchedule(
     secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID],
   },
   async () => {
-    await resetStuckAndFailed(25);
-    await processPendingNotifications(25);
+    try {
+      await resetStuckAndFailed(25);
+      await processPendingNotifications(25);
+    } catch (err) {
+      console.error(
+        "[retryWaNotifications] Scheduled run failed:",
+        err instanceof Error ? (err.stack ?? err.message) : String(err)
+      );
+      // Re-throw so the invocation is marked as failed in Cloud Functions
+      // metrics/alerts rather than silently reporting success.
+      throw err;
+    }
   }
 );
 

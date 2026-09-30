@@ -23,7 +23,7 @@ import BrandView from './views/BrandView';
 import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
 import type { Banner } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
@@ -62,6 +62,21 @@ type UserProfile = {
 
 const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
+
+/**
+ * Bounded fetch for Home's "Top Picks" rail. Hits a small, store-free server
+ * route that ranks by live-discount → discount % → newest (see
+ * /api/home/top-picks) and returns ~10 merged cards — so the homepage renders
+ * from a bounded read instead of pulling the whole `products` + `productReviews`
+ * collections into the browser on every boot. The full catalogue is loaded
+ * lazily by ensureCatalogLoaded() the first time a product/cart/map view opens.
+ */
+async function fetchTopPicks(): Promise<MarketplaceProduct[]> {
+  const res = await fetch('/api/home/top-picks');
+  if (!res.ok) throw new Error(`Top Picks fetch failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.products) ? (data.products as MarketplaceProduct[]) : [];
+}
 
 /**
  * Resolve the RETAILER-SPECIFIC commercial settings (GST + delivery) for the cart
@@ -149,6 +164,15 @@ export default function App() {
     userRole === 'admin' ? 'customer' : userRole;
   
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
+  // Bounded product slice powering Home's rails only. Home no longer reads the
+  // whole catalogue on boot; the full list (allProducts) is loaded lazily by
+  // ensureCatalogLoaded() when a product/cart/map view is first opened.
+  const [homeRailProducts, setHomeRailProducts] = useState<MarketplaceProduct[]>([]);
+  // Home's "Latest Reels" rail — owned here (not inside HomeView) so it survives
+  // HomeView's remount on every Home⇄detail navigation and /api/reels is hit
+  // once per session instead of once per return to Home.
+  const [homeReels, setHomeReels] = useState<any[]>([]);
+  const [homeReelsLoading, setHomeReelsLoading] = useState(true);
   const [allStores, setAllStores] = useState<any[]>([]);
   const [hubs, setHubs] = useState<any[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -599,6 +623,33 @@ export default function App() {
     }
   }, []);
 
+  // Guards ensureCatalogLoaded so the full products + productReviews read happens
+  // at most once per session. Home used to run this on every boot (via loadData)
+  // just to render ~10 rail cards; it now renders those from a bounded API page,
+  // and the full in-memory catalogue is deferred until a view that genuinely
+  // needs it (Product Detail related-products / cart line resolution / map
+  // product overlay) is opened.
+  const catalogLoadedRef = useRef(false);
+
+  const ensureCatalogLoaded = useCallback(async () => {
+    if (catalogLoadedRef.current) return;
+    catalogLoadedRef.current = true;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const products = await fetchMarketplaceProducts();
+      setAllProducts(products);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full products/productReviews read fires
+        // exactly once, on demand — and never on the home view.
+        console.info(`[catalog] lazy fetchMarketplaceProducts() → ${products.length} products in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load catalog:', err);
+      catalogLoadedRef.current = false; // allow a retry on the next catalog-view open
+    }
+  }, []);
+
   // Single choke point for on-demand store loading. Watching currentView (rather
   // than hooking navigate) covers every entry path into a store-dependent view:
   // in-app navigation, direct deep links (route is applied via setCurrentView),
@@ -617,23 +668,35 @@ export default function App() {
     }
   }, [currentView, ensureStoresLoaded]);
 
+  // Companion choke point for the full product catalogue. Product Detail can
+  // still stand alone (it self-fetches its own doc by id when the catalogue is
+  // absent — see ProductDetailView), but the in-memory list powers its
+  // related-products rail, the cart's per-line store resolution, and the map's
+  // product overlay, so those three views warm it. Home and Market never do:
+  // Home uses the bounded rail fetch, Market its own paginated API.
+  useEffect(() => {
+    const CATALOG_DEPENDENT_VIEWS = new Set(['product', 'cart', 'map']);
+    if (CATALOG_DEPENDENT_VIEWS.has(currentView)) {
+      void ensureCatalogLoaded();
+    }
+  }, [currentView, ensureCatalogLoaded]);
+
   const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       trackPageView('home');
 
-      let products = await fetchMarketplaceProducts();
-      // NOTE: the full /retailers read (fetchStores) is deliberately NOT here.
-      // It ran on every home load and dominated Firestore reads (~20M). Stores are
-      // now lazy-loaded once via ensureStoresLoaded() the first time the user opens
-      // a store-dependent view (Stores/Map, Market, Product, Cart). See the
-      // currentView effect below.
+      // Home's rails only need a small, bounded slice, so this fetches just the
+      // first page of the SAME cursor-paginated route the Market grid uses —
+      // NOT the whole catalogue. The full products + productReviews read that
+      // used to run here on every boot is now deferred to ensureCatalogLoaded()
+      // (fired only when a product/cart/map view is opened).
       //
-      // Hubs are likewise NOT read here. The "Shop by Crop" strip renders from a
-      // static fallback until real hubs are needed, so the full /hubs read is now
-      // lazy — triggered by HomeView's onHubsNeeded when that section scrolls into
-      // view (see ensureHubsLoaded above).
+      // The full /retailers read (fetchStores) is likewise NOT here — it is lazy
+      // via ensureStoresLoaded() (store-dependent views only). Hubs are lazy too:
+      // the "Shop by Crop" strip falls back to a static list until HomeView's
+      // onHubsNeeded fires when that section scrolls into view (ensureHubsLoaded).
 
       // An empty read is NOT a reason to write. This used to call
       // syncInitialData(PRODUCTS, STORES, INVENTORY), which had every visitor's
@@ -641,7 +704,8 @@ export default function App() {
       // the likeliest source of the test shops in the live store locator. An
       // empty result now renders as empty, which is the truth.
 
-      setAllProducts(products);
+      const railProducts = await fetchTopPicks();
+      setHomeRailProducts(railProducts);
 
       // Banners are a non-critical homepage enhancement — HomeView falls back
       // to its built-in default slides if this fails or returns empty, so a
@@ -650,7 +714,7 @@ export default function App() {
         console.warn('Failed to fetch banners, homepage will use default slides:', err);
       });
 
-      if (products.length === 0) {
+      if (railProducts.length === 0) {
         setErrorMsg('No products found in database even after sync. Please check your Firestore rules.');
       }
     } catch (error: any) {
@@ -803,6 +867,25 @@ export default function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Latest Reels for the home rail — fetched once for the app's lifetime (page.tsx
+  // never remounts on view changes), so returning to Home reuses this instead of
+  // re-hitting /api/reels each time. Cancellable so a fast unmount doesn't setState
+  // on a torn-down tree.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/reels?limit=10')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setHomeReels(data.reels ?? []);
+        setHomeReelsLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setHomeReelsLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const handleAuthSuccess = (firebaseUser: any, profile: any) => {
@@ -1004,9 +1087,16 @@ export default function App() {
     });
   }, [productsWithDistance, productSearch, storeNameById]);
 
+  // Home renders from the bounded Top Picks fetch (fetchTopPicks). The
+  // full-catalogue-derived slice is only a fallback for the case where the
+  // catalogue happens to already be loaded (e.g. returning to Home after
+  // visiting a product/cart/map view) but the rail fetch came back empty.
   const homeProducts = useMemo(
-    () => searchedProducts.slice(0, HOME_PRODUCTS_LIMIT),
-    [searchedProducts]
+    () =>
+      homeRailProducts.length > 0
+        ? homeRailProducts
+        : searchedProducts.slice(0, HOME_PRODUCTS_LIMIT),
+    [homeRailProducts, searchedProducts]
   );
 
   const searchedStores = useMemo(() => {
@@ -1617,6 +1707,8 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            reels={homeReels}
+            reelsLoading={homeReelsLoading}
             onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
@@ -2056,6 +2148,8 @@ export default function App() {
             products={homeProducts}
             hubs={hubs}
             banners={banners}
+            reels={homeReels}
+            reelsLoading={homeReelsLoading}
             onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
@@ -2102,17 +2196,22 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentView}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            {renderView()}
-          </motion.div>
-        </AnimatePresence>
+        {/* Keyed on currentView so each view remounts with its enter animation.
+            Deliberately NOT wrapped in <AnimatePresence mode="wait">: the detail
+            views (ProductDetailView / HubView) each contain their OWN nested
+            AnimatePresence, and a nested exit animation could leave the parent
+            waiting on an exit that never completed — so the incoming view (most
+            visibly Home on Back) was never mounted and the content area went
+            blank until a full reload. Without the exit-wait, the next view mounts
+            immediately on every navigation, Back included. */}
+        <motion.div
+          key={currentView}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {renderView()}
+        </motion.div>
       </main>
 
       <Footer
