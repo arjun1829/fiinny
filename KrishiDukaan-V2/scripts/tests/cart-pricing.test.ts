@@ -131,4 +131,31 @@ t("hasCommercial: an old doc with none of the fields does not count", () => {
   assert.equal(C.hasCommercial({ gstApplicable: false }), true);
   assert.equal(C.hasCommercial(null), false);
 });
+// ── State names: spelling must not decide which slab a customer pays ───────
+import { canonicalState, isSameState } from "../../app/utils/delivery";
+t("state aliases: '&' vs 'and', Delhi forms, Orissa, case and spacing", () => {
+  assert.ok(isSameState("Jammu & Kashmir", "Jammu and Kashmir"));
+  assert.ok(isSameState("Delhi", "NCT of Delhi"));
+  assert.ok(isSameState("Delhi", "New Delhi"));
+  assert.ok(isSameState("Odisha", "Orissa"));
+  assert.ok(isSameState("Andaman & Nicobar Islands", "Andaman and Nicobar Islands"));
+  assert.ok(isSameState("Dadra & Nagar Haveli and Daman & Diu", "Dadra and Nagar Haveli and Daman and Diu"));
+  assert.ok(isSameState("Daman and Diu", "Dadra & Nagar Haveli and Daman & Diu"));
+  assert.ok(isSameState("  TAMIL   NADU ", "tamil nadu"));
+  assert.ok(isSameState("Puducherry", "Pondicherry"));
+});
+t("state aliases never merge different states, and empty never matches", () => {
+  assert.ok(!isSameState("Maharashtra", "Gujarat"));
+  assert.ok(!isSameState("Uttar Pradesh", "Uttarakhand"));
+  assert.ok(!isSameState("Madhya Pradesh", "Maharashtra"));
+  assert.ok(!isSameState("", ""));
+  assert.ok(!isSameState("Goa", ""));
+  assert.equal(canonicalState(undefined), "");
+});
+t("an in-state customer spelled differently still gets the in-state slab", () => {
+  const seller = { ...panIndia, sellerState: "Jammu & Kashmir" };
+  const d = C.computeSellerDelivery([line({ weightKg: 2 })], seller, "Jammu and Kashmir");
+  assert.deepEqual([d.slab, d.deliveryType], [60, "in_state"]);
+});
+
 console.log(`\n${n} passed`);

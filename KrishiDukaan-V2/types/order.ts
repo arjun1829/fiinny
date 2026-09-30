@@ -93,6 +93,10 @@ export type CustomerAddressObject = {
   phone?: string;
   address?: string;
   city?: string;
+  /** Optional, from the app's checkout (web joins these into its string). */
+  district?: string;
+  /** Delivery-address state — what picks in/out-of-state delivery slabs. */
+  state?: string;
   pincode?: string;
 };
 
@@ -110,7 +114,11 @@ export function formatCustomerAddress(addr: CustomerAddress | undefined | null):
   if (!addr) return "";
   if (typeof addr === "string") return addr.trim();
   if (typeof addr !== "object") return String(addr);
-  return [addr.address, addr.city, addr.pincode].filter(Boolean).join(", ").trim();
+  // Same order the web's pre-joined string uses: area, city, district, state, pincode.
+  return [addr.address, addr.city, addr.district, addr.state, addr.pincode]
+    .filter(Boolean)
+    .join(", ")
+    .trim();
 }
 
 export type OrderItem = {

@@ -52,20 +52,40 @@ class PaymentService {
   ///   clientDelivery     – extra charges on top of the subtotal
   ///   clientGrandTotal   – clientSubtotal + clientDelivery
   ///
-  /// IMPORTANT — amount contract: the server charges
-  /// `serverSubtotal + clientDelivery` and has no GST field, so GST must be
-  /// folded into `clientDelivery`. This mirrors the web client, which sends
-  /// `clientDelivery = grandTotal - subtotal` (delivery + GST combined).
-  /// Do NOT add a separate gst field here without also changing the server,
-  /// or the buyer would be double-charged.
+  /// AMOUNT CONTRACT — the server is the authority on what is charged.
+  ///
+  /// A current server (create-cart-order with lib/cart-pricing) prices the
+  /// items itself — by the pack size in `items[].variantUnit` — and computes
+  /// delivery (slab chosen by `customerDeliveryState`, extra, free) and any
+  /// exclusive GST itself. `clientGstAdded` being present is what marks this a
+  /// current client; the client figures below are then only compared, never
+  /// trusted. The response carries `sellerBreakdown` (per seller: subtotal,
+  /// GST, delivery breakdown, total) and `amount` (paise) — callers show the
+  /// customer THAT and write the order from it.
+  ///
+  /// A server that has not been redeployed yet ignores `clientGstAdded` and
+  /// charges `serverSubtotal + clientDelivery`, so `clientDelivery` still carries
+  /// delivery AND the added GST folded together, as it always has. A current
+  /// server ignores that field for a current client. Both therefore charge the
+  /// right amount whichever is live.
   ///
   /// Returns the full Razorpay order object. Use `result['id']` as the
   /// Razorpay order_id (NOT `result['orderId']` – that field doesn't exist).
   Future<Map<String, dynamic>> createCartOrder({
     required List<CartItemModel> items,
     required String userId,
+
+    /// The app's own estimate of delivery alone (no GST).
     required double clientDelivery,
+
+    /// GST ADDED on top of the prices (exclusive lines only). Included GST is
+    /// already in the prices and is not part of this.
     required double clientGst,
+
+    /// The address state — picks a pan-India seller's in-state or out-of-state
+    /// slab on the server.
+    String? customerDeliveryState,
+
     /// Checkout details sent BEFORE payment. Until these were sent, the
     /// address only reached the server in createOrdersAfterPayment — the one
     /// step that can fail after Razorpay has already captured the money
@@ -82,7 +102,8 @@ class PaymentService {
 
     final clientSubtotal =
         items.fold<double>(0.0, (sum, i) => sum + i.price * i.quantity);
-    // Fold GST into the delivery figure — see the amount contract above.
+    // Delivery + added GST folded, for a server not yet redeployed — see the
+    // amount contract above.
     final deliveryPlusGst = clientDelivery + clientGst;
     final clientGrandTotal = clientSubtotal + deliveryPlusGst;
 
@@ -113,11 +134,17 @@ class PaymentService {
           'sellerId': i.sellerPhone,
           'sellerPhone': i.sellerPhone,
           'qty': i.quantity,
+          // The pack size: the server prices this size (not the base price)
+          // and derives the shipment weight from it.
+          if (i.variantLabel != null && i.variantLabel!.isNotEmpty)
+            'variantUnit': i.variantLabel,
         }).toList(),
         'userId': userId,
         'clientSubtotal': clientSubtotal,
         'clientDelivery': deliveryPlusGst,
+        'clientGstAdded': clientGst,
         'clientGrandTotal': clientGrandTotal,
+        'customerDeliveryState': ?customerDeliveryState,
         'note': 'Mobile Cart Order',
         'customerName': ?customerName,
         'customerPhone': ?customerPhone,

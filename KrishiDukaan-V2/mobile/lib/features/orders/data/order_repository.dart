@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/models/order_model.dart';
+import '../../../core/utils/delivery_utils.dart';
 
 class OrderRepository {
   final _db = FirebaseFirestore.instance;
@@ -79,7 +80,15 @@ class OrderRepository {
     required Map<String, dynamic> customerAddress,
     required String razorpayOrderId,
     required String razorpayPaymentId,
-    required Map<String, double> deliveryChargesBySeller,
+
+    /// Each seller's pricing — the SERVER's figures when create-cart-order
+    /// returned them (what the customer was actually charged), else the
+    /// checkout estimate. Keyed by seller phone.
+    required Map<String, SellerPricing> pricingBySeller,
+
+    /// The address state that picked the delivery slab; stored so the order
+    /// (and its invoice) show which slab set applied.
+    String? customerDeliveryState,
   }) async {
     final user = FirebaseAuth.instance.currentUser!;
 
@@ -101,12 +110,12 @@ class OrderRepository {
       final sellerItems = entry.value;
       final sellerName = sellerItems.first.sellerName;
 
-      final subtotal = sellerItems.fold(
-          0.0, (acc, i) => acc + i.price * i.quantity);
-      final sellerGst = sellerItems.fold(
-          0.0, (acc, i) => acc + i.lineGst);
-      final deliveryCharge = deliveryChargesBySeller[sellerPhone] ?? 0.0;
-      final grandTotal = subtotal + sellerGst + deliveryCharge;
+      final sp = _pricingFor(sellerPhone, pricingBySeller, sellerItems);
+      final subtotal = sp.subtotal;
+      final deliveryCharge = sp.deliveryCharge;
+      // Included GST is already inside the prices; only EXCLUDED GST was added.
+      final grandTotal = sp.total;
+      final state = (customerDeliveryState ?? '').trim();
 
       final orderRef = _db.collection('orders').doc();
       batch.set(orderRef, {
@@ -136,12 +145,28 @@ class OrderRepository {
                   'listingId': i.listingId,
                   'gstApplicable': i.gstApplicable,
                   'gstRate': i.gstRate,
+                  // Per unit: backed out of the price when included, on top when
+                  // not — what the invoice's tax column shows.
                   'gstAmount': i.unitGst,
+                  // True when gstAmount was already inside `price` and was NOT
+                  // added to the total. The invoice needs this to tell them apart.
+                  'gstIncluded': i.gstIncluded,
                 })
             .toList(),
         'subtotal': subtotal,
-        'totalGst': sellerGst,
+        // All GST in the order (included + added) — for the invoice.
+        'totalGst': sp.gstTotal,
+        // The part actually ADDED to the payable total (0 → field omitted).
+        if (sp.gstAdded > 0) 'totalGstAdded': sp.gstAdded,
         'deliveryCharge': deliveryCharge,
+        // Frozen delivery breakdown as charged (slab, extra, free, waived, and
+        // which slab set applied), so the invoice never recomputes from
+        // today's settings.
+        'deliveryBreakdown': {
+          ...sp.delivery.toMap(),
+          if (state.isNotEmpty) 'customerDeliveryState': state,
+        },
+        if (state.isNotEmpty) 'customerDeliveryState': state,
         // `grandTotal` is the canonical final-total field (web writes it too);
         // `total` is kept as a mirror for backward compatibility with older
         // readers and the OrderModel fallback. Both hold the same value.
@@ -160,6 +185,48 @@ class OrderRepository {
     }
 
     await batch.commit();
+  }
+
+  /// This seller's pricing: the server's / estimate's figure when there is one
+  /// (matched on the phone's last 10 digits, since keys appear as "+91…" and
+  /// bare), otherwise computed here from the lines with no delivery settings.
+  SellerPricing _pricingFor(
+    String sellerPhone,
+    Map<String, SellerPricing> bySeller,
+    List<CartItemModel> sellerItems,
+  ) {
+    final direct = bySeller[sellerPhone];
+    if (direct != null) return direct;
+    String tail(String v) {
+      final d = v.replaceAll(RegExp(r'\D'), '');
+      return d.length >= 10 ? d.substring(d.length - 10) : '';
+    }
+
+    final want = tail(sellerPhone);
+    if (want.isNotEmpty) {
+      for (final e in bySeller.entries) {
+        if (tail(e.key) == want) return e.value;
+      }
+    }
+    return computeSellerPricing(
+      sellerPhone,
+      [
+        for (final i in sellerItems)
+          CartPricingLine(
+            sellerKey: sellerPhone,
+            unitPrice: i.price,
+            qty: i.quantity,
+            weightKg: 0,
+            gstApplicable: i.gstApplicable,
+            gstRate: i.gstRate,
+            gstIncluded: i.gstIncluded,
+            extraDeliveryCharge: i.extraDeliveryCharge,
+            freeDelivery: i.freeDelivery,
+          ),
+      ],
+      null,
+      null,
+    );
   }
 
   /// Streams all orders for the current user — as buyer and as seller.

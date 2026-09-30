@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/providers/cart_provider.dart';
+import '../../../core/utils/delivery_utils.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../marketplace/widgets/store_selector_sheet.dart';
@@ -184,6 +187,23 @@ class _CartItemTile extends ConsumerWidget {
                     ),
                     if (item.variantLabel != null)
                       Text(item.variantLabel!, style: AppTextStyles.caption),
+                    // This product ships free — same badge as the website's cart.
+                    if (item.freeDelivery)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_shipping_outlined,
+                                size: 13, color: Color(0xFF15803D)),
+                            const SizedBox(width: 4),
+                            Text('Free Delivery',
+                                style: AppTextStyles.caption.copyWith(
+                                    color: const Color(0xFF15803D),
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 6),
 
                     // ── Selected store + change ──────────────────────────────
@@ -339,6 +359,11 @@ class _CartItemTile extends ConsumerWidget {
           originalPrice: picked.originalPrice,
           discountPct: picked.discountPct,
         );
+    // GST and delivery are per store — look up the NEW store's own settings.
+    unawaited(ref.read(cartProvider.notifier).resolveCommercial(item.copyWith(
+          listingId: picked.listing.id,
+          sellerPhone: picked.listing.sellerPhone,
+        )));
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -405,10 +430,14 @@ class _CheckoutBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cart = ref.watch(cartProvider);
     final subtotal = ref.watch(cartTotalProvider);
     final savings = ref.watch(cartSavingsProvider);
-    final totalGst = ref.watch(cartGstProvider);
+    final gstIncluded = ref.watch(cartGstIncludedProvider);
+    final customerState = ref.watch(deliveryStateProvider).trim();
     final deliveryState = ref.watch(deliveryChargeProvider);
+    // Same rows as the website's cart summary.
+    final mrpSubtotal = cart.fold(0.0, (s, i) => s + i.originalPrice * i.quantity);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -424,12 +453,19 @@ class _CheckoutBar extends ConsumerWidget {
       ),
       child: deliveryState.when(
         data: (delivery) {
-          final grandTotal = subtotal + totalGst + delivery.totalCharge;
+          final gstAdded = delivery.gstAdded;
+          // items + GST added on top + delivery — the figure the server will
+          // charge (it recomputes all three at payment).
+          final grandTotal = subtotal + gstAdded + delivery.totalCharge;
+          final deliveryType = delivery.slabType;
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Breakdown
-              _buildSummaryRow('Subtotal (MRP)', subtotal),
+              _buildSummaryRow('Subtotal (MRP)', mrpSubtotal),
+              if (savings > 0) ...[
+                _buildSummaryRow('Product Discounts', -savings, isDiscount: true),
+                _buildSummaryRow('Discounted Subtotal', subtotal),
+              ],
               if (deliveryState.isLoading)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 4),
@@ -450,6 +486,23 @@ class _CheckoutBar extends ConsumerWidget {
                   'Delivery Charges',
                   delivery.totalCharge,
                   isFree: delivery.totalCharge == 0,
+                  badge: deliveryType == null
+                      ? null
+                      : (deliveryType == DeliveryType.inState
+                          ? 'Within-State'
+                          : 'Outside-State'),
+                ),
+              if (customerState.isNotEmpty && !deliveryState.isLoading)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Deliver to: $customerState',
+                      style: AppTextStyles.caption
+                          .copyWith(color: Colors.black54, fontSize: 10),
+                    ),
+                  ),
                 ),
               if (delivery.totalWeight > 0)
                 Padding(
@@ -465,7 +518,24 @@ class _CheckoutBar extends ConsumerWidget {
                     ],
                   ),
                 ),
-              if (totalGst > 0) _buildSummaryRow('Total GST', totalGst),
+              // Exclusive GST is a real charge on top of the price.
+              if (gstAdded > 0) _buildSummaryRow('GST', gstAdded, plus: true),
+              // Included GST is already inside the prices — informational only.
+              if (gstIncluded > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Incl. GST (in price)',
+                          style: AppTextStyles.caption
+                              .copyWith(color: Colors.black54)),
+                      Text(CurrencyUtils.format(gstIncluded),
+                          style: AppTextStyles.caption
+                              .copyWith(color: Colors.black54)),
+                    ],
+                  ),
+                ),
               const Divider(height: 16),
               // Grand Total & Checkout button
               Row(
@@ -518,13 +588,47 @@ class _CheckoutBar extends ConsumerWidget {
     );
   }
 
-  Widget _buildSummaryRow(String label, double amount, {bool isFree = false}) {
+  Widget _buildSummaryRow(
+    String label,
+    double amount, {
+    bool isFree = false,
+    bool isDiscount = false,
+    bool plus = false,
+    String? badge,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: AppTextStyles.bodySmall),
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: isDiscount ? const Color(0xFF15803D) : null)),
+                if (badge != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Text(badge,
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10)),
+                  ),
+                ],
+              ],
+            ),
+          ),
           if (isFree)
             Text(
               'FREE',
@@ -535,9 +639,10 @@ class _CheckoutBar extends ConsumerWidget {
             )
           else
             Text(
-              CurrencyUtils.format(amount),
+              '${plus ? '+ ' : ''}${isDiscount ? '-' : ''}${CurrencyUtils.format(amount.abs())}',
               style: AppTextStyles.bodyMedium.copyWith(
                 fontWeight: FontWeight.w600,
+                color: isDiscount ? const Color(0xFF15803D) : null,
               ),
             ),
         ],

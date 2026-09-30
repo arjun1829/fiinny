@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -514,6 +515,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     return catalog.unit;
   }
 
+  /// "18" for 18.0, "12.5" for 12.5 — no pointless ".0".
+  static String _fmtRate(double r) =>
+      r == r.roundToDouble() ? r.toInt().toString() : r.toString();
+
   /// GST for a cart line: the seller copy's own fields when present, otherwise
   /// the canonical product's — mirrors web, where GST lives on the product data.
   static ({bool applicable, double rate}) _gstFor(
@@ -530,10 +535,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   void _addOptionToCart(CatalogModel catalog, StoreOption opt) {
     final listing = opt.listing;
     final gst = _gstFor(listing, catalog);
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: catalog.id,
             catalogName: catalog.name,
             catalogImage: catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
@@ -547,8 +549,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             variantLabel: _selectedVariantLabel(catalog),
             gstApplicable: gst.applicable,
             gstRate: gst.rate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    // Then this STORE's own GST + delivery settings replace the product-level
+    // guess (fire-and-forget: the cart re-prices itself when they arrive).
+    unawaited(notifier.resolveCommercial(item));
   }
 
   void _showFullImage(BuildContext context, String imageUrl) {
@@ -777,15 +783,21 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ],
             ],
           ),
-          // GST is charged on top at checkout (same as web's cart), so the
-          // label must not claim the price is inclusive.
+          // GST note — product-level settings; the store you buy from can
+          // override them at the cart. Same wording as the website:
+          //  included → the price already contains it; excluded → added at checkout.
           if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '+ ${catalog.gstRate!.toStringAsFixed(0)}% GST added at checkout',
+                catalog.gstIncluded
+                    ? 'Incl. ${_fmtRate(catalog.gstRate!)}% GST'
+                    : '+ ${_fmtRate(catalog.gstRate!)}% GST at checkout',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.onSurfaceVariant,
+                  color: catalog.gstIncluded
+                      ? AppColors.onSurfaceVariant
+                      : const Color(0xFFB45309),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -2962,10 +2974,7 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
   void _addToCart(BuildContext context) {
     if (!ensureSignedInForCart(context, ref)) return;
     final listing = widget.listing;
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: widget.catalogId,
             catalogName: widget.catalogName,
             catalogImage: widget.catalogImage.isNotEmpty
@@ -2981,8 +2990,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             variantLabel: widget.variantLabel,
             gstApplicable: widget.gstApplicable,
             gstRate: widget.gstRate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    unawaited(notifier.resolveCommercial(item));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Added ${widget.catalogName} to cart'),
@@ -2998,13 +3009,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
 
   /// Buy Now from this specific store: add to cart, then go straight to
   /// checkout (login is enforced by the /checkout route guard).
-  void _buyNow(BuildContext context) {
+  Future<void> _buyNow(BuildContext context) async {
     if (!ensureSignedInForCart(context, ref)) return;
     final listing = widget.listing;
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: widget.catalogId,
             catalogName: widget.catalogName,
             catalogImage: widget.catalogImage.isNotEmpty
@@ -3020,8 +3028,14 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             variantLabel: widget.variantLabel,
             gstApplicable: widget.gstApplicable,
             gstRate: widget.gstRate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    // Buy Now goes straight to the payment screen, so wait (briefly) for this
+    // store's own GST + delivery settings rather than showing the product-level
+    // guess on the very screen the customer pays from.
+    await notifier.resolveCommercial(item);
+    if (!context.mounted) return;
     context.push('/checkout');
   }
 }

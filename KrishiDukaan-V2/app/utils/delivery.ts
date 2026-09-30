@@ -28,10 +28,46 @@ export type ResolvedSlabs = {
   sameState: boolean;
 };
 
-/** Case/whitespace-insensitive state comparison. Empty on either side → false. */
+/**
+ * Alternative spellings of the same state / UT → the canonical (lower-case,
+ * "and" not "&") form. Google returns "Jammu and Kashmir" or "NCT of Delhi"
+ * where a seller's own list says "Jammu & Kashmir" or "Delhi", and older names
+ * such as "Orissa" are still typed by hand. A miss here is not harmless: an
+ * in-state customer would be charged the OUTSIDE-state rate.
+ */
+const STATE_ALIASES: Record<string, string> = {
+  "orissa": "odisha",
+  "uttaranchal": "uttarakhand",
+  "pondicherry": "puducherry",
+  "nct of delhi": "delhi",
+  "new delhi": "delhi",
+  "delhi ncr": "delhi",
+  "telengana": "telangana",
+  "chattisgarh": "chhattisgarh",
+  "andaman and nicobar": "andaman and nicobar islands",
+  "andaman nicobar islands": "andaman and nicobar islands",
+  // One UT since 2020; the two old halves both mean it.
+  "dadra and nagar haveli": "dadra and nagar haveli and daman and diu",
+  "daman and diu": "dadra and nagar haveli and daman and diu",
+  "daman diu": "dadra and nagar haveli and daman and diu",
+};
+
+/** Canonical form of a state name for comparison; "" when there is none. */
+export function canonicalState(v: string | null | undefined): string {
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[.,\-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return STATE_ALIASES[s] ?? s;
+}
+
+/** Same-state check over canonical names. Empty on either side → false. */
 export function isSameState(a: string | null | undefined, b: string | null | undefined): boolean {
-  const na = String(a ?? "").trim().toLowerCase();
-  const nb = String(b ?? "").trim().toLowerCase();
+  const na = canonicalState(a);
+  const nb = canonicalState(b);
   if (!na || !nb) return false;
   return na === nb;
 }

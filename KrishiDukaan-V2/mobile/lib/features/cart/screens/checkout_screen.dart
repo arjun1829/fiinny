@@ -10,10 +10,14 @@ import '../../../core/payments/app_razorpay.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/constants/indian_states.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/providers/cart_provider.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/services/address_locator.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/utils/delivery_utils.dart';
+import '../../../core/widgets/address_pickers.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/loading_overlay.dart';
@@ -35,6 +39,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _addressCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
+  final _districtCtrl = TextEditingController();
+
+  /// The delivery state — always an entry of [kIndianStates], because it
+  /// decides a pan-India seller's in-state vs out-of-state delivery charge.
+  /// Mirrored into [deliveryStateProvider] so every price on screen follows it.
+  String? _state;
+
+  /// Per-seller pricing the SERVER computed for the current payment attempt
+  /// (create-cart-order's `sellerBreakdown`), keyed by seller. The order is
+  /// written from these — the figures the customer was actually charged.
+  Map<String, SellerPricing>? _serverPricing;
 
   late final AppRazorpay _razorpay;
   final _paymentService = PaymentService();
@@ -72,8 +87,43 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _addressCtrl.dispose();
     _cityCtrl.dispose();
     _pincodeCtrl.dispose();
+    _districtCtrl.dispose();
     super.dispose();
   }
+
+  /// Sets the delivery state and lets the whole cart re-price for it.
+  void _setState(String? value) {
+    setState(() => _state = value);
+    // Off the build phase: a provider write must not happen while building.
+    Future.microtask(() {
+      if (mounted) ref.read(deliveryStateProvider.notifier).state = value ?? '';
+    });
+  }
+
+  /// Fills the address form from a place or a GPS fix. Only fields the source
+  /// actually knows are overwritten, so a partial result never blanks what the
+  /// customer already typed.
+  void _applyFields(AddressFields f) {
+    setState(() {
+      if (f.area.isNotEmpty) _addressCtrl.text = f.area;
+      if (f.city.isNotEmpty) _cityCtrl.text = f.city;
+      if (f.district.isNotEmpty) _districtCtrl.text = f.district;
+      if (f.pincode.isNotEmpty) _pincodeCtrl.text = f.pincode;
+    });
+    if (f.state.isNotEmpty) _setState(f.state);
+  }
+
+  /// The address exactly as written to the order and sent to the server.
+  Map<String, dynamic> _addressMap() => {
+        'name': _nameCtrl.text.trim(),
+        'phone': _phoneCtrl.text.trim(),
+        'address': _addressCtrl.text.trim(),
+        'city': _cityCtrl.text.trim(),
+        if (_districtCtrl.text.trim().isNotEmpty)
+          'district': _districtCtrl.text.trim(),
+        if ((_state ?? '').isNotEmpty) 'state': _state,
+        'pincode': _pincodeCtrl.text.trim(),
+      };
 
   Future<void> _proceedToPayment() async {
     if (!_formKey.currentState!.validate()) return;
@@ -86,27 +136,48 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     try {
       final items = ref.read(cartProvider);
       final user = FirebaseAuth.instance.currentUser!;
+      // Re-priced for the address state chosen NOW (not a stale estimate).
       final delivery = await ref.read(deliveryChargeProvider.future);
-      final gst = ref.read(cartGstProvider);
+      final gstAdded = delivery.gstAdded;
+      final expectedTotal =
+          ref.read(cartTotalProvider) + gstAdded + delivery.totalCharge;
 
       final result = await _paymentService.createCartOrder(
         items: items,
         userId: user.uid,
         clientDelivery: delivery.totalCharge,
-        clientGst: gst,
+        clientGst: gstAdded,
+        customerDeliveryState: _state,
         // Same values createOrdersAfterPayment writes later — sent now so
         // the server can rebuild the order if that later step never runs.
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
-        customerAddress: {
-          'name': _nameCtrl.text.trim(),
-          'phone': _phoneCtrl.text.trim(),
-          'address': _addressCtrl.text.trim(),
-          'city': _cityCtrl.text.trim(),
-          'pincode': _pincodeCtrl.text.trim(),
-        },
+        customerAddress: _addressMap(),
         deliveryBySeller: delivery.bySellerCharge,
       );
+
+      // The server's own per-seller pricing, when it sent it — what we are
+      // about to charge, and what the order will be written from.
+      final rawBreakdown = result['sellerBreakdown'];
+      _serverPricing = rawBreakdown is List
+          ? {
+              for (final e in rawBreakdown.whereType<Map>())
+                SellerPricing.fromMap(e).sellerKey: SellerPricing.fromMap(e),
+            }
+          : null;
+
+      // If the server's total differs from what this screen showed (a price,
+      // GST or delivery setting changed, or a size was priced differently),
+      // the customer confirms the real figure before Razorpay opens — never
+      // a silent surprise on the payment sheet.
+      final serverTotal = (result['amount'] as num).toInt() / 100;
+      if ((serverTotal - expectedTotal).abs() > 1.0) {
+        final ok = await _confirmChangedTotal(expectedTotal, serverTotal);
+        if (!ok) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+      }
 
       // The Razorpay API returns the order ID in the 'id' field, not 'orderId'
       _razorpayOrderId = result['id'] as String?;
@@ -146,6 +217,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         _error = 'Failed to initiate payment: $e';
       });
     }
+  }
+
+  /// The server priced this order differently from the estimate on screen.
+  /// Shows the real total and asks before any payment sheet opens.
+  Future<bool> _confirmChangedTotal(double shown, double actual) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Your total has changed'),
+        content: Text(
+          'Prices, GST or delivery were updated. The amount to pay is '
+          '${CurrencyUtils.format(actual)} (it was showing '
+          '${CurrencyUtils.format(shown)}).',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Pay ${CurrencyUtils.format(actual)}'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   void _onPaymentSuccess(AppPaymentSuccess response) async {
@@ -191,16 +289,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       items: items,
       customerName: _nameCtrl.text.trim(),
       customerPhone: user.phoneNumber ?? '',
-      customerAddress: {
-        'name': _nameCtrl.text.trim(),
-        'phone': _phoneCtrl.text.trim(),
-        'address': _addressCtrl.text.trim(),
-        'city': _cityCtrl.text.trim(),
-        'pincode': _pincodeCtrl.text.trim(),
-      },
+      customerAddress: _addressMap(),
       razorpayOrderId: razorpayOrderId,
       razorpayPaymentId: razorpayPaymentId,
-      deliveryChargesBySeller: delivery.bySellerCharge,
+      // The server's figures when we have them (what was charged), else the
+      // estimate this screen showed.
+      pricingBySeller: _serverPricing ??
+          {for (final sp in delivery.sellers) sp.sellerKey: sp},
+      customerDeliveryState: _state,
     );
 
     ref.read(cartProvider.notifier).clear();
@@ -286,8 +382,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final items = ref.watch(cartProvider);
     final subtotal = ref.watch(cartTotalProvider);
     final savings = ref.watch(cartSavingsProvider);
-    final gst = ref.watch(cartGstProvider);
+    final gstIncluded = ref.watch(cartGstIncludedProvider);
     final deliveryAsync = ref.watch(deliveryChargeProvider);
+    final mrpSubtotal =
+        items.fold(0.0, (s, i) => s + i.originalPrice * i.quantity);
 
     // One-time prefill of the address form from the user's saved profile so
     // returning buyers don't retype what the app already knows.
@@ -298,6 +396,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       if (_addressCtrl.text.isEmpty) _addressCtrl.text = profile.address ?? '';
       if (_cityCtrl.text.isEmpty) _cityCtrl.text = profile.city ?? '';
       if (_pincodeCtrl.text.isEmpty) _pincodeCtrl.text = profile.pincode ?? '';
+      // The saved state, matched onto the recognised list ("Orissa" → Odisha),
+      // so returning buyers get the right delivery slab without picking again.
+      final saved = matchIndianState(profile.state);
+      if (_state == null && saved != null) _setState(saved);
     }
 
     // While the delivery estimate loads, the grand total is unknown — the Pay
@@ -305,7 +407,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final estimating = deliveryAsync.isLoading;
     final delivery = deliveryAsync.value;
     final deliveryCharge = delivery?.totalCharge ?? 0.0;
-    final grandTotal = subtotal + deliveryCharge + gst;
+    final gstAdded = delivery?.gstAdded ?? 0.0;
+    // items + GST added on top + delivery: the figure the server will charge.
+    final grandTotal = subtotal + deliveryCharge + gstAdded;
 
     // Was a custom AppBar with white text/icons (foregroundColor: Colors.white)
     // painted on topBarGradient() — which is this app's shared FROSTED WHITE
@@ -363,6 +467,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 title: 'Delivery Address',
                 child: Column(
                   children: [
+                    // Search or locate instead of typing a whole address —
+                    // either one fills area, city, district, state, pincode.
+                    AddressSearchField(onSelected: _applyFields),
+                    const SizedBox(height: 10),
+                    UseMyLocationButton(onLocated: _applyFields),
+                    const Divider(height: 26),
                     _field(_nameCtrl, 'Full Name', Icons.person_outline,
                         validator: _required),
                     const SizedBox(height: 12),
@@ -396,6 +506,43 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    _field(_districtCtrl, 'District (optional)', Icons.map_outlined),
+                    const SizedBox(height: 12),
+                    // A dropdown, not free text: the state decides the
+                    // delivery charge, so it must be a recognised name.
+                    DropdownButtonFormField<String>(
+                      initialValue: _state,
+                      isExpanded: true,
+                      menuMaxHeight: 340,
+                      decoration: InputDecoration(
+                        labelText: 'State',
+                        prefixIcon: const Icon(Icons.flag_outlined, size: 20),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              const BorderSide(color: AppColors.primary, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final st in kIndianStates)
+                          DropdownMenuItem(
+                            value: st,
+                            child: Text(st, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                      onChanged: _setState,
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? 'Select your state — delivery is priced by it'
+                          : null,
+                    ),
                   ],
                 ),
               ),
@@ -407,13 +554,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 title: 'Price Details',
                 child: Column(
                   children: [
-                    _priceRow('Subtotal (MRP)', CurrencyUtils.format(subtotal)),
-                    if (savings > 0)
+                    _priceRow('Subtotal (MRP)', CurrencyUtils.format(mrpSubtotal)),
+                    if (savings > 0) ...[
                       _priceRow(
-                        'Discount savings',
+                        'Product discounts',
                         '− ${CurrencyUtils.format(savings)}',
                         valueColor: const Color(0xFF15803D),
                       ),
+                      _priceRow('Discounted subtotal',
+                          CurrencyUtils.format(subtotal)),
+                    ],
                     if (estimating)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 4),
@@ -439,7 +589,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             : 'FREE',
                         valueColor:
                             deliveryCharge == 0 ? AppColors.success : null,
+                        badge: delivery?.slabType == null
+                            ? null
+                            : (delivery!.slabType == DeliveryType.inState
+                                ? 'Within-State'
+                                : 'Outside-State'),
                       ),
+                      if ((_state ?? '').isNotEmpty)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              'Deliver to: $_state',
+                              style: AppTextStyles.caption
+                                  .copyWith(color: Colors.black54),
+                            ),
+                          ),
+                        ),
                       if ((delivery?.totalWeight ?? 0) > 0)
                         Align(
                           alignment: Alignment.centerLeft,
@@ -453,8 +620,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           ),
                         ),
                     ],
-                    if (gst > 0)
-                      _priceRow('Total GST', CurrencyUtils.format(gst)),
+                    // Exclusive GST is a real charge on top of the prices.
+                    if (gstAdded > 0)
+                      _priceRow('GST', '+ ${CurrencyUtils.format(gstAdded)}'),
+                    // Included GST is already in the prices — informational.
+                    if (gstIncluded > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Incl. GST (in price)',
+                                style: AppTextStyles.caption
+                                    .copyWith(color: Colors.black54)),
+                            Text(CurrencyUtils.format(gstIncluded),
+                                style: AppTextStyles.caption
+                                    .copyWith(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
                     const Divider(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -567,13 +751,39 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
   }
 
-  Widget _priceRow(String label, String value, {Color? valueColor}) {
+  Widget _priceRow(String label, String value,
+      {Color? valueColor, String? badge}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: AppTextStyles.body),
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: AppTextStyles.body),
+                if (badge != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Text(badge,
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10)),
+                  ),
+                ],
+              ],
+            ),
+          ),
           Text(
             value,
             style: AppTextStyles.bodyMedium.copyWith(
@@ -761,6 +971,19 @@ class _ItemTile extends ConsumerWidget {
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.onSurfaceVariant),
                   ),
+                  if (item.freeDelivery)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF15803D).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('Free Delivery',
+                          style: AppTextStyles.caption.copyWith(
+                              color: const Color(0xFF15803D),
+                              fontWeight: FontWeight.w700)),
+                    ),
                 ],
               ),
               Text(
