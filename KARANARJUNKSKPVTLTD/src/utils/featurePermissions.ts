@@ -59,6 +59,13 @@ export const PERMISSION_MODULES: PermissionModule[] = [
                 ],
             },
             {
+                id: 'reports.sales',
+                label: 'Sales Report',
+                actions: [
+                    { id: 'reports.sales.view', label: 'View' },
+                ],
+            },
+            {
                 id: 'reports.financial',
                 label: 'Financial Report',
                 actions: [

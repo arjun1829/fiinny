@@ -133,6 +133,7 @@ export const PROTECTED_ROUTES: RoutePermission[] = [
 export const HASH_TAB_PERMISSIONS: RoutePermission[] = [
     // /reports#<tab>  (ReportsPage)
     { path: '/reports#stock',             appScreen: 'analytics', featurePerm: 'reports.stock.view' },
+    { path: '/reports#sales',             appScreen: 'analytics', featurePerm: 'reports.sales.view' },
     { path: '/reports#financial',         appScreen: 'analytics', featurePerm: 'reports.financial.view' },
     { path: '/reports#gst',               appScreen: 'analytics', featurePerm: 'reports.gst.view' },
 

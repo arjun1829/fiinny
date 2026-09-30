@@ -39,6 +39,13 @@ dependencies:
   package_info_plus: ^10.1.0
   share_plus: ^13.3.0
 
+  # image_picker's web resizer re-encodes losslessly for PNG/HEIC/WebP source
+  # files (canvas.toBlob only honours its quality argument for JPEG/WebP), so
+  # a re-encode pass is needed to guarantee every upload is actually
+  # compressed. Was already resolved transitively (via image_picker itself);
+  # pinned here directly now that lib/ imports it.
+  image: ^4.9.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

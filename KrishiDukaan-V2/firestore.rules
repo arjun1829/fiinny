@@ -509,7 +509,7 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
- 
+
     // ─── adminLogs ───────────────────────────────────────────────────────────
     match /adminLogs/{docId} {
       allow read: if isAdmin();
@@ -1179,6 +1179,25 @@ service cloud.firestore {
       allow update: if isAuthed()
                        && resource.data.salesExecutiveId == request.auth.uid;
       allow delete: if isAdmin();
+    }
+
+// ─── dealerNotes ──────────────────────────────────────────────────────────
+    // One free-text note a sales executive leaves against a dealer — a
+    // conversation log, not a structured field. New in the sales app.
+    // Reads are OWNER-SCOPED, same rationale as dealerVisits above: every
+    // client query already filters where('dealerId','==',...) AND is only ever
+    // run by the signed-in rep looking at their own notes, so owner-scoping
+    // matches the only read path that exists.
+    // Unlike dealerVisits, delete is NOT admin-only: the rep who wrote a note
+    // is expected to be able to remove it themselves. Notes are immutable once
+    // created (no edit flow), so there is no update rule.
+    match /dealerNotes/{noteId} {
+      allow read:   if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
+      allow create: if isSalesExec()
+                       && request.resource.data.salesExecutiveId == request.auth.uid;
+      allow delete: if isAdmin()
+                       || (isAuthed() && resource.data.salesExecutiveId == request.auth.uid);
     }
 
     // ─── salesAttendance ──────────────────────────────────────────────────────

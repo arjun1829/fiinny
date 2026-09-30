@@ -9,6 +9,7 @@ import '../../features/auth/screens/splash_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/day_session/screens/session_detail_screen.dart';
 import '../../features/day_session/screens/sessions_screen.dart';
+import '../../features/dealers/screens/dealer_detail_screen.dart';
 import '../../features/dealers/screens/dealers_screen.dart';
 import '../../features/expenses/screens/expenses_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
@@ -132,6 +133,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: Routes.dealers,
                 builder: (_, _) => const DealersScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':dealerId',
+                    builder: (_, s) => DealerDetailScreen(
+                      dealerId: s.pathParameters['dealerId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

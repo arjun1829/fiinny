@@ -4,6 +4,8 @@ import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin';
 import { recordAttempt, type AttemptItem } from '../../../lib/payment-attempts';
 import { allocateShares, assertTransfersFit, computeSellerSplit, type SellerSplit } from '../../../lib/route-split';
 import { loadRouteConfig, resolveSellerAccount } from '../../../lib/route-server';
+import { parseVariantWeightKg } from '../../../utils/weight';
+import { resolveDeliverySlabs, chargeFromSlabs } from '../../../utils/delivery';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -15,6 +17,17 @@ type CartItemInput = {
   sellerId:     string;
   sellerPhone?: string;
   qty:          number;
+  /** Package size string e.g. "1kg", "500ml" — drives server-side weight/slab. */
+  variantUnit?: string;
+};
+
+/** Per-item delivery inputs, resolved from authoritative docs (not the client). */
+type DeliveryLineInput = {
+  sellerKey:    string;
+  sellerPhone?: string;
+  weightKg:     number;
+  freeDelivery: boolean;
+  extra:        number;
 };
 
 /**
@@ -65,7 +78,9 @@ export async function POST(request: Request) {
       userId,
       clientSubtotal,
       clientDelivery,
+      clientGstAdded,
       clientGrandTotal,
+      customerDeliveryState,
       note,
       customerName,
       customerPhone,
@@ -76,7 +91,12 @@ export async function POST(request: Request) {
       userId:            string;
       clientSubtotal?:   number;
       clientDelivery?:   number;
+      // Exclusive GST added ON TOP of item prices (inclusive GST is already in the
+      // price). Sent separately so the server owns the delivery figure entirely.
+      clientGstAdded?:   number;
       clientGrandTotal?: number;
+      // Finalized delivery-address state — server picks in/out-of-state slabs from it.
+      customerDeliveryState?: string;
       note?:             string;
       // Captured before payment so a payment.captured webhook can rebuild the
       // order server-side if the client never gets to write it. Optional:
@@ -109,6 +129,9 @@ export async function POST(request: Request) {
     // back to the id. Route pays a linked account, so an ambiguous seller key
     // here is not a mismatched dashboard query - it is money to the wrong shop.
     const subtotalBySeller = new Map<string, number>();
+    // Per-item delivery inputs, gathered from the authoritative product/inventory
+    // docs (weight from the sent variantUnit; free/extra never from the client).
+    const deliveryLines: DeliveryLineInput[] = [];
 
     for (const item of items) {
       const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
@@ -180,6 +203,15 @@ export async function POST(request: Request) {
       let finalPrice: number;
       let priceSource: AttemptItem['priceSource'] = 'none';
       let itemName = '';
+      // Delivery inputs resolved from whichever authoritative doc priced the item.
+      let itemFree = false;
+      let itemExtra = 0;
+      const readDeliveryFlags = (d: FirebaseFirestore.DocumentData) => {
+        itemFree = d.freeDelivery === true;
+        itemExtra = typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0
+          ? d.extraDeliveryCharge
+          : 0;
+      };
 
       if (invDoc) {
         const d         = invDoc.data();
@@ -192,6 +224,7 @@ export async function POST(request: Request) {
         finalPrice = Math.round(Math.max(0, basePrice - discAmt - discFixed) * 100) / 100;
         priceSource = 'inventory';
         itemName = String(d.productName ?? d.name ?? '');
+        readDeliveryFlags(d);
         console.log('[create-cart-order] inventory doc found for', item.productId,
           '| base:', basePrice, 'disc:', discPct + '%', 'fixed:', discFixed, 'final:', finalPrice);
       } else {
@@ -225,6 +258,7 @@ export async function POST(request: Request) {
           finalPrice = Math.round(Math.max(0, basePrice - discAmt - discFixed) * 100) / 100;
           priceSource = 'seller-copy';
           itemName = String(d.name ?? d.productName ?? '');
+          readDeliveryFlags(d);
           console.log('[create-cart-order] seller copy found for', item.productId,
             '| base:', basePrice, 'disc:', discPct + '%', 'final:', finalPrice);
         } else {
@@ -239,6 +273,8 @@ export async function POST(request: Request) {
               ? availability.find((e: Record<string,unknown>) =>
                   e.storePhone === phoneKey || e.storeId === phoneKey)
               : null;
+            // Delivery flags come from the canonical product doc (its own product).
+            readDeliveryFlags(prodData);
             if (avEntry && Number(avEntry.sellingPrice) > 0) {
               finalPrice = Number(avEntry.sellingPrice);
               priceSource = 'availability';
@@ -272,10 +308,25 @@ export async function POST(request: Request) {
       });
       if (sellerKey) {
         subtotalBySeller.set(sellerKey, (subtotalBySeller.get(sellerKey) ?? 0) + lineTotal);
+        deliveryLines.push({
+          sellerKey,
+          sellerPhone: String(item.sellerPhone ?? '').trim() || undefined,
+          weightKg: Number((qty * parseVariantWeightKg(item.variantUnit)).toFixed(3)),
+          freeDelivery: itemFree,
+          extra: itemExtra,
+        });
       }
     }
 
     serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
+    // ── Server-authoritative delivery ─────────────────────────────────────────
+    // The delivery charge is computed here from the seller's configured slabs and
+    // the customer's finalized delivery state — never from a client-sent figure.
+    const { total: serverDelivery, bySeller: serverDeliveryBySeller } =
+      await computeServerDelivery(db, deliveryLines, customerDeliveryState);
+    console.log('[create-cart-order] serverDelivery:', serverDelivery,
+      '| bySeller:', serverDeliveryBySeller, '| state:', customerDeliveryState);
 
     console.log('[create-cart-order] serverSubtotal:', serverSubtotal,
       '| clientSubtotal:', clientSubtotal,
@@ -285,14 +336,28 @@ export async function POST(request: Request) {
     // ── Determine the Razorpay amount ─────────────────────────────────────────
     // Prefer the server-computed subtotal (can't be tampered with).
     // Fall back to the client-computed subtotal only if the server lookup returned 0.
-    // Always add client-provided delivery charge (trusted: independently verified
-    // by the same delivery-settings Firestore doc read during order creation).
     const safeClientSubtotal  = Math.max(0, Number(clientSubtotal)  || 0);
     const safeClientDelivery  = Math.max(0, Number(clientDelivery)  || 0);
+    const safeClientGstAdded  = Math.max(0, Number(clientGstAdded)  || 0);
     const safeClientGrand     = Math.max(0, Number(clientGrandTotal)|| 0);
 
+    // A "new client" splits exclusive GST out (clientGstAdded) and sends the
+    // variantUnit + delivery state the server needs to price delivery itself.
+    // Older builds (notably an un-updated mobile app) send neither — for them we
+    // must keep the legacy behavior of trusting clientDelivery (which bundled
+    // delivery + exclusive GST together) so their checkout is not broken.
+    const isNewClient = clientGstAdded !== undefined;
+
     const subtotalForPayment  = serverSubtotal > 0 ? serverSubtotal : safeClientSubtotal;
-    let   totalForPayment     = Math.round((subtotalForPayment + safeClientDelivery) * 100) / 100;
+
+    // DELIVERY: server-computed for new clients (never trusted from the client);
+    // clientDelivery only for legacy clients. GST-added is added separately for
+    // new clients; for legacy clients it is already inside clientDelivery.
+    const deliveryForPayment = isNewClient ? serverDelivery : safeClientDelivery;
+    const gstForPayment      = isNewClient ? safeClientGstAdded : 0;
+    let   totalForPayment    = Math.round(
+      (subtotalForPayment + deliveryForPayment + gstForPayment) * 100,
+    ) / 100;
 
     // Last resort: use the client grand total if everything else is still 0
     if (totalForPayment <= 0 && safeClientGrand > 0) {
@@ -326,7 +391,7 @@ export async function POST(request: Request) {
         note:            note     || 'Cart Order',
         itemCount:       String(items.length),
         serverSubtotal:  String(serverSubtotal),
-        deliveryCharge:  String(safeClientDelivery),
+        deliveryCharge:  String(deliveryForPayment),
         routedSellers:   String(splitSummary.length),
       },
       ...(transfers.length > 0 ? { transfers } : {}),
@@ -342,21 +407,26 @@ export async function POST(request: Request) {
       userId:          callerUid,
       amount:          totalForPayment,
       subtotal:        subtotalForPayment,
-      deliveryCharge:  safeClientDelivery,
+      deliveryCharge:  deliveryForPayment,
       items:           pricedItems,
       source:          request.headers.get('x-client') === 'mobile' ? 'mobile' : 'web',
       note:            note || 'Cart Order',
       customerName:    typeof customerName === 'string' ? customerName.trim() : undefined,
       customerPhone:   typeof customerPhone === 'string' ? customerPhone.trim() : undefined,
       customerAddress: customerAddress ?? undefined,
+      // Server-computed per-seller split so the webhook recovery path rebuilds
+      // orders with the same authoritative delivery figures (not a client claim).
+      // Legacy clients fall back to whatever split they sent.
       deliveryBySeller:
-        deliveryBySeller && typeof deliveryBySeller === 'object' ? deliveryBySeller : undefined,
+        isNewClient && Object.keys(serverDeliveryBySeller).length > 0
+          ? serverDeliveryBySeller
+          : (deliveryBySeller && typeof deliveryBySeller === 'object' ? deliveryBySeller : undefined),
     });
 
     return NextResponse.json({
       ...order,
       serverSubtotal,
-      deliveryCharge: safeClientDelivery,
+      deliveryCharge: deliveryForPayment,
       serverTotal:    totalForPayment,
       splitSummary,
       // Return the key used to create this order so the mobile client
@@ -367,6 +437,82 @@ export async function POST(request: Request) {
     console.error('[create-cart-order] unhandled error:', error);
     return NextResponse.json({ error: 'Failed to create payment order' }, { status: 500 });
   }
+}
+
+const SELLER_PHONE_RE = /^(\+91)?[6-9]\d{9}$/;
+
+/**
+ * Compute the delivery charge per seller, server-side and state-aware.
+ *
+ * This is the enforcement point required by the Pan-India delivery spec: the
+ * customer's finalized delivery state, the seller's own state, and the seller's
+ * configured slabs are read here — a client-supplied delivery charge or a
+ * "deliveryType" flag is never trusted.
+ *
+ * Per seller (grouped by the same key checkout uses — phone first, id fallback):
+ *   - Free-delivery items contribute no weight and no charge (mirrors the cart
+ *     estimate and the order-write logic).
+ *   - The applicable slab set is chosen by resolveDeliverySlabs() from the
+ *     customer state vs the seller's denormalized state; the chargeable weight
+ *     resolves to a slab charge; per-product `extra` is added on top.
+ *   - Sellers whose delivery settings can't be read resolve to their per-product
+ *     `extra` only (0 when none) — exactly how the order write prices them, so
+ *     the payable amount and the persisted order stay in step.
+ */
+async function computeServerDelivery(
+  db: FirebaseFirestore.Firestore,
+  lines: DeliveryLineInput[],
+  customerState: string | undefined,
+): Promise<{ total: number; bySeller: Record<string, number> }> {
+  if (lines.length === 0) return { total: 0, bySeller: {} };
+
+  // Group by seller key; remember a usable phone for the settings lookup.
+  const bySellerLines = new Map<string, DeliveryLineInput[]>();
+  const phoneByKey = new Map<string, string>();
+  for (const line of lines) {
+    if (!line.sellerKey) continue;
+    if (!bySellerLines.has(line.sellerKey)) bySellerLines.set(line.sellerKey, []);
+    bySellerLines.get(line.sellerKey)!.push(line);
+    const phone =
+      line.sellerPhone ||
+      (SELLER_PHONE_RE.test(line.sellerKey) ? line.sellerKey : '');
+    if (phone && !phoneByKey.has(line.sellerKey)) phoneByKey.set(line.sellerKey, phone);
+  }
+
+  const bySeller: Record<string, number> = {};
+
+  await Promise.all(
+    Array.from(bySellerLines.entries()).map(async ([sellerKey, items]) => {
+      const chargeable = items.filter((i) => !i.freeDelivery);
+      // Entire shipment ships free → no charge, no extra.
+      if (chargeable.length === 0) { bySeller[sellerKey] = 0; return; }
+
+      const chargeableWeight = Number(
+        chargeable.reduce((s, i) => s + i.weightKg, 0).toFixed(3),
+      );
+      const extra = Number(
+        chargeable.reduce((s, i) => s + (i.extra > 0 ? i.extra : 0), 0).toFixed(2),
+      );
+
+      const phone = phoneByKey.get(sellerKey);
+      if (!phone) { bySeller[sellerKey] = extra; return; }
+
+      try {
+        const snap = await db.collection('deliverySettings').doc(phone).get();
+        if (!snap.exists) { bySeller[sellerKey] = extra; return; }
+        const { slabs } = resolveDeliverySlabs(snap.data() ?? {}, customerState);
+        const slabCharge = slabs.length ? chargeFromSlabs(chargeableWeight, slabs) : 0;
+        bySeller[sellerKey] = Number((slabCharge + extra).toFixed(2));
+      } catch {
+        bySeller[sellerKey] = extra;
+      }
+    }),
+  );
+
+  const total = Number(
+    Object.values(bySeller).reduce((s, v) => s + v, 0).toFixed(2),
+  );
+  return { total, bySeller };
 }
 
 interface SplitSummaryRow {

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 /// A bill photo held in memory, ready to upload.
@@ -23,6 +24,11 @@ class BillImage {
     required this.extension,
   });
 
+  /// Matches the `maxWidth`/`imageQuality` values already passed to
+  /// `ImagePicker.pickImage` at both call sites.
+  static const _maxDimension = 1600;
+  static const _jpegQuality = 75;
+
   static Future<BillImage> fromXFile(XFile file) async {
     final bytes = await file.readAsBytes();
 
@@ -30,11 +36,52 @@ class BillImage {
     // the picker re-encodes to JPEG whenever imageQuality is set, so falling
     // back to the file extension and then to JPEG is accurate in practice.
     final mime = file.mimeType ?? _mimeFromName(file.name);
+
+    final compressed = _compress(bytes);
+    if (compressed == null) {
+      // Decode failed (corrupt/unsupported image) or the source was already
+      // smaller than a JPEG re-encode would produce — use the original bytes
+      // rather than risk shipping a larger or broken file.
+      return BillImage(
+        bytes: bytes,
+        contentType: mime,
+        extension: _extensionFor(mime),
+      );
+    }
     return BillImage(
-      bytes: bytes,
-      contentType: mime,
-      extension: _extensionFor(mime),
+      bytes: compressed,
+      contentType: 'image/jpeg',
+      extension: '.jpg',
     );
+  }
+
+  /// Re-encodes [bytes] as a resized JPEG, or returns null when that would not
+  /// actually help.
+  ///
+  /// image_picker's own `maxWidth`/`imageQuality` already resize on mobile
+  /// (native platform channels) and on web for JPEG/WebP sources. But
+  /// `canvas.toBlob` — what the web plugin uses under the hood — only honours
+  /// its quality argument for JPEG/WebP output; a PNG (or any other lossless
+  /// format) source is re-encoded losslessly regardless of the quality value,
+  /// so it can come back the same size or larger. Re-encoding here, after the
+  /// picker's own resize, guarantees a real compressed JPEG independent of the
+  /// source format or platform.
+  static Uint8List? _compress(Uint8List bytes) {
+    try {
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+
+      final resized = decoded.width > _maxDimension
+          ? img.copyResize(decoded, width: _maxDimension)
+          : decoded;
+      final jpeg = img.encodeJpg(resized, quality: _jpegQuality);
+
+      // Verify the re-encode is actually smaller rather than assuming it —
+      // a tiny or already-optimized source can grow under JPEG re-encoding.
+      return jpeg.length < bytes.length ? jpeg : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _mimeFromName(String name) {

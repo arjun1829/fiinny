@@ -25,7 +25,6 @@ interface NavbarProps {
   externalUser?: any;
   externalUserRole?: string;
   externalUserProfile?: { isPaid?: boolean };
-  allProducts?: MarketplaceProduct[];
   allStores?: any[];
   onProductClick?: (id: string) => void;
   onStoreClick?: (id: string) => void;
@@ -44,7 +43,6 @@ export function Navbar({
   externalUser,
   externalUserRole,
   externalUserProfile,
-  allProducts = [],
   allStores = [],
   onProductClick,
   onStoreClick,
@@ -77,6 +75,44 @@ export function Navbar({
     if (setProductSearch) setProductSearch(val);
     setInternalSearch(val);
   };
+
+  // Product suggestions come from the lightweight server endpoint
+  // (/api/marketplace/products?suggest=1) instead of an in-memory full catalogue.
+  // Debounced, min 2 chars, and stale responses are aborted/discarded so an older
+  // query can never overwrite newer results. Results are already unique canonical
+  // products (server merges retailer copies by name), so no client dedup needed.
+  const [productSuggestions, setProductSuggestions] = useState<MarketplaceProduct[]>([]);
+  const suggestAbortRef = useRef<AbortController | null>(null);
+  const suggestGenRef = useRef(0);
+
+  useEffect(() => {
+    const q = activeSearch.trim();
+    if (q.length < 2) {
+      suggestAbortRef.current?.abort();
+      setProductSuggestions([]);
+      return;
+    }
+    const gen = ++suggestGenRef.current;
+    const timer = setTimeout(async () => {
+      suggestAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      suggestAbortRef.current = ctrl;
+      try {
+        const res = await fetch(
+          `/api/marketplace/products?suggest=1&pageSize=8&search=${encodeURIComponent(q)}`,
+          { signal: ctrl.signal },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { products?: MarketplaceProduct[] };
+        if (gen !== suggestGenRef.current) return; // superseded by a newer keystroke
+        setProductSuggestions(json.products ?? []);
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        if (gen === suggestGenRef.current) setProductSuggestions([]);
+      }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [activeSearch]);
 
 
   const fetchLocation = async () => {
@@ -181,14 +217,8 @@ export function Navbar({
     const query = activeSearch.trim().toLowerCase();
     if (query.length < 2) return { products: [], stores: [] };
 
-    const products = allProducts
-      .filter(p =>
-        p.name.toLowerCase().includes(query) ||
-        (p.fullName && p.fullName.toLowerCase().includes(query)) ||
-        p.category.toLowerCase().includes(query) ||
-        p.store.toLowerCase().includes(query)
-      )
-      .slice(0, 5);
+    // Products come from the debounced server endpoint (already unique canonical).
+    const products = productSuggestions;
 
     const stores = allStores
       .filter(s => {
@@ -204,7 +234,7 @@ export function Navbar({
       .slice(0, 3);
 
     return { products, stores };
-  }, [productSearch, allProducts, allStores]);
+  }, [activeSearch, productSuggestions, allStores]);
 
   const hasResults = searchResults.products.length > 0 || searchResults.stores.length > 0;
   const shouldShowDropdown = showResults && activeSearch.trim().length >= 2 && hasResults;
