@@ -57,7 +57,7 @@ const fmtCount = (n: number) => n.toLocaleString("en-IN");
 const fmtMoney = (n: number) =>
   n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const TEMPLATES: { id: TemplateId; label: string; description: string }[] = [
+const TEMPLATES: { id: TemplateId; label: string; description: string; abandoned?: true }[] = [
   {
     id: "payment_failed_app_update",
     label: "Payment Failed — App Update",
@@ -100,8 +100,9 @@ const TEMPLATES: { id: TemplateId; label: string; description: string }[] = [
   },
   {
     id: "reel_promo_hindi",
-    label: "Reel Promotion Hindi (Marketing)",
-    description: "Promote a farming reel to all users in Hindi. Image header, zero variables, static URL button. Marketing template — billed per message.",
+    label: "Reel Promotion Hindi (Marketing) [ABANDONED]",
+    description: "⛔ Campaign abandoned — do not send. Implementation preserved for future reference.",
+    abandoned: true,
   },
 ];
 
@@ -4175,7 +4176,16 @@ export default function SendMessagesPage() {
         {templateId === "kyc_pending" && <KycPendingFlow />}
         {templateId === "kyc_success" && <KycSuccessFlow />}
         {templateId === "app_update" && <AppUpdateFlow />}
-        {templateId === "reel_promo_hindi" && <ReelPromoHindiFlow />}
+        {templateId === "reel_promo_hindi" && (
+          <div className="rounded-xl border border-red-300 bg-red-50 px-5 py-5 space-y-2 max-w-xl">
+            <p className="text-sm font-bold text-red-800">⛔ Campaign Abandoned</p>
+            <p className="text-sm text-red-700">
+              This campaign has been abandoned and cannot be sent. The template configuration and
+              implementation are preserved for future reference.
+            </p>
+            <p className="text-xs text-red-600 font-mono">reel_promo_hindi · Marketing · Hindi</p>
+          </div>
+        )}
       </div>
     </div>
   );
