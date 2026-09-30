@@ -1381,6 +1381,12 @@ async function fetchSellerDeliveryCharge(
   directPhone?: string,
   customerState?: string,
 ): Promise<{ charge: number; deliveryType: "in_state" | "out_state" | "default" }> {
+  // No chargeable weight (every item free, or a pack size with no parseable
+  // weight) → no slab. The cart estimate and the server (lib/cart-pricing)
+  // already do this; without it the order write picked up the LOWEST slab for a
+  // zero-weight shipment, so the persisted delivery charge could exceed the
+  // one the customer saw and paid.
+  if (!(totalWeightKg > 0)) return { charge: 0, deliveryType: "default" };
   try {
     // Resolve seller phone using the three-path strategy
     let phone: string | null = directPhone || null;
@@ -1409,6 +1415,23 @@ async function fetchSellerDeliveryCharge(
   return { charge: 0, deliveryType: "default" };
 }
 
+/** One seller's pricing as computed by lib/cart-pricing on the server. */
+export type ServerSellerBreakdown = {
+  sellerKey: string;
+  subtotal: number;
+  gstTotal: number;
+  gstAdded: number;
+  deliveryCharge: number;
+  delivery: { slab: number; extra: number; free: boolean; waived: number; deliveryType: "in_state" | "out_state" | "default" };
+  total: number;
+};
+
+/** Last 10 digits — seller keys appear as "+91…" and bare in different places. */
+function phoneTail(v: string): string {
+  const d = String(v ?? "").replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : "";
+}
+
 export async function createOrdersFromCart(params: {
   customerId: string;
   customerName: string;
@@ -1416,6 +1439,14 @@ export async function createOrdersFromCart(params: {
   customerAddress: string;
   /** Finalized delivery-address state — decides in/out-of-state delivery slabs. */
   customerDeliveryState?: string;
+  /**
+   * The server's own per-seller pricing, returned by /api/payment/create-cart-order
+   * (`sellerBreakdown`). When it names a seller, THAT seller's order takes the
+   * server's subtotal, added GST, delivery and total — the figures actually
+   * charged — instead of the browser's re-derivation, so an order can never say
+   * more or less than was paid. Absent (or no match) → the calculation below.
+   */
+  serverBreakdown?: ServerSellerBreakdown[];
   items: CartItem[];
   payment?: {
     razorpayOrderId: string;
@@ -1426,7 +1457,7 @@ export async function createOrdersFromCart(params: {
     paidAt: string;
   };
 }): Promise<string[]> {
-  const { customerId, customerName, customerPhone, customerAddress, customerDeliveryState, items, payment } = params;
+  const { customerId, customerName, customerPhone, customerAddress, customerDeliveryState, serverBreakdown, items, payment } = params;
   if (!items.length) return [];
 
   const groups = new Map<string, CartItem[]>();
@@ -1575,8 +1606,26 @@ export async function createOrdersFromCart(params: {
     };
 
     // Included GST is already inside the price; only EXCLUDED GST is added here.
-    const grandTotal = Number((subtotal + deliveryCharge + totalGstAdded).toFixed(2));
+    const clientGrandTotal = Number((subtotal + deliveryCharge + totalGstAdded).toFixed(2));
     const sellerName = groupItems[0]?.sellerName ?? "";
+
+    // The server's figures for this seller, when it sent them. The customer PAID
+    // the server's total, so the order records that — not the browser's estimate.
+    const serverKey = String(sellerPhoneHint || sellerId);
+    const sb = serverBreakdown?.find((b) => b.sellerKey === serverKey)
+      ?? serverBreakdown?.find((b) => phoneTail(b.sellerKey) !== "" && phoneTail(b.sellerKey) === phoneTail(serverKey));
+    if (sb && Math.abs(sb.total - clientGrandTotal) > 0.5) {
+      console.warn("[createOrdersFromCart] browser and server totals differ — recording the server's", {
+        seller: serverKey, browser: clientGrandTotal, server: sb.total,
+      });
+    }
+    const orderSubtotal = sb ? sb.subtotal : subtotal;
+    const orderDeliveryCharge = sb ? sb.deliveryCharge : deliveryCharge;
+    const orderGstAdded = sb ? sb.gstAdded : totalGstAdded;
+    const orderDeliveryBreakdown = sb
+      ? { ...sb.delivery, ...(customerDeliveryState ? { customerDeliveryState } : {}) }
+      : deliveryBreakdown;
+    const grandTotal = sb ? sb.total : clientGrandTotal;
 
     // Derive invoiceNumber from the document ref ID (generated before addDoc)
     const orderRef = doc(collection(db, "orders"));
@@ -1595,12 +1644,12 @@ export async function createOrdersFromCart(params: {
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
       mrpSubtotal,
-      subtotal,
+      subtotal: orderSubtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
       ...(totalGst > 0 ? { totalGst } : {}),
-      ...(totalGstAdded > 0 ? { totalGstAdded } : {}),
-      deliveryCharge,
-      deliveryBreakdown,
+      ...(orderGstAdded > 0 ? { totalGstAdded: orderGstAdded } : {}),
+      deliveryCharge: orderDeliveryCharge,
+      deliveryBreakdown: orderDeliveryBreakdown,
       grandTotal,
       totalWeightKg,
       invoiceNumber,
@@ -1627,9 +1676,11 @@ export async function createOrdersFromCart(params: {
         ...(sellerGstNumber ? { sellerGstNumber } : {}),
         items: normalizedItems as OrderItem[],
         mrpSubtotal,
-        subtotal,
+        subtotal: orderSubtotal,
         ...(totalGst > 0 ? { totalGst } : {}),
-        deliveryCharge,
+        ...(orderGstAdded > 0 ? { totalGstAdded: orderGstAdded } : {}),
+        deliveryCharge: orderDeliveryCharge,
+        deliveryBreakdown: orderDeliveryBreakdown,
         grandTotal,
         totalWeightKg,
         invoiceNumber,

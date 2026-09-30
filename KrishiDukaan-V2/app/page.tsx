@@ -1141,7 +1141,7 @@ export default function App() {
     .reduce((sum, item) => sum + item.price * item.qty, 0);
 
   // Core order creation — called after successful payment
-  const createOrdersAfterPayment = async (paymentDetails?: any) => {
+  const createOrdersAfterPayment = async (paymentDetails?: any, serverBreakdown?: any[]) => {
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
     const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
 
@@ -1153,6 +1153,9 @@ export default function App() {
       // The finalized delivery-address state — decides in/out-of-state slabs so
       // the order's persisted delivery charge matches what the server charged.
       customerDeliveryState: checkoutInfo.addressState.trim(),
+      // The server's per-seller figures (what was actually charged), so each order
+      // records exactly that. Undefined for older responses → local calculation.
+      serverBreakdown,
       items: readyItems,
       payment: paymentDetails,
     });
@@ -1317,7 +1320,7 @@ export default function App() {
                 amount: rzpOrder.amount / 100,
                 status: "paid",
                 paidAt: new Date().toISOString(),
-              });
+              }, rzpOrder.sellerBreakdown);
             } else {
               setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
@@ -1371,7 +1374,7 @@ export default function App() {
               amount: rzpOrder.amount / 100,
               status: "paid",
               paidAt: new Date().toISOString(),
-            });
+            }, rzpOrder.sellerBreakdown);
             setCheckoutLoading(false);
             return;
           }
