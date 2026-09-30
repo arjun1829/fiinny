@@ -36,6 +36,15 @@ class ListingModel {
   final String? sellMode;
   final bool? gstApplicable;
   final double? gstRate;
+
+  /// Whether [gstRate] is already inside the price (default true).
+  final bool gstIncluded;
+
+  /// Per-product delivery surcharge (₹) on top of the seller's slab charge.
+  final double extraDeliveryCharge;
+
+  /// This product ships free: no weight and no delivery charge.
+  final bool freeDelivery;
   final DateTime? updatedAt;
 
   /// Product-detail-page view count, bumped by `ProductDetailScreen` (and by
@@ -85,6 +94,9 @@ class ListingModel {
     this.sellMode,
     this.gstApplicable,
     this.gstRate,
+    this.gstIncluded = true,
+    this.extraDeliveryCharge = 0,
+    this.freeDelivery = false,
     this.updatedAt,
     this.distanceKm,
     this.clicks = 0,
@@ -181,6 +193,12 @@ class ListingModel {
       sellMode: d['sellMode'] as String?,
       gstApplicable: d['gstApplicable'] as bool?,
       gstRate: (d['gstRate'] as num?)?.toDouble(),
+      gstIncluded: d['gstIncluded'] != false,
+      extraDeliveryCharge: () {
+        final n = (d['extraDeliveryCharge'] as num?)?.toDouble() ?? 0;
+        return n > 0 ? n : 0.0;
+      }(),
+      freeDelivery: d['freeDelivery'] == true,
       updatedAt: updatedAt,
       clicks: (d['clicks'] as num?)?.toInt() ?? 0,
       impressions: (d['impressions'] as num?)?.toInt() ?? 0,
