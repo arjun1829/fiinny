@@ -169,6 +169,14 @@ class DashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             ModuleTile(
+              icon: Icons.link_rounded,
+              title: 'Referrals & Offer Links',
+              subtitle: 'Share your link, send ready-made plans, see who paid',
+              accent: AppColors.primaryLight,
+              onTap: () => context.go('${Routes.home}/referrals'),
+            ),
+            const SizedBox(height: 12),
+            ModuleTile(
               icon: Icons.insert_chart_rounded,
               title: 'Reports',
               subtitle: 'Weekly and monthly performance summary',

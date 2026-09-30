@@ -873,9 +873,26 @@ export async function updateSubscriptionStatus(
    * input field — only the gateway-verified value flows through here.
    */
   promoCode?: string | null,
+  /**
+   * Which plan was bought — from verify/, which reads it off the Razorpay
+   * order's notes (stamped by create-order), so it is the plan actually
+   * charged, not whatever the checkout screen currently has selected.
+   * Snapshotted on the subscription so a later edit or delete of the ladder
+   * row never changes what this subscription says it was.
+   */
+  plan?: {
+    planId?: string | null;
+    planTier?: string | null;
+    planName?: string | null;
+    /** Referral code from the order notes (validated by create-order). */
+    referralCode?: string | null;
+  } | null,
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
   const timestamp = serverTimestamp();
   const normalizedPromo = String(promoCode ?? '').trim().toUpperCase();
+  const planTier = plan?.planTier === 'standard' ? 'standard' : 'custom';
+  const planName = String(plan?.planName ?? '').trim() ||
+    (planTier === 'standard' ? 'Standard' : 'Custom');
 
   // Resolve uid → phone. Try uidIndex first; then scan users/{uid} directly (works for
   // admin-created / email-based accounts that have no uidIndex entry).
@@ -904,11 +921,17 @@ export async function updateSubscriptionStatus(
   const currentSeats = Number(userData.totalSeats) || 0;
   const seatsToAdd = Number(seatCount) || 1;
 
+  const referralCode = String(plan?.referralCode ?? '').trim().toUpperCase();
+  // A customer buying seats becomes a retailer, as in the mobile app — they
+  // can reach checkout through a sales referral link.
+  const upgradeRole = status === 'paid' && (userData.role === 'customer' || userData.role === 'consumer');
+
   await setDoc(userDocRef, {
     isPaid: status === 'paid',
     subscriptionStatus: status,
     paymentDetails: paymentDetails || null,
     totalSeats: status === 'paid' ? currentSeats + seatsToAdd : currentSeats,
+    ...(upgradeRole ? { role: 'retailer' } : {}),
     updatedAt: timestamp,
   }, { merge: true });
 
@@ -932,6 +955,9 @@ export async function updateSubscriptionStatus(
         amount: totalAmount,
         seatCount: seatsToAdd,
         durationMonths,
+        planName,
+        planTier,
+        ...(referralCode ? { referralCode } : {}),
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
@@ -950,7 +976,9 @@ export async function updateSubscriptionStatus(
         ownerId: uid,
         ownerPhone: phone ?? uid,
         ownerType: role,
-        planName: 'Standard',
+        planName,
+        planTier,
+        ...(plan?.planId ? { planId: String(plan.planId) } : {}),
         seatsPurchased: seatsToAdd,
         durationMonths,
         amountPaid: totalAmount,
@@ -961,6 +989,8 @@ export async function updateSubscriptionStatus(
         // Promo attribution — written only when a gateway-verified code was
         // used. Absent field = no promo, so usage queries filter on presence.
         ...(normalizedPromo ? { promoCode: normalizedPromo } : {}),
+        // Sales attribution — only when a validated code was used at checkout.
+        ...(referralCode ? { referralCode } : {}),
         startDate: Timestamp.fromDate(now),
         expiryDate: Timestamp.fromDate(expiry),
         createdAt: timestamp,

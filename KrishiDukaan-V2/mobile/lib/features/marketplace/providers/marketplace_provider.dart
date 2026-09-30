@@ -4,6 +4,7 @@ import '../../../core/constants/app_config.dart';
 import '../../../core/providers/user_provider.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/home_banner_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/models/store_model.dart';
 import '../../../core/models/listing_model.dart';
@@ -838,3 +839,18 @@ final moreFromRetailerProvider =
           .read(catalogRepositoryProvider)
           .fetchMoreFromRetailer(args.phone, excludeId: args.excludeId);
     });
+
+/// Live homepage banners from Admin > Banners — the same `banners` docs the
+/// website's hero carousel shows, so an admin's add / remove / reorder /
+/// publish reaches the app without a release. Filtered to live banners
+/// client-side (as the web does) so no composite index is needed.
+final homeBannersProvider = StreamProvider<List<HomeBannerModel>>((ref) {
+  return FirebaseFirestore.instance
+      .collection('banners')
+      .orderBy('order')
+      .snapshots()
+      .map((snap) => snap.docs
+          .map(HomeBannerModel.fromFirestore)
+          .where((b) => b.isLive && b.image.isNotEmpty)
+          .toList());
+});
