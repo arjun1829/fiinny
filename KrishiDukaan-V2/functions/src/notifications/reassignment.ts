@@ -21,7 +21,7 @@ import { queueWaNotification } from "../wa-notify";
  * expire, so customers would never be auto-refunded. One source can't disagree
  * with itself. Generated on first run.
  */
-async function expirySecret(): Promise<string> {
+export async function expirySecret(): Promise<string> {
   const ref = admin.firestore().collection("_serverConfig").doc("cron");
   return admin.firestore().runTransaction(async (tx) => {
     const snap = await tx.get(ref);

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/delivery_utils.dart';
+
 class OrderModel {
   final String id;
   final String customerId;
@@ -13,8 +15,22 @@ class OrderModel {
   final double subtotal;
   final double deliveryCharge;
 
-  /// Total GST for this order (written as `totalGst` at checkout).
+  /// Total GST for this order (written as `totalGst` at checkout) — included
+  /// and added together, for the invoice.
   final double totalGst;
+
+  /// The part of [totalGst] that was ADDED to the payable total, when the
+  /// order records it (`totalGstAdded`). Null on orders older than that field:
+  /// see [gstAdded].
+  final double? totalGstAdded;
+
+  /// The delivery charge as it was made up when charged (slab, extra, free,
+  /// waived, which slab set) — frozen on the order so nothing is recomputed
+  /// from today's settings. Null on older orders.
+  final DeliveryBreakdown? deliveryBreakdown;
+
+  /// The state the delivery went to; decided the within/outside-state slab.
+  final String? customerDeliveryState;
 
   final double total;
   final String status;
@@ -40,6 +56,9 @@ class OrderModel {
     required this.subtotal,
     required this.deliveryCharge,
     this.totalGst = 0,
+    this.totalGstAdded,
+    this.deliveryBreakdown,
+    this.customerDeliveryState,
     required this.total,
     required this.status,
     this.payment,
@@ -47,6 +66,21 @@ class OrderModel {
     this.statusHistory = const [],
     this.invoiceNumber,
   });
+
+  /// GST added on top of the items. Orders from before `totalGstAdded` existed
+  /// charged their GST on top, which shows as a grand total above items +
+  /// delivery — the same inference the web invoice makes.
+  double get gstAdded {
+    if (totalGstAdded != null) return totalGstAdded!;
+    if (totalGst <= 0) return 0;
+    return total > subtotal + deliveryCharge + 0.01 ? totalGst : 0;
+  }
+
+  /// GST that was already inside the item prices.
+  double get gstIncluded {
+    final v = totalGst - gstAdded;
+    return v > 0.005 ? v : 0;
+  }
 
   factory OrderModel.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>? ?? {};
@@ -114,6 +148,15 @@ class OrderModel {
       subtotal: (d['subtotal'] as num?)?.toDouble() ?? 0.0,
       deliveryCharge: (d['deliveryCharge'] as num?)?.toDouble() ?? 0.0,
       totalGst: (d['totalGst'] as num?)?.toDouble() ?? 0.0,
+      totalGstAdded: (d['totalGstAdded'] as num?)?.toDouble(),
+      deliveryBreakdown: d['deliveryBreakdown'] is Map
+          ? DeliveryBreakdown.fromMap(d['deliveryBreakdown'] as Map)
+          : null,
+      customerDeliveryState: (d['customerDeliveryState'] ??
+              (d['deliveryBreakdown'] is Map
+                  ? (d['deliveryBreakdown'] as Map)['customerDeliveryState']
+                  : null))
+          ?.toString(),
       total: (d['total'] as num?)?.toDouble() ??
           (d['grandTotal'] as num?)?.toDouble() ??
           (d['subtotal'] as num?)?.toDouble() ??

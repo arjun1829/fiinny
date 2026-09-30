@@ -356,7 +356,13 @@ function buildInvoicePDF(order: OrderDoc, seller?: InvoiceSellerInfo): jsPDF {
   // GST-included disclosure (business default). Shows the amount inside the price.
   if (includedGst > 0) {
     note(`GST${rateLabel ? ` (${rateLabel} included)` : " (included)"}: ${formatINR(includedGst)}`, PRIMARY, 7);
-    note("GST is included in the product price and is not charged separately.");
+    // A mixed order has both: say which is which, rather than claiming GST is
+    // "not charged separately" directly under a "+ GST" row.
+    note(
+      addedGst > 0
+        ? "Included GST is part of the product price. GST marked + is added on top."
+        : "GST is included in the product price and is not charged separately.",
+    );
   }
   // Delivery detail: free (waived) or slab + extra breakdown.
   if (deliveryFree) {

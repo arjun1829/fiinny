@@ -43,6 +43,16 @@ export type AttemptItem = {
    * primary lookup missed, which is worth seeing when a charge looks wrong.
    */
   priceSource: 'inventory' | 'seller-copy' | 'availability' | 'canonical' | 'none';
+  /** Pack size the customer chose (e.g. "500ml"); drives price and weight. */
+  variantUnit?: string;
+  /**
+   * The store's GST settings for this line, as the server priced it. Kept so a
+   * webhook-rebuilt order carries the same per-item GST an invoice needs.
+   */
+  gstApplicable?: boolean;
+  gstRate?: number;
+  /** True when GST was already inside `unitPrice` (the default). */
+  gstIncluded?: boolean;
 };
 
 export type AttemptKind = 'cart' | 'subscription';
@@ -85,7 +95,23 @@ export type RecordAttemptInput = {
   durationMonths?: number;
   promoCode?: string | null;
   discountPercent?: number;
+  /**
+   * Validated, active referral code (lib/referrals.ts) — set only by
+   * create-order after checking it, so attribution can't be client-forged.
+   */
+  referralCode?: string | null;
   note?: string;
+  /** Cart attempts, new clients: exclusive GST added to the payable total. */
+  gstAdded?: number;
+  gstBySeller?: Record<string, number>;
+  /**
+   * Full per-seller pricing as the server computed it (subtotal, GST, delivery
+   * with slab / extra / free / waived). Order recovery rebuilds each order
+   * from this rather than re-deriving it.
+   */
+  sellerBreakdown?: unknown[];
+  /** Finalized delivery-address state that picked the in/out-of-state slab. */
+  customerDeliveryState?: string;
 };
 
 /**
@@ -100,12 +126,15 @@ async function resolveBuyer(
   try {
     // Phone-keyed accounts reach their doc through uidIndex; email-keyed ones
     // live at users/{uid} directly. Try both, same as the sales-role lookup.
-    const idx = await db.collection('uidIndex').doc(userId).get();
+    // uidIndex and the uid-keyed user doc in parallel; the phone-keyed doc
+    // only when uidIndex names one (same result as before, one wait fewer).
+    const [idx, byUid] = await Promise.all([
+      db.collection('uidIndex').doc(userId).get(),
+      db.collection('users').doc(userId).get(),
+    ]);
     const phone = idx.exists ? String(idx.data()?.phone ?? '') : '';
 
-    const userSnap = phone
-      ? await db.collection('users').doc(phone).get()
-      : await db.collection('users').doc(userId).get();
+    const userSnap = phone ? await db.collection('users').doc(phone).get() : byUid;
 
     const data = userSnap.exists ? userSnap.data() ?? {} : {};
     return {
@@ -155,11 +184,16 @@ export async function recordAttempt(input: RecordAttemptInput): Promise<void> {
           ...(input.customerPhone ? { customerPhone: input.customerPhone } : {}),
           ...(input.customerAddress ? { customerAddress: input.customerAddress } : {}),
           ...(input.deliveryBySeller ? { deliveryBySeller: input.deliveryBySeller } : {}),
+          ...(input.gstAdded !== undefined ? { gstAdded: input.gstAdded } : {}),
+          ...(input.gstBySeller ? { gstBySeller: input.gstBySeller } : {}),
+          ...(input.sellerBreakdown ? { sellerBreakdown: input.sellerBreakdown } : {}),
+          ...(input.customerDeliveryState ? { customerDeliveryState: input.customerDeliveryState } : {}),
 
           seatCount: input.seatCount ?? null,
           durationMonths: input.durationMonths ?? null,
           promoCode: input.promoCode ?? null,
           discountPercent: input.discountPercent ?? null,
+          referralCode: input.referralCode ?? null,
 
           note: input.note ?? null,
           source: input.source,

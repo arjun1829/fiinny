@@ -1,6 +1,9 @@
 import { getAdminDb } from './firebase-admin';
 import { resolveSellerAccount } from './route-server';
 import { markAttemptPaid } from './payment-attempts';
+import { ensureOrderInvoice } from './order-invoice';
+import { computeLinePricing } from '../utils/gst';
+import type { SellerPricing } from './cart-pricing';
 
 /**
  * Server-side order recovery for a captured payment whose order never got
@@ -50,6 +53,10 @@ type RecoveredItem = {
   sellerId: string;
   sellerPhone: string | null;
   sellerName: string | null;
+  variantUnit?: string;
+  gstApplicable?: boolean;
+  gstRate?: number;
+  gstIncluded?: boolean;
 };
 
 export type RecoveryOutcome =
@@ -110,6 +117,16 @@ export async function recoverOrderFromCapturedPayment(params: {
   const addressMissing = !customerAddress;
   const deliveryBySeller = (attempt.deliveryBySeller ?? {}) as Record<string, number>;
   const totalDelivery = Number(attempt.deliveryCharge ?? 0);
+  // New clients: the server's own per-seller pricing (items, GST, delivery
+  // breakdown), stored by create-cart-order. When present the order is rebuilt
+  // from it verbatim, so it carries the GST and delivery detail an invoice
+  // needs and its total is exactly what was charged. Legacy attempts have none
+  // and fall through to the older subtotal + delivery path.
+  const breakdownBySeller = new Map<string, SellerPricing>();
+  for (const sp of (Array.isArray(attempt.sellerBreakdown) ? attempt.sellerBreakdown : []) as SellerPricing[]) {
+    if (sp && typeof sp.sellerKey === 'string') breakdownBySeller.set(sp.sellerKey, sp);
+  }
+  const customerDeliveryState = String(attempt.customerDeliveryState ?? '').trim();
 
   // Group by seller the same way checkout does: phone first, id as fallback.
   const bySeller = new Map<string, RecoveredItem[]>();
@@ -162,9 +179,11 @@ export async function recoverOrderFromCapturedPayment(params: {
     const sellerName =
       seller?.shopName || String(sellerItems[0]?.sellerName ?? '').trim() || sellerKey;
 
-    const subtotal = subtotals.get(sellerKey) ?? 0;
-    const deliveryCharge = deliveryFor(sellerKey);
-    const total = Math.round((subtotal + deliveryCharge) * 100) / 100;
+    const bd = breakdownBySeller.get(sellerKey);
+    const subtotal = bd ? bd.subtotal : subtotals.get(sellerKey) ?? 0;
+    const deliveryCharge = bd ? bd.deliveryCharge : deliveryFor(sellerKey);
+    const gstAdded = bd ? bd.gstAdded : 0;
+    const total = Math.round((subtotal + gstAdded + deliveryCharge) * 100) / 100;
 
     batch.set(ref, {
       customerId,
@@ -178,15 +197,37 @@ export async function recoverOrderFromCapturedPayment(params: {
       sellerPhone: PHONE_RE.test(sellerKey) ? sellerKey : '',
       sellerName,
       sellerType,
-      items: sellerItems.map((i) => ({
-        productId: i.productId,
-        name: i.name,
-        price: i.unitPrice,
-        qty: i.qty,
-        lineTotal: Number(i.lineTotal ?? i.unitPrice * i.qty),
-      })),
+      items: sellerItems.map((i) => {
+        const pricing = computeLinePricing({
+          unitPrice: i.unitPrice,
+          qty: i.qty,
+          gstApplicable: i.gstApplicable,
+          gstRate: i.gstRate,
+          gstIncluded: i.gstIncluded,
+        });
+        return {
+          productId: i.productId,
+          name: i.name,
+          price: i.unitPrice,
+          qty: i.qty,
+          lineTotal: Number(i.lineTotal ?? i.unitPrice * i.qty),
+          ...(i.variantUnit ? { variantUnit: i.variantUnit } : {}),
+          ...(pricing.applicable
+            ? {
+                gstApplicable: true,
+                gstRate: i.gstRate,
+                gstAmount: pricing.gstPerUnit,
+                gstIncluded: pricing.included,
+              }
+            : {}),
+        };
+      }),
       subtotal,
+      ...(bd && bd.gstTotal > 0 ? { totalGst: bd.gstTotal } : {}),
+      ...(gstAdded > 0 ? { totalGstAdded: gstAdded } : {}),
       deliveryCharge,
+      ...(bd ? { deliveryBreakdown: bd.delivery } : {}),
+      ...(customerDeliveryState ? { customerDeliveryState } : {}),
       grandTotal: total,
       total,
       deliveryMode: 'delivery',
@@ -213,5 +254,13 @@ export async function recoverOrderFromCapturedPayment(params: {
   }
 
   await batch.commit();
+
+  // The invoice the customer's WhatsApp link points at. Best effort — it never
+  // fails a recovery; the invoice sweep catches anything missed here.
+  for (const id of orderIds) {
+    await ensureOrderInvoice(id).catch((e) =>
+      console.error('[order-recovery] invoice failed', id, e),
+    );
+  }
   return { action: 'recovered', orderIds, addressMissing };
 }

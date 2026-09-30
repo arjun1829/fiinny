@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { getAdminAuth, getAdminDb } from '../../../lib/firebase-admin';
 import { recordAttempt } from '../../../lib/payment-attempts';
+import { resolveActiveReferralCode } from '../../../lib/referrals';
 import {
   DEFAULT_DURATIONS,
   PRICING_DOC_PATH,
@@ -14,6 +15,8 @@ import {
   parseDurations,
   planFor,
   planKey,
+  planNameFor,
+  tierOf,
   type DurationPrice,
 } from '../../../lib/pricing';
 
@@ -149,10 +152,13 @@ async function resolveDiscount(
 
 export async function POST(request: Request) {
   try {
-    const { seatCount, durationMonths, planId, promoCode, userId } = await request.json();
+    const { seatCount, durationMonths, planId, promoCode, referralCode, userId } = await request.json();
 
     const durations = await loadDurations();
-    const callerRole = await resolveCallerRole(request);
+    // A customer / consumer buying a subscription becomes a retailer on
+    // payment (web and app both upgrade the role), so they buy as one.
+    const rawRole = await resolveCallerRole(request);
+    const callerRole = rawRole === 'customer' || rawRole === 'consumer' ? 'retailer' : rawRole;
 
     // Seats sell in blocks of 10 with a 10-seat minimum. Enforced here as well
     // as in the purchase UIs so the rule holds even for a request that didn't
@@ -180,7 +186,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Falling back to the first plan the caller is actually allowed to buy.
+    // The client named a plan that is no longer on the ladder — an admin edited
+    // or deleted it while this checkout was open. Refuse rather than fall back:
+    // the fallback below is the first plan on the ladder (now a Standard
+    // bundle), which would charge a different amount than the screen showed.
+    if (!requestedPlan && (planId != null || durationMonths != null)) {
+      return NextResponse.json(
+        { error: 'This plan has just been updated. Please refresh the page and choose your plan again.' },
+        { status: 409 },
+      );
+    }
+
+    // No plan named at all: the first plan the caller is allowed to buy.
     const allowed = durations.filter((d) => isPlanAllowed(d, callerRole));
     if (allowed.length === 0) {
       return NextResponse.json(
@@ -196,11 +213,18 @@ export async function POST(request: Request) {
     // cannot be turned into unlimited listings by sending a large seatCount.
     const grantedSeats = billableSeats(plan, seats);
 
-    const promoResult = await resolveDiscount(promoCode, seats, months);
+    // Promo min/max-seat rules are checked against what is actually granted —
+    // a Standard plan is always its included listings, whatever count the
+    // client sent.
+    const promoResult = await resolveDiscount(promoCode, grantedSeats, months);
     if (promoResult.error) {
       return NextResponse.json({ error: promoResult.error }, { status: 422 });
     }
     const discountPercent = promoResult.discountPercent;
+
+    // Sales / marketing attribution. An unknown or paused code is dropped, not
+    // refused — a rep's code must never be why a seller can't pay.
+    const referral = await resolveActiveReferralCode(referralCode);
     const subtotal = computeAmount(plan, grantedSeats);
     const baseAmount = discountPercent
       ? applyDiscount(subtotal, discountPercent)
@@ -217,6 +241,13 @@ export async function POST(request: Request) {
         promoCode:      promoCode || '',
         unitPrice,
         planId: planKey(plan),
+        // Snapshotted onto the subscription record via verify/, so it keeps
+        // saying Standard or Custom even if this ladder row is later edited.
+        planTier: tierOf(plan),
+        planName: planNameFor(plan),
+        // verify/ relays this to the subscription record; paymentAttempts
+        // (below) is the server-side source the referral stats read.
+        referralCode: referral?.code ?? '',
         discountPercent,
         // The rupee amount actually charged. verify/ reads this back off the
         // order so the record written afterwards can never be re-derived from a
@@ -235,12 +266,13 @@ export async function POST(request: Request) {
       userId:          String(userId || ''),
       amount:          baseAmount,
       subtotal:        subtotal,
-      seatCount:       seats,
+      seatCount:       grantedSeats,
       durationMonths:  months,
       promoCode:       promoCode || null,
       discountPercent: discountPercent,
+      referralCode:    referral?.code ?? null,
       source:          request.headers.get('x-client') === 'mobile' ? 'mobile' : 'web',
-      note:            `Subscription — ${seats} seat(s), ${months} month(s)`,
+      note:            `${planNameFor(plan)} subscription — ${grantedSeats} listing(s), ${months} month(s)`,
     });
 
     return NextResponse.json({
@@ -249,6 +281,9 @@ export async function POST(request: Request) {
       durationMonths: months,
       unitPrice,
       planId:         planKey(plan),
+      planTier:       tierOf(plan),
+      planName:       planNameFor(plan),
+      referralCode:   referral?.code ?? null,
       amountCharged:  baseAmount,
       discountPercent,
       // Return the key used to create this order so the mobile always opens

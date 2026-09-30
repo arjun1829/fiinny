@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -151,11 +152,31 @@ class NotificationService {
       return; // Notifications blocked — skip rest of FCM setup
     }
 
-    // Local notifications setup (for showing heads-up in foreground)
+    // iOS shows FCM notifications itself while the app is open, once asked to
+    // (Android needs the local-notification heads-up below instead).
+    if (_isIOS) {
+      await _fcm.setForegroundNotificationPresentationOptions(
+          alert: true, badge: true, sound: true);
+    }
+
+    // Local notifications setup (for showing heads-up in foreground).
+    //
+    // The Darwin settings are REQUIRED on iOS: with Android settings only, the
+    // plugin throws "iOS settings must be set when targeting iOS platform",
+    // which aborted this whole method before the FCM token was saved — so no
+    // iPhone ever had an fcmToken on its user doc and no push could reach iOS.
+    // Permission is already requested through FCM above, so it is not asked
+    // for again here.
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     await _localNotifications.initialize(
-      settings: const InitializationSettings(android: androidSettings),
+      settings: const InitializationSettings(
+          android: androidSettings, iOS: darwinSettings),
       // Foreground local notification tapped while app is open
       onDidReceiveNotificationResponse: (details) {
         if (router == null) return;
@@ -205,15 +226,38 @@ class NotificationService {
       }
     }
 
-    // Save (and refresh) FCM token in Firestore
-    final token = await _fcm.getToken();
-    if (token != null) await _saveToken(userPhone, token);
+    // Save (and refresh) the FCM token on the user doc — the address every
+    // push is sent to (functions/src/notify.ts reads users/{phone}.fcmToken).
+    //
+    // Refresh listener FIRST: on iOS the FCM token only exists once Apple has
+    // issued the APNs token, which can land a few seconds after launch; it
+    // then arrives through onTokenRefresh even if getToken() below is early.
     _fcm.onTokenRefresh.listen((t) => _saveToken(userPhone, t));
+    try {
+      if (_isIOS) {
+        // getToken() throws "apns-token-not-set" until APNs responds. Wait up
+        // to ~10 s for it rather than failing on a cold start.
+        for (var i = 0; i < 10; i++) {
+          if (await _fcm.getAPNSToken() != null) break;
+          await Future<void>.delayed(const Duration(seconds: 1));
+        }
+      }
+      final token = await _fcm.getToken();
+      if (token != null) await _saveToken(userPhone, token);
+    } catch (e) {
+      debugPrint('[NotificationService] FCM token not available yet: $e');
+    }
   }
+
+  static bool get _isIOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   void _showForegroundNotification(RemoteMessage message) {
     final n = message.notification;
     if (n == null) return;
+    // iOS already displays it (setForegroundNotificationPresentationOptions);
+    // showing a local copy too would give the user two banners.
+    if (_isIOS) return;
 
     final route = routeForNotification(
       message.data['type'] as String?,

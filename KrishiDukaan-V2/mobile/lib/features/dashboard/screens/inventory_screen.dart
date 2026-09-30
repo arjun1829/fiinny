@@ -18,6 +18,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../marketplace/data/catalog_repository.dart';
 import '../data/dashboard_repository.dart';
+import '../widgets/gst_delivery_fields.dart';
 import '../providers/dashboard_provider.dart';
 import '../../../core/data/product_schema_repository.dart';
 import '../widgets/product_form_sections.dart';
@@ -765,6 +766,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;
+  // GST is INCLUDED in the entered price by default (web's business rule).
+  bool _gstIncluded = true;
+  bool _freeDelivery = false;
+  final _extraDeliveryCtrl = TextEditingController();
   // Matches web's add-product-inventory-form.tsx exactly: "New products
   // default to offline; seller opts in when account delivery is enabled."
   // This used to default to 'online_delivery', so every product added from
@@ -827,6 +832,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     _addressCtrl.dispose();
     _customUnitCtrl.dispose();
     _customSizeCtrl.dispose();
+    _extraDeliveryCtrl.dispose();
     for (final c in _imageUrlCtrls) {
       c.dispose();
     }
@@ -1409,64 +1415,17 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 // online selling — the product is simply created offline.
                 const SizedBox(height: 16),
                 if (_accountDeliveryEnabled == true) ...[
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          title: Text(
-                            'GST Applicable',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            _gstApplicable
-                                ? 'GST will be applied'
-                                : 'No GST on this product',
-                            style: AppTextStyles.caption,
-                          ),
-                          value: _gstApplicable,
-                          activeThumbColor: AppColors.primary,
-                          onChanged: (v) => setState(() => _gstApplicable = v),
-                        ),
-                        if (_gstApplicable)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                            child: DropdownButtonFormField<double>(
-                              value: _gstRate,
-                              decoration: InputDecoration(
-                                labelText: 'GST Rate (%)',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 12,
-                                ),
-                              ),
-                              items: [0.0, 5.0, 12.0, 18.0, 28.0]
-                                  .map(
-                                    (rate) => DropdownMenuItem<double>(
-                                      value: rate,
-                                      child: Text('${rate.toInt()}%'),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (v) {
-                                if (v != null) setState(() => _gstRate = v);
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
+                  GstDeliveryFields(
+                    gstApplicable: _gstApplicable,
+                    gstRate: _gstRate,
+                    gstIncluded: _gstIncluded,
+                    freeDelivery: _freeDelivery,
+                    extraDeliveryCtrl: _extraDeliveryCtrl,
+                    price: double.tryParse(_priceCtrl.text.trim()) ?? 0,
+                    onGstApplicable: (v) => setState(() => _gstApplicable = v),
+                    onGstRate: (v) => setState(() => _gstRate = v),
+                    onGstIncluded: (v) => setState(() => _gstIncluded = v),
+                    onFreeDelivery: (v) => setState(() => _freeDelivery = v),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -1690,7 +1649,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         isActive: true,
         sellMode: _sellMode,
         gstApplicable: _gstApplicable,
-        gstRate: _gstRate,
+        gstRate: _gstApplicable ? _gstRate : 0.0,
+        gstIncluded: _gstIncluded,
+        freeDelivery: _freeDelivery,
+        extraDeliveryCharge: GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text),
         // Drop empty values so a product never carries a blank map/array.
         categoryInfo: Map<String, dynamic>.fromEntries(
           _categoryInfo.entries.where((e) {
@@ -1769,6 +1731,9 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;
+  bool _gstIncluded = true;
+  bool _freeDelivery = false;
+  late final TextEditingController _extraDeliveryCtrl;
   String _sellMode = 'online_delivery';
   bool _saving = false;
 
@@ -1804,7 +1769,15 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     );
     _isActive = widget.listing.isActive;
     _gstApplicable = widget.listing.gstApplicable ?? false;
-    _gstRate = widget.listing.gstRate ?? 18.0;
+    // A stored rate of 0 with GST off means "never set": offer 18 as the start.
+    _gstRate = (widget.listing.gstRate ?? 0) > 0 ? widget.listing.gstRate! : 18.0;
+    _gstIncluded = widget.listing.gstIncluded;
+    _freeDelivery = widget.listing.freeDelivery;
+    _extraDeliveryCtrl = TextEditingController(
+      text: widget.listing.extraDeliveryCharge > 0
+          ? widget.listing.extraDeliveryCharge.toString().replaceFirst(RegExp(r'\.0$'), '')
+          : '',
+    );
     _sellMode = widget.listing.sellMode ?? 'online_delivery';
     _variants = widget.listing.variants
         .map(
@@ -1837,6 +1810,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     _priceCtrl.dispose();
     _stockCtrl.dispose();
     _lowStockCtrl.dispose();
+    _extraDeliveryCtrl.dispose();
     for (final c in _imageUrlCtrls) {
       c.dispose();
     }
@@ -1904,64 +1878,18 @@ class _EditListingSheetState extends State<_EditListingSheet> {
             // ── GST & Sell Mode ──────────────────────────────────────
             // Same account-level gate as Add Listing — see its comment.
             if (_accountDeliveryEnabled == true) ...[
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      title: Text(
-                        'GST Applicable',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: Text(
-                        _gstApplicable
-                            ? 'GST will be applied'
-                            : 'No GST on this product',
-                        style: AppTextStyles.caption,
-                      ),
-                      value: _gstApplicable,
-                      activeThumbColor: AppColors.primary,
-                      onChanged: (v) => setState(() => _gstApplicable = v),
-                    ),
-                    if (_gstApplicable)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: DropdownButtonFormField<double>(
-                          value: _gstRate,
-                          decoration: InputDecoration(
-                            labelText: 'GST Rate (%)',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 12,
-                            ),
-                          ),
-                          items: [0.0, 5.0, 12.0, 18.0, 28.0]
-                              .map(
-                                (rate) => DropdownMenuItem<double>(
-                                  value: rate,
-                                  child: Text('${rate.toInt()}%'),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) {
-                            if (v != null) setState(() => _gstRate = v);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+              GstDeliveryFields(
+                gstApplicable: _gstApplicable,
+                gstRate: _gstRate,
+                gstIncluded: _gstIncluded,
+                freeDelivery: _freeDelivery,
+                extraDeliveryCtrl: _extraDeliveryCtrl,
+                price: double.tryParse(_priceCtrl.text.trim()) ?? 0,
+                discountPct: _discountActive ? _discountPct : 0,
+                onGstApplicable: (v) => setState(() => _gstApplicable = v),
+                onGstRate: (v) => setState(() => _gstRate = v),
+                onGstIncluded: (v) => setState(() => _gstIncluded = v),
+                onFreeDelivery: (v) => setState(() => _freeDelivery = v),
               ),
               const SizedBox(height: 12),
               Container(
@@ -2374,6 +2302,13 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         'sellMode': effectiveSellMode,
         'gstApplicable': effectiveGstApplicable,
         'gstRate': effectiveGstApplicable ? _gstRate : 0.0,
+        // Same rules as the web's Edit Product: included only when GST applies,
+        // and Free Delivery zeroes the extra charge.
+        'gstIncluded': effectiveGstApplicable ? _gstIncluded : false,
+        'freeDelivery': accountGateOpen && _freeDelivery,
+        'extraDeliveryCharge': (accountGateOpen && !_freeDelivery)
+            ? GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text)
+            : 0.0,
         'isOnline': effectiveSellMode != 'offline_store_only',
       };
 
@@ -2402,6 +2337,11 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           discountEnabled: _discountActive,
           discountPct: _discountPct,
           effectiveDiscountPct: effectiveDiscountPct,
+          gstApplicable: effectiveGstApplicable,
+          gstRate: effectiveGstApplicable ? _gstRate : 0.0,
+          gstIncluded: _gstIncluded,
+          extraDeliveryCharge: GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text),
+          freeDelivery: accountGateOpen && _freeDelivery,
         );
       }
 

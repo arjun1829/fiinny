@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -114,12 +115,33 @@ class OrderDetailScreen extends ConsumerWidget {
                     children: [
                       _PriceRow('Subtotal',
                           CurrencyUtils.format(order.subtotal)),
-                      _PriceRow('Delivery',
-                          order.deliveryCharge == 0
-                              ? 'Free'
-                              : CurrencyUtils.format(order.deliveryCharge)),
-                      if (order.totalGst > 0)
-                        _PriceRow('GST', CurrencyUtils.format(order.totalGst)),
+                      // Delivery as it was charged. A Free Delivery order shows
+                      // what it would have cost, struck through, like the invoice.
+                      if (order.deliveryBreakdown?.free == true &&
+                          order.deliveryBreakdown!.waived > 0)
+                        _PriceRow(
+                            'Delivery',
+                            'Free (saved ${CurrencyUtils.format(order.deliveryBreakdown!.waived)})')
+                      else
+                        _PriceRow(
+                            'Delivery',
+                            order.deliveryCharge == 0
+                                ? 'Free'
+                                : CurrencyUtils.format(order.deliveryCharge)),
+                      if (order.deliveryBreakdown != null &&
+                          !order.deliveryBreakdown!.free &&
+                          order.deliveryBreakdown!.extra > 0)
+                        _PriceRow(
+                            '   slab ${CurrencyUtils.format(order.deliveryBreakdown!.slab)} + extra ${CurrencyUtils.format(order.deliveryBreakdown!.extra)}',
+                            ''),
+                      // GST added on top is a charge; included GST is already in
+                      // the prices — informational, never added.
+                      if (order.gstAdded > 0)
+                        _PriceRow(
+                            'GST', '+ ${CurrencyUtils.format(order.gstAdded)}'),
+                      if (order.gstIncluded > 0)
+                        _PriceRow('Incl. GST (in price)',
+                            CurrencyUtils.format(order.gstIncluded)),
                       const Divider(),
                       _PriceRow('Total', CurrencyUtils.format(order.total),
                           bold: true),
@@ -201,17 +223,43 @@ class OrderDetailScreen extends ConsumerWidget {
                       if (order.customerAddress['name'] != null)
                         Text(order.customerAddress['name'] as String,
                             style: AppTextStyles.bodyMedium),
-                      if (order.customerAddress['address'] != null)
-                        Text(order.customerAddress['address'] as String,
+                      if ('${order.customerAddress['address'] ?? ''}'.isNotEmpty)
+                        Text('${order.customerAddress['address']}',
                             style: AppTextStyles.body),
-                      if (order.customerAddress['city'] != null)
+                      // City, district, state, pincode — whichever the order has
+                      // (web orders carry one joined string; app orders these).
+                      if ([
+                        for (final k in const ['city', 'district', 'state', 'pincode'])
+                          '${order.customerAddress[k] ?? ''}'.trim()
+                      ].any((v) => v.isNotEmpty))
                         Text(
-                          '${order.customerAddress['city']}, ${order.customerAddress['pincode'] ?? ''}',
+                          [
+                            for (final k in const ['city', 'district', 'state', 'pincode'])
+                              '${order.customerAddress[k] ?? ''}'.trim()
+                          ].where((v) => v.isNotEmpty).join(', '),
                           style: AppTextStyles.body,
                         ),
                     ],
                   ),
                 ),
+                // The tax invoice (GST, delivery, amount in words) — generated on
+                // the server for every order, so app orders have one too.
+                if (order.status != 'reassigning' && order.status != 'rejected') ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push('/invoice/${order.id}'),
+                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                      label: const Text('View Invoice'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
                 // Self-service cancel — only while the seller hasn't
                 // dispatched yet, matching the seller's own reject window
                 // (seller_orders_screen.dart) and the check the server

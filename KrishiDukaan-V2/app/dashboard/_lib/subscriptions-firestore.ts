@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { authedJsonHeaders } from "../../lib/authed-fetch";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 import type {
   RetailerSeatListing,
   SeatStats,
@@ -64,7 +65,7 @@ function mapSubscriptionDoc(id: string, data: Record<string, unknown>): Subscrip
     id,
     ownerId: String(data.ownerId ?? ""),
     ownerType: data.ownerType === "retailer" ? "retailer" : "manufacturer",
-    planName: String(data.planName ?? "Standard"),
+    planName: subscriptionPlanLabel(data),
     seatsPurchased: typeof data.seatsPurchased === "number" ? data.seatsPurchased : 0,
     startDate: data.startDate as Timestamp,
     expiryDate: data.expiryDate as Timestamp,

@@ -236,6 +236,12 @@ class DashboardRepository {
     String? sellMode,
     bool? gstApplicable,
     double? gstRate,
+    // Same three fields the web's Edit Product writes: GST is INCLUDED in the
+    // price unless the seller says otherwise; a product can ship free or carry
+    // an extra delivery charge on top of the seller's weight slab.
+    bool gstIncluded = true,
+    double extraDeliveryCharge = 0,
+    bool freeDelivery = false,
     // Web-parity product detail fields. All optional so existing callers and
     // older app versions keep working; each is only written when non-empty so
     // a product never gains a meaningless empty array/map.
@@ -367,6 +373,10 @@ class DashboardRepository {
       'sellMode': sellMode,
       'gstApplicable': gstApplicable,
       'gstRate': gstRate,
+      // Included only makes sense when GST applies — web stores false otherwise.
+      'gstIncluded': gstApplicable == true ? gstIncluded : false,
+      'extraDeliveryCharge': freeDelivery ? 0 : extraDeliveryCharge,
+      'freeDelivery': freeDelivery,
       // Same field names the web dashboard writes (inventory-firestore.ts), so
       // a product created on either platform renders identically on both.
       if (categoryInfo != null && categoryInfo.isNotEmpty)
@@ -892,6 +902,14 @@ class DashboardRepository {
     DateTime? endDate,
     bool? bulkEnabled,
     List<Map<String, dynamic>>? bulkTiers,
+    // GST + delivery, mirrored onto the inventory row the web dashboard reads
+    // (the seller's product copy stays the source of truth). All-or-nothing:
+    // passing gstApplicable writes the whole set.
+    bool? gstApplicable,
+    double? gstRate,
+    bool? gstIncluded,
+    double? extraDeliveryCharge,
+    bool? freeDelivery,
   }) async {
     try {
       final snap = await _db
@@ -910,6 +928,14 @@ class DashboardRepository {
             : stockQuantity > 0;
       } else if (isProductActive != null) {
         data['isAvailable'] = isProductActive;
+      }
+      if (gstApplicable != null) {
+        data['gstApplicable'] = gstApplicable;
+        data['gstRate'] = gstApplicable ? (gstRate ?? 0) : 0;
+        data['gstIncluded'] = gstApplicable ? (gstIncluded ?? true) : false;
+        data['extraDeliveryCharge'] =
+            (freeDelivery ?? false) ? 0 : (extraDeliveryCharge ?? 0);
+        data['freeDelivery'] = freeDelivery ?? false;
       }
       if (discountEnabled != null) {
         data['discountEnabled'] = discountEnabled;

@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
 import type { Banner } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
+import { readPendingReferral } from './lib/referral-client';
 import { fetchInviteDetailsForSignup } from './lib/invite/fetch-invite-for-signup';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -203,7 +204,11 @@ export default function App() {
     // this view through navigation, but 'subscription' is in VALID_VIEWS, so
     // ?view=subscription would render the retailer pitch to them — SubscriptionView
     // treats every non-manufacturer role as a retailer.
-    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer') {
+    // Exception: someone who arrived from a sales referral link may buy as a
+    // customer — paying upgrades them to retailer (updateSubscriptionStatus),
+    // same as the mobile app.
+    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer'
+        && !(userRole && readPendingReferral())) {
       return 'home';
     }
     if (userRole === 'retailer' && view === 'become-retailer') {
@@ -813,6 +818,17 @@ export default function App() {
       productCount: profile.productCount || 0
     });
 
+    // Arrived from a sales referral link: straight to checkout, whatever the
+    // role — an already-paid seller gets the buy-more page instead.
+    if (readPendingReferral()) {
+      if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
+        window.location.href = '/dashboard/upgrade';
+      } else {
+        navigate('subscription', { replace: true });
+      }
+      return;
+    }
+
     if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
       navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
@@ -1125,7 +1141,7 @@ export default function App() {
     .reduce((sum, item) => sum + item.price * item.qty, 0);
 
   // Core order creation — called after successful payment
-  const createOrdersAfterPayment = async (paymentDetails?: any) => {
+  const createOrdersAfterPayment = async (paymentDetails?: any, serverBreakdown?: any[]) => {
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
     const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
 
@@ -1137,6 +1153,9 @@ export default function App() {
       // The finalized delivery-address state — decides in/out-of-state slabs so
       // the order's persisted delivery charge matches what the server charged.
       customerDeliveryState: checkoutInfo.addressState.trim(),
+      // The server's per-seller figures (what was actually charged), so each order
+      // records exactly that. Undefined for older responses → local calculation.
+      serverBreakdown,
       items: readyItems,
       payment: paymentDetails,
     });
@@ -1301,7 +1320,7 @@ export default function App() {
                 amount: rzpOrder.amount / 100,
                 status: "paid",
                 paidAt: new Date().toISOString(),
-              });
+              }, rzpOrder.sellerBreakdown);
             } else {
               setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
@@ -1355,7 +1374,7 @@ export default function App() {
               amount: rzpOrder.amount / 100,
               status: "paid",
               paidAt: new Date().toISOString(),
-            });
+            }, rzpOrder.sellerBreakdown);
             setCheckoutLoading(false);
             return;
           }
@@ -2003,6 +2022,7 @@ export default function App() {
         return (
           <SignupView
             inviteCode={signupInviteCode}
+            defaultRole={typeof window !== 'undefined' && readPendingReferral() ? 'retailer' : undefined}
             onInviteConsumed={() => {
               setSignupInviteCode(null);
               // Also remove the inviteCode from the URL immediately so the param

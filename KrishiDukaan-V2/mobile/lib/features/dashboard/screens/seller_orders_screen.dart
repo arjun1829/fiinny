@@ -491,6 +491,11 @@ class _SellerOrderCard extends StatelessWidget {
     final addressStr = [
       if (addressText.isNotEmpty) addressText else if (addressName.isNotEmpty) addressName,
       if (addressCity.isNotEmpty) addressCity,
+      // District and state (what priced the delivery) — app orders carry them.
+      if (('${order.customerAddress['district'] ?? ''}').trim().isNotEmpty)
+        '${order.customerAddress['district']}'.trim(),
+      if (('${order.customerAddress['state'] ?? ''}').trim().isNotEmpty)
+        '${order.customerAddress['state']}'.trim(),
       if (addressPincode.isNotEmpty) addressPincode
     ].join(', ');
 
@@ -1472,6 +1477,11 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
   final addressStr = [
     if (addressText.isNotEmpty) addressText else if (addressName.isNotEmpty) addressName,
     if (addressCity.isNotEmpty) addressCity,
+    // District and state (what priced the delivery) — app orders carry them.
+    if (('${order.customerAddress['district'] ?? ''}').trim().isNotEmpty)
+      '${order.customerAddress['district']}'.trim(),
+    if (('${order.customerAddress['state'] ?? ''}').trim().isNotEmpty)
+      '${order.customerAddress['state']}'.trim(),
     if (addressPincode.isNotEmpty) addressPincode
   ].join(', ');
 

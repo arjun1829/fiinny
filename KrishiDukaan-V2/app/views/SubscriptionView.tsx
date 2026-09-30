@@ -19,11 +19,20 @@ import {
   normalizeSeatCount,
   planKey,
   parseDurations,
+  tierOf,
   type DurationPrice,
+  type PlanTier,
 } from '../lib/pricing';
 import { LEGAL_ROUTES, TERMS_VERSION } from '../lib/legal-constants';
 import { authedJsonHeaders } from "../lib/authed-fetch";
 import { ProductListingCard } from "../../components/shared/ProductListingCard";
+import {
+  clearPendingReferral,
+  logReferralEvent,
+  readPendingReferral,
+  savePendingReferral,
+  validateReferralCode,
+} from '../lib/referral-client';
 
 interface SubscriptionViewProps {
   user: any;
@@ -47,7 +56,14 @@ type DurationOption = {
   /** Set on bundle plans ("Rs 4,999 for 50 listings"); overrides pricePerSeat. */
   flatPrice?: number;
   includedListings?: number;
+  /** Standard (fixed 100-listing pack) or Custom (per listing). */
+  tier: PlanTier;
+  /** Struck-through "was" price. Display only. */
+  compareAtPrice?: number;
 };
+
+/** "₹11,000" — Indian digit grouping for rupee amounts. */
+const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
 /** "1 Month" / "3 Months" / "1 Year" from a month count. */
 function durationLabel(months: number): string {
@@ -59,8 +75,13 @@ function durationLabel(months: number): string {
 const toOption = (d: DurationPrice): DurationOption => ({
   id: planKey(d),
   months: d.months,
-  label: durationLabel(d.months),
+  // Standard cards read as Monthly / Yearly; Custom keeps period labels.
+  label: tierOf(d) === 'standard' && (d.months === 1 || d.months === 12)
+    ? (d.months === 1 ? 'Monthly' : 'Yearly')
+    : durationLabel(d.months),
   pricePerSeat: d.pricePerSeat,
+  tier: tierOf(d),
+  ...(d.compareAtPrice ? { compareAtPrice: d.compareAtPrice } : {}),
   ...(d.badge ? { badge: d.badge } : {}),
   ...(d.flatPrice !== undefined
     ? { flatPrice: d.flatPrice, includedListings: d.includedListings }
@@ -76,6 +97,17 @@ const toOption = (d: DurationPrice): DurationOption => ({
  */
 const DURATION_OPTIONS: DurationOption[] = DEFAULT_DURATIONS.map(toOption);
 
+/**
+ * Plans of one tab in display order — Standard longest period first (Yearly
+ * left, Monthly right), Custom short to long. The default selection is always
+ * the FIRST card shown, so what is preselected is what sits on the left.
+ */
+function tierInDisplayOrder(opts: DurationOption[], tier: PlanTier): DurationOption[] {
+  return opts
+    .filter((o) => o.tier === tier)
+    .sort((a, b) => (tier === 'standard' ? b.months - a.months : a.months - b.months));
+}
+
 export default function SubscriptionView({ user, role, onSuccess, onLogout }: SubscriptionViewProps) {
   const { t } = useI18n();
   const [loading,      setLoading]      = useState(false);
@@ -83,7 +115,11 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const [seatCount,    setSeatCount]    = useState<number>(SEAT_STEP);
   const [seatInput,    setSeatInput]    = useState(String(SEAT_STEP));
   const [options,      setOptions]      = useState<DurationOption[]>(DURATION_OPTIONS);
-  const [duration,     setDuration]     = useState<DurationOption>(DURATION_OPTIONS[0]!);
+  // Standard is the default tab; the first plan of the tab is preselected.
+  const [tier,         setTier]         = useState<PlanTier>('standard');
+  const [duration,     setDuration]     = useState<DurationOption>(
+    tierInDisplayOrder(DURATION_OPTIONS, 'standard')[0] ?? DURATION_OPTIONS[0]!,
+  );
   const [promoCode,    setPromoCode]    = useState('');
   // The raw promoCodes/ document once a code has been looked up. Eligibility and
   // the discount are NOT stored — they are derived from this doc against the
@@ -94,6 +130,19 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   // Set only for problems that aren't about eligibility (code not found, network).
   const [promoLookupError, setPromoLookupError] = useState<string | null>(null);
   const [error,        setError]        = useState<string | null>(null);
+
+  // Sales / marketing referral (lib/referrals.ts). Applied from a /subscribe
+  // link (kept in localStorage across login) or typed by the buyer. Only a
+  // server-validated code is ever shown as applied or sent to create-order.
+  const [referralInput,    setReferralInput]    = useState('');
+  const [referral,         setReferral]         = useState<{ code: string; ownerName: string } | null>(null);
+  const [referralError,    setReferralError]    = useState<string | null>(null);
+  const [referralChecking, setReferralChecking] = useState(false);
+  // Plan / seats from a rep's offer link, applied once the live ladder is in.
+  const [offer,        setOffer]        = useState<{ plan?: string; seats?: number } | null>(null);
+  const [offerApplied, setOfferApplied] = useState(false);
+  const [offerNote,    setOfferNote]    = useState<string | null>(null);
+  const [pricingReady, setPricingReady] = useState(false);
 
   const premiumRole: PremiumRole = role === 'manufacturer' ? 'manufacturer' : 'retailer';
   const isRetailer = premiumRole === 'retailer';
@@ -118,14 +167,102 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         if (!visible.length) return;
         const next = visible.map(toOption);
         setOptions(next);
-        // Keep the selection valid if the admin removed the chosen period.
-        setDuration((cur) => next.find((o) => o.months === cur.months) ?? next[0]!);
+        // Keep the tab and selection valid if the admin removed plans: fall back
+        // to whichever tier still has plans, then to that tier's first plan.
+        const hasStandard = next.some((o) => o.tier === 'standard');
+        const nextTier: PlanTier = hasStandard ? 'standard' : 'custom';
+        setTier((cur) => (next.some((o) => o.tier === cur) ? cur : nextTier));
+        setDuration((cur) =>
+          next.find((o) => o.id === cur.id) ??
+          tierInDisplayOrder(next, next.some((x) => x.tier === cur.tier) ? cur.tier : nextTier)[0] ??
+          next[0]!,
+        );
       } catch {
         /* keep the defaults */
+      } finally {
+        if (!cancelled) setPricingReady(true);
       }
     })();
     return () => { cancelled = true; };
   }, [premiumRole]);
+
+  // Pick up a referral: the URL (?ref= on this page) wins, else the pending
+  // one saved by /subscribe before login. Validated server-side before it is
+  // shown as applied.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('ref');
+    if (fromUrl) {
+      savePendingReferral({
+        code: fromUrl,
+        plan: params.get('plan'),
+        seats: Number(params.get('seats') ?? '') || null,
+      });
+    }
+    const pending = readPendingReferral();
+    if (!pending) return;
+    setReferralInput(pending.code);
+    if (pending.plan || pending.seats) setOffer({ plan: pending.plan, seats: pending.seats });
+    let cancelled = false;
+    validateReferralCode(pending.code).then((r) => {
+      if (cancelled) return;
+      if (r.valid) setReferral({ code: r.code!, ownerName: r.ownerName ?? '' });
+      else setReferralError(r.error ?? 'This referral code is not valid.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // "Reached checkout" funnel event, once the code is confirmed.
+  useEffect(() => {
+    if (referral && user?.uid) {
+      logReferralEvent(referral.code, 'checkout_view', { uid: user.uid, plan: offer?.plan ?? null });
+    }
+  }, [referral, user?.uid, offer?.plan]);
+
+  // Apply the offer link's plan and seats — only if that exact plan is on the
+  // live ladder for this account. A rep can only ever point at what admin
+  // offers; anything else falls back to the normal choice with a note.
+  useEffect(() => {
+    if (!offer || offerApplied) return;
+    const match = offer.plan ? options.find((o) => o.id === offer.plan) : undefined;
+    if (match) {
+      setTier(match.tier);
+      setDuration(match);
+      if (match.tier === 'custom' && match.flatPrice === undefined && offer.seats) {
+        const n = normalizeSeatCount(offer.seats);
+        setSeatCount(n);
+        setSeatInput(String(n));
+      }
+      setOfferApplied(true);
+      setOfferNote(null);
+    } else if (pricingReady) {
+      setOfferApplied(true);
+      if (offer.plan) setOfferNote('The plan in your link is no longer offered — please choose a plan below.');
+    }
+  }, [offer, offerApplied, options, pricingReady]);
+
+  const applyReferral = async () => {
+    const code = referralInput.trim().toUpperCase();
+    if (!code) return;
+    setReferralChecking(true);
+    setReferralError(null);
+    const r = await validateReferralCode(code);
+    setReferralChecking(false);
+    if (r.valid) {
+      setReferral({ code: r.code!, ownerName: r.ownerName ?? '' });
+      savePendingReferral({ code: r.code! });
+    } else {
+      setReferral(null);
+      setReferralError(r.error ?? 'This referral code is not valid.');
+    }
+  };
+
+  const removeReferral = () => {
+    setReferral(null);
+    setReferralInput('');
+    setReferralError(null);
+    clearPendingReferral();
+  };
 
 
   const content = {
@@ -141,12 +278,26 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   // shown and what Razorpay bills cannot drift.
   const grantedSeats = billableSeats(duration, seatCount);
   const baseTotal   = computeAmount(duration, seatCount);
+  const isStandard  = duration.tier === 'standard';
+
+  // Plans shown under the current tab, and whether the toggle is needed at all
+  // (an admin may have removed every plan of one tier).
+  // Standard cards run longest period first (Yearly left, Monthly right);
+  // Custom keeps its short-to-long ladder order.
+  const tierOptions = tierInDisplayOrder(options, tier);
+  const showToggle  = options.some((o) => o.tier === 'standard') && options.some((o) => o.tier === 'custom');
+  const switchTier  = (next: PlanTier) => {
+    if (next === tier) return;
+    setTier(next);
+    const first = tierInDisplayOrder(options, next)[0];
+    if (first) setDuration(first);
+  };
 
   // Re-evaluate the entered code against the CURRENT selection every render —
   // the same shared rule set the server enforces in create-order — so switching
   // plan/cycle or changing seats instantly updates the discount and the reason.
   const promoEval = promoDoc
-    ? evaluatePromo(promoDoc, { months: duration.months, seatCount })
+    ? evaluatePromo(promoDoc, { months: duration.months, seatCount: grantedSeats })
     : null;
   const promoOk = !!promoEval && !promoEval.error;
   const appliedDiscountPct = promoOk ? promoEval!.discountPercent : 0;
@@ -234,13 +385,15 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
         body: JSON.stringify({
-          seatCount,
+          seatCount: grantedSeats,
           durationMonths: duration.months,
           planId: duration.id,
           // Only send a code that currently qualifies for this exact selection;
           // create-order re-validates it and would 422 an ineligible one,
           // needlessly blocking a seller who left a stale code in the box.
           promoCode: promoOk ? promoEval!.code : null,
+          // Validated above; create-order re-checks it before stamping it.
+          referralCode: referral?.code ?? null,
           userId: user.uid,
         }),
       });
@@ -258,7 +411,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         amount: order.amount,
         currency: order.currency,
         name: 'KrishiDukan',
-        description: `${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`,
+        description: `${isStandard ? 'Standard · ' : ''}${grantedSeats} listing${grantedSeats !== 1 ? 's' : ''} · ${duration.label}`,
         order_id: order.id,
         handler: async function (paymentResponse: any) {
           setVerifying(true);
@@ -293,7 +446,16 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               // Gateway-verified promo code (from order notes), relayed straight
               // from verify/ — not the checkout input — so attribution matches
               // what was actually charged.
-              verifyData.promoCode ?? null);
+              verifyData.promoCode ?? null,
+              // Plan identity from the gateway's order notes (see verify/).
+              {
+                planId: verifyData.planId ?? duration.id ?? null,
+                planTier: verifyData.planTier ?? duration.tier,
+                planName: verifyData.planName ?? null,
+                referralCode: verifyData.referralCode ?? null,
+              });
+            // Used — the next purchase is credited only if a code is applied again.
+            clearPendingReferral();
 
             if (!updateResult.paymentLogged) {
               setVerifying(false);
@@ -318,9 +480,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 body: JSON.stringify({
                   userEmail:         profileEmail,
                   userName:          profile?.name || user.displayName || '',
-                  seatsPurchased:    verifyData.seatCount || seatCount,
-                  amountPaid:        finalTotal,
-                  planName:          'Standard',
+                  seatsPurchased:    verifyData.seatCount || grantedSeats,
+                  amountPaid:        verifyData.amountPaid ?? finalTotal,
+                  planName:          verifyData.planName || (isStandard ? 'Standard' : 'Custom'),
                   startDate:         now.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
                   expiryDate:        expiry.toLocaleDateString('en-IN', { dateStyle: 'medium' }),
                   razorpayPaymentId: paymentResponse.razorpay_payment_id,
@@ -350,7 +512,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
         logFailedPayment(user.uid, response.error, {
           orderId: order.id,
           amount: order.amount,
-          seatCount,
+          seatCount: grantedSeats,
           durationMonths: duration.months,
         }).catch(console.error);
       });
@@ -452,7 +614,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                     <li className="flex items-start gap-3 bg-primary/5 border border-primary/15 rounded-xl p-3 mt-1">
                       <span className="text-lg leading-none mt-0.5 shrink-0">🛒</span>
                       <span className="text-sm font-bold text-primary leading-snug">
-                        {t('listUpTo', { seats: seatCount })} · {duration.label}
+                        {t('listUpTo', { seats: grantedSeats })} · {duration.label}
                       </span>
                     </li>
                   </ul>
@@ -507,85 +669,166 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
               {/* ── Right: Payment config ────────────────────────────────── */}
               <div className="min-w-0 p-6 md:p-8 flex flex-col gap-5">
 
-                {/* Duration selector */}
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Duration</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {options.map((opt) => (
+                {offerNote && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-800">
+                    {offerNote}
+                  </div>
+                )}
+
+                {/* Plan type toggle — Standard (default) / Custom. Hidden when
+                    the admin has left only one tier with plans. */}
+                {showToggle && (
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface-container p-1" role="tablist" aria-label="Plan type">
+                    {(['standard', 'custom'] as const).map((tk) => (
                       <button
-                        key={opt.months}
+                        key={tk}
                         type="button"
-                        onClick={() => setDuration(opt)}
+                        role="tab"
+                        aria-selected={tier === tk}
+                        onClick={() => switchTier(tk)}
                         className={[
-                          'relative flex flex-col items-start p-3 rounded-xl border text-left transition-all',
-                          duration.months === opt.months
-                            ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                          'rounded-lg py-2 text-xs font-black uppercase tracking-widest transition-all',
+                          tier === tk
+                            ? 'bg-white text-primary shadow-sm'
+                            : 'text-on-surface-variant hover:text-on-surface',
                         ].join(' ')}
                       >
-                        {opt.badge && (
-                          <span className={`absolute -top-2 right-2 rounded-full px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider ${opt.badge === 'Best Value' ? 'bg-amber-500' : 'bg-primary'}`}>
-                            {opt.badge}
-                          </span>
-                        )}
-                        <span className="text-xs font-bold text-on-surface">{opt.label}</span>
-                        <span className="text-[10px] text-on-surface-variant mt-0.5">₹{opt.pricePerSeat}/listing</span>
+                        {tk === 'standard' ? 'Standard' : 'Custom'}
                       </button>
                     ))}
                   </div>
-                </div>
+                )}
 
-                {/* Listing count stepper */}
-                <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/40">
-                  <div className="flex justify-between items-center">
+                {tier === 'standard' ? (
+                  /* Standard — fixed 100-product packs; pick a period only. */
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Choose your plan</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {tierOptions.map((opt) => {
+                        const selected = duration.id === opt.id;
+                        const price = opt.flatPrice ?? 0;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDuration(opt)}
+                            className={[
+                              'relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all',
+                              selected
+                                ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary/30'
+                                : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                            ].join(' ')}
+                          >
+                            {opt.badge && (
+                              <span className="absolute -top-2 right-2 rounded-full bg-amber-500 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white">
+                                {opt.badge}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-on-surface">{opt.label}</span>
+                            <span className="mt-1 flex items-baseline gap-1.5">
+                              {opt.compareAtPrice && opt.compareAtPrice > price && (
+                                <span className="text-[11px] text-on-surface-variant line-through">{rupees(opt.compareAtPrice)}</span>
+                              )}
+                              <span className="text-lg font-black text-on-surface">{rupees(price)}</span>
+                            </span>
+                            <span className="text-[10px] font-semibold text-on-surface-variant mt-0.5">
+                              / {opt.includedListings} products
+                              {opt.months > 1 && ` · ${rupees(Math.round(price / opt.months))}/mo`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Duration selector */}
                     <div>
-                      <p className="text-sm font-bold text-on-surface">{t('numberOfSeats')}</p>
-                      <p className="text-[10px] text-on-surface-variant mt-0.5">
-                        {SEAT_STEP} listings पासून सुरुवात · {SEAT_STEP} च्या पटीत
-                      </p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2.5">Duration</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {tierOptions.map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDuration(opt)}
+                            className={[
+                              'relative flex flex-col items-start p-3 rounded-xl border text-left transition-all',
+                              duration.id === opt.id
+                                ? 'border-primary bg-primary/5 shadow-sm'
+                                : 'border-outline-variant/40 hover:border-primary/40 hover:bg-surface-container-lowest',
+                            ].join(' ')}
+                          >
+                            {opt.badge && (
+                              <span className={`absolute -top-2 right-2 rounded-full px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider ${opt.badge === 'Best Value' ? 'bg-amber-500' : 'bg-primary'}`}>
+                                {opt.badge}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-on-surface">{opt.label}</span>
+                            <span className="text-[10px] text-on-surface-variant mt-0.5">
+                              {opt.flatPrice !== undefined
+                                ? `${rupees(opt.flatPrice)} · ${opt.includedListings} listings`
+                                : `₹${opt.pricePerSeat}/listing`}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-white rounded-xl p-1 border border-outline-variant/20 shadow-sm">
-                      <button
-                        onClick={() => adjustSeats(-1)}
-                        disabled={seatCount <= SEAT_STEP}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold disabled:opacity-30 disabled:hover:bg-transparent"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        min={SEAT_STEP}
-                        max={10000}
-                        step={SEAT_STEP}
-                        value={seatInput}
-                        onChange={(e) => handleSeatInput(e.target.value)}
-                        onBlur={commitSeatInput}
-                        className="text-base font-black w-16 text-center bg-transparent h-8 text-on-surface outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        onClick={() => adjustSeats(1)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold"
-                      >
-                        +
-                      </button>
+                    {/* Listing count stepper — per-listing plans only; a bundle
+                        has a fixed listing count. */}
+                    {duration.flatPrice === undefined && (
+                    <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/40">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-sm font-bold text-on-surface">{t('numberOfSeats')}</p>
+                          <p className="text-[10px] text-on-surface-variant mt-0.5">
+                            {SEAT_STEP} listings पासून सुरुवात · {SEAT_STEP} च्या पटीत
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-white rounded-xl p-1 border border-outline-variant/20 shadow-sm">
+                          <button
+                            onClick={() => adjustSeats(-1)}
+                            disabled={seatCount <= SEAT_STEP}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold disabled:opacity-30 disabled:hover:bg-transparent"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={SEAT_STEP}
+                            max={10000}
+                            step={SEAT_STEP}
+                            value={seatInput}
+                            onChange={(e) => handleSeatInput(e.target.value)}
+                            onBlur={commitSeatInput}
+                            className="text-base font-black w-16 text-center bg-transparent h-8 text-on-surface outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            onClick={() => adjustSeats(1)}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface font-bold"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        {SEAT_PRESETS.map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => selectSeatPreset(n)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                              seatCount === n
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-white text-on-surface border-outline-variant/40 hover:bg-surface-container'
+                            }`}
+                          >
+                            {n} seats
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    {SEAT_PRESETS.map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => selectSeatPreset(n)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                          seatCount === n
-                            ? 'bg-primary text-white border-primary'
-                            : 'bg-white text-on-surface border-outline-variant/40 hover:bg-surface-container'
-                        }`}
-                      >
-                        {n} seats
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                    )}
+                  </>
+                )}
 
                 {/* Promo code */}
                 <div>
@@ -625,20 +868,64 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                   {promoError && <p className="mt-1.5 text-xs text-red-600">{promoError}</p>}
                 </div>
 
+                {/* Referral code — which sales / marketing person helped. */}
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
+                    Referral code <span className="normal-case font-semibold">(optional)</span>
+                  </p>
+                  {referral ? (
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
+                      <span className="text-xs font-semibold text-primary">
+                        ✓ {referral.code}{referral.ownerName ? ` · Referred by ${referral.ownerName}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={removeReferral}
+                        className="text-xs font-bold text-on-surface-variant hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Code from your KrishiDukan representative"
+                        value={referralInput}
+                        onChange={(e) => { setReferralInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); setReferralError(null); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyReferral(); } }}
+                        maxLength={20}
+                        className="flex-1 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-xs font-medium text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 uppercase placeholder:normal-case"
+                      />
+                      <button
+                        type="button"
+                        onClick={applyReferral}
+                        disabled={referralChecking || !referralInput.trim()}
+                        className="rounded-xl bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                      >
+                        {referralChecking ? '…' : 'Apply'}
+                      </button>
+                    </div>
+                  )}
+                  {referralError && <p className="mt-1.5 text-xs text-red-600">{referralError}</p>}
+                </div>
+
                 {/* Price summary */}
                 <div className="bg-gradient-to-br from-primary/5 to-green-50 rounded-xl border border-primary/10 p-4">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">{t('totalPrice')}</span>
                     {promoOk && (
-                      <span className="text-xs text-on-surface-variant line-through">₹{baseTotal}.00</span>
+                      <span className="text-xs text-on-surface-variant line-through">{rupees(baseTotal)}</span>
                     )}
                   </div>
                   <div className="flex items-end justify-between">
-                    <span className="text-3xl font-black text-on-surface tracking-tight">₹{finalTotal}.00</span>
+                    <span className="text-3xl font-black text-on-surface tracking-tight">{rupees(finalTotal)}</span>
                     <span className="text-[10px] text-on-surface-variant bg-white border border-outline-variant/20 rounded-lg px-2 py-1 font-semibold">
-                      {duration.flatPrice !== undefined
-                        ? `₹${duration.flatPrice} · up to ${duration.includedListings} listings · ${duration.label}`
-                        : `₹${duration.pricePerSeat} × ${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
+                      {isStandard
+                        ? `Standard · ${grantedSeats} products · ${duration.label}`
+                        : duration.flatPrice !== undefined
+                          ? `${rupees(duration.flatPrice)} · up to ${duration.includedListings} listings · ${duration.label}`
+                          : `₹${duration.pricePerSeat} × ${seatCount} listing${seatCount !== 1 ? 's' : ''} · ${duration.label}`}
                     </span>
                   </div>
                 </div>
@@ -659,9 +946,9 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 >
                   {loading
                     ? t('processing')
-                    : seatCount === 1
-                      ? `आजच List करा — ₹${finalTotal} · ${duration.label}`
-                      : `List ${seatCount} Products for ₹${finalTotal} · ${duration.label}`
+                    : grantedSeats === 1
+                      ? `आजच List करा — ${rupees(finalTotal)} · ${duration.label}`
+                      : `List ${grantedSeats} Products for ${rupees(finalTotal)} · ${duration.label}`
                   }
                 </button>
 

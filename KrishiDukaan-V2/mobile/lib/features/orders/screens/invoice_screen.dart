@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
@@ -48,12 +52,37 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _open());
   }
 
+  /// Orders placed in the app (and ones rebuilt by the payment webhook) had no
+  /// invoice PDF — only the website built one, in the buyer's browser. Ask the
+  /// server to generate it now; it is idempotent, so an order that already has
+  /// one is left alone. Best effort: a signed-out visitor from a WhatsApp link,
+  /// or an older server, just proceeds to the page as before.
+  Future<void> _ensureInvoice() async {
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null) return;
+      await http
+          .post(
+            Uri.parse('${AppConfig.apiBaseUrl}/api/orders/invoice'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'orderId': widget.orderId}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {
+      /* the invoice page reports "not generated yet" if it truly is not */
+    }
+  }
+
   Future<void> _open() async {
     setState(() {
       _launching = true;
       _launchFailed = false;
     });
     try {
+      await _ensureInvoice();
       final ok = await launchUrl(
         _invoiceUri,
         mode: LaunchMode.inAppBrowserView,

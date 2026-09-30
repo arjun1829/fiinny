@@ -92,14 +92,27 @@ const SOURCE_LABEL: Record<string, string> = {
   razorpay_backfill: "Razorpay (synced)",
 };
 
-type Bucket = "failed" | "abandoned" | "paid";
+type Bucket = "failed" | "abandoned" | "pending" | "paid";
 
+/**
+ * Which queue an attempt belongs in. "paid" means Razorpay confirmed the money
+ * (status set by /api/payment/verify, order-status reconciliation, or the
+ * payment.captured webhook) — NOTHING else may land there.
+ *
+ * An attempt still at 'created' inside the abandon window is "pending": the
+ * checkout was opened and has not resolved yet. This used to fall through to
+ * "paid", so any checkout opened in the last 30 minutes — including one the
+ * customer closed without paying — showed a green "Paid" badge and counted as
+ * Successful, then silently flipped to Abandoned half an hour later. Reported
+ * 28 Sep 2026 after three unpaid seat-purchase test checkouts all read "Paid";
+ * Razorpay had zero payments against any of them.
+ */
 function bucketOf(a: Attempt): Bucket {
   if (a.status === "paid") return "paid";
   if (a.status === "failed") return "failed";
   return Date.now() - (a.createdAt?.getTime() ?? 0) > ABANDON_AFTER_MS
     ? "abandoned"
-    : "paid"; // still in flight — not a problem to show, hidden from both queues
+    : "pending";
 }
 
 const money = (n: number) =>
@@ -227,7 +240,7 @@ export default function AdminPaymentsPage() {
   };
 
   const counts = useMemo(() => {
-    const c = { failed: 0, abandoned: 0, paid: 0 };
+    const c = { failed: 0, abandoned: 0, pending: 0, paid: 0 };
     for (const a of attempts) c[bucketOf(a)] += 1;
     return c;
   }, [attempts]);
@@ -298,9 +311,10 @@ export default function AdminPaymentsPage() {
       )}
 
       {/* Summary */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <SummaryCard label="Failed" value={String(counts.failed)} tone="error" />
         <SummaryCard label="Abandoned" value={String(counts.abandoned)} tone="warn" />
+        <SummaryCard label="In progress" value={String(counts.pending)} tone="warn" />
         <SummaryCard label="Successful" value={String(counts.paid)} tone="ok" />
         <SummaryCard label="Value not collected" value={money(lostValue)} tone="error" />
       </div>
@@ -314,7 +328,7 @@ export default function AdminPaymentsPage() {
 
       {/* Tabs */}
       <div className="flex gap-4 border-b border-outline/20">
-        {(["failed", "abandoned", "paid"] as Bucket[]).map((t) => (
+        {(["failed", "abandoned", "pending", "paid"] as Bucket[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -324,7 +338,7 @@ export default function AdminPaymentsPage() {
                 : "text-on-surface-variant hover:text-on-surface"
             }`}
           >
-            {t === "paid" ? "Successful" : t}
+            {t === "paid" ? "Successful" : t === "pending" ? "In progress" : t}
             <span className="rounded-full bg-surface-container px-1.5 py-0.5 text-[11px] font-bold">
               {counts[t]}
             </span>
@@ -362,7 +376,9 @@ export default function AdminPaymentsPage() {
               ? "No failed payments. "
               : tab === "abandoned"
                 ? "No abandoned checkouts."
-                : "No successful payments recorded yet."}
+                : tab === "pending"
+                  ? "No checkouts in progress."
+                  : "No successful payments recorded yet."}
         </p>
       ) : (
         <div className="space-y-3">
@@ -418,7 +434,9 @@ function AttemptRow({
       ? { text: "Failed", cls: "bg-red-50 text-red-700" }
       : bucket === "abandoned"
         ? { text: "Abandoned", cls: "bg-amber-50 text-amber-700" }
-        : { text: "Paid", cls: "bg-green-50 text-green-700" };
+        : bucket === "pending"
+          ? { text: "In progress", cls: "bg-slate-100 text-slate-600" }
+          : { text: "Paid", cls: "bg-green-50 text-green-700" };
 
   // The single most useful line for a support call: why it did not go through.
   const reason =
@@ -426,7 +444,9 @@ function AttemptRow({
     a.error?.reason ||
     (bucket === "abandoned"
       ? "Customer closed the payment screen without completing it."
-      : null);
+      : bucket === "pending"
+        ? "Checkout opened — not paid yet. Moves to Abandoned if unpaid after 30 minutes."
+        : null);
 
   return (
     <div className="overflow-hidden rounded-xl border border-outline/15 bg-white">

@@ -26,6 +26,7 @@ import {
 import { useAdminAuth } from "../_context/admin-auth-context";
 import { isValidGstinFormat } from "../../dashboard/_lib/profile-persistence";
 import { compressImage } from "../../utils/compressImage";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 
 declare global { interface Window { google?: any } }
 
@@ -890,7 +891,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
                         {/* Plan */}
                         <div className="px-4 py-3">
                           <p className="text-xs text-on-surface-variant">Plan</p>
-                          <p className="text-sm font-medium text-on-surface mt-0.5">{activeSub.planName || "Standard"}</p>
+                          <p className="text-sm font-medium text-on-surface mt-0.5">{subscriptionPlanLabel(activeSub)}</p>
                         </div>
 
                         {/* Extend */}

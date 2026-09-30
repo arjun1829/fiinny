@@ -16,6 +16,17 @@ class PlaceDetails {
   final String? formattedAddress;
   final double? lat;
   final double? lng;
+
+  /// District (administrative_area_level_2, else _3) — the web's cart keeps it
+  /// as its own address field.
+  final String? district;
+
+  /// Street-level parts, for building a precise "area" line (same idea as the
+  /// web's applyPlaceToFields): street number + route, else premise.
+  final String? streetNumber;
+  final String? route;
+  final String? premise;
+
   const PlaceDetails({
     required this.name,
     this.sublocality,
@@ -25,20 +36,28 @@ class PlaceDetails {
     this.formattedAddress,
     this.lat,
     this.lng,
+    this.district,
+    this.streetNumber,
+    this.route,
+    this.premise,
   });
 }
 
 class PlacesService {
   static const _base = 'https://maps.googleapis.com/maps/api';
 
+  /// [types] narrows the search ('establishment' by default, as the store /
+  /// shop pickers want). Pass '' for no filter — what a delivery-address
+  /// search needs, since a village, a locality and a landmark are all valid.
   static Future<List<PlaceSuggestion>> autocomplete(
-      String input, String apiKey) async {
+      String input, String apiKey,
+      {String types = 'establishment'}) async {
     if (input.trim().isEmpty) return [];
     try {
       final uri = Uri.parse('$_base/place/autocomplete/json'
           '?input=${Uri.encodeComponent(input)}'
           '&components=country:in'
-          '&types=establishment'
+          '${types.isEmpty ? '' : '&types=$types'}'
           '&key=$apiKey');
       final res = await http.get(uri).timeout(const Duration(seconds: 5));
       if (res.statusCode != 200) return [];
@@ -91,6 +110,7 @@ class PlacesService {
 
   static PlaceDetails _parseResult(Map<String, dynamic> result) {
     String? neighborhood, sublocality, locality, admin3, admin2, state, pincode;
+    String? streetNumber, route, premise;
     final components = result['address_components'] as List? ?? [];
     
     for (final c in components) {
@@ -107,6 +127,10 @@ class PlacesService {
       if (types.contains('administrative_area_level_2')) admin2 ??= name;
       if (types.contains('administrative_area_level_1')) state ??= name;
       if (types.contains('postal_code')) pincode ??= name;
+      if (types.contains('street_number')) streetNumber ??= name;
+      if (types.contains('route')) route ??= name;
+      if (types.contains('premise')) premise ??= name;
+      if (types.contains('subpremise')) premise ??= name;
     }
 
     String? bestSub = neighborhood ?? sublocality ?? admin3 ?? locality;
@@ -135,6 +159,10 @@ class PlacesService {
       formattedAddress: result['formatted_address'] as String?,
       lat: (loc?['lat'] as num?)?.toDouble(),
       lng: (loc?['lng'] as num?)?.toDouble(),
+      district: admin2 ?? admin3,
+      streetNumber: streetNumber,
+      route: route,
+      premise: premise,
     );
   }
 

@@ -5,9 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_config.dart';
+import '../../../core/services/places_service.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/loading_overlay.dart';
@@ -62,6 +65,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   bool _saving = false;
   bool _prefilled = false;
+
+  // Set by "Use my current location"; saved as the shop's map pin (`geo`).
+  GeoPoint? _geo;
+  bool _locating = false;
   String? _error;
 
   // Shop/profile logo + banner — picked files shown immediately, uploaded on Save.
@@ -254,6 +261,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                 social.values.any((v) => v.isNotEmpty)
             ? social
             : null,
+        geo: _geo,
       );
 
       ref.invalidate(currentUserProvider);
@@ -412,6 +420,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                           Icons.storefront_outlined,
                           validator: _required, highlightIfEmpty: true),
                       const SizedBox(height: 12),
+                      _locationButton(
+                          hint: 'Tap while you are at your shop — it also '
+                              'pins your shop on the store map.'),
+                      const SizedBox(height: 12),
                       _field(_addressCtrl, 'Address', Icons.home_outlined,
                           maxLines: 2,
                           validator: _required,
@@ -517,6 +529,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       Text('Delivery Address (optional)',
                           style: AppTextStyles.heading3),
                       const SizedBox(height: 12),
+                      _locationButton(),
+                      const SizedBox(height: 12),
                       _field(_addressCtrl, 'Address', Icons.home_outlined,
                           maxLines: 2),
                       const SizedBox(height: 12),
@@ -608,6 +622,112 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     }
     if (_pincodeCtrl.text.trim().isEmpty) missing.add('Pincode');
     return missing;
+  }
+
+  /// "Use my current location": GPS fix → Google reverse geocode → fills
+  /// address, city, state and pincode (the same fill the web profile's
+  /// button does), and keeps the coordinates for the shop's map pin.
+  Future<void> _useCurrentLocation() async {
+    final messenger = ScaffoldMessenger.of(context);
+    void say(String msg, {SnackBarAction? action}) => messenger.showSnackBar(
+        SnackBar(content: Text(msg), action: action));
+
+    setState(() => _locating = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        say('Location is turned off on your phone.',
+            action: SnackBarAction(
+                label: 'Turn on', onPressed: Geolocator.openLocationSettings));
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        say('Location permission is blocked for KrishiDukan.',
+            action: SnackBarAction(
+                label: 'Settings', onPressed: Geolocator.openAppSettings));
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        say('Allow location access to fill your address automatically.');
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      final place = await PlacesService.reverseGeocode(
+          pos.latitude, pos.longitude, AppConfig.googleMapsApiKey);
+      if (!mounted) return;
+
+      setState(() {
+        _geo = GeoPoint(pos.latitude, pos.longitude);
+        if (place == null) return;
+        String clean(String? v) => (v ?? '').trim();
+        // Drop the trailing country — every address here is in India.
+        final line = clean(place.formattedAddress)
+            .replaceFirst(RegExp(r',\s*India$'), '');
+        if (line.isNotEmpty) _addressCtrl.text = line;
+        if (clean(place.city).isNotEmpty) _cityCtrl.text = clean(place.city);
+        if (clean(place.state).isNotEmpty) _stateCtrl.text = clean(place.state);
+        final pin = clean(place.pincode).replaceAll(RegExp(r'\D'), '');
+        if (pin.length == 6) _pincodeCtrl.text = pin;
+      });
+      say(place == null
+          ? 'Location found, but the address could not be read. Please type it.'
+          : 'Address filled from your location. Check it before saving.');
+    } catch (_) {
+      if (mounted) {
+        say('Could not get your location. Try again outside or near a window.');
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  Widget _locationButton({String? hint}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _locating ? null : _useCurrentLocation,
+            icon: _locating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(_geo != null ? Icons.check_circle : Icons.my_location,
+                    size: 18),
+            label: Text(_locating
+                ? 'Finding your location…'
+                : _geo != null
+                    ? 'Location added — tap to refresh'
+                    : 'Use my current location'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        if (hint != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(hint,
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.onSurfaceVariant)),
+          ),
+      ],
+    );
   }
 
   Widget _field(

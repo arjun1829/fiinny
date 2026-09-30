@@ -24,6 +24,7 @@ export {
 export { sendStoreAnalyticsDigest } from "./notifications/digest";
 export { raiseAbandonedCheckoutEnquiries } from "./notifications/enquiries";
 export { notifySellerOfOrderOffer, expireOrderReassignments } from "./notifications/reassignment";
+export { generateInvoiceForNewOrder, sweepMissingInvoices } from "./orders/invoices";
 export {
   remindIncompleteProfiles,
   remindIncompletePayoutDetails,

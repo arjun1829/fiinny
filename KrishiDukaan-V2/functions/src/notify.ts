@@ -102,6 +102,12 @@ export async function notify(
       notification: { title, body },
       data: { type, ...data },
       android: { priority: "high" },
+      // iOS: alert-priority delivery with the default sound. Without an apns
+      // block a push still shows, but silently — easy to miss on an iPhone.
+      apns: {
+        headers: { "apns-priority": "10", "apns-push-type": "alert" },
+        payload: { aps: { sound: "default" } },
+      },
     });
   } catch (err) {
     console.error(`[notify] push failed for ${phone}:`, err);

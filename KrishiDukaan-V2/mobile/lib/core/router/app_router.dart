@@ -142,6 +142,21 @@ String? _translateExternalLink(Uri uri) {
     if (id != null) return '/product/$id';
   }
 
+  // Sales / marketing referral link (app/subscribe on the web):
+  // /subscribe?ref=CODE[&plan=<planKey>][&seats=<n>] → the subscription
+  // screen with the code applied and the offer's plan preselected. Not the
+  // manufacturer inviteCode below — a different feature.
+  if (segments.length == 1 && segments[0] == 'subscribe') {
+    final q = uri.queryParameters;
+    final params = <String, String>{
+      if ((q['ref'] ?? q['code'] ?? '').isNotEmpty) 'ref': q['ref'] ?? q['code']!,
+      if ((q['plan'] ?? '').isNotEmpty) 'plan': q['plan']!,
+      if ((q['seats'] ?? '').isNotEmpty) 'seats': q['seats']!,
+      'from': 'link',
+    };
+    return Uri(path: '/subscription', queryParameters: params).toString();
+  }
+
   // Manufacturer invite link: WebLinks.invite → /?inviteCode={code}
   final invite = uri.queryParameters['inviteCode'];
   if (invite != null && invite.isNotEmpty) {
@@ -206,11 +221,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthPath =
           path == '/login' || path == '/login/otp' || path == '/onboarding';
 
-      const protectedPaths = ['/checkout', '/orders', '/dashboard'];
+      const protectedPaths = ['/checkout', '/orders', '/dashboard', '/subscription'];
       final needsAuth = protectedPaths.any((p) => path.startsWith(p));
 
       if (!isLoggedIn && needsAuth) {
-        return '/login?redirect=${Uri.encodeComponent(path)}';
+        // Keep the query for the subscription screen: a referral link's code
+        // and offer (?ref=&plan=&seats=) must survive login / signup.
+        final target = path.startsWith('/subscription') ? state.uri.toString() : path;
+        return '/login?redirect=${Uri.encodeComponent(target)}';
       }
 
       if (isLoggedIn && isAuthPath) {
@@ -346,6 +364,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => _RootBackFallback(
           child: SubscriptionScreen(
             reason: state.uri.queryParameters['reason'],
+            // Referral link (/subscribe on the web): code + optional offer.
+            referralCode: state.uri.queryParameters['ref'],
+            offerPlanId: state.uri.queryParameters['plan'],
+            fromReferralLink: state.uri.queryParameters['from'] == 'link',
             // A subscription_expiry notification passes the user's current
             // plan so renewal is one tap on Pay.
             initialSeats: int.tryParse(

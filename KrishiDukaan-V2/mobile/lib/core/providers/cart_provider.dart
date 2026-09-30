@@ -5,9 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/commercial_repository.dart';
 import '../data/shared_cart_repository.dart';
 import '../models/cart_model.dart';
+import '../models/store_commercial.dart';
 import '../models/user_model.dart';
+import '../utils/delivery_utils.dart';
+import '../utils/gst_utils.dart';
 import '../utils/weight_utils.dart';
 import 'user_provider.dart';
 
@@ -18,6 +22,7 @@ class CartNotifier extends StateNotifier<List<CartItemModel>> {
 
   static const _key = 'cart_items';
   final _sharedCartRepo = SharedCartRepository();
+  final _commercialRepo = CommercialRepository();
 
   /// Completes once the on-device guest cart has been read into [state].
   /// [onSignedIn] awaits this before treating [state] as "the guest cart" to
@@ -117,6 +122,40 @@ class CartNotifier extends StateNotifier<List<CartItemModel>> {
       state = [...state, item];
     }
     _save();
+  }
+
+  /// Applies a store's GST + delivery settings to one line.
+  void applyCommercial(
+      String listingId, String? variantLabel, StoreCommercial c) {
+    state = state.map((e) {
+      if (e.listingId == listingId && e.variantLabel == variantLabel) {
+        return e.copyWith(
+          gstApplicable: c.gstApplicable,
+          gstRate: c.gstRate,
+          gstIncluded: c.gstIncluded,
+          extraDeliveryCharge: c.extraDeliveryCharge,
+          freeDelivery: c.freeDelivery,
+        );
+      }
+      return e;
+    }).toList();
+    _save();
+  }
+
+  /// Looks up the STORE'S OWN GST + delivery settings for [item] — its product
+  /// copy first, then its availability entry, then the canonical product, as
+  /// the server does — and applies them to the line. GST and delivery are
+  /// per store: the same product can be GST-inclusive at one shop and carry
+  /// extra delivery at another. Best effort; a failed lookup keeps whatever
+  /// the line already has, and the server re-derives everything at payment.
+  Future<void> resolveCommercial(CartItemModel item) async {
+    try {
+      final c = await _commercialRepo.resolve(
+        catalogId: item.catalogId,
+        sellerPhone: item.sellerPhone,
+      );
+      if (c != null) applyCommercial(item.listingId, item.variantLabel, c);
+    } catch (_) {}
   }
 
   void removeItem(String listingId, String? variantLabel) {
@@ -223,52 +262,79 @@ final cartSavingsProvider = Provider<double>((ref) {
   return ref.watch(cartProvider).fold(0.0, (sum, item) => sum + item.lineSavings);
 });
 
-/// Total GST across the cart.
-final cartGstProvider = Provider<double>((ref) {
-  return ref.watch(cartProvider).fold(0.0, (sum, item) => sum + item.lineGst);
+/// GST ADDED to what the customer pays — exclusive-GST lines only. Included
+/// GST is already inside the prices and is never added.
+final cartGstAddedProvider = Provider<double>((ref) {
+  return round2(
+      ref.watch(cartProvider).fold(0.0, (sum, item) => sum + item.lineGstAdded));
 });
 
-// ── Delivery charge estimation ────────────────────────────────────────────────
+/// GST already INSIDE the cart's prices (shown as a component, not a charge).
+final cartGstIncludedProvider = Provider<double>((ref) {
+  return round2(ref.watch(cartProvider).fold(0.0,
+      (sum, item) => sum + (item.lineGstTotal - item.lineGstAdded)));
+});
 
-/// Weight slab from `deliverySettings/{sellerPhone}`.
-class WeightSlab {
-  final double minKg;
-  final double maxKg;
-  final double charge;
-  const WeightSlab({required this.minKg, required this.maxKg, required this.charge});
+// ── Delivery + GST pricing ────────────────────────────────────────────────────
 
-  factory WeightSlab.fromMap(Map<String, dynamic> m) => WeightSlab(
-        minKg: (m['minKg'] as num).toDouble(),
-        maxKg: (m['maxKg'] as num).toDouble(),
-        charge: (m['charge'] as num).toDouble(),
-      );
-}
+/// The customer's delivery-address state — what picks a pan-India seller's
+/// in-state vs out-of-state slab. Set from the checkout address (and prefilled
+/// from the saved profile); empty until known, in which case sellers price on
+/// their single legacy slab set, exactly like the website.
+final deliveryStateProvider = StateProvider<String>((ref) => '');
 
-/// Delivery estimate result per seller.
+/// Pricing result for the whole cart, per seller (subtotal, GST, delivery).
+/// Field names of the old slab-only estimate are kept so the screens need
+/// little change.
 class DeliveryEstimate {
+  final List<SellerPricing> sellers;
   final Map<String, double> bySellerCharge;
   final Map<String, double> bySellerWeight;
   final double totalCharge;
   final double totalWeight;
 
   const DeliveryEstimate({
+    this.sellers = const [],
     this.bySellerCharge = const {},
     this.bySellerWeight = const {},
     this.totalCharge = 0,
     this.totalWeight = 0,
   });
+
+  SellerPricing? forSeller(String sellerKey) {
+    for (final s in sellers) {
+      if (s.sellerKey == sellerKey) return s;
+    }
+    return null;
+  }
+
+  /// Exclusive GST added across all sellers.
+  double get gstAdded => round2(sellers.fold(0.0, (s, p) => s + p.gstAdded));
+
+  /// items + added GST + delivery, across all sellers.
+  double get total => round2(sellers.fold(0.0, (s, p) => s + p.total));
+
+  /// Whether every seller's shipment is free.
+  bool get allFree => sellers.isNotEmpty && sellers.every((s) => s.delivery.free);
+
+  /// The within / outside-state slab set that applied — only when every seller
+  /// that has a state-aware set agrees, so a mixed cart shows no badge. Null
+  /// for legacy single-slab sellers and when the state isn't known yet.
+  DeliveryType? get slabType {
+    final types = sellers
+        .map((s) => s.delivery.type)
+        .where((t) => t != DeliveryType.defaultSlabs)
+        .toSet();
+    return types.length == 1 ? types.first : null;
+  }
 }
 
 final _phoneRegex = RegExp(r'^(\+91)?[6-9]\d{9}$');
 
 /// `deliverySettings` docs are keyed by phone, but some legacy retailer copies
-/// only carry the seller's Firebase UID in the phone-ish fields (see the
-/// "UIDs leak into sellerPhone on some legacy docs" note in product_detail_
-/// screen.dart). If [candidate] isn't already a valid phone, resolve it via
-/// `uidIndex/{uid}.phone` — mirrors the web's `useDeliveryEstimates` 3-tier
-/// lookup (stored phone → uidIndex → treat-as-phone), which is why the web
-/// charges delivery for sellers whose mobile-side sellerPhone lookup was
-/// silently coming up empty.
+/// only carry the seller's Firebase UID in the phone-ish fields. If [candidate]
+/// isn't already a valid phone, resolve it via `uidIndex/{uid}.phone` — the
+/// web's 3-tier lookup (stored phone → uidIndex → treat-as-phone).
 Future<String?> _resolveSellerPhone(String candidate) async {
   final cleaned = candidate.replaceAll(RegExp(r'\s'), '');
   if (_phoneRegex.hasMatch(cleaned)) return cleaned;
@@ -286,19 +352,22 @@ Future<String?> _resolveSellerPhone(String candidate) async {
   return null;
 }
 
-/// Async provider that computes delivery charges from Firestore `deliverySettings`.
-/// Mirrors the web app's `useDeliveryEstimator` hook.
+/// Computes each seller's subtotal, GST and delivery with the same rules as the
+/// website and the server (core/utils/gst_utils + delivery_utils): store
+/// settings from the cart line, slab by the customer's state. The server
+/// recomputes all of it at payment; this is the estimate shown before paying.
 final deliveryChargeProvider = FutureProvider<DeliveryEstimate>((ref) async {
   final items = ref.watch(cartProvider);
+  final customerState = ref.watch(deliveryStateProvider);
   if (items.isEmpty) return const DeliveryEstimate();
 
-  // Group by seller phone
   final groups = <String, List<CartItemModel>>{};
   for (final item in items) {
     groups.putIfAbsent(item.sellerPhone, () => []).add(item);
   }
 
   final db = FirebaseFirestore.instance;
+  final sellers = <SellerPricing>[];
   final charges = <String, double>{};
   final weights = <String, double>{};
 
@@ -306,92 +375,51 @@ final deliveryChargeProvider = FutureProvider<DeliveryEstimate>((ref) async {
     final sellerKey = entry.key;
     final sellerItems = entry.value;
 
-    // Compute total weight for this seller
-    double weightKg = 0;
-    for (final item in sellerItems) {
-      weightKg += item.quantity * parseVariantWeightKg(item.variantLabel);
-    }
-    weightKg = double.parse(weightKg.toStringAsFixed(3));
-    weights[sellerKey] = weightKg;
+    final lines = [
+      for (final i in sellerItems)
+        CartPricingLine(
+          sellerKey: sellerKey,
+          unitPrice: i.price,
+          qty: i.quantity,
+          weightKg: round3(i.quantity * parseVariantWeightKg(i.variantLabel)),
+          gstApplicable: i.gstApplicable,
+          gstRate: i.gstRate,
+          gstIncluded: i.gstIncluded,
+          extraDeliveryCharge: i.extraDeliveryCharge,
+          freeDelivery: i.freeDelivery,
+        ),
+    ];
+    // Whole-shipment weight — shown to the buyer as the estimate.
+    weights[sellerKey] = round3(lines.fold(0.0, (s, l) => s + l.weightKg));
 
-    debugPrint('[DeliveryEstimate] seller: $sellerKey | weightKg: $weightKg | '
-        'items: ${sellerItems.map((i) => '${i.catalogName}×${i.quantity} variantLabel="${i.variantLabel}"').join(', ')}');
-
-    if (weightKg == 0) {
-      debugPrint('[DeliveryEstimate] weight=0, no delivery charge applied');
-      charges[sellerKey] = 0;
-      continue;
-    }
-
-    // Resolve the actual deliverySettings doc ID — sellerKey may be a UID on
-    // legacy retailer copies rather than the phone deliverySettings is keyed by.
+    // The seller's delivery settings; null (missing / unreadable / no phone)
+    // means only the per-product extra applies, as on the website.
+    Map<String, dynamic>? settings;
     final phone = await _resolveSellerPhone(sellerKey);
-    debugPrint('[DeliveryEstimate] resolved phone for $sellerKey → $phone');
-    if (phone == null) {
-      debugPrint('[DeliveryEstimate] could not resolve phone for seller: $sellerKey');
-      charges[sellerKey] = 0;
-      continue;
+    if (phone != null) {
+      try {
+        final snap = await db.collection('deliverySettings').doc(phone).get();
+        settings = snap.data();
+      } catch (e) {
+        debugPrint('[DeliveryEstimate] settings read failed for $phone: $e');
+      }
     }
 
-    try {
-      final settingsSnap =
-          await db.collection('deliverySettings').doc(phone).get();
-      debugPrint('[DeliveryEstimate] deliverySettings doc exists: '
-          '${settingsSnap.exists} for phone: $phone');
-      if (!settingsSnap.exists) {
-        charges[sellerKey] = 0;
-        continue;
-      }
-
-      final data = settingsSnap.data()!;
-      final slabsList = data['weightSlabs'] as List<dynamic>?;
-      debugPrint('[DeliveryEstimate] slabs: $slabsList');
-      if (slabsList == null || slabsList.isEmpty) {
-        charges[sellerKey] = 0;
-        continue;
-      }
-
-      final slabs = slabsList
-          .map((s) => WeightSlab.fromMap(s as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.minKg.compareTo(b.minKg));
-
-      double charge = 0;
-      for (final slab in slabs) {
-        if (weightKg >= slab.minKg && weightKg < slab.maxKg) {
-          charge = slab.charge;
-          debugPrint('[DeliveryEstimate] matched slab: '
-              '${slab.minKg}-${slab.maxKg} → charge: $charge');
-          break;
-        }
-      }
-      // Open-ended last slab fallback
-      if (charge == 0 && slabs.isNotEmpty) {
-        final last = slabs.last;
-        if (weightKg >= last.minKg) {
-          charge = last.charge;
-          debugPrint('[DeliveryEstimate] last-slab fallback → charge: $charge');
-        }
-      }
-      if (charge == 0) {
-        debugPrint('[DeliveryEstimate] no slab matched weightKg=$weightKg, slabs=$slabs');
-      }
-      charges[sellerKey] = charge;
-    } catch (e) {
-      debugPrint('[DeliveryEstimate] fetch error: $e');
-      charges[sellerKey] = 0;
-    }
+    final pricing =
+        computeSellerPricing(sellerKey, lines, settings, customerState);
+    sellers.add(pricing);
+    charges[sellerKey] = pricing.deliveryCharge;
+    debugPrint('[DeliveryEstimate] $sellerKey state="$customerState" '
+        'type=${pricing.delivery.type.value} slab=${pricing.delivery.slab} '
+        'extra=${pricing.delivery.extra} free=${pricing.delivery.free} '
+        'gstAdded=${pricing.gstAdded}');
   }
 
-  debugPrint('[DeliveryEstimate] final charges: $charges | weights: $weights');
-
-  final totalCharge = charges.values.fold(0.0, (s, v) => s + v);
-  final totalWeight = weights.values.fold(0.0, (s, v) => s + v);
-
   return DeliveryEstimate(
+    sellers: sellers,
     bySellerCharge: charges,
     bySellerWeight: weights,
-    totalCharge: totalCharge,
-    totalWeight: totalWeight,
+    totalCharge: round2(charges.values.fold(0.0, (s, v) => s + v)),
+    totalWeight: round3(weights.values.fold(0.0, (s, v) => s + v)),
   );
 });

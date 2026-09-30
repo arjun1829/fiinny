@@ -37,6 +37,7 @@ dependencies:
   url_launcher: ^6.3.1
   image_picker: ^1.1.2
   package_info_plus: ^10.1.0
+  share_plus: ^13.3.0
 
   # image_picker's web resizer re-encodes losslessly for PNG/HEIC/WebP source
   # files (canvas.toBlob only honours its quality argument for JPEG/WebP), so

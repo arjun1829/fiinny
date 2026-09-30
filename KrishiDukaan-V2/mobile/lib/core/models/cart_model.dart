@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../utils/gst_utils.dart';
+
 class CartItemModel {
   final String catalogId;
   final String catalogName;
@@ -25,9 +27,22 @@ class CartItemModel {
   /// Whether GST applies to this product (synced from catalog/listing).
   final bool gstApplicable;
 
-  /// GST rate in percent (0, 5, 12, 18, 28). Only meaningful when
-  /// [gstApplicable] is true.
+  /// GST rate in percent — a preset (0, 5, 12, 18, 28) or a custom rate the
+  /// seller entered. Only meaningful when [gstApplicable] is true.
   final double gstRate;
+
+  /// Whether [gstRate] is already INSIDE [price] (the default). Included GST is
+  /// shown as a component of the price and never added; only an explicitly
+  /// exclusive line (false) has GST added on top at checkout.
+  final bool gstIncluded;
+
+  /// Per-product delivery surcharge (₹), added on top of the seller's
+  /// weight-slab charge.
+  final double extraDeliveryCharge;
+
+  /// This product ships free: it adds no weight and no charge to the seller's
+  /// delivery fee.
+  final bool freeDelivery;
 
   const CartItemModel({
     required this.catalogId,
@@ -43,6 +58,9 @@ class CartItemModel {
     this.variantLabel,
     this.gstApplicable = false,
     this.gstRate = 0,
+    this.gstIncluded = true,
+    this.extraDeliveryCharge = 0,
+    this.freeDelivery = false,
   }) : originalPrice = originalPrice ?? price;
 
   double get lineTotal => price * quantity;
@@ -57,11 +75,27 @@ class CartItemModel {
   /// Total money saved across the whole line.
   double get lineSavings => unitSavings * quantity;
 
-  /// Per-unit GST amount.
-  double get unitGst => gstApplicable ? price * gstRate / 100 : 0;
+  /// The authoritative line pricing (GST on the discounted price) — the same
+  /// rules as the website and the server (core/utils/gst_utils.dart).
+  LinePricing get pricing => computeLinePricing(
+        unitPrice: price,
+        qty: quantity,
+        gstApplicable: gstApplicable,
+        gstRate: gstRate,
+        gstIncluded: gstIncluded,
+      );
 
-  /// Total GST for this line.
-  double get lineGst => unitGst * quantity;
+  /// GST per unit — backed out of the price when included, on top when not.
+  double get unitGst => pricing.gstPerUnit;
+
+  /// All GST in this line (included + added) — for the invoice.
+  double get lineGstTotal => pricing.gstTotal;
+
+  /// GST ADDED to what the customer pays for this line (exclusive lines only).
+  double get lineGstAdded => pricing.gstAdded;
+
+  /// What the customer pays for this line: net price plus any GST added.
+  double get payableLineTotal => pricing.lineTotal;
 
   CartItemModel copyWith({
     String? listingId,
@@ -73,6 +107,9 @@ class CartItemModel {
     int? quantity,
     bool? gstApplicable,
     double? gstRate,
+    bool? gstIncluded,
+    double? extraDeliveryCharge,
+    bool? freeDelivery,
   }) =>
       CartItemModel(
         catalogId: catalogId,
@@ -88,6 +125,9 @@ class CartItemModel {
         variantLabel: variantLabel,
         gstApplicable: gstApplicable ?? this.gstApplicable,
         gstRate: gstRate ?? this.gstRate,
+        gstIncluded: gstIncluded ?? this.gstIncluded,
+        extraDeliveryCharge: extraDeliveryCharge ?? this.extraDeliveryCharge,
+        freeDelivery: freeDelivery ?? this.freeDelivery,
       );
 
   Map<String, dynamic> toJson() => {
@@ -104,6 +144,9 @@ class CartItemModel {
         'variantLabel': variantLabel,
         'gstApplicable': gstApplicable,
         'gstRate': gstRate,
+        'gstIncluded': gstIncluded,
+        'extraDeliveryCharge': extraDeliveryCharge,
+        'freeDelivery': freeDelivery,
       };
 
   factory CartItemModel.fromJson(Map<String, dynamic> j) {
@@ -123,6 +166,11 @@ class CartItemModel {
       variantLabel: j['variantLabel'] as String?,
       gstApplicable: j['gstApplicable'] as bool? ?? false,
       gstRate: (j['gstRate'] as num?)?.toDouble() ?? 0,
+      // Carts saved before these fields existed: GST was the old "added on
+      // top" behaviour, but new checkouts follow the platform default.
+      gstIncluded: j['gstIncluded'] as bool? ?? true,
+      extraDeliveryCharge: (j['extraDeliveryCharge'] as num?)?.toDouble() ?? 0,
+      freeDelivery: j['freeDelivery'] as bool? ?? false,
     );
   }
 
