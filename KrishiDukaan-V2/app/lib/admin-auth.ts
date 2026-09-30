@@ -130,7 +130,22 @@ export async function requireSection(
     }
   } catch (e) {
     console.error("[requireSection] lookup failed:", e);
-    return NextResponse.json({ error: "Server could not verify access." }, { status: 500 });
+    // Same hint as requireAdmin: locally this is almost always expired
+    // application-default credentials (invalid_rapt), not a code problem.
+    const devHint =
+      process.env.NODE_ENV !== "production"
+        ? " To fix locally, run: gcloud auth application-default login " +
+          "— then restart the dev server (Ctrl+C, then npm run dev)."
+        : "";
+    return NextResponse.json(
+      {
+        error:
+          "Server could not verify access (backend datastore unreachable). " +
+          "Check Firebase Admin credentials / project configuration." +
+          devHint,
+      },
+      { status: 500 },
+    );
   }
   return NextResponse.json({ error: "Forbidden — you don't have access to this section." }, { status: 403 });
 }
