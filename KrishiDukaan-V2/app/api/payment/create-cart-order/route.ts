@@ -136,7 +136,11 @@ export async function POST(request: Request) {
     // never come from it.
     const pricingLines: ServerLine[] = [];
 
-    for (const item of items) {
+    // Items are priced in PARALLEL — each needs several Firestore reads, and a
+    // sequential loop made the Pay button wait roughly one round trip per
+    // cart line. Results are folded back in the original item order below, so
+    // totals (including floating-point summation order) are unchanged.
+    const itemResults = await Promise.all(items.map(async (item) => {
       const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
       // `let`: resolved from the product doc below when the cart item carries
       // no seller at all. That happens when a customer buys a manufacturer's
@@ -297,9 +301,8 @@ export async function POST(request: Request) {
       );
 
       const lineTotal = Math.round(finalPrice * qty * 100) / 100;
-      serverSubtotal += lineTotal;
 
-      pricedItems.push({
+      const priced: AttemptItem = {
         productId:   item.productId,
         name:        itemName || String(prodData?.name ?? prodData?.productName ?? item.productId),
         qty,
@@ -315,21 +318,31 @@ export async function POST(request: Request) {
         ...(commercial.gstApplicable
           ? { gstApplicable: true, gstRate: commercial.gstRate, gstIncluded: commercial.gstIncluded }
           : {}),
-      });
-      if (sellerKey) {
-        subtotalBySeller.set(sellerKey, (subtotalBySeller.get(sellerKey) ?? 0) + lineTotal);
-        pricingLines.push({
-          sellerKey,
-          sellerPhone: String(item.sellerPhone ?? '').trim() || undefined,
-          unitPrice: finalPrice,
-          qty,
-          weightKg: Number((qty * parseVariantWeightKg(item.variantUnit)).toFixed(3)),
-          gstApplicable: commercial.gstApplicable,
-          gstRate: commercial.gstRate,
-          gstIncluded: commercial.gstIncluded,
-          extraDeliveryCharge: commercial.extraDeliveryCharge,
-          freeDelivery: commercial.freeDelivery,
-        });
+      };
+      const line: ServerLine | null = sellerKey
+        ? {
+            sellerKey,
+            sellerPhone: String(item.sellerPhone ?? '').trim() || undefined,
+            unitPrice: finalPrice,
+            qty,
+            weightKg: Number((qty * parseVariantWeightKg(item.variantUnit)).toFixed(3)),
+            gstApplicable: commercial.gstApplicable,
+            gstRate: commercial.gstRate,
+            gstIncluded: commercial.gstIncluded,
+            extraDeliveryCharge: commercial.extraDeliveryCharge,
+            freeDelivery: commercial.freeDelivery,
+          }
+        : null;
+      return { lineTotal, priced, sellerKey, line };
+    }));
+
+    // Fold in the original cart order.
+    for (const r of itemResults) {
+      serverSubtotal += r.lineTotal;
+      pricedItems.push(r.priced);
+      if (r.sellerKey && r.line) {
+        subtotalBySeller.set(r.sellerKey, (subtotalBySeller.get(r.sellerKey) ?? 0) + r.lineTotal);
+        pricingLines.push(r.line);
       }
     }
 
@@ -342,6 +355,10 @@ export async function POST(request: Request) {
     // (slab, extra, free, waived). The same numbers go back to the client and
     // onto the payment attempt, so the order a client writes and the order the
     // webhook rebuilds both match what was charged.
+    // Route payout lookups depend only on WHICH sellers are in the cart, not on
+    // the amount — so start them now, alongside the delivery-settings reads,
+    // instead of after. Both were sequential waits before Razorpay was called.
+    const routePrefetch = prefetchRouteContext(Array.from(subtotalBySeller.keys()));
     const settingsBySeller = await loadDeliverySettings(db, pricingLines);
     const linesBySeller = new Map<string, ServerLine[]>();
     for (const l of pricingLines) {
@@ -428,6 +445,7 @@ export async function POST(request: Request) {
     const { transfers, splitSummary } = await buildRouteTransfers(
       amountPaise,
       isNewClient && totalsSum > 0 ? totalBySeller : subtotalBySeller,
+      await routePrefetch,
     );
 
     const order = await razorpay.orders.create({
@@ -566,9 +584,31 @@ interface SplitSummaryRow {
  * orders early on will have no transfer at all and settle exactly as they do
  * today. An unroutable seller must never block a customer's payment.
  */
+type RouteContext = {
+  config: Awaited<ReturnType<typeof loadRouteConfig>> | null;
+  accounts: Map<string, Awaited<ReturnType<typeof resolveSellerAccount>>>;
+};
+
+/** Route config + each seller's linked account, fetched in parallel. Never
+ *  throws: a failure yields an empty context and buildRouteTransfers falls
+ *  back to its own lookups (or to an unsplit order). */
+async function prefetchRouteContext(sellerKeys: string[]): Promise<RouteContext> {
+  try {
+    const [config, accounts] = await Promise.all([
+      loadRouteConfig(),
+      Promise.all(sellerKeys.map(async (k) => [k, await resolveSellerAccount(k)] as const)),
+    ]);
+    return { config, accounts: new Map(accounts) };
+  } catch (e) {
+    console.warn('[create-cart-order] route prefetch failed:', e);
+    return { config: null, accounts: new Map() };
+  }
+}
+
 async function buildRouteTransfers(
   orderAmountPaise: number,
   subtotalBySeller: Map<string, number>,
+  prefetched?: RouteContext,
 ): Promise<{
   transfers: Array<{ account: string; amount: number; currency: string; on_hold: boolean; notes: Record<string, string> }>;
   splitSummary: SplitSummaryRow[];
@@ -577,7 +617,7 @@ async function buildRouteTransfers(
   if (subtotalBySeller.size === 0 || orderAmountPaise <= 0) return empty;
 
   try {
-    const config = await loadRouteConfig();
+    const config = prefetched?.config ?? await loadRouteConfig();
 
     // Allocate the ACTUAL captured amount across sellers in proportion to their
     // subtotals. Deriving each share from the order total rather than summing
@@ -587,7 +627,12 @@ async function buildRouteTransfers(
     if (shares.length === 0) return empty;
 
     const accounts = await Promise.all(
-      shares.map(async (sh) => ({ ...sh, seller: await resolveSellerAccount(sh.key) })),
+      shares.map(async (sh) => ({
+        ...sh,
+        seller: prefetched?.accounts.has(sh.key)
+          ? prefetched.accounts.get(sh.key)!
+          : await resolveSellerAccount(sh.key),
+      })),
     );
 
     const transfers: Array<{ account: string; amount: number; currency: string; on_hold: boolean; notes: Record<string, string> }> = [];

@@ -88,4 +88,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // WindowCompat.enableEdgeToEdge (MainActivity) — added in core 1.17.
     implementation("androidx.core:core-ktx:1.17.0")
+    // Checkout.preload in MainActivity. Same range razorpay_flutter pulls in,
+    // declared here so the app module compiles against it directly.
+    implementation("com.razorpay:checkout:1.6.+")
 }

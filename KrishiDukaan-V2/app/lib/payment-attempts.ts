@@ -126,12 +126,15 @@ async function resolveBuyer(
   try {
     // Phone-keyed accounts reach their doc through uidIndex; email-keyed ones
     // live at users/{uid} directly. Try both, same as the sales-role lookup.
-    const idx = await db.collection('uidIndex').doc(userId).get();
+    // uidIndex and the uid-keyed user doc in parallel; the phone-keyed doc
+    // only when uidIndex names one (same result as before, one wait fewer).
+    const [idx, byUid] = await Promise.all([
+      db.collection('uidIndex').doc(userId).get(),
+      db.collection('users').doc(userId).get(),
+    ]);
     const phone = idx.exists ? String(idx.data()?.phone ?? '') : '';
 
-    const userSnap = phone
-      ? await db.collection('users').doc(phone).get()
-      : await db.collection('users').doc(userId).get();
+    const userSnap = phone ? await db.collection('users').doc(phone).get() : byUid;
 
     const data = userSnap.exists ? userSnap.data() ?? {} : {};
     return {

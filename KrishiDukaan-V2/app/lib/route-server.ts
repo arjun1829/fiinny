@@ -76,8 +76,16 @@ export async function resolveSellerAccount(phone: string): Promise<SellerAccount
   if (!key) return null;
 
   const db = getAdminDb();
-  for (const collection of SELLER_COLLECTIONS) {
-    const snap = await db.collection(collection).doc(key).get();
+  // All candidate docs read in PARALLEL (it used to be up to three sequential
+  // round trips on the checkout path); the first existing one in priority
+  // order still wins, exactly as before.
+  const [roleSnaps, userSnap] = await Promise.all([
+    Promise.all(SELLER_COLLECTIONS.map((c) => db.collection(c).doc(key).get())),
+    db.collection("users").doc(key).get(),
+  ]);
+  for (let i = 0; i < SELLER_COLLECTIONS.length; i++) {
+    const collection = SELLER_COLLECTIONS[i]!;
+    const snap = roleSnaps[i]!;
     if (!snap.exists) continue;
     const d = snap.data()!;
     return {
@@ -91,7 +99,6 @@ export async function resolveSellerAccount(phone: string): Promise<SellerAccount
     };
   }
 
-  const userSnap = await db.collection("users").doc(key).get();
   if (userSnap.exists) {
     const d = userSnap.data()!;
     const role = String(d.role ?? "");
