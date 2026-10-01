@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ICONS } from '../constants';
 import { getUserProfile, updateSubscriptionStatus, logFailedPayment } from '../firebase';
+import { reportSubscriptionCreated } from '../lib/ads/openai-pixel';
 import { useI18n } from '../i18n/I18nContext';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -466,6 +467,26 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 paymentResponse.razorpay_payment_id
               );
               return;
+            }
+
+            // OpenAI Ads conversion — only past the guard above, so the
+            // subscription document is known to have been written. A verified
+            // payment on its own is NOT an enrolment: when paymentLogged is
+            // false the seller paid but activation failed, and that must not
+            // report a conversion.
+            //
+            // Fire-and-forget and self-silencing, so a blocked Pixel or a
+            // failed request cannot affect the rest of this handler. The server
+            // independently re-checks capture, activation, renewal and
+            // duplication before anything reaches OpenAI.
+            try {
+              const idToken = await user.getIdToken();
+              reportSubscriptionCreated({
+                razorpayPaymentId: paymentResponse.razorpay_payment_id,
+                idToken,
+              });
+            } catch {
+              /* never block activation on measurement */
             }
 
             getUserProfile(user.uid).then(async (profile) => {
