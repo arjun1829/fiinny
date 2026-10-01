@@ -1,0 +1,18 @@
+// REFERENCE ONLY — do not deploy from this app.
+//
+// The analytics namespace lives in the FinERP UAT Firestore database
+// (finny-erp-uat), whose rules are owned and deployed by KARANARJUNKSKPVTLTD
+// (that project is the ERP app's "uat" alias — see its .firebaserc). This file
+// is a copy of the block that was added to
+// ../KARANARJUNKSKPVTLTD/firestore.rules so reviewers can see it alongside the
+// app.
+//
+// To change these rules, edit ../KARANARJUNKSKPVTLTD/firestore.rules and deploy
+// from THERE (never `firebase deploy` the whole project from this app — this
+// app's firebase.json intentionally declares hosting only).
+
+match /analytics/{document=**} {
+  // isSuperAdmin() is defined in the shared rules (master-tenant admin/analyst,
+  // or the superadmin@fiinny.com platform account).
+  allow read, write: if request.auth != null && isSuperAdmin();
+}

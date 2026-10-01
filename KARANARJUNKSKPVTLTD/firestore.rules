@@ -868,6 +868,19 @@ service cloud.firestore {
       }
 
     } // end /tenants/{tenantId}
-    
+
+    // ── analytics ─────────────────────────────────────────────────────────────
+    // Namespace owned by the standalone KrishiDukan Analytics app
+    // (../krishidukan-analytics). Platform-level data, isolated from all
+    // tenant-scoped ERP collections. Holds normalized monthly Firebase Analytics
+    // reports, e.g. analytics/{category}/months/{YYYY-MM}/rows/{rowId}.
+    // Restricted to the platform super admin, matching how other platform-wide
+    // collections (plans, platformAuditLogs, tenantSubscriptions) are gated and
+    // the analytics app's own client-side authorization check. Real writes arrive
+    // in a later phase (CSV import).
+    match /analytics/{document=**} {
+      allow read, write: if request.auth != null && isSuperAdmin();
+    }
+
   } // end /databases/{database}/documents
 }
