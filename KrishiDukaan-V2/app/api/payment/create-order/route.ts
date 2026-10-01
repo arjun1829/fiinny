@@ -231,7 +231,9 @@ export async function POST(request: Request) {
       : subtotal;
 
     const options = {
-      amount: baseAmount * 100, // paise
+      // paise — rounded: a decimal ladder price (e.g. 10.15) × 100 is not an
+      // integer in floating point, and Razorpay rejects a fractional amount.
+      amount: Math.round(baseAmount * 100),
       currency: 'INR',
       receipt: `receipt_${Date.now()}`,
       notes: {
