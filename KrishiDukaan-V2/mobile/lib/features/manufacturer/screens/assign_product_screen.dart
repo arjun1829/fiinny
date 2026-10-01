@@ -44,8 +44,18 @@ class _AssignProductScreenState
   /// re-assign a product a retailer already stocks, with no indication it was
   /// already theirs; the duplicate was then rejected server-side with a bare
   /// error.
+  /// Full seat-listing docs behind [_assignedPairs] — kept so the "currently
+  /// assigned" section (shown when opened from a specific retailer) can list
+  /// what they already have, with a Remove action per row. Web's per-retailer
+  /// assign modal shows this same list; the app previously only prevented
+  /// re-assigning a duplicate with no way to see or undo an assignment.
+  List<Map<String, dynamic>> _assignedListings = [];
   Set<String> _assignedPairs = {};
   bool _assignedLoading = true;
+
+  /// Seat listing id currently being removed, so only that row shows a
+  /// spinner and the rest of the screen stays interactive.
+  String? _removingListingId;
 
   @override
   void initState() {
@@ -62,6 +72,7 @@ class _AssignProductScreenState
     );
     if (!mounted) return;
     setState(() {
+      _assignedListings = listings;
       _assignedPairs = listings
           .map((l) =>
               '${l['retailerDocId'] ?? ''}|${l['manufacturerProductId'] ?? ''}')
@@ -74,6 +85,60 @@ class _AssignProductScreenState
     final productId = _selectedProduct?.id;
     if (productId == null) return false;
     return _assignedPairs.contains('$retailerPhone|$productId');
+  }
+
+  /// Removes one currently-assigned product, with a confirmation dialog —
+  /// this frees the seat and (per [ManufacturerRepository.removeProductAssignment])
+  /// takes the retailer's copy offline and off the marketplace.
+  Future<void> _removeAssignment(
+    String manufacturerPhone,
+    Map<String, dynamic> listing,
+    String productName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove assignment?'),
+        content: Text(
+          'This frees the seat and takes "$productName" offline for this '
+          'retailer. They can be re-assigned any product again afterwards.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final listingId = listing['id'] as String;
+    setState(() => _removingListingId = listingId);
+    try {
+      await ManufacturerRepository().removeProductAssignment(listingId);
+      await _loadAssigned(manufacturerPhone);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Removed "$productName".')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not remove assignment: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _removingListingId = null);
+    }
   }
 
   @override
@@ -124,6 +189,27 @@ class _AssignProductScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Opened for one specific retailer: show what they already have
+            // before asking what to add — this is the view the checklist
+            // called "Assign Products tab doesn't show assigned products".
+            if (widget.initialRetailerPhone != null)
+              catalogAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (_, _) => const SizedBox.shrink(),
+                data: (products) => _CurrentlyAssignedSection(
+                  loading: _assignedLoading,
+                  listings: _assignedListings
+                      .where((l) =>
+                          l['retailerDocId'] == widget.initialRetailerPhone)
+                      .toList(),
+                  products: products,
+                  removingListingId: _removingListingId,
+                  onRemove: (listing, name) => _removeAssignment(phone, listing, name),
+                ),
+              ),
+            if (widget.initialRetailerPhone != null)
+              const SizedBox(height: 24),
+
             // Step 1: Choose product
             _StepHeader(
                 number: '1', title: 'Choose a product to assign'),
@@ -582,6 +668,112 @@ class _RetailerSelectionTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Currently assigned" list shown above the picker when this screen was
+/// opened for one specific retailer — mirrors web's per-retailer assign
+/// modal, which always shows what a retailer already stocks alongside what
+/// can still be added.
+class _CurrentlyAssignedSection extends StatelessWidget {
+  final bool loading;
+  final List<Map<String, dynamic>> listings;
+  final List<CatalogModel> products;
+  final String? removingListingId;
+  final void Function(Map<String, dynamic> listing, String productName) onRemove;
+
+  const _CurrentlyAssignedSection({
+    required this.loading,
+    required this.listings,
+    required this.products,
+    required this.removingListingId,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Currently assigned', style: AppTextStyles.heading3),
+          const SizedBox(height: 2),
+          Text(
+            listings.isEmpty
+                ? 'No products assigned to this retailer yet.'
+                : '${listings.length} product${listings.length == 1 ? '' : 's'} '
+                    'assigned — remove one to free the seat.',
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.onSurfaceVariant),
+          ),
+          if (listings.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...listings.map((listing) {
+              final mfrProductId = listing['manufacturerProductId'] as String?;
+              CatalogModel? product;
+              for (final p in products) {
+                if (p.id == mfrProductId) {
+                  product = p;
+                  break;
+                }
+              }
+              final name = product?.name ?? 'Unknown product';
+              final removing = removingListingId == listing['id'];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: AppTextStyles.bodyMedium
+                                  .copyWith(fontWeight: FontWeight.w600)),
+                          if (product != null)
+                            Text(
+                              CurrencyUtils.format(product.price),
+                              style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.onSurfaceVariant),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (removing)
+                      const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      TextButton(
+                        onPressed: () => onRemove(listing, name),
+                        style: TextButton.styleFrom(
+                            foregroundColor: AppColors.error),
+                        child: const Text('Remove'),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
       ),
     );
   }

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/cart_model.dart';
+import '../models/store_commercial.dart';
+import 'commercial_repository.dart';
 
 /// Mirrors web's `carts/{phone}` collection (app/cartService.ts) so the same
 /// signed-in user's cart is shared between the mobile app and the website —
@@ -8,9 +10,15 @@ import '../models/cart_model.dart';
 ///
 /// Schema written/read here matches web's `StoredCartItem` field-for-field:
 /// productId, storeId, sellerPhone, sellerName, variantUnit, quantity,
-/// sellerType, sellingPrice, originalPrice, discountPct.
+/// sellerType, sellingPrice, originalPrice, discountPct — plus the store's own
+/// GST + delivery settings (gstApplicable, gstRate, gstIncluded,
+/// extraDeliveryCharge, freeDelivery), written exactly as the web writes them.
+/// Dropping those on save would erase what the website captured for the same
+/// cart, so a cart that moves between web and app keeps the buyer's price and
+/// GST intact.
 class SharedCartRepository {
   final _db = FirebaseFirestore.instance;
+  final _commercial = CommercialRepository();
 
   Future<void> saveCart(String phone, List<CartItemModel> items) async {
     if (phone.isEmpty) return;
@@ -40,6 +48,15 @@ class SharedCartRepository {
         'sellingPrice': item.price,
         if (item.hasDiscount) 'originalPrice': item.originalPrice,
         if (item.discountPct > 0) 'discountPct': item.discountPct,
+        // The store's own commercial settings, as the web's toStoredItem
+        // writes them: gstIncluded is an explicit boolean whenever GST applies
+        // (so an exclusive line survives a reload), the rest only when set.
+        if (item.gstApplicable) 'gstApplicable': true,
+        if (item.gstRate > 0) 'gstRate': item.gstRate,
+        if (item.gstApplicable) 'gstIncluded': item.gstIncluded,
+        if (item.extraDeliveryCharge > 0)
+          'extraDeliveryCharge': item.extraDeliveryCharge,
+        if (item.freeDelivery) 'freeDelivery': true,
       };
 
   /// Loads `carts/{phone}` and reconstructs full [CartItemModel]s by fetching
@@ -94,8 +111,36 @@ class SharedCartRepository {
         if (d != null) productMap[doc.id] = d;
       }
 
+      // A stored line that carries ANY commercial field keeps exactly those
+      // (what the buyer saw when they added it — the web's rule). A line with
+      // none (older carts, or ones an older app build saved) is resolved from
+      // the store's own copy, then its availability entry, then the product.
+      final commercialFor = <int, StoreCommercial>{};
+      await Future.wait([
+        for (var i = 0; i < stored.length; i++)
+          () async {
+            final item = stored[i];
+            if (StoreCommercial.hasAny(item)) {
+              commercialFor[i] = StoreCommercial.fromMap(item);
+              return;
+            }
+            final productId = (item['productId'] as String?) ?? '';
+            final phone = (item['sellerPhone'] as String?) ??
+                (item['storeId'] as String?) ??
+                '';
+            if (productId.isEmpty || phone.isEmpty) return;
+            final resolved = await _commercial.resolve(
+              catalogId: productId,
+              sellerPhone: phone,
+              canonical: productMap[productId],
+            );
+            if (resolved != null) commercialFor[i] = resolved;
+          }(),
+      ]);
+
       final result = <CartItemModel>[];
-      for (final item in stored) {
+      for (var idx = 0; idx < stored.length; idx++) {
+        final item = stored[idx];
         final productId = (item['productId'] as String?) ?? '';
         final product = productMap[productId];
         if (product == null) continue; // product no longer exists
@@ -133,8 +178,11 @@ class SharedCartRepository {
           discountPct: (item['discountPct'] as num?)?.toDouble() ?? 0,
           quantity: (item['quantity'] as num?)?.toInt() ?? 1,
           variantLabel: variantUnit.isNotEmpty ? variantUnit : null,
-          gstApplicable: product['gstApplicable'] == true,
-          gstRate: (product['gstRate'] as num?)?.toDouble() ?? 0,
+          gstApplicable: commercialFor[idx]?.gstApplicable ?? false,
+          gstRate: commercialFor[idx]?.gstRate ?? 0,
+          gstIncluded: commercialFor[idx]?.gstIncluded ?? true,
+          extraDeliveryCharge: commercialFor[idx]?.extraDeliveryCharge ?? 0,
+          freeDelivery: commercialFor[idx]?.freeDelivery ?? false,
         ));
       }
       return result;

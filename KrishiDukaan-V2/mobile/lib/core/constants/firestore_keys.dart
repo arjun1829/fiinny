@@ -54,12 +54,27 @@ class FirestoreKeys {
   static const status = 'status';
   static const items = 'items';
 
-  // order statuses
-  static const statusPending = 'pending';
+  // Order statuses — these are the CANONICAL Firestore values, identical to
+  // OrderStatus in types/order.ts on the web. Mobile used to keep its own
+  // vocabulary ('pending'/'dispatched'/'cancelled') and translate on read and
+  // write, which broke the moment 'dispatched' became a real status of its own:
+  // mobile's 'dispatched' meant out_for_delivery, so the two collided. There is
+  // no translation layer any more — what Firestore stores is what mobile uses.
+  static const statusPlaced = 'placed';
   static const statusAccepted = 'accepted';
   static const statusDispatched = 'dispatched';
+  static const statusOutForDelivery = 'out_for_delivery';
   static const statusDelivered = 'delivered';
-  static const statusCancelled = 'cancelled';
+  static const statusRejected = 'rejected';
+
+  /// Progression order, mirroring ORDER_STATUS_FLOW on the web.
+  static const orderStatusFlow = [
+    statusPlaced,
+    statusAccepted,
+    statusDispatched,
+    statusOutForDelivery,
+    statusDelivered,
+  ];
 
   // manufacturerNetwork fields
   static const manufacturerPhone = 'manufacturerPhone';

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -26,6 +27,11 @@ String? routeForNotification(String? type, Map<String, dynamic> data) {
   switch (type) {
     case 'order':
       return '/dashboard/orders';
+    // Another seller rejected an order this seller could fulfil. Lands on the
+    // Requests tab, same as the web's /dashboard/orders?tab=requests that the
+    // WhatsApp alert links to.
+    case 'order_offer':
+      return '/dashboard/orders?tab=requests';
     case 'order_update':
       final id = str('orderId');
       return id != null ? '/orders/$id' : '/orders';
@@ -36,6 +42,17 @@ String? routeForNotification(String? type, Map<String, dynamic> data) {
           : '/dashboard/inventory';
     case 'network':
       return '/dashboard';
+
+    // A buyer abandoned a checkout for one of this seller's products. The
+    // list is the useful landing place — it carries the buyer's number and
+    // the follow-up actions. Mirrors web's /dashboard/enquiry, which the
+    // WhatsApp alert for the same event links to.
+    // Carries the enquiry id so the screen opens with that buyer on top.
+    case 'enquiry':
+      final id = str('enquiryId');
+      return id != null
+          ? '/dashboard/enquiry?id=${Uri.encodeComponent(id)}'
+          : '/dashboard/enquiry';
 
     // Seller added or was assigned a product, and low-stock alerts, both open
     // the inventory list scrolled to (and editing) that product.
@@ -74,6 +91,11 @@ String? routeForNotification(String? type, Map<String, dynamic> data) {
           ? '/profile/edit?highlight=${Uri.encodeComponent(missing)}'
           : '/profile/edit?highlight=1';
 
+    // Bank details and/or KYC docs still missing — both live on the same
+    // screen, so there's nothing to branch on, just open it directly.
+    case 'payout_incomplete':
+      return '/dashboard/payouts';
+
     // Open the renewal screen with the existing plan already selected, so the
     // user only has to pay.
     case 'subscription_expiry':
@@ -102,6 +124,23 @@ class NotificationService {
 
   bool _initialized = false;
 
+  // A tap that LAUNCHED the app (getInitialMessage) arrives while the splash
+  // screen is still up — and splash then calls `context.go('/')`, which
+  // replaces the whole stack and silently threw the pushed screen away. That
+  // is why tapping a notification with the app closed only ever opened Home.
+  // Such a route is parked here until splash has navigated, then pushed.
+  static String? _pendingLaunchRoute;
+  static bool _launchSettled = false;
+
+  /// Called by the splash screen right after it navigates to the first real
+  /// screen. Opens the notification that launched the app, if any.
+  static void onLaunchSettled(GoRouter router) {
+    _launchSettled = true;
+    final route = _pendingLaunchRoute;
+    _pendingLaunchRoute = null;
+    if (route != null) router.push(route);
+  }
+
   Future<void> initialize(String userPhone, {GoRouter? router}) async {
     if (_initialized) return;
     _initialized = true;
@@ -113,11 +152,31 @@ class NotificationService {
       return; // Notifications blocked — skip rest of FCM setup
     }
 
-    // Local notifications setup (for showing heads-up in foreground)
+    // iOS shows FCM notifications itself while the app is open, once asked to
+    // (Android needs the local-notification heads-up below instead).
+    if (_isIOS) {
+      await _fcm.setForegroundNotificationPresentationOptions(
+          alert: true, badge: true, sound: true);
+    }
+
+    // Local notifications setup (for showing heads-up in foreground).
+    //
+    // The Darwin settings are REQUIRED on iOS: with Android settings only, the
+    // plugin throws "iOS settings must be set when targeting iOS platform",
+    // which aborted this whole method before the FCM token was saved — so no
+    // iPhone ever had an fcmToken on its user doc and no push could reach iOS.
+    // Permission is already requested through FCM above, so it is not asked
+    // for again here.
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     await _localNotifications.initialize(
-      settings: const InitializationSettings(android: androidSettings),
+      settings: const InitializationSettings(
+          android: androidSettings, iOS: darwinSettings),
       // Foreground local notification tapped while app is open
       onDidReceiveNotificationResponse: (details) {
         if (router == null) return;
@@ -158,18 +217,47 @@ class NotificationService {
         initial.data['type'] as String?,
         initial.data,
       );
-      if (route != null) router.push(route);
+      if (route != null) {
+        if (_launchSettled) {
+          router.push(route);
+        } else {
+          _pendingLaunchRoute = route;
+        }
+      }
     }
 
-    // Save (and refresh) FCM token in Firestore
-    final token = await _fcm.getToken();
-    if (token != null) await _saveToken(userPhone, token);
+    // Save (and refresh) the FCM token on the user doc — the address every
+    // push is sent to (functions/src/notify.ts reads users/{phone}.fcmToken).
+    //
+    // Refresh listener FIRST: on iOS the FCM token only exists once Apple has
+    // issued the APNs token, which can land a few seconds after launch; it
+    // then arrives through onTokenRefresh even if getToken() below is early.
     _fcm.onTokenRefresh.listen((t) => _saveToken(userPhone, t));
+    try {
+      if (_isIOS) {
+        // getToken() throws "apns-token-not-set" until APNs responds. Wait up
+        // to ~10 s for it rather than failing on a cold start.
+        for (var i = 0; i < 10; i++) {
+          if (await _fcm.getAPNSToken() != null) break;
+          await Future<void>.delayed(const Duration(seconds: 1));
+        }
+      }
+      final token = await _fcm.getToken();
+      if (token != null) await _saveToken(userPhone, token);
+    } catch (e) {
+      debugPrint('[NotificationService] FCM token not available yet: $e');
+    }
   }
+
+  static bool get _isIOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   void _showForegroundNotification(RemoteMessage message) {
     final n = message.notification;
     if (n == null) return;
+    // iOS already displays it (setForegroundNotificationPresentationOptions);
+    // showing a local copy too would give the user two banners.
+    if (_isIOS) return;
 
     final route = routeForNotification(
       message.data['type'] as String?,

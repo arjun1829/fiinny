@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
+import { requireAuthed } from "../../../lib/admin-auth";
 import { sendEmail } from "../../../lib/email/mailer";
 import { buildWeeklyReportEmail } from "../../../lib/email/report-template";
 import type { ManufacturerReportData } from "../../../lib/reports/manufacturer-report-data";
 
 export async function POST(request: Request) {
+  // The recipient comes from the request body, so an unauthenticated caller
+  // could send mail from this platform's identity to any address. A verified
+  // token is the minimum bar.
+  const caller = await requireAuthed(request);
+  if (caller instanceof NextResponse) return caller;
+
   try {
     const body = await request.json() as {
       // Path A (admin UI): full report data pre-built client-side — no firebase-admin needed

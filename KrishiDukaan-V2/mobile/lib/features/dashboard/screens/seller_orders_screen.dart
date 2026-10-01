@@ -1,10 +1,15 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/providers/user_provider.dart';
@@ -12,10 +17,14 @@ import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../data/dashboard_repository.dart';
+import '../data/order_offers_repository.dart';
 import '../providers/dashboard_provider.dart';
 
 class SellerOrdersScreen extends ConsumerWidget {
-  const SellerOrdersScreen({super.key});
+  /// `requests` or `payments` to open on that tab (from `?tab=`); anything
+  /// else opens Orders.
+  final String? initialTab;
+  const SellerOrdersScreen({super.key, this.initialTab});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,6 +42,7 @@ class SellerOrdersScreen extends ConsumerWidget {
         return _SellerOrdersBody(
           sellerPhone: user.phone,
           sellerName: user.name,
+          initialTab: initialTab,
         );
       },
     );
@@ -42,9 +52,11 @@ class SellerOrdersScreen extends ConsumerWidget {
 class _SellerOrdersBody extends ConsumerStatefulWidget {
   final String sellerPhone;
   final String sellerName;
+  final String? initialTab;
   const _SellerOrdersBody({
     required this.sellerPhone,
     required this.sellerName,
+    this.initialTab,
   });
 
   @override
@@ -53,11 +65,20 @@ class _SellerOrdersBody extends ConsumerStatefulWidget {
 
 class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
   String _activeFilter = 'all';
-  String _activeViewTab = 'orders'; // 'orders' or 'payments'
+  // 'orders', 'requests' or 'payments'
+  late String _activeViewTab =
+      const ['requests', 'payments'].contains(widget.initialTab)
+          ? widget.initialTab!
+          : 'orders';
 
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(sellerOrdersProvider(widget.sellerPhone));
+    // Never errors (the repository resolves failures to an empty list), so an
+    // unreadable offers path can't take the real orders list down with it.
+    final offers =
+        ref.watch(openOrderOffersProvider(widget.sellerPhone)).value ??
+            const <OrderOfferModel>[];
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -69,7 +90,10 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () => ref.invalidate(sellerOrdersProvider(widget.sellerPhone)),
+            onPressed: () {
+              ref.invalidate(sellerOrdersProvider(widget.sellerPhone));
+              ref.invalidate(openOrderOffersProvider(widget.sellerPhone));
+            },
           ),
         ],
       ),
@@ -81,35 +105,93 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
           return ErrorView(message: 'Could not load orders: $err');
         },
         data: (orders) {
-          if (orders.isEmpty) {
-            return const EmptyState(
-              title: 'No orders yet',
-              subtitle: 'New orders from customers will appear here',
-              icon: Icons.receipt_long_outlined,
-            );
-          }
-
           // Count statuses
           final total = orders.length;
-          final placedCount = orders.where((o) => o.status == 'pending').length;
-          final dispatchedCount = orders.where((o) => o.status == 'dispatched').length;
-          final deliveredCount = orders.where((o) => o.status == 'delivered').length;
-          final rejectedCount = orders.where((o) => o.status == 'cancelled').length;
+          final placedCount = orders.where((o) => o.status == 'placed').length;
           final acceptedCount = orders.where((o) => o.status == 'accepted').length;
+          final dispatchedCount = orders.where((o) => o.status == 'dispatched').length;
+          final outForDeliveryCount =
+              orders.where((o) => o.status == 'out_for_delivery').length;
+          final deliveredCount = orders.where((o) => o.status == 'delivered').length;
+          final rejectedCount = orders.where((o) => o.status == 'rejected').length;
 
           final paidOrders = orders.where((o) => o.payment?.status == 'paid').toList();
           final paidOrdersCount = paidOrders.length;
 
           final filteredOrders = _activeFilter == 'all'
               ? orders
-              : orders.where((o) {
-                  if (_activeFilter == 'pending') return o.status == 'pending';
-                  if (_activeFilter == 'dispatched') return o.status == 'dispatched';
-                  if (_activeFilter == 'delivered') return o.status == 'delivered';
-                  if (_activeFilter == 'cancelled') return o.status == 'cancelled';
-                  if (_activeFilter == 'accepted') return o.status == 'accepted';
-                  return true;
-                }).toList();
+              // The filter key IS the canonical status, so no per-status branch
+              // is needed — a new status can never be silently unfilterable.
+              : orders.where((o) => o.status == _activeFilter).toList();
+
+          final Widget content;
+          if (_activeViewTab == 'requests') {
+            content = _OrderRequestsView(
+              offers: offers,
+              onAccepted: () {
+                ref.invalidate(sellerOrdersProvider(widget.sellerPhone));
+                setState(() {
+                  _activeViewTab = 'orders';
+                  _activeFilter = 'all';
+                });
+              },
+            );
+          } else if (orders.isEmpty) {
+            // Kept inside the tab layout (not a whole-screen empty state) so a
+            // seller with no orders yet can still reach an offered one.
+            content = const EmptyState(
+              title: 'No orders yet',
+              subtitle: 'New orders from customers will appear here',
+              icon: Icons.receipt_long_outlined,
+            );
+          } else if (_activeViewTab == 'payments') {
+            content = _buildPaymentsView(orders);
+          } else {
+            content = Column(
+              children: [
+                // Filter chips row
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      _filterChip('all', 'All ($total)'),
+                      _filterChip('placed', 'New ($placedCount)'),
+                      _filterChip('accepted', 'Accepted ($acceptedCount)'),
+                      _filterChip('dispatched', 'Dispatched ($dispatchedCount)'),
+                      _filterChip('out_for_delivery',
+                          'Out for Delivery ($outForDeliveryCount)'),
+                      _filterChip('delivered', 'Delivered ($deliveredCount)'),
+                      _filterChip('rejected', 'Rejected ($rejectedCount)'),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: filteredOrders.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No orders in this category',
+                            style: AppTextStyles.body.copyWith(
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+                          itemCount: filteredOrders.length,
+                          itemBuilder: (_, i) => _SellerOrderCard(
+                            order: filteredOrders[i],
+                            sellerName: widget.sellerName,
+                            sellerPhone: widget.sellerPhone,
+                            onStatusChanged: () {
+                              ref.invalidate(sellerOrdersProvider(widget.sellerPhone));
+                            },
+                          ),
+                        ),
+                ),
+              ],
+            );
+          }
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,8 +215,9 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
                 ),
               ),
 
-              // View tabs: Orders (5) | Payments
-              Padding(
+              // View tabs: Orders (5) | Requests | Payments
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Container(
                   padding: const EdgeInsets.all(4),
@@ -146,6 +229,8 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildViewTab('orders', 'Orders ($total)'),
+                      _buildViewTab('requests', 'Requests',
+                          badgeCount: offers.length, highlightBadge: true),
                       _buildViewTab('payments', 'Payments', badgeCount: paidOrdersCount),
                     ],
                   ),
@@ -153,53 +238,7 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
               ),
 
               // View content
-              Expanded(
-                child: _activeViewTab == 'payments'
-                    ? _buildPaymentsView(orders)
-                    : Column(
-                        children: [
-                          // Filter chips row
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Row(
-                              children: [
-                                _filterChip('all', 'All ($total)'),
-                                _filterChip('pending', 'New ($placedCount)'),
-                                _filterChip('dispatched', 'Dispatched ($dispatchedCount)'),
-                                _filterChip('delivered', 'Delivered ($deliveredCount)'),
-                                _filterChip('cancelled', 'Rejected ($rejectedCount)'),
-                                if (acceptedCount > 0)
-                                  _filterChip('accepted', 'Processing ($acceptedCount)'),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: filteredOrders.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No orders in this category',
-                                      style: AppTextStyles.body.copyWith(
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-                                    itemCount: filteredOrders.length,
-                                    itemBuilder: (_, i) => _SellerOrderCard(
-                                      order: filteredOrders[i],
-                                      sellerName: widget.sellerName,
-                                      sellerPhone: widget.sellerPhone,
-                                      onStatusChanged: () {
-                                        ref.invalidate(sellerOrdersProvider(widget.sellerPhone));
-                                      },
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      ),
-              ),
+              Expanded(child: content),
             ],
           );
         },
@@ -207,7 +246,8 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
     );
   }
 
-  Widget _buildViewTab(String viewTabKey, String label, {int badgeCount = 0}) {
+  Widget _buildViewTab(String viewTabKey, String label,
+      {int badgeCount = 0, bool highlightBadge = false}) {
     final isSelected = _activeViewTab == viewTabKey;
     return GestureDetector(
       onTap: () {
@@ -235,7 +275,11 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              viewTabKey == 'orders' ? Icons.shopping_bag_outlined : Icons.credit_card_outlined,
+              switch (viewTabKey) {
+                'orders' => Icons.shopping_bag_outlined,
+                'requests' => Icons.move_to_inbox_outlined,
+                _ => Icons.credit_card_outlined,
+              },
               size: 16,
               color: isSelected ? AppColors.onSurface : AppColors.onSurfaceVariant,
             ),
@@ -252,7 +296,7 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade100,
+                  color: highlightBadge ? AppColors.warning : Colors.green.shade100,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -260,7 +304,7 @@ class _SellerOrdersBodyState extends ConsumerState<_SellerOrdersBody> {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
+                    color: highlightBadge ? Colors.white : Colors.green.shade700,
                   ),
                 ),
               ),
@@ -447,11 +491,16 @@ class _SellerOrderCard extends StatelessWidget {
     final addressStr = [
       if (addressText.isNotEmpty) addressText else if (addressName.isNotEmpty) addressName,
       if (addressCity.isNotEmpty) addressCity,
+      // District and state (what priced the delivery) — app orders carry them.
+      if (('${order.customerAddress['district'] ?? ''}').trim().isNotEmpty)
+        '${order.customerAddress['district']}'.trim(),
+      if (('${order.customerAddress['state'] ?? ''}').trim().isNotEmpty)
+        '${order.customerAddress['state']}'.trim(),
       if (addressPincode.isNotEmpty) addressPincode
     ].join(', ');
 
     final statusConfig = switch (order.status) {
-      'pending' => (
+      'placed' => (
           label: 'Order Placed',
           icon: Icons.access_time,
           color: Colors.amber.shade800,
@@ -459,13 +508,20 @@ class _SellerOrderCard extends StatelessWidget {
           border: Colors.amber.shade200
         ),
       'accepted' => (
-          label: 'Processing',
+          label: 'Accepted',
           icon: Icons.check_circle_outline,
           color: Colors.blue.shade700,
           bg: Colors.blue.shade50,
           border: Colors.blue.shade200
         ),
       'dispatched' => (
+          label: 'Dispatched',
+          icon: Icons.inventory_2_outlined,
+          color: Colors.indigo.shade700,
+          bg: Colors.indigo.shade50,
+          border: Colors.indigo.shade200
+        ),
+      'out_for_delivery' => (
           label: 'Out for Delivery',
           icon: Icons.local_shipping_outlined,
           color: Colors.purple.shade700,
@@ -478,6 +534,13 @@ class _SellerOrderCard extends StatelessWidget {
           color: Colors.green.shade700,
           bg: Colors.green.shade50,
           border: Colors.green.shade200
+        ),
+      'reassigning' => (
+          label: 'Offered to other sellers',
+          icon: Icons.sync,
+          color: Colors.orange.shade800,
+          bg: Colors.orange.shade50,
+          border: Colors.orange.shade200
         ),
       'cancelled' => (
           label: 'Rejected',
@@ -709,6 +772,33 @@ class _OrderProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (status == 'reassigning') {
+      // Rejected by this seller and now offered to others; it leaves this
+      // list if one accepts, or turns into a refund after 24 hours.
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.sync, size: 16, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'You rejected this order. It has been offered to other sellers '
+                'for 24 hours; the customer is refunded if no one accepts.',
+                style: AppTextStyles.caption.copyWith(color: Colors.orange.shade900),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (status == 'cancelled') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -731,17 +821,19 @@ class _OrderProgressBar extends StatelessWidget {
       );
     }
 
-    final steps = ['pending', 'dispatched', 'delivered'];
-    final labels = ['Order Placed', 'Out for Delivery', 'Delivered'];
-    final icons = [Icons.access_time, Icons.local_shipping_outlined, Icons.check_circle_outline];
+    // Mirrors FirestoreKeys.orderStatusFlow / ORDER_STATUS_FLOW on the web, so
+    // the seller, the customer app and the website all show the same stages.
+    const steps = ['placed', 'accepted', 'dispatched', 'out_for_delivery', 'delivered'];
+    const labels = ['Placed', 'Accepted', 'Dispatched', 'Out for\nDelivery', 'Delivered'];
+    const icons = [
+      Icons.access_time,
+      Icons.check_circle_outline,
+      Icons.inventory_2_outlined,
+      Icons.local_shipping_outlined,
+      Icons.done_all,
+    ];
 
-    final currentIdx = switch (status) {
-      'pending' => 0,
-      'accepted' => 0,
-      'dispatched' => 1,
-      'delivered' => 2,
-      _ => -1,
-    };
+    final currentIdx = steps.indexOf(status);
 
     return Row(
       children: List.generate(steps.length, (idx) {
@@ -907,12 +999,137 @@ class _ActionButtons extends StatefulWidget {
 class _ActionButtonsState extends State<_ActionButtons> {
   bool _loading = false;
 
+  /// One step forward at a time, mirroring NEXT_ACTIONS in
+  /// app/dashboard/orders/page.tsx so a seller sees the same choices on phone
+  /// and web. Reject stays available until the goods leave the seller: once
+  /// dispatched, cancelling is a refund rather than a status flip.
+  static List<_OrderAction> _nextActionsFor(String status) => switch (status) {
+        'placed' => const [
+            _OrderAction('accepted', 'Accept Order', Icons.check_circle_outline,
+                AppColors.info),
+            _OrderAction('rejected', 'Reject', Icons.cancel_outlined, null,
+                destructive: true),
+          ],
+        'accepted' => const [
+            _OrderAction('dispatched', 'Mark Dispatched',
+                Icons.inventory_2_outlined, AppColors.primary),
+            _OrderAction('rejected', 'Reject', Icons.cancel_outlined, null,
+                destructive: true),
+          ],
+        'dispatched' => const [
+            _OrderAction('out_for_delivery', 'Out for Delivery',
+                Icons.local_shipping_outlined, AppColors.primary),
+          ],
+        'out_for_delivery' => const [
+            _OrderAction('delivered', 'Mark Delivered', Icons.done_all_outlined,
+                AppColors.success),
+          ],
+        _ => const [],
+      };
+
   Future<void> _updateStatus(String newStatus) async {
+    // Reject goes through the server (POST /api/orders/reject), not a bare
+    // Firestore status write: a paid order needs its Razorpay refund issued
+    // (and the seller's Route transfer reversed, if one already went out) as
+    // part of the SAME action, mirroring app/dashboard/orders/page.tsx —
+    // there is no way to reject a paid order here and forget the refund.
+    if (newStatus == 'rejected') {
+      await _rejectWithReason();
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       await DashboardRepository()
           .updateOrderStatus(widget.order.id, newStatus);
       widget.onStatusChanged();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _rejectWithReason() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('Reject this order?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'If other sellers stock every item, the order is offered to '
+                  'them for 24 hours. Otherwise the customer is refunded '
+                  'automatically if they paid online.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Reason (shown to the customer)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
+    if (reason == null) return; // dialog dismissed
+    if (reason.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('A reason is required to reject an order.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      final res = await http.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/api/orders/reject'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'orderId': widget.order.id, 'reason': reason}),
+      );
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode != 200) {
+        throw Exception(body['error'] ?? 'Could not reject the order.');
+      }
+      widget.onStatusChanged();
+      if (mounted) {
+        final candidates = (body['candidates'] as num?)?.toInt() ?? 0;
+        final message = body['reassigning'] == true
+            ? 'Order offered to $candidates other seller${candidates == 1 ? '' : 's'}. '
+                'The customer is refunded if no one accepts within 24 hours.'
+            : body['refunded'] == true
+                ? 'Order rejected. The customer has been refunded.'
+                : 'Order rejected.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -927,9 +1144,8 @@ class _ActionButtonsState extends State<_ActionButtons> {
               child: CircularProgressIndicator(strokeWidth: 2)));
     }
 
-    final hasActions = widget.order.status == 'pending' ||
-        widget.order.status == 'accepted' ||
-        widget.order.status == 'dispatched';
+    final actions = _nextActionsFor(widget.order.status);
+    final hasActions = actions.isNotEmpty;
 
     final invoiceButton = OutlinedButton.icon(
       onPressed: () => _showInvoiceDialog(
@@ -959,59 +1175,34 @@ class _ActionButtonsState extends State<_ActionButtons> {
       children: [
         Row(
           children: [
-            if (widget.order.status == 'pending') ...[
+            for (final a in actions) ...[
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _updateStatus('cancelled'),
-                  icon: const Icon(Icons.cancel_outlined, size: 16),
-                  label: const Text('Reject'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+                child: a.destructive
+                    ? OutlinedButton.icon(
+                        onPressed: () => _updateStatus(a.next),
+                        icon: Icon(a.icon, size: 16),
+                        label: Text(a.label),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.error,
+                          side: const BorderSide(color: AppColors.error),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      )
+                    : FilledButton.icon(
+                        onPressed: () => _updateStatus(a.next),
+                        icon: Icon(a.icon, size: 16),
+                        label: Text(a.label),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: a.color,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _updateStatus('dispatched'),
-                  icon: const Icon(Icons.local_shipping_outlined, size: 16),
-                  label: const Text('Mark Dispatched'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ] else if (widget.order.status == 'accepted') ...[
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _updateStatus('dispatched'),
-                  icon: const Icon(Icons.local_shipping_outlined, size: 16),
-                  label: const Text('Mark Dispatched'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.info,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ] else if (widget.order.status == 'dispatched') ...[
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _updateStatus('delivered'),
-                  icon: const Icon(Icons.done_all_outlined, size: 16),
-                  label: const Text('Mark Delivered'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.success,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
+              if (a != actions.last) const SizedBox(width: 10),
             ],
           ],
         ),
@@ -1286,6 +1477,11 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
   final addressStr = [
     if (addressText.isNotEmpty) addressText else if (addressName.isNotEmpty) addressName,
     if (addressCity.isNotEmpty) addressCity,
+    // District and state (what priced the delivery) — app orders carry them.
+    if (('${order.customerAddress['district'] ?? ''}').trim().isNotEmpty)
+      '${order.customerAddress['district']}'.trim(),
+    if (('${order.customerAddress['state'] ?? ''}').trim().isNotEmpty)
+      '${order.customerAddress['state']}'.trim(),
     if (addressPincode.isNotEmpty) addressPincode
   ].join(', ');
 
@@ -1577,4 +1773,307 @@ void _showInvoiceDialog(BuildContext context, OrderModel order, {String? sellerN
       ),
     ),
   );
+}
+
+/// Requests tab: orders another seller rejected, offered to this seller for a
+/// limited window. First seller to accept gets the order (and its payout);
+/// mirrors app/dashboard/_components/order-requests-panel.tsx on the web.
+class _OrderRequestsView extends StatelessWidget {
+  final List<OrderOfferModel> offers;
+  final VoidCallback onAccepted;
+  const _OrderRequestsView({required this.offers, required this.onAccepted});
+
+  @override
+  Widget build(BuildContext context) {
+    if (offers.isEmpty) {
+      return const EmptyState(
+        title: 'No order requests',
+        subtitle:
+            'When another seller can\'t fulfil an order for products you sell, '
+            'it will be offered to you here.',
+        icon: Icons.move_to_inbox_outlined,
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      children: [
+        Text(
+          'Another seller couldn\'t fulfil these orders. Accept one to take it '
+          'over — the first seller to accept gets it.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        for (final o in offers)
+          _OrderOfferCard(key: ValueKey(o.orderId), offer: o, onAccepted: onAccepted),
+      ],
+    );
+  }
+}
+
+class _OrderOfferCard extends ConsumerStatefulWidget {
+  final OrderOfferModel offer;
+  final VoidCallback onAccepted;
+  const _OrderOfferCard({super.key, required this.offer, required this.onAccepted});
+
+  @override
+  ConsumerState<_OrderOfferCard> createState() => _OrderOfferCardState();
+}
+
+class _OrderOfferCardState extends ConsumerState<_OrderOfferCard> {
+  bool _busy = false;
+
+  String _timeLeft(DateTime? expiresAt) {
+    if (expiresAt == null) return '';
+    final left = expiresAt.difference(DateTime.now());
+    if (left.isNegative) return 'Expired';
+    if (left.inHours >= 1) return '${left.inHours}h ${left.inMinutes % 60}m left';
+    return '${left.inMinutes.clamp(1, 59)}m left';
+  }
+
+  Future<void> _respond({required bool accept}) async {
+    final offer = widget.offer;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(accept ? 'Accept this order?' : 'Decline this order?'),
+        content: Text(accept
+            ? 'You will need to deliver ${offer.itemSummary}'
+                '${offer.deliveryCity.isNotEmpty ? ' to ${offer.deliveryCity}' : ''}. '
+                'The stock is taken from your inventory and the order moves to '
+                'your Orders list.'
+            : 'The order stays open for other sellers. You won\'t be able to '
+                'take it later.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+                backgroundColor: accept ? AppColors.success : AppColors.error),
+            child: Text(accept ? 'Accept' : 'Decline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref.read(orderOffersRepoProvider).respond(offer.orderId, accept: accept);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(accept
+            ? 'Order accepted. It is now in your Orders list.'
+            : 'Request declined.'),
+      ));
+      if (accept) widget.onAccepted();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final offer = widget.offer;
+    final expired = offer.isExpiredAt(DateTime.now());
+    final area = [
+      if (offer.deliveryCity.isNotEmpty) offer.deliveryCity,
+      if (offer.deliveryPincode.isNotEmpty) offer.deliveryPincode,
+    ].join(' · ');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.orange.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.move_to_inbox_outlined, size: 16, color: Colors.orange.shade800),
+                const SizedBox(width: 6),
+                Text(
+                  'NEW ORDER REQUEST',
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.orange.shade800,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const Spacer(),
+                Icon(Icons.timer_outlined, size: 14,
+                    color: expired ? AppColors.error : AppColors.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text(
+                  _timeLeft(offer.expiresAt),
+                  style: AppTextStyles.caption.copyWith(
+                    color: expired ? AppColors.error : AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '#${offer.orderId.length > 8 ? offer.orderId.substring(0, 8).toUpperCase() : offer.orderId.toUpperCase()}',
+                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      if (area.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 14,
+                                color: AppColors.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Deliver to $area',
+                                style: AppTextStyles.bodySmall
+                                    .copyWith(color: AppColors.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (offer.sellerEarning != null) ...[
+                      Text(
+                        CurrencyUtils.format(offer.sellerEarning!),
+                        style: AppTextStyles.heading3.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                      Text(
+                        'you earn · order ${CurrencyUtils.format(offer.orderValue)}',
+                        style: AppTextStyles.caption.copyWith(fontSize: 9),
+                      ),
+                    ] else
+                      Text(
+                        CurrencyUtils.format(offer.orderValue),
+                        style: AppTextStyles.heading3.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.secondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                children: List.generate(offer.items.length, (idx) {
+                  final item = offer.items[idx];
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      border: idx > 0
+                          ? Border(top: BorderSide(color: Colors.grey.shade200))
+                          : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.variantLabel.isNotEmpty
+                                ? '${item.name} (${item.variantLabel})'
+                                : item.name,
+                            style: AppTextStyles.bodyMedium,
+                          ),
+                        ),
+                        Text(
+                          '× ${item.qty}',
+                          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_busy)
+              const SizedBox(
+                height: 48,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: expired ? null : () => _respond(accept: false),
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('Decline'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: const BorderSide(color: AppColors.error),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: expired ? null : () => _respond(accept: true),
+                      icon: const Icon(Icons.check_circle_outline, size: 16),
+                      label: const Text('Accept & deliver'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.success,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One button offered to the seller on an order card.
+class _OrderAction {
+  final String next;
+  final String label;
+  final IconData icon;
+  /// Null for [destructive] actions, which take the shared error styling.
+  final Color? color;
+  final bool destructive;
+
+  const _OrderAction(this.next, this.label, this.icon, this.color,
+      {this.destructive = false});
 }

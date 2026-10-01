@@ -6,6 +6,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { orderGrandTotal } from "../../../types/order";
 
 export type SearchAppearanceStats = {
   impressions: string;
@@ -70,6 +71,12 @@ export function periodDays(key: AnalyticsPeriodKey): number {
   return ANALYTICS_PERIODS.find((p) => p.key === key)?.days ?? 7;
 }
 
+/** An explicit start/end window for the Custom Date Range filter, alongside
+ * the Week/Month/Year presets above — mirrors AnalyticsRange in the app
+ * (mobile/lib/features/dashboard/data/store_analytics.dart). Both bounds are
+ * inclusive calendar days. */
+export type CustomDateRange = { start: Date; end: Date };
+
 /**
  * The day buckets for a window, oldest first.
  *
@@ -88,6 +95,29 @@ function getDaySeries(days: number): DaySeries[] {
       key: getLocalDayKey(d),
       label:
         days <= 7
+          ? d.toLocaleDateString("en-US", { weekday: "short" })
+          : d.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
+    });
+  }
+  return out;
+}
+
+/** Same day-bucket shape as getDaySeries, but for an explicit start/end
+ * range instead of "the last N days ending today" — backs the Custom Date
+ * Range filter. */
+function getDaySeriesForRange(start: Date, end: Date): DaySeries[] {
+  const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const to = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  const totalDays =
+    Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  const out: DaySeries[] = [];
+  for (let i = 0; i < totalDays; i += 1) {
+    const d = new Date(from);
+    d.setDate(from.getDate() + i);
+    out.push({
+      key: getLocalDayKey(d),
+      label:
+        totalDays <= 7
           ? d.toLocaleDateString("en-US", { weekday: "short" })
           : d.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
     });
@@ -138,8 +168,11 @@ export async function fetchRetailerAnalytics(
   retailerId: string | null,
   profile?: any,
   period: AnalyticsPeriodKey = "week",
+  customRange?: CustomDateRange,
 ): Promise<RetailerAnalytics> {
-  const days = getDaySeries(periodDays(period));
+  const days = customRange
+    ? getDaySeriesForRange(customRange.start, customRange.end)
+    : getDaySeries(periodDays(period));
   const dayKeys = new Set(days.map((d) => d.key));
 
   // ── Candidate identifiers ────────────────────────────────────────────────
@@ -318,7 +351,9 @@ export async function fetchRetailerAnalytics(
       totalOrders += 1;
 
       const cancelled = status === "cancelled" || status === "rejected";
-      const total = Number(data.total ?? 0);
+      // Canonical final total: web orders carry `grandTotal`, mobile orders `total`.
+      // Reading only `total` silently counted every web order as ₹0 here.
+      const total = orderGrandTotal(data as Parameters<typeof orderGrandTotal>[0]);
       if (!cancelled) totalRevenue += total;
 
       const createdAt = data.createdAt as Timestamp | undefined;

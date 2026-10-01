@@ -1,468 +1,673 @@
-import { useState } from 'react';
-import { Search, RotateCcw, Package, CheckCircle, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Search, RotateCcw, Loader2, X, CheckCircle2, Printer, FileText } from 'lucide-react';
 import {
-  collection, query, where, getDocs, addDoc, updateDoc,
-  doc, serverTimestamp, increment, orderBy, limit,
+  query, where, getDocs, orderBy, limit, doc,
+  runTransaction, serverTimestamp,
 } from 'firebase/firestore';
+import { getDoc } from 'firebase/firestore';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { useToast } from '../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
+import { prepareStockReturn, recordStockMovements } from '../utils/stockDeduction';
+import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
+import { PosInvoicePreview } from '../components/PosInvoicePreview';
 
+// ── Types (POS/B2C line-item shape — mrp/amount, NOT unitPrice/price) ─────────
 interface LineItem {
   productId?: string;
   productName: string;
-  sku?: string;
+  mfgCompany?: string;
+  batchNo?: string;
+  expDate?: string;
   quantity: number;
-  unitPrice: number;
-  price?: number;
+  unit?: string;
+  mrp?: number;
+  amount?: number;
+  gstPct?: number;
 }
 
 interface SalesOrder {
   id: string;
   orderNumber: string;
   retailerName?: string;
-  customerName?: string;
   phoneNumber?: string;
+  address?: string;
+  pin?: string;
+  taluka?: string;
+  district?: string;
+  retailerId?: string;
+  invoiceType?: string;
+  paymentMethod?: string;
   grandTotal?: number;
-  netAmount?: number;
-  totalAmount?: number;
-  subtotal?: number;
   createdAt?: any;
   invoiceDate?: string;
+  status?: string;
+  deleted?: boolean;
   lineItems: LineItem[];
+  // Additive return linkage (may be absent on bills with no returns).
+  returnedQty?: Record<string, number>;
+  returnTotal?: number;
+  returnIds?: string[];
+  hasReturns?: boolean;
 }
 
-interface ReturnItem {
-  idx: number;
+// Row state per original line index.
+interface ReturnRow {
+  lineIdx: number;
   returnQty: number;
-  selected: boolean;
 }
 
 const RETURN_REASONS = [
   'Defective / Damaged',
   'Wrong Item Delivered',
   'Customer Changed Mind',
-  'Duplicate Order',
   'Quality Not Satisfactory',
+  'Expired / Near Expiry',
   'Other',
 ];
+const REFUND_METHODS = ['Cash', 'Store Credit', 'Khata Adjustment', 'UPI / Bank Transfer'];
 
-const REFUND_METHODS = ['Cash', 'Store Credit', 'UPI / Bank Transfer'];
+const BILL_FORMATS: ('A5' | 'A4')[] = ['A5', 'A4'];
 
-function getOrderTotal(o: SalesOrder) {
-  return Number(o.grandTotal || o.netAmount || o.totalAmount || o.subtotal || 0);
+// A sale is B2C (returnable in this iteration) when it is NOT a B2B GST invoice
+// and NOT a plain B2B Sales Order (orderNumber 'SO-…'). Mirrors OrderHistoryPage.
+function isB2C(o: { invoiceType?: string; orderNumber?: string }): boolean {
+  return o.invoiceType !== 'B2B_GST' && !(o.orderNumber || '').startsWith('SO-');
 }
 
+const lineRate = (li: LineItem): number => Number(li.mrp) || 0;
+const lineGst = (li: LineItem): number => (typeof li.gstPct === 'number' ? li.gstPct : 5);
+const fmtINR = (n: number) => `₹${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
 export default function ReturnsPage() {
-  const { tenantId } = useAuth();
+  const { tenantId, currentUser, userName } = useAuth();
   const { showToast } = useToast();
+  const { t, i18n } = useTranslation();
+  const L = (key: string): string => t(`pos_bill.${key}`) as string;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [searching, setSearching] = useState(false);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
-  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [rows, setRows] = useState<ReturnRow[]>([]);
   const [reason, setReason] = useState(RETURN_REASONS[0]);
   const [refundMethod, setRefundMethod] = useState(REFUND_METHODS[0]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
-  const [showRecentReturns, setShowRecentReturns] = useState(false);
-  const [recentReturns, setRecentReturns] = useState<any[]>([]);
-  const [loadingRecent, setLoadingRecent] = useState(false);
+  const [billFormat, setBillFormat] = useState<'A5' | 'A4'>('A5');
+
+  const [branding, setBranding] = useState<any>(null);
+  // Set after a successful return; drives the success panel + the print portal.
+  const [completed, setCompleted] = useState<{
+    returnNumber: string;
+    order: SalesOrder;
+    lines: any[];
+    returnTotal: number;
+  } | null>(null);
+
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchInvoiceBranding(tenantId).then(setBranding).catch(() => {});
+  }, [tenantId]);
+
+  // Deep link from Order History: ?orderId=<id> pre-loads that bill's return form.
+  useEffect(() => {
+    const orderId = searchParams.get('orderId');
+    if (!tenantId || !orderId) return;
+    getDoc(getTenantDoc(db, tenantId, 'salesOrders', orderId)).then(snap => {
+      if (!snap.exists()) { showToast('That bill could not be found.', 'error'); return; }
+      const data = { id: snap.id, ...snap.data() } as SalesOrder;
+      if (!isB2C(data)) { showToast('Only B2C bills can be returned.', 'error'); return; }
+      if (data.deleted || String(data.status || '').toLowerCase() === 'cancelled') { showToast('This bill is cancelled and cannot be returned.', 'error'); return; }
+      selectOrder(data);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, searchParams]);
 
   if (!tenantId) return null;
 
+  // ── Search original B2C invoices by bill no / phone / name ─────────────────
   async function handleSearch() {
-    if (!searchTerm.trim()) return;
+    const term = searchTerm.trim();
+    if (!term) return;
     setSearching(true);
     setSelectedOrder(null);
     setOrders([]);
     try {
       const col = getTenantCollection(db, tenantId!, 'salesOrders');
-      const term = searchTerm.trim();
+      const digits = term.replace(/\D/g, '');
+      const results = new Map<string, SalesOrder>();
 
-      // Search by order number
-      const byNum = await getDocs(
-        query(col, where('orderNumber', '==', term), limit(10))
-      );
-      const byPhone = term.length >= 8
-        ? await getDocs(query(col, where('phoneNumber', '==', term), orderBy('createdAt', 'desc'), limit(10)))
-        : { docs: [] };
+      const snaps = await Promise.all([
+        // Exact bill number
+        getDocs(query(col, where('orderNumber', '==', term), limit(10))),
+        // Exact phone
+        digits.length >= 8
+          ? getDocs(query(col, where('phoneNumber', '==', term), orderBy('createdAt', 'desc'), limit(10)))
+          : Promise.resolve({ docs: [] as any[] }),
+        // Name prefix
+        getDocs(query(col, where('retailerName', '>=', term), where('retailerName', '<=', term + ''), orderBy('retailerName'), limit(10))),
+      ]);
 
-      const seen = new Set<string>();
-      const results: SalesOrder[] = [];
-      for (const snap of [...byNum.docs, ...byPhone.docs]) {
-        if (!seen.has(snap.id)) {
-          seen.add(snap.id);
-          results.push({ id: snap.id, ...snap.data() } as SalesOrder);
+      for (const snap of snaps) {
+        for (const d of snap.docs) {
+          const data = { id: d.id, ...d.data() } as SalesOrder;
+          // B2C only, with line items, not soft-deleted or cancelled.
+          if (!isB2C(data) || data.deleted) continue;
+          if (String(data.status || '').toLowerCase() === 'cancelled') continue;
+          if (!Array.isArray(data.lineItems) || data.lineItems.length === 0) continue;
+          results.set(d.id, data);
         }
       }
-      setOrders(results);
-      if (results.length === 0) showToast('No orders found', 'error');
+
+      const list = [...results.values()];
+      setOrders(list);
+      if (list.length === 0) showToast('No B2C bills found for that search.', 'error');
     } catch (e: any) {
-      showToast('Search failed: ' + e.message, 'error');
+      showToast('Search failed: ' + (e?.message || e), 'error');
     } finally {
       setSearching(false);
     }
   }
 
+  function alreadyReturned(order: SalesOrder, lineIdx: number): number {
+    return Number(order.returnedQty?.[String(lineIdx)] || 0);
+  }
+  function returnableQty(order: SalesOrder, lineIdx: number): number {
+    const orig = Number(order.lineItems[lineIdx]?.quantity || 0);
+    return Math.max(0, orig - alreadyReturned(order, lineIdx));
+  }
+
   function selectOrder(order: SalesOrder) {
     setSelectedOrder(order);
-    setReturnItems(
-      (order.lineItems || []).map((_, idx) => ({ idx, returnQty: 0, selected: false }))
-    );
-    setDone(null);
+    setRows((order.lineItems || []).map((_, lineIdx) => ({ lineIdx, returnQty: 0 })));
+    setReason(RETURN_REASONS[0]);
+    setRefundMethod(REFUND_METHODS[0]);
+    setNotes('');
+    setCompleted(null);
   }
 
-  function toggleItem(idx: number) {
-    setReturnItems(prev =>
-      prev.map(ri => ri.idx === idx ? { ...ri, selected: !ri.selected, returnQty: ri.selected ? 0 : 1 } : ri)
-    );
-  }
-
-  function setReturnQty(idx: number, qty: number) {
-    const item = selectedOrder!.lineItems[idx];
-    const max = item.quantity;
-    setReturnItems(prev =>
-      prev.map(ri => ri.idx === idx ? { ...ri, returnQty: Math.min(Math.max(0, qty), max) } : ri)
-    );
-  }
-
-  function getRefundTotal() {
-    if (!selectedOrder) return 0;
-    return returnItems.reduce((sum, ri) => {
-      if (!ri.selected || ri.returnQty <= 0) return sum;
-      const item = selectedOrder.lineItems[ri.idx];
-      const unitPrice = item.unitPrice || item.price || 0;
-      return sum + unitPrice * ri.returnQty;
-    }, 0);
-  }
-
-  async function handleSubmit() {
+  function setReturnQty(lineIdx: number, qty: number) {
     if (!selectedOrder) return;
-    const itemsToReturn = returnItems.filter(ri => ri.selected && ri.returnQty > 0);
-    if (itemsToReturn.length === 0) {
-      showToast('Select at least one item to return', 'error');
-      return;
+    const max = returnableQty(selectedOrder, lineIdx);
+    const clamped = Math.min(Math.max(0, Math.floor(qty || 0)), max);
+    setRows(prev => prev.map(r => (r.lineIdx === lineIdx ? { ...r, returnQty: clamped } : r)));
+  }
+
+  // GST-inclusive return figures (same convention as the POS sale).
+  function computeTotals(order: SalesOrder, activeRows: ReturnRow[]) {
+    let subtotal = 0, taxable = 0, cgst = 0;
+    for (const r of activeRows) {
+      if (r.returnQty <= 0) continue;
+      const li = order.lineItems[r.lineIdx];
+      const amount = lineRate(li) * r.returnQty; // GST-inclusive
+      const g = lineGst(li);
+      const t0 = amount / (1 + g / 100);
+      subtotal += amount;
+      taxable += t0;
+      cgst += (t0 * (g / 2)) / 100;
     }
+    return { subtotal, taxable, cgst, sgst: cgst, totalTax: cgst * 2, returnTotal: subtotal };
+  }
+
+  const totals = selectedOrder ? computeTotals(selectedOrder, rows) : { subtotal: 0, taxable: 0, cgst: 0, sgst: 0, totalTax: 0, returnTotal: 0 };
+  const hasReturnQty = rows.some(r => r.returnQty > 0);
+
+  // ── Submit: one transaction — re-read, revalidate, create return, restock,
+  //    link original, adjust customer counters, bump the CN counter. ──────────
+  async function handleSubmit() {
+    if (!selectedOrder || submitting) return;
+    const activeRows = rows.filter(r => r.returnQty > 0);
+    if (activeRows.length === 0) { showToast('Enter a return quantity for at least one product.', 'error'); return; }
 
     setSubmitting(true);
     try {
-      const returnLineItems = itemsToReturn.map(ri => {
-        const item = selectedOrder.lineItems[ri.idx];
-        return {
-          productId: item.productId || '',
-          productName: item.productName,
-          sku: item.sku || '',
-          returnQty: ri.returnQty,
-          unitPrice: item.unitPrice || item.price || 0,
-          refundAmount: (item.unitPrice || item.price || 0) * ri.returnQty,
-        };
+      // Resolve batch/product restore targets (queries can't run in a txn).
+      const stockLines = activeRows.map(r => {
+        const li = selectedOrder.lineItems[r.lineIdx];
+        return { productId: li.productId || '', productName: li.productName, qty: r.returnQty, batchNo: li.batchNo };
       });
+      const plan = await prepareStockReturn(tenantId!, stockLines);
 
-      const refundTotal = getRefundTotal();
+      const orderRef = getTenantDoc(db, tenantId!, 'salesOrders', selectedOrder.id);
+      const counterRef = getTenantDoc(db, tenantId!, 'counters', 'salesReturnCounter');
+      const newReturnRef = doc(getTenantCollection(db, tenantId!, 'returns'));
 
-      // Write return doc
-      const returnsCol = getTenantCollection(db, tenantId!, 'returns');
-      const returnRef = await addDoc(returnsCol, {
-        originalOrderId: selectedOrder.id,
-        originalOrderNumber: selectedOrder.orderNumber,
-        customerName: selectedOrder.retailerName || selectedOrder.customerName || '',
-        phoneNumber: selectedOrder.phoneNumber || '',
-        returnItems: returnLineItems,
-        reason,
-        refundMethod,
-        refundTotal,
-        notes,
-        status: 'processed',
-        createdAt: serverTimestamp(),
-      });
+      let returnNumber = '';
+      let finalReturnTotal = 0;
+      let finalLines: any[] = [];
+      let movements: any[] = [];
 
-      // Restock inventory — increment loosePieces on each product
-      for (const ri of itemsToReturn) {
-        const item = selectedOrder.lineItems[ri.idx];
-        if (item.productId) {
-          try {
-            const prodRef = getTenantDoc(db, tenantId!, 'products', item.productId);
-            await updateDoc(prodRef, { loosePieces: increment(ri.returnQty) });
-          } catch {
-            // non-critical if product doc not found
+      await runTransaction(db, async (tx) => {
+        // reset per-attempt accumulators (a txn body can retry)
+        movements = [];
+
+        // ---- READS (all before any write) ----
+        const orderSnap = await tx.get(orderRef);
+        if (!orderSnap.exists()) throw new Error('The original bill no longer exists.');
+        const order = { id: orderSnap.id, ...orderSnap.data() } as SalesOrder;
+
+        if (!isB2C(order)) throw new Error('Only B2C bills can be returned in this flow.');
+        if (order.deleted || String(order.status || '').toLowerCase() === 'cancelled')
+          throw new Error('This bill is cancelled and cannot be returned.');
+
+        const retailerRef = order.retailerId ? getTenantDoc(db, tenantId!, 'retailers', order.retailerId) : null;
+        const retailerSnap = retailerRef ? await tx.get(retailerRef) : null;
+        const counterSnap = await tx.get(counterRef);
+        const productSnaps = await Promise.all(plan.productRestores.map(p => tx.get(getTenantDoc(db, tenantId!, 'products', p.productId))));
+        const batchSnaps = await Promise.all(plan.batchRestores.map(b => tx.get(getTenantDoc(db, tenantId!, 'inventoryBatches', b.batchDocId))));
+
+        // ---- REVALIDATE returnable against the FRESH doc (concurrency guard) ----
+        const freshReturnedQty: Record<string, number> = { ...(order.returnedQty || {}) };
+        const returnLines: any[] = [];
+        for (const r of activeRows) {
+          const li = order.lineItems[r.lineIdx];
+          if (!li) throw new Error('A returned line no longer matches the bill.');
+          const orig = Number(li.quantity || 0);
+          const prior = Number(freshReturnedQty[String(r.lineIdx)] || 0);
+          if (r.returnQty > orig - prior) {
+            throw new Error(`Cannot return ${r.returnQty} of "${li.productName}". Only ${orig - prior} left to return.`);
+          }
+          const amount = lineRate(li) * r.returnQty;
+          returnLines.push({
+            lineIdx: r.lineIdx,
+            productId: li.productId || '',
+            productName: li.productName,
+            mfgCompany: li.mfgCompany || '',
+            batchNo: li.batchNo || '',
+            expDate: li.expDate || '',
+            unit: li.unit || 'pcs',
+            mrp: lineRate(li),
+            gstPct: lineGst(li),
+            originalQty: orig,
+            returnQty: r.returnQty,
+            amount,
+          });
+          freshReturnedQty[String(r.lineIdx)] = prior + r.returnQty;
+        }
+
+        const tot = computeTotals(order, activeRows);
+        finalReturnTotal = tot.returnTotal;
+        finalLines = returnLines;
+
+        // Credit Note number
+        const seq = (counterSnap.exists() ? Number(counterSnap.data().lastReturnNumber || 0) : 0) + 1;
+        returnNumber = `CN-${seq.toString().padStart(4, '0')}`;
+
+        // ---- WRITES ----
+        // 1) Return document
+        tx.set(newReturnRef, {
+          returnType: 'SALES_RETURN',
+          channel: 'b2c',
+          returnNumber,
+          originalOrderId: order.id,
+          originalOrderNumber: order.orderNumber || '',
+          customerName: order.retailerName || 'Walk-in Customer',
+          phoneNumber: order.phoneNumber || '',
+          retailerId: order.retailerId || null,
+          address: order.address || '',
+          pin: order.pin || '',
+          taluka: order.taluka || '',
+          district: order.district || '',
+          lineItems: returnLines,
+          subtotalReturn: tot.subtotal,
+          taxableReturn: tot.taxable,
+          cgstReturn: tot.cgst,
+          sgstReturn: tot.sgst,
+          totalTaxReturn: tot.totalTax,
+          returnTotal: tot.returnTotal,
+          reason,
+          refundMethod,
+          notes: notes.trim() || '',
+          status: 'completed',
+          createdBy: currentUser?.uid || null,
+          createdByName: userName || currentUser?.email || 'Unknown',
+          returnDate: new Date().toISOString().split('T')[0],
+          createdAt: serverTimestamp(),
+        });
+
+        // 2) Restock — batch increments (record movements). Skip a batch that was
+        //    deleted since prepare() (tx.update on a missing doc throws); the
+        //    product-level loosePieces restore below still recovers the count.
+        for (let i = 0; i < plan.batchRestores.length; i++) {
+          const b = plan.batchRestores[i];
+          const snap = batchSnaps[i];
+          if (!snap.exists()) continue;
+          const newQty = Number((snap.data() as any).quantity || 0) + b.qtyToAdd;
+          tx.update(getTenantDoc(db, tenantId!, 'inventoryBatches', b.batchDocId), { quantity: newQty, updatedAt: serverTimestamp() });
+          movements.push({ productId: b.productId, productName: b.productName, batchNumber: b.batchNumber, qtyIn: b.qtyToAdd, qtyOut: 0, remainingBatchQty: newQty, remainingStock: newQty });
+        }
+
+        // 3) Restock — product loosePieces (box/loose recompute for non-batch)
+        for (let i = 0; i < plan.productRestores.length; i++) {
+          const p = plan.productRestores[i];
+          const snap = productSnaps[i];
+          if (!snap.exists()) continue; // product deleted — nothing to restock into
+          const pdata = snap.data() as any;
+          const productRef = getTenantDoc(db, tenantId!, 'products', p.productId);
+          if (p.isBatchModel) {
+            // loosePieces mirrors the batch total → rise by the same qty.
+            tx.update(productRef, { loosePieces: Number(pdata.loosePieces || 0) + p.qtyToAdd, updatedAt: serverTimestamp() });
+          } else {
+            const cap = Number(pdata.boxCapacity || 1);
+            let loose = Number(pdata.loosePieces || 0) + p.qtyToAdd;
+            let boxes = Number(pdata.quantity || 0);
+            if (cap > 1 && loose >= cap) { boxes += Math.floor(loose / cap); loose = loose % cap; }
+            tx.update(productRef, { quantity: boxes, loosePieces: loose, updatedAt: serverTimestamp() });
+            movements.push({ productId: p.productId, productName: p.productName, batchNumber: '', qtyIn: p.qtyToAdd, qtyOut: 0, remainingBatchQty: 0, remainingStock: boxes * cap + loose });
           }
         }
+
+        // 4) Additive linkage on the ORIGINAL sale — never touches core fields.
+        tx.update(orderRef, {
+          returnedQty: freshReturnedQty,
+          returnTotal: Number(order.returnTotal || 0) + tot.returnTotal,
+          returnIds: [...(Array.isArray(order.returnIds) ? order.returnIds : []), newReturnRef.id],
+          hasReturns: true,
+          updatedAt: serverTimestamp(),
+        } as any);
+
+        // 5) Customer financials — reduce totalSales; reduce outstanding only for
+        //    credit/Khata sales. Paid-sale refunds are handled via refundMethod
+        //    (recorded on the return doc); no negative salesOrders are created.
+        if (retailerSnap && retailerSnap.exists()) {
+          const rd = retailerSnap.data() as any;
+          const wasCredit = order.paymentMethod === 'Khata';
+          const updates: Record<string, any> = {
+            totalSales: Math.max(0, Number(rd.totalSales || 0) - tot.returnTotal),
+            updatedAt: serverTimestamp(),
+          };
+          if (wasCredit) {
+            updates.outstandingAmount = Math.max(0, Number(rd.outstandingAmount || 0) - tot.returnTotal);
+          }
+          tx.update(retailerRef!, updates);
+        }
+
+        // 6) Bump the Credit Note counter
+        tx.set(counterRef, { lastReturnNumber: seq }, { merge: true });
+      });
+
+      // Best-effort stock-movement audit trail (never blocks the committed return).
+      if (movements.length > 0) {
+        recordStockMovements(tenantId!, movements, {
+          type: 'sales_return',
+          sourceType: 'Sales Return',
+          sourceId: newReturnRef.id,
+          sourceNumber: returnNumber,
+          date: new Date().toISOString().slice(0, 10),
+        }).catch(console.error);
       }
 
-      setDone(`RET-${returnRef.id.slice(-6).toUpperCase()}`);
-      showToast('Return processed successfully', 'success');
+      showToast(`Sales Return saved · ${returnNumber} · ${fmtINR(finalReturnTotal)}`, 'success');
+      setCompleted({ returnNumber, order: selectedOrder, lines: finalLines, returnTotal: finalReturnTotal });
     } catch (e: any) {
-      showToast('Failed to process return: ' + e.message, 'error');
+      showToast(e?.message || 'Could not process the return. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function loadRecentReturns() {
-    setLoadingRecent(true);
-    try {
-      const col = getTenantCollection(db, tenantId!, 'returns');
-      const snap = await getDocs(query(col, orderBy('createdAt', 'desc'), limit(20)));
-      setRecentReturns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch {
-      // ignore
-    } finally {
-      setLoadingRecent(false);
-    }
+  // ── Print the Credit Note through the shared POS print portal ──────────────
+  function triggerPrint() {
+    document.body.classList.add('pos-printing');
+    const cleanup = () => {
+      window.removeEventListener('afterprint', cleanup);
+      document.body.classList.remove('pos-printing');
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(() => window.print(), 60);
   }
 
-  function resetForm() {
+  function resetAll() {
     setSelectedOrder(null);
     setOrders([]);
     setSearchTerm('');
-    setReturnItems([]);
+    setRows([]);
     setReason(RETURN_REASONS[0]);
     setRefundMethod(REFUND_METHODS[0]);
     setNotes('');
-    setDone(null);
+    setCompleted(null);
   }
 
-  // ── Success screen ──────────────────────────────────────────────
-  if (done) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-lg p-10 text-center max-w-md w-full">
-          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Return Processed</h2>
-          <p className="text-gray-500 mb-1">Return ID: <span className="font-mono font-semibold text-gray-700">{done}</span></p>
-          <p className="text-gray-500 mb-6">Refund: <span className="font-semibold text-gray-800">₹{getRefundTotal().toFixed(2)}</span> via {refundMethod}</p>
-          <button onClick={resetForm} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition">
-            Process Another Return
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Map return lines → PosInvoicePreview cart shape for the Credit Note.
+  const creditNoteCart = completed
+    ? completed.lines.map(li => ({
+        name: li.productName,
+        mfgCompany: li.mfgCompany,
+        batchNo: li.batchNo,
+        expDate: li.expDate,
+        gstPct: li.gstPct,
+        unit: li.unit,
+        baseUnit: li.unit,
+        cartQuantity: li.returnQty,
+        cartTotal: li.amount,
+        sellingPrice: li.mrp,
+        maxRetailPrice: li.mrp,
+      }))
+    : [];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <RotateCcw className="w-6 h-6 text-blue-600" /> Returns & Exchanges
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">Search an order to initiate a return</p>
-          </div>
-          <button
-            onClick={() => { setShowRecentReturns(v => !v); if (!showRecentReturns) loadRecentReturns(); }}
-            className="flex items-center gap-1 text-sm text-blue-600 font-medium hover:underline"
-          >
-            Recent Returns {showRecentReturns ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
+    <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 className="primary-gradient-text" style={{ fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+            <RotateCcw size={30} /> {t('returns.title')}
+          </h1>
+          <p style={{ color: 'var(--text-secondary)' }}>{t('returns.subtitle')}</p>
         </div>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{L('bill_format')}</span>
+          {BILL_FORMATS.map(f => (
+            <button key={f} onClick={() => setBillFormat(f)}
+              style={{ padding: '0.35rem 0.9rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', border: '1px solid var(--surface-border)', background: billFormat === f ? 'var(--primary)' : 'var(--surface-base)', color: billFormat === f ? '#fff' : 'var(--text-secondary)' }}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {/* Recent returns */}
-        {showRecentReturns && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-            <h3 className="font-semibold text-gray-700 mb-3">Recent Returns</h3>
-            {loadingRecent ? (
-              <div className="flex items-center gap-2 text-gray-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-            ) : recentReturns.length === 0 ? (
-              <p className="text-gray-400 text-sm">No returns yet</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b">
-                      <th className="pb-2 pr-4">Order #</th>
-                      <th className="pb-2 pr-4">Customer</th>
-                      <th className="pb-2 pr-4">Reason</th>
-                      <th className="pb-2 pr-4">Refund</th>
-                      <th className="pb-2">Method</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentReturns.map(r => (
-                      <tr key={r.id} className="border-b last:border-0">
-                        <td className="py-2 pr-4 font-mono text-xs">{r.originalOrderNumber}</td>
-                        <td className="py-2 pr-4">{r.customerName || '—'}</td>
-                        <td className="py-2 pr-4 text-gray-600">{r.reason}</td>
-                        <td className="py-2 pr-4 font-semibold">₹{Number(r.refundTotal || 0).toFixed(2)}</td>
-                        <td className="py-2 text-gray-600">{r.refundMethod}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      {/* Success panel */}
+      {completed ? (
+        <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+          <CheckCircle2 size={56} style={{ color: 'var(--success, #10b981)', margin: '0 auto 1rem' }} />
+          <h2 style={{ marginBottom: '0.4rem' }}>{t('returns.processed')}</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            {t('returns.credit_note')}: <strong>{completed.returnNumber}</strong> · {fmtINR(completed.returnTotal)}
+          </p>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+            {t('returns.against_bill')}: {completed.order.orderNumber}
+          </p>
+          <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={triggerPrint} className="btn" style={{ background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.7rem 1.5rem', borderRadius: '8px', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+              <Printer size={18} /> {t('returns.print_credit_note')}
+            </button>
+            <button onClick={resetAll} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.7rem 1.5rem', borderRadius: '8px', fontWeight: 700, cursor: 'pointer' }}>
+              <RotateCcw size={18} /> {t('returns.new_return')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Search */}
+          <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>{t('returns.find_bill')}</label>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+                <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                <input
+                  type="text"
+                  className="input-field"
+                  style={{ paddingLeft: '2.5rem', margin: 0 }}
+                  placeholder={t('returns.search_ph')}
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+                />
+              </div>
+              <button onClick={handleSearch} disabled={searching || !searchTerm.trim()} className="btn"
+                style={{ background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.4rem', borderRadius: '8px', fontWeight: 700, border: 'none', cursor: 'pointer', opacity: searching || !searchTerm.trim() ? 0.6 : 1 }}>
+                {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />} {t('returns.search')}
+              </button>
+            </div>
+
+            {/* Results */}
+            {orders.length > 0 && !selectedOrder && (
+              <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {orders.map(o => (
+                  <button key={o.id} onClick={() => selectOrder(o)}
+                    style={{ textAlign: 'left', padding: '0.75rem 1rem', border: '1px solid var(--surface-border)', borderRadius: '10px', background: 'var(--surface-base)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{o.orderNumber}</span>
+                      <span style={{ marginLeft: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{o.retailerName || 'Walk-in'}</span>
+                      {o.phoneNumber && <span style={{ marginLeft: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>{o.phoneNumber}</span>}
+                      {o.hasReturns && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700 }}>• {t('returns.has_returns')}</span>}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--primary-light)' }}>{fmtINR(Number(o.grandTotal || 0))}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{o.invoiceDate || (o.createdAt?.toDate?.()?.toLocaleDateString?.() ?? '')}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
           </div>
-        )}
 
-        {/* Search */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Find Original Order</label>
-          <div className="flex gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Bill number or customer phone…"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              />
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={searching || !searchTerm.trim()}
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition flex items-center gap-2"
-            >
-              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Search
-            </button>
-          </div>
+          {/* Return form */}
+          {selectedOrder && (
+            <div className="glass-panel" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.15rem' }}>{t('returns.returning_against')} {selectedOrder.orderNumber}</h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.25rem 0 0' }}>
+                    {selectedOrder.retailerName || 'Walk-in'} · {selectedOrder.paymentMethod === 'Khata' ? t('returns.credit_sale') : t('returns.paid_sale')}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedOrder(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+              </div>
 
-          {/* Order results */}
-          {orders.length > 0 && !selectedOrder && (
-            <div className="mt-4 space-y-2">
-              {orders.map(order => (
-                <button
-                  key={order.id}
-                  onClick={() => selectOrder(order)}
-                  className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition flex items-center justify-between"
-                >
-                  <div>
-                    <span className="font-semibold text-gray-800">{order.orderNumber}</span>
-                    <span className="ml-3 text-gray-500 text-sm">{order.retailerName || order.customerName || 'Customer'}</span>
-                    {order.phoneNumber && <span className="ml-2 text-gray-400 text-xs">{order.phoneNumber}</span>}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-700">₹{getOrderTotal(order).toFixed(2)}</p>
-                    <p className="text-xs text-gray-400">{order.invoiceDate || (order.createdAt?.toDate?.()?.toLocaleDateString() ?? '')}</p>
-                  </div>
+              {/* Items table — POS bill columns + returnable/return-qty */}
+              <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--surface-border)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem' }}>#</th>
+                      <th style={{ padding: '0.5rem' }}>{L('item_description')}</th>
+                      <th style={{ padding: '0.5rem' }}>{L('company')}</th>
+                      <th style={{ padding: '0.5rem' }}>{L('batch_no')}</th>
+                      <th style={{ padding: '0.5rem' }}>{L('exp_date')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>{t('returns.orig_qty')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>{t('returns.already_returned')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>{t('returns.returnable')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>{t('returns.return_qty')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>{L('rate')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>{L('gst_pct')}</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>{t('returns.return_amount')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedOrder.lineItems.map((li, idx) => {
+                      const returnable = returnableQty(selectedOrder, idx);
+                      const row = rows.find(r => r.lineIdx === idx);
+                      const rq = row?.returnQty || 0;
+                      const amount = lineRate(li) * rq;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--surface-border)', opacity: returnable === 0 ? 0.5 : 1 }}>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                          <td style={{ padding: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{li.productName}</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{li.mfgCompany || '—'}</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{li.batchNo || '—'}</td>
+                          <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{li.expDate || '—'}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>{li.quantity}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>{alreadyReturned(selectedOrder, idx)}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center', fontWeight: 700, color: returnable === 0 ? 'var(--text-tertiary)' : '#2E7D32' }}>{returnable}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                            <input
+                              type="number" min={0} max={returnable}
+                              value={rq || ''}
+                              disabled={returnable === 0}
+                              onChange={e => setReturnQty(idx, Number(e.target.value))}
+                              onWheel={e => e.currentTarget.blur()}
+                              placeholder="0"
+                              style={{ width: '68px', textAlign: 'center', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '0.3rem', background: 'var(--surface-raised)', color: 'var(--text-primary)' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtINR(lineRate(li))}</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>{lineGst(li)}%</td>
+                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 700 }}>{amount ? fmtINR(amount) : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Reason / refund / notes */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{t('returns.reason')}</label>
+                  <select className="input-field" style={{ margin: 0 }} value={reason} onChange={e => setReason(e.target.value)}>
+                    {RETURN_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{t('returns.refund_method')}</label>
+                  <select className="input-field" style={{ margin: 0 }} value={refundMethod} onChange={e => setRefundMethod(e.target.value)}>
+                    {REFUND_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{t('returns.notes')}</label>
+                  <input className="input-field" style={{ margin: 0 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('returns.notes_ph')} />
+                </div>
+              </div>
+
+              {/* Footer: total + submit */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--surface-border)', paddingTop: '1rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>{t('returns.return_total')}</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--primary-light)' }}>{fmtINR(totals.returnTotal)}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{t('returns.via')} {refundMethod}</div>
+                </div>
+                <button onClick={handleSubmit} disabled={submitting || !hasReturnQty} className="btn"
+                  style={{ background: '#1565C0', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.8rem 1.8rem', borderRadius: '8px', fontWeight: 700, border: 'none', cursor: submitting || !hasReturnQty ? 'not-allowed' : 'pointer', opacity: submitting || !hasReturnQty ? 0.5 : 1 }}>
+                  {submitting ? <Loader2 size={18} className="spin" /> : <FileText size={18} />} {t('returns.process')}
                 </button>
-              ))}
+              </div>
             </div>
           )}
-        </div>
+        </>
+      )}
 
-        {/* Return form */}
-        {selectedOrder && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-gray-800">Order {selectedOrder.orderNumber}</h2>
-                <p className="text-sm text-gray-500">{selectedOrder.retailerName || selectedOrder.customerName || 'Customer'} · ₹{getOrderTotal(selectedOrder).toFixed(2)}</p>
-              </div>
-              <button onClick={() => setSelectedOrder(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Items */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                <Package className="w-4 h-4" /> Select Items to Return
-              </h3>
-              <div className="space-y-2">
-                {(selectedOrder.lineItems || []).map((item, idx) => {
-                  const ri = returnItems[idx];
-                  if (!ri) return null;
-                  return (
-                    <div
-                      key={idx}
-                      className={`flex items-center gap-3 p-3 rounded-lg border transition ${ri.selected ? 'border-blue-400 bg-blue-50' : 'border-gray-100 hover:border-gray-200'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={ri.selected}
-                        onChange={() => toggleItem(idx)}
-                        className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-800 truncate">{item.productName}</p>
-                        <p className="text-xs text-gray-500">Ordered: {item.quantity} · ₹{(item.unitPrice || item.price || 0).toFixed(2)} each</p>
-                      </div>
-                      {ri.selected && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <label className="text-xs text-gray-500 font-medium">Return qty:</label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={item.quantity}
-                            value={ri.returnQty}
-                            onChange={e => setReturnQty(idx, parseInt(e.target.value) || 0)}
-                            className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        </div>
-                      )}
-                      {ri.selected && (
-                        <p className="text-sm font-semibold text-blue-700 w-20 text-right shrink-0">
-                          ₹{((item.unitPrice || item.price || 0) * ri.returnQty).toFixed(2)}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Return details */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Return Reason</label>
-                <select
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  {RETURN_REASONS.map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Refund Method</label>
-                <select
-                  value={refundMethod}
-                  onChange={e => setRefundMethod(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  {REFUND_METHODS.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes (optional)</label>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                rows={2}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                placeholder="Any additional details…"
-              />
-            </div>
-
-            {/* Summary + submit */}
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-              <div>
-                <p className="text-sm text-gray-500">Refund Total</p>
-                <p className="text-2xl font-bold text-gray-800">₹{getRefundTotal().toFixed(2)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">via {refundMethod}</p>
-              </div>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || returnItems.filter(ri => ri.selected && ri.returnQty > 0).length === 0}
-                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Process Return
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Credit Note print portal — reuses the shared #pos-print-root + PosInvoicePreview */}
+      {completed && createPortal(
+        <div id="pos-print-root">
+          <PosInvoicePreview
+            cart={creditNoteCart}
+            customer={{
+              name: completed.order.retailerName, phone: completed.order.phoneNumber,
+              address: completed.order.address, pin: completed.order.pin,
+              taluka: completed.order.taluka, district: completed.order.district,
+            }}
+            branding={branding}
+            billNumber={completed.returnNumber}
+            originalBillNumber={completed.order.orderNumber}
+            documentTitle="CREDIT NOTE"
+            grandTotal={completed.returnTotal}
+            billFormat={billFormat}
+            invoiceDate={new Date().toISOString().split('T')[0]}
+            modeOfPayment={refundMethod}
+            L={L}
+          />
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

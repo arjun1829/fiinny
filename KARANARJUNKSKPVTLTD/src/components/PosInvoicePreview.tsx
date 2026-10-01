@@ -79,6 +79,12 @@ export function toMonthYear(val: string): string {
     return m ? `${m[2]}/${m[1].slice(2)}` : (val || '');
 }
 
+// Minimum total product rows shown on the printed/previewed invoice — matches
+// POSPage's FRESH_BILL_ROW_COUNT so a fresh bill's on-screen row count and its
+// printed row count agree. Blank rows pad up to this floor; a cart with more
+// items than this simply shows all of them, no padding.
+const INVOICE_PRINT_ROW_COUNT = 10;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface PosInvoiceItem {
@@ -142,6 +148,11 @@ interface Props {
     previousOutstanding?: number;
     L?: (key: string) => string;
     activeCats?: string[];
+    // Sales Return / Credit Note reuse: overrides the "GST INVOICE" header title
+    // and, when set, prints the original bill reference. Both default to the
+    // normal invoice behaviour, so existing POS bill printing is unaffected.
+    documentTitle?: string;
+    originalBillNumber?: string;
 }
 
 // ── Component — single source of truth for the POS GST invoice layout ────────
@@ -163,6 +174,8 @@ export function PosInvoicePreview({
     previousOutstanding = 0,
     L = defaultL,
     activeCats: activeCatsProp,
+    documentTitle,
+    originalBillNumber,
 }: Props) {
     const fmt = (n: number) => (Number.isFinite(n) ? n : 0).toFixed(2);
     const lineGst = (i: PosInvoiceItem) => (typeof i.gstPct === 'number' ? i.gstPct : 5);
@@ -177,6 +190,7 @@ export function PosInvoicePreview({
     const uppercaseEnabled = branding?.invoiceTextCase === 'uppercase';
     const up = (v?: string | null) => (uppercaseEnabled && v ? v.toUpperCase() : v);
 
+    const totalQty = cart.reduce((s, i) => s + (i.cartQuantity || 0), 0);
     const taxable = cart.reduce((s, i) => s + (i.cartTotal || 0) / (1 + lineGst(i) / 100), 0);
     const cgst = cart.reduce((s, i) => { const g = lineGst(i); return s + ((i.cartTotal || 0) / (1 + g / 100)) * (g / 2) / 100; }, 0);
     const sgst = cgst;
@@ -225,7 +239,7 @@ export function PosInvoicePreview({
 
                         {/* Center: GST INVOICE (primary) + Business info */}
                         <div style={{ borderRight: '1px solid #aaa', padding: '4px 10px', textAlign: 'center' as const, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5px' }}>
-                            <div style={{ fontWeight: 900, fontSize: '0.82rem', letterSpacing: '0.10em', textTransform: 'uppercase' as const, color: '#111', lineHeight: 1.1 }}>GST INVOICE</div>
+                            <div style={{ fontWeight: 900, fontSize: '0.82rem', letterSpacing: '0.10em', textTransform: 'uppercase' as const, color: '#111', lineHeight: 1.1 }}>{documentTitle || 'GST INVOICE'}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'center' }}>
                                 {branding?.logoUrl && <img src={branding.logoUrl} alt="Logo" style={{ height: '18px', objectFit: 'contain' }} />}
                                 <div style={{ fontWeight: 800, fontSize: '0.68rem', lineHeight: 1.15 }}>{sellerName}</div>
@@ -240,7 +254,8 @@ export function PosInvoicePreview({
 
                         {/* Right: Bill meta */}
                         <div style={{ padding: '4px 7px', display: 'flex', flexDirection: 'column', justifyContent: 'center', fontSize: '0.52rem', gap: '2.5px' }}>
-                            <div style={{ display: 'flex', gap: '3px' }}><strong style={{ whiteSpace: 'nowrap' }}>Bill No:</strong><span style={{ fontWeight: 900 }}>{billNumber}</span></div>
+                            <div style={{ display: 'flex', gap: '3px' }}><strong style={{ whiteSpace: 'nowrap' }}>{originalBillNumber ? 'CN No:' : 'Bill No:'}</strong><span style={{ fontWeight: 900 }}>{billNumber}</span></div>
+                            {originalBillNumber && <div style={{ display: 'flex', gap: '3px' }}><strong style={{ whiteSpace: 'nowrap' }}>Ref Bill:</strong><span>{originalBillNumber}</span></div>}
                             <div style={{ display: 'flex', gap: '3px' }}><strong style={{ whiteSpace: 'nowrap' }}>Date:</strong><span>{dateLabel}</span></div>
                             <div style={{ display: 'flex', gap: '3px' }}><strong style={{ whiteSpace: 'nowrap' }}>Mode:</strong><strong style={{ fontWeight: 900 }}>{modeOfPayment}</strong></div>
                         </div>
@@ -329,13 +344,15 @@ export function PosInvoicePreview({
                                     <td style={{ border: '1px solid #e0e0e0', padding: '1.5px 3px', textAlign: 'right' as const, fontWeight: 700 }}>{fmt(item.cartTotal)}</td>
                                 </tr>
                             ))}
-                            {Array.from({ length: Math.max(0, 5 - cart.length) }).map((_, i) => (
+                            {Array.from({ length: Math.max(0, INVOICE_PRINT_ROW_COUNT - cart.length) }).map((_, i) => (
                                 <tr key={`e-${i}`} style={{ height: '13px' }}>
                                     {Array.from({ length: 10 }).map((_, j) => <td key={j} style={{ border: '1px solid #e0e0e0' }}></td>)}
                                 </tr>
                             ))}
                             <tr style={{ background: '#f5f5f5', borderTop: '1.5px solid #333' }}>
-                                <td colSpan={9} style={{ border: '1px solid #ccc', padding: '2px 6px', textAlign: 'right' as const, fontWeight: 800, fontSize: '0.62rem', textTransform: 'uppercase' as const }}>Total</td>
+                                <td colSpan={6} style={{ border: '1px solid #ccc', padding: '2px 6px', textAlign: 'right' as const, fontWeight: 800, fontSize: '0.62rem', textTransform: 'uppercase' as const }}>Total</td>
+                                <td style={{ border: '1px solid #ccc', padding: '2px 1px', textAlign: 'center' as const, fontWeight: 900, fontSize: '0.62rem' }}>{totalQty}</td>
+                                <td colSpan={2} style={{ border: '1px solid #ccc' }}></td>
                                 <td style={{ border: '1px solid #ccc', padding: '2px 3px', textAlign: 'right' as const, fontWeight: 900, fontSize: '0.62rem' }}>{fmt(taxable + tax)}</td>
                             </tr>
                         </tbody>
@@ -435,7 +452,7 @@ export function PosInvoicePreview({
             ) : (
                 // ── A4 PORTRAIT ───────────────────────────────────────────────
                 <>
-                    <div style={{ textAlign: 'center', fontWeight: 700, letterSpacing: '0.15em', marginBottom: '2px' }}>{L('gst_invoice')}</div>
+                    <div style={{ textAlign: 'center', fontWeight: 700, letterSpacing: '0.15em', marginBottom: '2px' }}>{documentTitle || L('gst_invoice')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #111', paddingBottom: '6px', marginBottom: '8px', gap: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             {branding?.logoUrl && <img src={branding.logoUrl} alt="Logo" style={{ height: '44px', objectFit: 'contain' }} />}
@@ -455,7 +472,7 @@ export function PosInvoicePreview({
                             </div>
                         </div>
                         <div style={{ textAlign: 'right', fontWeight: 700, border: '2px solid #111', padding: '3px 10px', borderRadius: '6px', whiteSpace: 'nowrap' }}>
-                            {modeOfPayment === 'Khata' || modeOfPayment === 'Credit' ? L('credit_bill') : L('cash_bill')}
+                            {originalBillNumber ? 'CREDIT NOTE' : (modeOfPayment === 'Khata' || modeOfPayment === 'Credit' ? L('credit_bill') : L('cash_bill'))}
                         </div>
                     </div>
 
@@ -467,7 +484,8 @@ export function PosInvoicePreview({
                             {customer.phone && <div>{L('contact')}: {customer.phone}</div>}
                         </div>
                         <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>{L('bill_no')} :</strong><span>{billNumber}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>{originalBillNumber ? 'Credit Note No' : L('bill_no')} :</strong><span>{billNumber}</span></div>
+                            {originalBillNumber && <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>Ref Bill No :</strong><span>{originalBillNumber}</span></div>}
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>{L('bill_date')} :</strong><span>{dateLabel}</span></div>
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>{L('mode_of_payment')} :</strong><span>{modeOfPayment}</span></div>
                         </div>
@@ -498,13 +516,15 @@ export function PosInvoicePreview({
                                     <td style={{ textAlign: 'center' as const }}>{fmt(item.cartTotal)}</td>
                                 </tr>
                             ))}
-                            {Array.from({ length: Math.max(0, 6 - cart.length) }).map((_, i) => (
+                            {Array.from({ length: Math.max(0, INVOICE_PRINT_ROW_COUNT - cart.length) }).map((_, i) => (
                                 <tr key={`e-${i}`} style={{ height: '20px' }}>
                                     <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
                                 </tr>
                             ))}
                             <tr style={{ fontWeight: 700, background: '#f9f9f9' }}>
-                                <td colSpan={9} style={{ textAlign: 'right', paddingRight: '8px' }}>{L('total')}</td>
+                                <td colSpan={7} style={{ textAlign: 'right', paddingRight: '8px' }}>{L('total')}</td>
+                                <td style={{ textAlign: 'center' as const }}>{totalQty}</td>
+                                <td></td>
                                 <td style={{ textAlign: 'center' as const }}>{fmt(taxable + tax)}</td>
                             </tr>
                         </tbody>

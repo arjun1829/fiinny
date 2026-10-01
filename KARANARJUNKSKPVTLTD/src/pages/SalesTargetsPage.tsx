@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Target, ReceiptText, Wallet, ChevronLeft, ChevronRight, Trophy, Loader2, TrendingUp } from 'lucide-react';
-import { doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { collectionGroup } from 'firebase/firestore';
+import { doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
@@ -224,23 +223,19 @@ export default function SalesTargetsPage() {
           }
         });
 
-        // Payments: collection group query on 'payments'
-        const isMaster = tenantId === 'master';
-        const pmtSnap = await getDocs(collectionGroup(db, 'payments'));
+        // Fetch payments only for the sales user's scoped retailers (tenant-scoped, no collectionGroup).
+        const scopedIds = Array.from(scopedRetailerIds);
+        const pmtSnaps = await Promise.all(
+          scopedIds.map(rId => getDocs(getTenantCollection(db, tenantId, 'retailers', rId, 'payments')))
+        );
         let pmtTotal = 0;
-        pmtSnap.docs.forEach(pdoc => {
-          const parts = pdoc.ref.path.split('/');
-          let rId: string | undefined;
-          if (isMaster) {
-            if (parts.length === 4 && parts[0] === 'retailers' && parts[2] === 'payments') rId = parts[1];
-          } else {
-            if (parts.length === 6 && parts[0] === 'tenants' && parts[1] === tenantId && parts[2] === 'retailers' && parts[4] === 'payments') rId = parts[3];
-          }
-          if (!rId || !scopedRetailerIds.has(rId)) return;
-          const pmtDate: string = pdoc.data().paymentDate || '';
-          if (pmtDate.startsWith(selectedMonth)) {
-            pmtTotal += Number(pdoc.data().amount ?? 0);
-          }
+        pmtSnaps.forEach((snap, idx) => {
+          snap.docs.forEach(pdoc => {
+            const pmtDate: string = pdoc.data().paymentDate || '';
+            if (pmtDate.startsWith(selectedMonth)) {
+              pmtTotal += Number(pdoc.data().amount ?? 0);
+            }
+          });
         });
 
         if (!cancelled) {

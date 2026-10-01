@@ -47,7 +47,10 @@ export default function ReelVideo({
         // Omitted entirely outside the warm window — an element with no src is
         // guaranteed not to touch the network.
         src={attachSource ? reel.videoUrl : undefined}
-        poster={reel.thumbnailUrl}
+        // Falls back to the linked product image: a reel with no poster and
+        // no attached src renders as a black rectangle, which is what older
+        // reels (uploaded before server-side thumbnails) look like today.
+        poster={reel.thumbnailUrl ?? reel.linkedProductImageUrl}
         muted={isMuted}
         loop
         playsInline

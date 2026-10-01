@@ -9,6 +9,7 @@ import { useHashTab } from '../hooks/useHashTab';
 import { getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { getTenantCollection } from '../utils/tenantPath';
 import SupplierFormModal from '../components/SupplierFormModal';
 
@@ -54,6 +55,14 @@ const SUPPLIER_MODULE_TABS: { id: SupplierTab; label: string; icon: React.ReactN
   { id: 'reports',   label: 'Reports',            icon: <BarChart3 size={16} /> },
 ];
 
+// Feature-permission id per sub-tab (Super Admin → Feature Permissions).
+const TAB_PERM: Record<SupplierTab, string> = {
+  suppliers: 'supplierLedger.suppliers.view',
+  payments:  'supplierLedger.payments.view',
+  reminders: 'supplierLedger.reminders.view',
+  reports:   'supplierLedger.reports.view',
+};
+
 type PartyFilter = 'all' | 'suppliers' | 'transporters';
 type SortCol = 'name' | 'invoiced' | 'paid' | 'outstanding' | 'nextPayment';
 
@@ -66,8 +75,20 @@ const fmtDate = (d: string) => {
 export default function SupplierLedgerPage() {
   const { tenantId } = useAuth();
   const navigate = useNavigate();
+  const can = useFeaturePermissions();
 
-  const [activeTab, setActiveTab] = useHashTab<SupplierTab>(VALID_SUPPLIER_TABS, 'suppliers', 'fiinny-tab-supplier-ledger');
+  const [activeTab, setActiveTab] = useHashTab<SupplierTab>(
+    VALID_SUPPLIER_TABS, 'suppliers', 'fiinny-tab-supplier-ledger',
+    tab => can(TAB_PERM[tab]),
+  );
+
+  // Only show tabs the role is permitted to view.
+  const visibleTabs = SUPPLIER_MODULE_TABS.filter(tab => can(TAB_PERM[tab.id]));
+  const activeAllowed = visibleTabs.some(t => t.id === activeTab);
+
+  useEffect(() => {
+    if (!activeAllowed && visibleTabs.length > 0) setActiveTab(visibleTabs[0].id);
+  }, [activeAllowed, visibleTabs, setActiveTab]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
@@ -309,7 +330,7 @@ export default function SupplierLedgerPage() {
         marginBottom: '1.5rem',
         paddingBottom: 0,
       }}>
-        {SUPPLIER_MODULE_TABS.map(tab => {
+        {visibleTabs.map(tab => {
           const isActive = activeTab === tab.id;
           return (
             <button
@@ -339,7 +360,7 @@ export default function SupplierLedgerPage() {
       </div>
 
       {/* ── Suppliers Tab ── */}
-      {activeTab === 'suppliers' && <>
+      {activeAllowed && activeTab === 'suppliers' && <>
 
       {/* Upcoming Payment Reminders dashboard card */}
       {upcomingReminders.length > 0 && (
@@ -646,7 +667,7 @@ export default function SupplierLedgerPage() {
       </> /* end Suppliers tab */}
 
       {/* ── Payments Tab (supplier invoices list) ── */}
-      {activeTab === 'payments' && (
+      {activeAllowed && activeTab === 'payments' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Supplier Invoices</h2>
@@ -700,7 +721,7 @@ export default function SupplierLedgerPage() {
       )}
 
       {/* ── Reminders Tab ── */}
-      {activeTab === 'reminders' && (
+      {activeAllowed && activeTab === 'reminders' && (
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 1rem' }}>Payment Reminders</h2>
           {upcomingReminders.length === 0 ? (
@@ -751,7 +772,7 @@ export default function SupplierLedgerPage() {
       )}
 
       {/* ── Reports Tab ── */}
-      {activeTab === 'reports' && (
+      {activeAllowed && activeTab === 'reports' && (
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 1rem' }}>Supplier Reports</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>

@@ -65,10 +65,9 @@ env:
 
   # ─── Cron ────────────────────────────────────────────────────────────────────
   - variable: CRON_SECRET
-    value: krishidukan-uat-cron-secret
+    # Rotated value lives in Secret Manager, never in this file.
+    secret: CRON_SECRET
 
-  - variable: NEXT_PUBLIC_CRON_SECRET
-    value: krishidukan-uat-cron-secret
 
   # ─── Firebase Admin SDK ──────────────────────────────────────────────────────
   - variable: FIREBASE_PROJECT_ID
@@ -79,3 +78,11 @@ env:
 
   - variable: FIREBASE_PRIVATE_KEY
     secret: FIREBASE_PRIVATE_KEY_UAT
+
+  # ─── Google Analytics 4 (Data API) ─────────────────────────────────────────
+  # Numeric GA4 property id for the UAT GA4 property (Admin Analytics →
+  # Engagement DAU/MAU). Leave empty to show "Google Analytics is not configured
+  # for this environment." The FIREBASE_CLIENT_EMAIL service account above must
+  # be granted "Viewer" on this GA4 property.
+  - variable: GA4_PROPERTY_ID
+    value: "" # TODO: set to the numeric UAT GA4 property id if one exists

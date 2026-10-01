@@ -29,5 +29,8 @@ dist-ssr
 .env.production
 .env.staging
 .env.*
+# Allow example/template files that document required variables (no real credentials)
+!.env.example
+!.env.*.example
 dev-dist/
 dev-dist/

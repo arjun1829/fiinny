@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { logAudit } from '../utils/auditLog';
 import { LOCATION_DATA, STATES } from '../utils/locationData';
+import { checkContactNumber } from '../utils/phoneValidator';
 
 interface Retailer {
     id: string;
@@ -35,6 +36,7 @@ export default function ManageRetailersPage() {
     const [editingRetailer, setEditingRetailer] = useState<Retailer | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [numberError, setNumberError] = useState<string | null>(null);
 
     // Form State for Editing
     const [formData, setFormData] = useState({
@@ -82,12 +84,21 @@ export default function ManageRetailersPage() {
             licenseNumber: retailer.licenseNumber || '',
             portfolioSize: retailer.portfolioSize || 'Small'
         });
+        setNumberError(null);
         setIsModalOpen(true);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingRetailer) return;
+
+        const numberCheck = checkContactNumber(formData.number);
+        if (!numberCheck.valid) {
+            setNumberError(numberCheck.error || 'Enter a valid contact number');
+            return;
+        }
+        setNumberError(null);
+
         setIsSaving(true);
 
         try {
@@ -240,7 +251,18 @@ export default function ManageRetailersPage() {
 
                             <div>
                                 <label className="input-label">{t('onboarding.contact_number')}</label>
-                                <input required className="input-field" value={formData.number} onChange={e => setFormData({ ...formData, number: e.target.value })} />
+                                <input
+                                    required
+                                    className="input-field"
+                                    value={formData.number}
+                                    onChange={e => { setFormData({ ...formData, number: e.target.value }); if (numberError) setNumberError(null); }}
+                                    aria-invalid={!!numberError}
+                                />
+                                {numberError && (
+                                    <span style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                                        {numberError}
+                                    </span>
+                                )}
                             </div>
                             <div>
                                 <label className="input-label">{t('auth.email')}</label>

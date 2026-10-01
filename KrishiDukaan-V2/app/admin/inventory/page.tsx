@@ -9,13 +9,16 @@ import {
   collection, getDocs, query, where, orderBy, limit,
   doc, updateDoc, serverTimestamp, getDoc, Timestamp,
 } from "firebase/firestore";
-import { db, auth } from "../../firebase";
+import { db, auth, adminUpdateAssignmentPricing } from "../../firebase";
 import { cn } from "../../dashboard/_lib/cn";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type ProductVariant = { unit: string; price: number; stock?: number };
+
 type InventoryItem = {
   inventoryId: string;
+  /** The SELLER'S product-copy id — what inventory docs are keyed on. */
   productId: string;
   productName: string;
   category: string;
@@ -25,6 +28,8 @@ type InventoryItem = {
   sellingPrice: number;
   reorderThreshold: number;
   isAvailable: boolean;
+  /** Pack sizes, when the product is sold in several. Empty for simple products. */
+  variants: ProductVariant[];
   updatedAt: Date | null;
 };
 
@@ -45,15 +50,25 @@ type AuditLog = {
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
 async function fetchAllInventory(): Promise<InventoryItem[]> {
-  const invSnap = await getDocs(
-    query(collection(db, "inventory"), orderBy("updatedAt", "desc"), limit(300))
-  );
-  if (invSnap.empty) return [];
+  // Two reads, merged. Ordering by updatedAt alone surfaces only RECENT activity,
+  // and an item that went out of stock months ago sinks below the limit — which
+  // is exactly why out-of-stock products were unfindable here. The second query
+  // pulls the out-of-stock set directly, so it is always present no matter how
+  // long ago it sold out.
+  const [recentSnap, zeroSnap] = await Promise.all([
+    getDocs(query(collection(db, "inventory"), orderBy("updatedAt", "desc"), limit(400))),
+    getDocs(query(collection(db, "inventory"), where("stockQuantity", "==", 0), limit(400))),
+  ]);
+
+  const docsById = new Map<string, (typeof recentSnap.docs)[number]>();
+  for (const d of [...recentSnap.docs, ...zeroSnap.docs]) docsById.set(d.id, d);
+  const invDocs = Array.from(docsById.values());
+  if (invDocs.length === 0) return [];
 
   const productIds = Array.from(
-    new Set(invSnap.docs.map(d => String(d.data().productId ?? "")).filter(Boolean))
+    new Set(invDocs.map(d => String(d.data().productId ?? "")).filter(Boolean))
   );
-  const productNameMap = new Map<string, { name: string; category: string }>();
+  const productNameMap = new Map<string, { name: string; category: string; variants: ProductVariant[] }>();
 
   const chunkSize = 10;
   for (let i = 0; i < productIds.length; i += chunkSize) {
@@ -66,14 +81,22 @@ async function fetchAllInventory(): Promise<InventoryItem[]> {
       productNameMap.set(d.id, {
         name: String(r.name ?? ""),
         category: String(r.category ?? ""),
+        variants: Array.isArray(r.variants)
+          ? (r.variants as Record<string, unknown>[]).map(v => ({
+              unit: String(v.unit ?? ""),
+              price: Number(v.price ?? 0),
+              stock: v.stock === undefined || v.stock === null ? undefined : Number(v.stock),
+            }))
+          : [],
       });
     });
   }
 
-  return invSnap.docs.map(d => {
+  return invDocs.map(d => {
     const r = d.data() as Record<string, unknown>;
     const ts = r.updatedAt as Timestamp | null;
-    const pInfo = productNameMap.get(String(r.productId ?? "")) ?? { name: "—", category: "—" };
+    const pInfo = productNameMap.get(String(r.productId ?? ""))
+      ?? { name: "—", category: "—", variants: [] as ProductVariant[] };
     return {
       inventoryId: d.id,
       productId: String(r.productId ?? ""),
@@ -85,6 +108,7 @@ async function fetchAllInventory(): Promise<InventoryItem[]> {
       sellingPrice: Number(r.sellingPrice ?? r.price ?? 0),
       reorderThreshold: Number(r.reorderThreshold ?? 0),
       isAvailable: r.isAvailable !== false,
+      variants: pInfo.variants,
       updatedAt: ts?.toDate?.() ?? null,
     };
   });
@@ -114,18 +138,57 @@ async function fetchAuditLogs(): Promise<AuditLog[]> {
   });
 }
 
+/**
+ * Applies an admin stock/price edit everywhere it has to land.
+ *
+ * A seller product's price and stock live in THREE places and every writer has
+ * to fan out to all of them, or the marketplace and the seller's own dashboard
+ * disagree with what admin just set:
+ *   1. products/{sellerCopyId}      — price, stock label, variants
+ *   2. inventory/{id}               — what the web seller dashboard reads
+ *   3. products/{canonicalId}.availability[] — what the marketplace page reads
+ *
+ * This page previously wrote only #2 (plus a per-owner mirror), so an admin
+ * correction showed up in the admin table and nowhere else. adminUpdateAssignmentPricing
+ * is the existing, already-used implementation of that fan-out, so it is reused
+ * here rather than reimplemented — leaving only the fields it does not own
+ * (the reorder threshold) and the audit trail to write separately.
+ */
 async function adminUpdateInventory(
   inventoryId: string,
+  productId: string,
   productName: string,
   ownerPhone: string,
   prev: { stock: number; price: number; threshold: number },
-  next: { stock: number; price: number; threshold: number },
+  next: { stock: number; price: number; threshold: number; variants?: ProductVariant[] },
   note: string,
   adminUid: string,
-): Promise<void> {
+): Promise<{ syncedToStore: boolean }> {
   const now = serverTimestamp();
   const invRef = doc(db, "inventory", inventoryId);
   const logRef = doc(collection(db, "adminLogs"));
+
+  // Copy + inventory + canonical availability, in one tested path.
+  //
+  // Attempted first but NOT allowed to abort the save: an inventory row can
+  // outlive its product copy (deleted listing), and adminUpdateAssignmentPricing
+  // throws on a missing doc. Losing the admin's correction because of that would
+  // be worse than a partial sync, so the failure is reported back to the caller
+  // and surfaced in the UI instead of thrown away or silently swallowed.
+  let syncedToStore = true;
+  if (productId) {
+    try {
+      await adminUpdateAssignmentPricing(productId, {
+        sellingPrice: next.price,
+        stockQuantity: next.stock,
+        ...(next.variants !== undefined ? { variants: next.variants } : {}),
+      });
+    } catch {
+      syncedToStore = false;
+    }
+  } else {
+    syncedToStore = false;
+  }
 
   await Promise.all([
     updateDoc(invRef, {
@@ -172,6 +235,8 @@ async function adminUpdateInventory(
       }
     }
   } catch { /* non-critical */ }
+
+  return { syncedToStore };
 }
 
 // ─── Row editor ───────────────────────────────────────────────────────────────
@@ -183,6 +248,8 @@ function InventoryRow({
   item: InventoryItem;
   onSaved: () => void;
 }) {
+  const hasVariants = item.variants.length > 0;
+
   const [editing,   setEditing]   = useState(false);
   const [stock,     setStock]     = useState(String(item.stockQuantity));
   const [price,     setPrice]     = useState(String(item.sellingPrice));
@@ -190,20 +257,36 @@ function InventoryRow({
   const [note,      setNote]      = useState("");
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState<string | null>(null);
+  // Per-pack-size stock, keyed by unit. Only used when the product has variants.
+  const [variantStock, setVariantStock] = useState<Record<string, string>>(() =>
+    Object.fromEntries(item.variants.map(v => [v.unit, String(v.stock ?? 0)])),
+  );
+
+  // With variants, the inventory doc's single stockQuantity is the SUM of the
+  // pack sizes — editing a variant re-derives it, so the two can never disagree.
+  const variantTotal = hasVariants
+    ? item.variants.reduce((sum, v) => sum + (Number(variantStock[v.unit]) || 0), 0)
+    : 0;
+  const effectiveStock = hasVariants ? variantTotal : Number(stock);
 
   const reset = () => {
     setStock(String(item.stockQuantity));
     setPrice(String(item.sellingPrice));
     setThreshold(String(item.reorderThreshold));
+    setVariantStock(Object.fromEntries(item.variants.map(v => [v.unit, String(v.stock ?? 0)])));
     setNote("");
     setErr(null);
     setEditing(false);
   };
 
   const handleSave = async () => {
-    const newStock = Number(stock);
+    const newStock = effectiveStock;
     const newPrice = Number(price);
     const newThreshold = Number(threshold);
+    if (hasVariants && item.variants.some(v => Number(variantStock[v.unit]) < 0)) {
+      setErr("Stock cannot be negative.");
+      return;
+    }
     if (newStock < 0)    { setErr("Stock cannot be negative."); return; }
     if (newPrice <= 0)   { setErr("Price must be greater than 0."); return; }
     if (newThreshold < 0){ setErr("Reorder threshold cannot be negative."); return; }
@@ -211,12 +294,32 @@ function InventoryRow({
     setSaving(true); setErr(null);
     try {
       const adminUid = auth.currentUser?.uid ?? "admin";
-      await adminUpdateInventory(
-        item.inventoryId, item.productName, item.ownerPhone,
+      const { syncedToStore } = await adminUpdateInventory(
+        item.inventoryId, item.productId, item.productName, item.ownerPhone,
         { stock: item.stockQuantity, price: item.sellingPrice, threshold: item.reorderThreshold },
-        { stock: newStock, price: newPrice, threshold: newThreshold },
+        {
+          stock: newStock,
+          price: newPrice,
+          threshold: newThreshold,
+          ...(hasVariants
+            ? {
+                variants: item.variants.map(v => ({
+                  ...v,
+                  stock: Number(variantStock[v.unit]) || 0,
+                })),
+              }
+            : {}),
+        },
         note, adminUid,
       );
+      if (!syncedToStore) {
+        setErr(
+          "Stock saved, but the seller's listing could not be updated — the product " +
+          "may have been deleted. The marketplace will still show the old value.",
+        );
+        onSaved();
+        return;
+      }
       setEditing(false);
       onSaved();
     } catch (e) {
@@ -224,7 +327,7 @@ function InventoryRow({
     } finally { setSaving(false); }
   };
 
-  const stockDelta = Number(stock) - item.stockQuantity;
+  const stockDelta = effectiveStock - item.stockQuantity;
 
   return (
     <div className="border-b border-outline-variant/10 last:border-0">
@@ -259,7 +362,7 @@ function InventoryRow({
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <label className="flex flex-col gap-1 text-xs">
               <span className="font-bold text-on-surface-variant uppercase tracking-widest">
-                Stock Qty
+                {hasVariants ? "Total Stock" : "Stock Qty"}
                 {stockDelta !== 0 && (
                   <span className={cn(
                     "ml-1.5 font-black",
@@ -270,10 +373,18 @@ function InventoryRow({
                   </span>
                 )}
               </span>
-              <input type="number" min={0} value={stock}
-                onChange={e => setStock(e.target.value)}
-                className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              />
+              {hasVariants ? (
+                // Read-only: with pack sizes the total is the sum of the rows
+                // below, so it cannot be edited independently of them.
+                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm font-bold tabular-nums text-on-surface">
+                  {variantTotal} units
+                </div>
+              ) : (
+                <input type="number" min={0} value={stock}
+                  onChange={e => setStock(e.target.value)}
+                  className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              )}
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="font-bold text-on-surface-variant uppercase tracking-widest">Price (₹)</span>
@@ -290,6 +401,49 @@ function InventoryRow({
               />
             </label>
           </div>
+          {hasVariants && (
+            <div className="rounded-xl border border-outline-variant/30 bg-white p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                Stock by pack size
+              </p>
+              <div className="space-y-2">
+                {item.variants.map(v => {
+                  const current = Number(variantStock[v.unit]) || 0;
+                  const before = v.stock ?? 0;
+                  const delta = current - before;
+                  return (
+                    <div key={v.unit} className="flex items-center gap-3">
+                      <span className="min-w-0 flex-1 truncate text-sm text-on-surface">
+                        {v.unit}
+                        <span className="ml-2 text-xs text-on-surface-variant">₹{v.price}</span>
+                      </span>
+                      {delta !== 0 && (
+                        <span className={cn(
+                          "shrink-0 text-xs font-black",
+                          delta > 0 ? "text-green-600" : "text-red-600",
+                        )}>
+                          {delta > 0 ? "+" : ""}{delta}
+                        </span>
+                      )}
+                      <input
+                        type="number"
+                        min={0}
+                        value={variantStock[v.unit] ?? "0"}
+                        onChange={e =>
+                          setVariantStock(prev => ({ ...prev, [v.unit]: e.target.value }))
+                        }
+                        className={cn(
+                          "w-24 shrink-0 rounded-xl border bg-white px-3 py-2 text-sm tabular-nums text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+                          current === 0 ? "border-red-300" : "border-outline-variant/40",
+                        )}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <label className="flex flex-col gap-1 text-xs">
             <span className="font-bold text-on-surface-variant uppercase tracking-widest">Note (optional)</span>
             <input type="text" value={note} placeholder="Reason for update, e.g. stock correction"
@@ -332,6 +486,7 @@ export default function AdminInventoryPage() {
   const [showLogs, setShowLogs] = useState(false);
   const [logSearch, setLogSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "retailer" | "manufacturer">("all");
+  const [stockFilter, setStockFilter] = useState<"all" | "out" | "low" | "in">("all");
 
   const load = async () => {
     setLoading(true);
@@ -345,17 +500,37 @@ export default function AdminInventoryPage() {
 
   useEffect(() => { load(); }, []);
 
+  // A product is "low" only once it is at or below its own reorder threshold,
+  // and a threshold of 0 would otherwise make every out-of-stock item look low
+  // as well — so zero stock is always classified as out, never low.
+  const stockStateOf = (i: InventoryItem): "out" | "low" | "in" =>
+    i.stockQuantity <= 0 ? "out"
+      : i.reorderThreshold > 0 && i.stockQuantity <= i.reorderThreshold ? "low"
+      : "in";
+
   const filtered = items.filter(item => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || item.productName.toLowerCase().includes(q) || item.ownerPhone.includes(q);
+    const q = search.trim().toLowerCase();
+    const matchSearch = !q
+      || item.productName.toLowerCase().includes(q)
+      || item.ownerPhone.includes(q)
+      || item.category.toLowerCase().includes(q)
+      || item.variants.some(v => v.unit.toLowerCase().includes(q));
     const matchType = typeFilter === "all" || item.ownerType === typeFilter;
-    return matchSearch && matchType;
+    const matchStock = stockFilter === "all" || stockStateOf(item) === stockFilter;
+    return matchSearch && matchType && matchStock;
   });
 
   const counts = {
     all: items.length,
     retailer: items.filter(i => i.ownerType === "retailer").length,
     manufacturer: items.filter(i => i.ownerType === "manufacturer").length,
+  };
+
+  const stockCounts = {
+    all: items.length,
+    out: items.filter(i => stockStateOf(i) === "out").length,
+    low: items.filter(i => stockStateOf(i) === "low").length,
+    in:  items.filter(i => stockStateOf(i) === "in").length,
   };
 
   const filteredLogs = logs.filter(log => {
@@ -408,10 +583,36 @@ export default function AdminInventoryPage() {
         ))}
       </div>
 
+      {/* Stock status — the fast way to reach every product that has run out */}
+      <div className="flex flex-wrap gap-2">
+        {([
+          { key: "all", label: "All stock",    count: stockCounts.all, tone: "text-on-surface" },
+          { key: "out", label: "Out of stock", count: stockCounts.out, tone: "text-red-600" },
+          { key: "low", label: "Low stock",    count: stockCounts.low, tone: "text-amber-600" },
+          { key: "in",  label: "In stock",     count: stockCounts.in,  tone: "text-green-700" },
+        ] as const).map(({ key, label, count, tone }) => (
+          <button
+            key={key}
+            onClick={() => setStockFilter(key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-colors",
+              stockFilter === key
+                ? "border-primary bg-primary text-white"
+                : "border-outline-variant/40 bg-white hover:border-outline-variant",
+            )}
+          >
+            <span>{label}</span>
+            <span className={cn("tabular-nums", stockFilter === key ? "text-white/80" : tone)}>
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Search */}
       <div className="flex items-center gap-3 rounded-2xl border border-outline-variant/40 bg-white px-4 py-2.5">
         <Search className="h-4 w-4 text-outline shrink-0" />
-        <input type="text" placeholder="Search by product name or phone…"
+        <input type="text" placeholder="Search product, phone, category or pack size…"
           value={search} onChange={e => setSearch(e.target.value)}
           className="flex-1 bg-transparent text-sm text-on-surface placeholder-on-surface-variant outline-none" />
         {search && <button onClick={() => setSearch("")}><X className="h-3.5 w-3.5 text-on-surface-variant" /></button>}

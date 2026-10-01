@@ -8,7 +8,7 @@
  *   new doc for that month only — prior months are never touched.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { doc, getDoc, setDoc, serverTimestamp, getDocs, query } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
 import { collection as fsCollection } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -87,10 +87,10 @@ export default function SalesTargetsAdminPage() {
         (async () => {
             setLoadingUsers(true);
             try {
-                const snap = await getDocs(query(fsCollection(db, 'users')));
+                const snap = await getDocs(query(fsCollection(db, 'users'), where('tenantId', '==', tenantId)));
                 const all = snap.docs
                     .map(d => ({ id: d.id, ...(d.data() as any) }))
-                    .filter((u: any) => u.tenantId === tenantId && u.role === 'sales') as SalesUser[];
+                    .filter((u: any) => u.role === 'sales') as SalesUser[];
                 setSalesUsers(all);
             } catch (e) {
                 console.error('Failed to load users:', e);

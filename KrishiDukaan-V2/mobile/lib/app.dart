@@ -7,6 +7,7 @@ import 'core/constants/app_colors.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/user_provider.dart';
 import 'core/router/app_router.dart';
+import 'core/services/activity_tracker.dart';
 import 'core/services/notification_service.dart';
 
 class KrishiDukaanApp extends ConsumerStatefulWidget {
@@ -23,6 +24,15 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     // Initialize FCM when a logged-in user is first available
     ref.listenManual(currentUserProvider, (_, next) {
       final user = next.value;
+      if (user != null && user.phone.isNotEmpty) {
+        // Activity signal (DAU/MAU/retention). Throttled to ~1 write/user/day
+        // and best-effort — never blocks anything.
+        ActivityTracker.record(
+          userId: user.phone,
+          role: user.role,
+          registeredAt: user.createdAt,
+        );
+      }
       if (!kIsWeb && user != null && user.phone.isNotEmpty) {
         NotificationService().initialize(
           user.phone,

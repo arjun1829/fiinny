@@ -682,6 +682,15 @@ export default function WorklistDetailsPage() {
                 outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - outstandingSub),
             });
 
+            // Remove this order's Cash auto-payment record (created by the GST Invoice
+            // page for Cash-mode invoices) so it stops counting toward computedTotalPaid.
+            const linkedCashPayments = await getDocs(query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'payments'),
+                where('orderId', '==', so.id),
+                where('source', '==', 'b2b_invoice_cash'),
+            ));
+            await Promise.all(linkedCashPayments.docs.map(d => deleteDoc(d.ref)));
+
             // Soft-delete the order doc (financials already reversed above).
             await softDelete({
                 db, tenantId: tenantId!,
@@ -747,6 +756,16 @@ export default function WorklistDetailsPage() {
                 totalPaid: Math.max(0, (Number(retailer?.totalPaid) || 0) - totalPaidReversal),
                 outstandingAmount: Math.max(0, (Number(retailer?.outstandingAmount) || 0) - totalOutstandingReversal),
             });
+
+            // Remove each selected order's Cash auto-payment record, if any.
+            for (const so of selected) {
+                const linkedCashPayments = await getDocs(query(
+                    getTenantCollection(db, tenantId, 'retailers', id, 'payments'),
+                    where('orderId', '==', so.id),
+                    where('source', '==', 'b2b_invoice_cash'),
+                ));
+                await Promise.all(linkedCashPayments.docs.map(d => deleteDoc(d.ref)));
+            }
 
             // Soft-delete all selected order docs (financials already reversed above)
             await Promise.all(
@@ -985,10 +1004,23 @@ export default function WorklistDetailsPage() {
         if (!can('worklist.retailerProfile.payments.edit')) return;
         if (!id || !tenantId) return;
 
-        // If payment has linked order allocations, route through the confirmation modal
-        if ((p.linkedOrderIds?.length ?? 0) > 0) {
-            setDeletePaymentTarget(p);
-            return;
+        // `linkedOrderIds` alone doesn't tell us how this payment was created —
+        // a single-order payment (handleAddOrderPayment, the "quick mark Paid"
+        // flow) stamps both `orderId` and `linkedOrderIds` but never writes a
+        // paymentAllocations record, while handleLinkPaymentToOrder (splitting
+        // an existing payment across orders) always does. Only the latter needs
+        // the allocation-reversal modal; check the actual paymentAllocations
+        // collection — the authoritative source both paths already query —
+        // instead of assuming from `linkedOrderIds`.
+        if (!p.orderId && (p.linkedOrderIds?.length ?? 0) > 0) {
+            const allocSnap = await getDocs(query(
+                getTenantCollection(db, tenantId, 'retailers', id, 'paymentAllocations'),
+                where('paymentId', '==', p.id)
+            ));
+            if (!allocSnap.empty) {
+                setDeletePaymentTarget(p);
+                return;
+            }
         }
 
         if (!window.confirm(`Delete this payment of ₹${Number(p.amount || 0).toLocaleString()}? Totals will be adjusted.`)) return;

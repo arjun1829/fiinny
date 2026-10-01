@@ -14,6 +14,15 @@ import '../providers/dashboard_provider.dart';
 ///
 /// The digest links here with `?period=week|month|year`, so whichever window
 /// the notification summarised is the one that opens.
+const _weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+String _weekdayLabel(DateTime d) => _weekdayLabels[d.weekday - 1];
+
+const _monthAbbrShort = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+String _shortDate(DateTime d) => '${d.day} ${_monthAbbrShort[d.month - 1]}';
+
 class DashboardAnalyticsScreen extends ConsumerStatefulWidget {
   /// 'week' | 'month' | 'year' from an analytics_digest notification.
   final String? initialPeriod;
@@ -28,11 +37,34 @@ class DashboardAnalyticsScreen extends ConsumerStatefulWidget {
 class _DashboardAnalyticsScreenState
     extends ConsumerState<DashboardAnalyticsScreen> {
   late AnalyticsPeriod _period;
+  // Non-null only while the Custom Date Range filter is the active
+  // selection — it overrides _period everywhere until the user picks a
+  // preset again. Kept separate from AnalyticsPeriod (rather than adding a
+  // 4th enum value) since a custom range carries actual dates, not a fixed
+  // day count.
+  AnalyticsRange? _customRange;
 
   @override
   void initState() {
     super.initState();
     _period = AnalyticsPeriod.fromKey(widget.initialPeriod);
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 3),
+      lastDate: now,
+      initialDateRange: _customRange != null
+          ? DateTimeRange(start: _customRange!.start, end: _customRange!.end)
+          : DateTimeRange(
+              start: now.subtract(const Duration(days: 6)), end: now),
+    );
+    if (picked == null) return;
+    setState(() {
+      _customRange = AnalyticsRange(start: picked.start, end: picked.end);
+    });
   }
 
   @override
@@ -52,10 +84,19 @@ class _DashboardAnalyticsScreenState
               children: [
                 _PeriodSelector(
                   selected: _period,
-                  onChanged: (p) => setState(() => _period = p),
+                  customRange: _customRange,
+                  onChanged: (p) => setState(() {
+                    _period = p;
+                    _customRange = null;
+                  }),
+                  onPickCustom: _pickCustomRange,
                 ),
                 Expanded(
-                  child: _Body(sellerPhone: user.phone, period: _period),
+                  child: _Body(
+                    sellerPhone: user.phone,
+                    period: _period,
+                    customRange: _customRange,
+                  ),
                 ),
               ],
             ),
@@ -63,15 +104,32 @@ class _DashboardAnalyticsScreenState
   }
 }
 
-/// Week / Month / Year segmented control.
+/// Week / Month / Year / Custom segmented control. Custom shows the picked
+/// range (e.g. "12 Sep – 18 Sep") once one is chosen, instead of a static
+/// "Custom" label, so the active window is always visible at a glance.
 class _PeriodSelector extends StatelessWidget {
   final AnalyticsPeriod selected;
+  final AnalyticsRange? customRange;
   final ValueChanged<AnalyticsPeriod> onChanged;
+  final VoidCallback onPickCustom;
 
-  const _PeriodSelector({required this.selected, required this.onChanged});
+  const _PeriodSelector({
+    required this.selected,
+    required this.customRange,
+    required this.onChanged,
+    required this.onPickCustom,
+  });
+
+  static const _monthAbbr = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _fmt(DateTime d) => '${d.day} ${_monthAbbr[d.month - 1]}';
 
   @override
   Widget build(BuildContext context) {
+    final isCustom = customRange != null;
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -79,32 +137,78 @@ class _PeriodSelector extends StatelessWidget {
         children: [
           for (final p in AnalyticsPeriod.values) ...[
             Expanded(
-              child: GestureDetector(
+              child: _Chip(
+                label: p.label,
+                selected: !isCustom && p == selected,
                 onTap: () => onChanged(p),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  decoration: BoxDecoration(
-                    color: p == selected
-                        ? AppColors.primary
-                        : AppColors.primaryContainer.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    p.label,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: p == selected
-                          ? Colors.white
-                          : AppColors.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            flex: 2,
+            child: _Chip(
+              icon: Icons.calendar_month_outlined,
+              label: isCustom
+                  ? '${_fmt(customRange!.start)} – ${_fmt(customRange!.end)}'
+                  : 'Custom',
+              selected: isCustom,
+              onTap: onPickCustom,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  const _Chip(
+      {required this.label,
+      required this.selected,
+      required this.onTap,
+      this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary
+              : AppColors.primaryContainer.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14,
+                  color: selected ? Colors.white : AppColors.onSurfaceVariant),
+              const SizedBox(width: 4),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: selected ? Colors.white : AppColors.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
                 ),
               ),
             ),
-            if (p != AnalyticsPeriod.values.last) const SizedBox(width: 8),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -113,13 +217,15 @@ class _PeriodSelector extends StatelessWidget {
 class _Body extends ConsumerWidget {
   final String sellerPhone;
   final AnalyticsPeriod period;
-  const _Body({required this.sellerPhone, required this.period});
+  final AnalyticsRange? customRange;
+  const _Body(
+      {required this.sellerPhone, required this.period, this.customRange});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ordersAsync = ref.watch(sellerOrdersProvider(sellerPhone));
-    final reachAsync = ref.watch(
-        storeAnalyticsProvider((phone: sellerPhone, period: period)));
+    final reachAsync = ref.watch(storeAnalyticsProvider(
+        (phone: sellerPhone, period: period, customRange: customRange)));
 
     return ordersAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -127,6 +233,7 @@ class _Body extends ConsumerWidget {
       data: (orders) => _Content(
         orders: orders,
         period: period,
+        customRange: customRange,
         reach: reachAsync,
       ),
     );
@@ -136,29 +243,52 @@ class _Body extends ConsumerWidget {
 class _Content extends StatelessWidget {
   final List<OrderModel> orders;
   final AnalyticsPeriod period;
+  final AnalyticsRange? customRange;
   final AsyncValue<StoreAnalytics> reach;
 
   const _Content({
     required this.orders,
     required this.period,
     required this.reach,
+    this.customRange,
   });
 
   @override
   Widget build(BuildContext context) {
     // Scope orders to the selected window so the revenue figure and the reach
-    // figures below it describe the same stretch of time.
-    final cutoff = DateTime.now().subtract(Duration(days: period.days));
-    final inPeriod = orders
-        .where((o) => o.createdAt == null || o.createdAt!.isAfter(cutoff))
+    // figures below it describe the same stretch of time. A custom range has
+    // an explicit end (not necessarily today), so it needs its own upper
+    // bound rather than just a "since X" cutoff.
+    final range = customRange;
+    final cutoff = range?.start ??
+        DateTime.now().subtract(Duration(days: period.days));
+    final upperBoundExclusive = range?.end.add(const Duration(days: 1));
+    final inPeriod = orders.where((o) {
+      if (o.createdAt == null) return true;
+      if (o.createdAt!.isBefore(cutoff)) return false;
+      if (upperBoundExclusive != null &&
+          !o.createdAt!.isBefore(upperBoundExclusive)) {
+        return false;
+      }
+      return true;
+    }).toList();
+    // 'rejected' is the canonical declined status; the old mobile-only
+    // 'cancelled' alias is still excluded so historical docs stay correct.
+    final valid = inPeriod
+        .where((o) => o.status != 'rejected' && o.status != 'cancelled')
         .toList();
-    final valid = inPeriod.where((o) => o.status != 'cancelled').toList();
     final totalRevenue = valid.fold<double>(0, (sum, o) => sum + o.total);
     final totalOrders = inPeriod.length;
 
+    // The trend chart is a fixed "Last 7 Days" for the Week/Month/Year
+    // presets (a 365-bar chart would be unreadable on a phone), but a Custom
+    // Date Range is exactly the window the seller asked to see, so it drives
+    // the chart directly — bucketed if long, one bar per day if short.
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final days = List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
+    final trendLabel = range != null ? 'Selected Range' : 'Last 7 Days';
+    final days = range?.days ??
+        List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
     final dayRevenue = {for (final d in days) d: 0.0};
     for (final o in valid) {
       final created = o.createdAt;
@@ -168,7 +298,30 @@ class _Content extends StatelessWidget {
         dayRevenue[day] = dayRevenue[day]! + o.total;
       }
     }
-    final maxRevenue = dayRevenue.values.fold<double>(0, (m, v) => v > m ? v : m);
+    // Cap the number of bars — a year-long custom range would otherwise
+    // render hundreds of slivers. Buckets sum consecutive days and are
+    // labelled by the bucket's first day.
+    const maxBars = 14;
+    final trendPoints = <_TrendPoint>[];
+    if (days.length <= maxBars) {
+      for (final d in days) {
+        trendPoints.add(_TrendPoint(
+          label: range != null ? _shortDate(d) : _weekdayLabel(d),
+          value: dayRevenue[d] ?? 0,
+        ));
+      }
+    } else {
+      final bucketSize = (days.length / maxBars).ceil();
+      for (var i = 0; i < days.length; i += bucketSize) {
+        final chunk = days.skip(i).take(bucketSize);
+        trendPoints.add(_TrendPoint(
+          label: _shortDate(chunk.first),
+          value: chunk.fold<double>(0, (s, d) => s + (dayRevenue[d] ?? 0)),
+        ));
+      }
+    }
+    final maxRevenue =
+        trendPoints.fold<double>(0, (m, p) => p.value > m ? p.value : m);
 
     final productRevenue = <String, double>{};
     final productQty = <String, int>{};
@@ -227,11 +380,9 @@ class _Content extends StatelessWidget {
         ),
         const SizedBox(height: 20),
 
-        // The trend chart is always a 7-day view — a 365-bar chart on the
-        // Year tab would be unreadable on a phone.
-        Text('Last 7 Days', style: AppTextStyles.heading3),
+        Text(trendLabel, style: AppTextStyles.heading3),
         const SizedBox(height: 12),
-        _TrendCard(days: days, revenue: dayRevenue, maxRevenue: maxRevenue),
+        _TrendCard(points: trendPoints, maxRevenue: maxRevenue),
         const SizedBox(height: 20),
         Text('Top Products', style: AppTextStyles.heading3),
         const SizedBox(height: 12),
@@ -393,14 +544,19 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _TrendCard extends StatelessWidget {
-  final List<DateTime> days;
-  final Map<DateTime, double> revenue;
-  final double maxRevenue;
-  const _TrendCard(
-      {required this.days, required this.revenue, required this.maxRevenue});
+/// One bar's worth of pre-labelled, pre-bucketed trend data — computed by
+/// _Content so this widget doesn't need to know whether it's showing raw
+/// days or summed buckets.
+class _TrendPoint {
+  final String label;
+  final double value;
+  const _TrendPoint({required this.label, required this.value});
+}
 
-  static const _weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+class _TrendCard extends StatelessWidget {
+  final List<_TrendPoint> points;
+  final double maxRevenue;
+  const _TrendCard({required this.points, required this.maxRevenue});
 
   @override
   Widget build(BuildContext context) {
@@ -414,36 +570,42 @@ class _TrendCard extends StatelessWidget {
               color: AppColors.cardShadow, blurRadius: 4, offset: const Offset(0, 2)),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (final day in days)
-            Column(
-              children: [
-                Text(
-                  maxRevenue > 0
-                      ? CurrencyUtils.format(revenue[day] ?? 0)
-                      : '',
-                  style: AppTextStyles.caption.copyWith(fontSize: 9),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (final point in points)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Column(
+                  children: [
+                    Text(
+                      maxRevenue > 0
+                          ? CurrencyUtils.format(point.value)
+                          : '',
+                      style: AppTextStyles.caption.copyWith(fontSize: 9),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: 20,
+                      height: 4 +
+                          (maxRevenue > 0
+                              ? (point.value / maxRevenue) * 80
+                              : 0),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(point.label, style: AppTextStyles.caption),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Container(
-                  width: 20,
-                  height: 4 +
-                      (maxRevenue > 0
-                          ? ((revenue[day] ?? 0) / maxRevenue) * 80
-                          : 0),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(_weekdayLabels[day.weekday - 1], style: AppTextStyles.caption),
-              ],
-            ),
-        ],
+              ),
+          ],
+        ),
       ),
     );
   }

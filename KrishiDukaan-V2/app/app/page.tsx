@@ -81,7 +81,16 @@ export default function AppDownloadPage() {
       price: "0",
       priceCurrency: "INR",
     },
-    ...(androidLive ? { installUrl: PLAY_STORE_URL } : {}),
+    // Both stores when both are live — schema.org allows a repeated
+    // installUrl, and the page already declares "Android, iOS", so listing
+    // only one would under-describe the app to search engines.
+    ...(() => {
+      const urls = [
+        ...(androidLive ? [PLAY_STORE_URL] : []),
+        ...(iosLive && APP_STORE_URL ? [APP_STORE_URL] : []),
+      ];
+      return urls.length > 0 ? { installUrl: urls.length === 1 ? urls[0] : urls } : {};
+    })(),
   };
 
   const breadcrumbLd = {

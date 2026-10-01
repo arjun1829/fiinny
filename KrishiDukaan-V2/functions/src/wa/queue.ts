@@ -1,12 +1,10 @@
 import * as admin from "firebase-admin";
 import { getDb } from "./firebase";
 import { getProvider } from "./provider";
-import { resolveTemplateComponents } from "./templateResolver";
+import { resolveTemplateComponents, resolveTemplateLanguage } from "./templateResolver";
 import type { WaNotification } from "./types";
 
 const COLLECTION = "waNotifications";
-
-const TEMPLATE_LANGUAGE = "mr";
 
 /**
  * Atomically claims a pending doc by setting status to "sending".
@@ -51,10 +49,11 @@ async function dispatchNotification(n: WaNotification): Promise<string> {
         ? n.templateComponents
         : resolveTemplateComponents(n.template, n.payload);
 
+    const langCode = resolveTemplateLanguage(n.template);
     const result = await provider.sendTemplateMessage(
       n.phone,
       n.template,
-      TEMPLATE_LANGUAGE,
+      langCode,
       components
     );
     return result.metaMessageId;
@@ -72,12 +71,16 @@ async function dispatchNotification(n: WaNotification): Promise<string> {
 
 export async function processPendingNotifications(batchSize = 10): Promise<void> {
   const db = getDb();
+  const cutoff = admin.firestore.Timestamp.fromMillis(
+    Date.now() - 7 * 24 * 60 * 60 * 1000
+  );
 
   const snap = await db
     .collection(COLLECTION)
     .where("status", "==", "pending")
+    .where("createdAt", ">=", cutoff)
+    .orderBy("createdAt", "desc")
     .orderBy("retryCount", "asc")
-    .orderBy("createdAt", "asc")
     .limit(batchSize)
     .get();
 
@@ -195,12 +198,15 @@ export async function processSingleNotification(docId: string): Promise<void> {
 }
 
 /**
- * Resets stuck and permanently-failed docs back to "pending" so the next
+ * Resets stuck "sending" docs back to "pending" so the next
  * processPendingNotifications() call picks them up.
  *
- * Two cases handled:
- *   "sending" + claimedAt older than stuckMinutes  — trigger/function crashed mid-flight
- *   "failed"                                        — scheduler gives a fresh set of retries
+ * Only handles: "sending" + claimedAt older than stuckMinutes
+ * (function crashed mid-flight after claiming but before writing "sent").
+ *
+ * Permanently "failed" docs are intentionally NOT reset here — auto-resetting
+ * failed docs with retryCount=0 creates an infinite retry loop. Failed docs
+ * must be retried explicitly via an admin action.
  */
 export async function resetStuckAndFailed(
   batchSize = 25,
@@ -230,29 +236,7 @@ export async function resetStuckAndFailed(
       });
     }
     await batch.commit();
-  }
-
-  // ── Permanently failed docs — give them a fresh set of retries ─────────────
-  const failedSnap = await db
-    .collection(COLLECTION)
-    .where("status", "==", "failed")
-    .limit(batchSize)
-    .get();
-
-  if (!failedSnap.empty) {
-    console.log(`[Queue] Resetting ${failedSnap.size} failed doc(s) for retry`);
-    const batch = db.batch();
-    for (const doc of failedSnap.docs) {
-      batch.update(doc.ref, {
-        status: "pending",
-        retryCount: 0,
-        lastError: null,
-      });
-    }
-    await batch.commit();
-  }
-
-  if (stuckSnap.empty && failedSnap.empty) {
-    console.log("[Queue] No stuck or failed notifications to reset");
+  } else {
+    console.log("[Queue] No stuck notifications to reset");
   }
 }

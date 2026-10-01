@@ -1,16 +1,18 @@
 import { useEffect } from 'react';
-import { FileText, BarChart3, Package2 } from 'lucide-react';
+import { FileText, BarChart3, Package2, ReceiptText } from 'lucide-react';
 import { useHashTab } from '../hooks/useHashTab';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import FinancialReportsPage from './FinancialReportsPage';
 import GSTReportsPage from './GSTReportsPage';
 import StockReportPage from './StockReportPage';
+import SalesReportPage from './SalesReportPage';
 
-type ReportTab = 'financial' | 'gst' | 'stock';
-const VALID_TABS: readonly ReportTab[] = ['financial', 'gst', 'stock'];
+type ReportTab = 'financial' | 'gst' | 'stock' | 'sales';
+const VALID_TABS: readonly ReportTab[] = ['financial', 'gst', 'stock', 'sales'];
 
 const TABS: { id: ReportTab; label: string; icon: React.ReactNode }[] = [
     { id: 'stock',     label: 'Stock Report',      icon: <Package2 size={16} /> },
+    { id: 'sales',     label: 'Sales Report',      icon: <ReceiptText size={16} /> },
     { id: 'financial', label: 'Financial Report', icon: <BarChart3 size={16} /> },
     { id: 'gst',       label: 'GST Report',       icon: <FileText size={16} /> },
 ];
@@ -18,13 +20,14 @@ const TABS: { id: ReportTab; label: string; icon: React.ReactNode }[] = [
 // Feature-permission id per sub-tab (Super Admin → Feature Permissions).
 const TAB_PERM: Record<ReportTab, string> = {
     stock:     'reports.stock.view',
+    sales:     'reports.sales.view',
     financial: 'reports.financial.view',
     gst:       'reports.gst.view',
 };
 
 export default function ReportsPage() {
-    const [active, setActive] = useHashTab<ReportTab>(VALID_TABS, 'stock', 'fiinny-tab-reports');
     const can = useFeaturePermissions();
+    const [active, setActive] = useHashTab<ReportTab>(VALID_TABS, 'stock', 'fiinny-tab-reports', tab => can(TAB_PERM[tab]));
 
     // Sub-tab visibility is driven SOLELY by the Feature Matrix (single source of
     // truth). Analyst's Financial/GST denial now lives in DEFAULT_FEATURE_PERMISSIONS.
@@ -87,6 +90,7 @@ export default function ReportsPage() {
             {activeAllowed && active === 'financial' && <FinancialReportsPage />}
             {activeAllowed && active === 'gst'       && <GSTReportsPage />}
             {activeAllowed && active === 'stock'     && <StockReportPage />}
+            {activeAllowed && active === 'sales'     && <SalesReportPage />}
         </div>
     );
 }

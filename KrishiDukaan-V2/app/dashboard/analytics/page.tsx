@@ -9,6 +9,7 @@ import {
   fetchRetailerAnalytics,
   ANALYTICS_PERIODS,
   type AnalyticsPeriodKey,
+  type CustomDateRange,
   type RetailerAnalytics,
 } from "../_lib/analytics-firestore";
 import { useEffectiveUser } from "../_context/effective-user-context";
@@ -17,6 +18,17 @@ import { useI18n } from "../../i18n/I18nContext";
 
 function formatINR(amount: number): string {
   return `₹${Math.round(amount).toLocaleString("en-IN")}`;
+}
+
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatShort(d: Date): string {
+  return d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
 export default function AnalyticsPage() {
@@ -29,6 +41,14 @@ export default function AnalyticsPage() {
   // has offered Week/Month/Year all along — so the same seller saw different
   // numbers on each platform and assumed web was wrong.
   const [period, setPeriod] = useState<AnalyticsPeriodKey>("week");
+  // Custom Date Range overrides `period` when set — same relationship as the
+  // app's _customRange (mobile/lib/features/dashboard/screens/
+  // dashboard_analytics_screen.dart), kept as a separate piece of state
+  // rather than folded into AnalyticsPeriodKey since it carries real dates.
+  const [customRange, setCustomRange] = useState<CustomDateRange | null>(null);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [draftStart, setDraftStart] = useState("");
+  const [draftEnd, setDraftEnd] = useState("");
 
   const load = useCallback(async () => {
     if (!effectiveUid && !profile?.phone) {
@@ -40,7 +60,12 @@ export default function AnalyticsPage() {
     setLoading(true);
     setError(false);
     try {
-      const realStats = await fetchRetailerAnalytics(effectiveUid, profile, period);
+      const realStats = await fetchRetailerAnalytics(
+        effectiveUid,
+        profile,
+        period,
+        customRange ?? undefined,
+      );
       setStats(realStats);
     } catch (err) {
       console.error("Failed to load analytics:", err);
@@ -48,11 +73,20 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveUid, profile, period]);
+  }, [effectiveUid, profile, period, customRange]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const applyCustomRange = () => {
+    if (!draftStart || !draftEnd) return;
+    const start = new Date(`${draftStart}T00:00:00`);
+    const end = new Date(`${draftEnd}T00:00:00`);
+    if (start > end) return;
+    setCustomRange({ start, end });
+    setShowCustomPicker(false);
+  };
 
   if (loading) {
     return (
@@ -96,16 +130,20 @@ export default function AnalyticsPage() {
         helperKey="dashAnalytics"
       />
 
-      {/* Window selector — matches the app's Week/Month/Year picker. */}
-      <div className="mb-6 inline-flex rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-1">
+      {/* Window selector — matches the app's Week/Month/Year/Custom picker. */}
+      <div className="mb-2 inline-flex flex-wrap items-center gap-1 rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-1">
         {ANALYTICS_PERIODS.map((p) => (
           <button
             key={p.key}
             type="button"
-            onClick={() => setPeriod(p.key)}
-            aria-pressed={period === p.key}
+            onClick={() => {
+              setPeriod(p.key);
+              setCustomRange(null);
+              setShowCustomPicker(false);
+            }}
+            aria-pressed={!customRange && period === p.key}
             className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
-              period === p.key
+              !customRange && period === p.key
                 ? "bg-primary text-white"
                 : "text-on-surface-variant hover:text-on-surface"
             }`}
@@ -113,7 +151,67 @@ export default function AnalyticsPage() {
             {p.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => {
+            setDraftStart(customRange ? toDateInputValue(customRange.start) : "");
+            setDraftEnd(customRange ? toDateInputValue(customRange.end) : "");
+            setShowCustomPicker((s) => !s);
+          }}
+          aria-pressed={!!customRange}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+            customRange
+              ? "bg-primary text-white"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          {customRange
+            ? `${formatShort(customRange.start)} – ${formatShort(customRange.end)}`
+            : "Custom"}
+        </button>
       </div>
+
+      {showCustomPicker && (
+        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-3">
+          <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+            From
+            <input
+              type="date"
+              value={draftStart}
+              max={draftEnd || undefined}
+              onChange={(e) => setDraftStart(e.target.value)}
+              className="mt-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-sm text-on-surface"
+            />
+          </label>
+          <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+            To
+            <input
+              type="date"
+              value={draftEnd}
+              min={draftStart || undefined}
+              max={toDateInputValue(new Date())}
+              onChange={(e) => setDraftEnd(e.target.value)}
+              className="mt-1 rounded-lg border border-outline-variant/40 px-2 py-1 text-sm text-on-surface"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={applyCustomRange}
+            disabled={!draftStart || !draftEnd}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Apply
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCustomPicker(false)}
+            className="rounded-lg px-3 py-1.5 text-sm font-semibold text-on-surface-variant hover:text-on-surface"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      <div className="mb-4" />
 
       {stats && !stats.hasAnyData && (
         <div className="mb-6 rounded-2xl border border-outline-variant/40 bg-surface-container-low px-5 py-4">

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   promoteToAdmin, ensureSellerStorefront,
-  fetchUsersPage, fetchSubscriptionsForPhones,
+  fetchUsersPage, fetchSubscriptionsForPhones, type UserRoleFilter,
   db, auth,
 } from "../../firebase";
 import { AdminUserEditPanel } from "../_components/admin-user-edit-panel";
@@ -129,7 +129,11 @@ export default function AdminUsersPage() {
   // Whether the admin has engaged search/role-chip/advanced-filter/promote-panel — any of
   // these need to look beyond whatever pages are currently loaded, so they trigger a
   // one-time fetch-and-cache of the complete collections instead of scoped paginated data.
-  const isFiltering = !!debouncedSearch.trim() || filterRole !== "all" ||
+  // Role is now applied by Firestore inside fetchUsersPage, so it no longer
+  // forces the whole collection into memory. Only the filters Firestore cannot
+  // express as a paginated query still do — free-text search across several
+  // fields, subscription joins, and the city/state/date predicates.
+  const isFiltering = !!debouncedSearch.trim() ||
     filterActive !== "all" || filterHasSubscription !== "all" ||
     !!filterDateFrom || !!filterDateTo ||
     !!filterCity.trim() || !!filterState.trim();
@@ -148,13 +152,16 @@ export default function AdminUsersPage() {
    * also drops the shared users cache so the next search re-reads Firestore; a plain
    * reload reuses whatever the cache already holds.
    */
-  const load = (force = false) => {
+  const load = (force = false, role: string = filterRole) => {
     if (force) invalidateUsers();
     setLoading(true);
     setPageUsers([]); setPageSubs([]);
     setLastDoc(null); setHasMore(true);
     setFullUsers(null); setFullSubs(null);
-    return Promise.all([fetchUsersPage(PAGE_SIZE), getRoleCounts({ force })])
+    return Promise.all([
+      fetchUsersPage(PAGE_SIZE, null, role as UserRoleFilter),
+      getRoleCounts({ force }),
+    ])
       .then(async ([page, counts]) => {
         setPageUsers(page.users);
         setLastDoc(page.lastDoc);
@@ -168,6 +175,14 @@ export default function AdminUsersPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Switching role tab re-queries Firestore for that role instead of filtering a
+  // fully-downloaded list. Skips the very first run, which load() above covers.
+  const didMountRole = useRef(false);
+  useEffect(() => {
+    if (!didMountRole.current) { didMountRole.current = true; return; }
+    load(false, filterRole);
+  }, [filterRole]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Clearing the box takes effect immediately; typing settles after 250ms.
@@ -186,7 +201,7 @@ export default function AdminUsersPage() {
     if (!lastDoc || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchUsersPage(PAGE_SIZE, lastDoc);
+      const page = await fetchUsersPage(PAGE_SIZE, lastDoc, filterRole as UserRoleFilter);
       setPageUsers(prev => [...prev, ...page.users]);
       setLastDoc(page.lastDoc);
       setHasMore(page.hasMore);
@@ -419,11 +434,14 @@ export default function AdminUsersPage() {
       if (!password || password.length < 6) { setCreateError("Password must be at least 6 characters."); return; }
       setCreating(true); setCreateError(null); setCreateSuccess(null);
       try {
-        const callerUid = auth.currentUser?.uid;
+        const idToken = await auth.currentUser?.getIdToken();
         const res = await fetch("/api/admin/create-user", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password, callerUid, role }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({ name, email, password, role }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `Failed to create ${label}.`);
@@ -819,8 +837,6 @@ export default function AdminUsersPage() {
                         {(u.role === "retailer" || u.role === "manufacturer") ? (
                           <a
                             href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
                             title={`Open ${u.shopName || u.name || u.id}'s dashboard`}
                           >
@@ -867,8 +883,6 @@ export default function AdminUsersPage() {
                     {(u.role === "retailer" || u.role === "manufacturer") ? (
                       <a
                         href={`/dashboard?adminView=${encodeURIComponent(u.phone || u.id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
                       >
                         <LayoutDashboard className="h-3 w-3" />

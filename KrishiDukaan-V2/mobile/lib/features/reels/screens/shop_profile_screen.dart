@@ -724,6 +724,17 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
 
 // ── Reel grid card ────────────────────────────────────────────────────────────
 
+/// A reel's poster for the grid: its own thumbnail, else the image of the
+/// product it links to. Mirrors the fallback the full-screen feed already
+/// applies (`reel.thumbnailUrl ?? reel.linkedProductImageUrl`).
+String? _gridThumb(ReelModel reel) {
+  final thumb = reel.thumbnailUrl;
+  if (thumb != null && thumb.isNotEmpty) return thumb;
+  final product = reel.linkedProductImageUrl;
+  if (product != null && product.isNotEmpty) return product;
+  return null;
+}
+
 class _ReelGridCard extends StatelessWidget {
   final ReelModel reel;
   final bool isOwner;
@@ -775,12 +786,14 @@ class _ReelGridCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Video thumbnail only — no product image fallback
-            if (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty) ...[
+            // Poster, falling back to the linked product image. This grid used
+            // to show the video thumbnail ONLY, which left every reel uploaded
+            // before server-side poster generation as an empty tile.
+            if (_gridThumb(reel) != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Image.network(
-                  reel.thumbnailUrl!,
+                  _gridThumb(reel)!,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                 ),

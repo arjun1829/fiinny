@@ -172,7 +172,7 @@ class _ManufacturerBody extends ConsumerWidget {
                     _StatCard(
                       label: 'Pending Orders',
                       value:
-                          '${(ordersAsync.value ?? []).where((o) => o.status == 'pending').length}',
+                          '${(ordersAsync.value ?? []).where((o) => o.status == 'placed').length}',
                       icon: Icons.pending_actions_outlined,
                       color: AppColors.secondary,
                     ),
@@ -180,7 +180,7 @@ class _ManufacturerBody extends ConsumerWidget {
                       label: 'Revenue',
                       value: CurrencyUtils.format(
                         (ordersAsync.value ?? [])
-                            .where((o) => o.status != 'cancelled')
+                            .where((o) => o.status != 'rejected')
                             .fold<double>(0, (sum, o) => sum + o.total),
                       ),
                       icon: Icons.currency_rupee,
@@ -423,11 +423,12 @@ class _RecentOrdersList extends StatelessWidget {
   const _RecentOrdersList({required this.orders});
 
   static const _statusColors = {
-    'pending': AppColors.secondary,
+    'placed': AppColors.secondary,
     'confirmed': AppColors.info,
     'dispatched': AppColors.info,
+    'out_for_delivery': AppColors.info,
     'delivered': AppColors.success,
-    'cancelled': AppColors.error,
+    'rejected': AppColors.error,
   };
 
   @override

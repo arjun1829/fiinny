@@ -34,6 +34,16 @@ export type StoredCartItem = {
   sellingPrice?: number;    // post-discount price per unit (item.price)
   originalPrice?: number;   // pre-discount price per unit (undefined = no discount)
   discountPct?: number;     // active discount % (undefined = no discount)
+  /**
+   * Persisted RETAILER-SPECIFIC commercial settings (the chosen store's own GST +
+   * delivery), captured at add/assign time. Preferred on hydration so a reload uses
+   * exactly what the buyer saw, independent of the master product.
+   */
+  gstApplicable?: boolean;
+  gstRate?: number;
+  gstIncluded?: boolean;
+  extraDeliveryCharge?: number;
+  freeDelivery?: boolean;
 };
 
 function toStoredItem(item: CartItem): StoredCartItem {
@@ -49,6 +59,14 @@ function toStoredItem(item: CartItem): StoredCartItem {
     sellingPrice: item.price,
     ...(item.originalPrice != null ? { originalPrice: item.originalPrice } : {}),
     ...(item.discountPct != null && item.discountPct > 0 ? { discountPct: item.discountPct } : {}),
+    // Persist the retailer-specific commercial settings captured at add/assign time.
+    // Store gstIncluded as an explicit boolean whenever GST applies (default included,
+    // false only when exclusive) so the inclusive/exclusive state survives a reload.
+    ...(item.gstApplicable ? { gstApplicable: true } : {}),
+    ...(item.gstRate != null ? { gstRate: item.gstRate } : {}),
+    ...(item.gstApplicable ? { gstIncluded: item.gstIncluded !== false } : {}),
+    ...(item.extraDeliveryCharge != null && item.extraDeliveryCharge > 0 ? { extraDeliveryCharge: item.extraDeliveryCharge } : {}),
+    ...(item.freeDelivery ? { freeDelivery: true } : {}),
   };
 }
 
@@ -110,7 +128,10 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
     price: number;
     image: string;
     gstApplicable?: boolean;
-    gstRate?: 0 | 5 | 12 | 18 | 28;
+    gstRate?: number;
+    gstIncluded?: boolean;
+    extraDeliveryCharge?: number;
+    freeDelivery?: boolean;
     variants?: { unit: string; price: number }[];
     availability?: {
       storeId: string;
@@ -135,16 +156,20 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
     if (!snap?.exists()) continue;
     const d = snap.data();
     const gstRateNum = Number(d.gstRate);
-    const GST_RATES = [0, 5, 12, 18, 28] as const;
     productMap.set(snap.id, {
       id: snap.id,
       name: String(d.name || ''),
       price: Number(d.price || 0),
       image: String(d.image || ''),
       gstApplicable: d.gstApplicable === true,
-      gstRate: (GST_RATES as readonly number[]).includes(gstRateNum)
-        ? (gstRateNum as 0 | 5 | 12 | 18 | 28)
+      // Predefined slab or a custom seller-entered rate — accept any non-negative number.
+      gstRate: Number.isFinite(gstRateNum) && gstRateNum >= 0 ? gstRateNum : undefined,
+      // Default included (business rule); false only when explicitly set exclusive.
+      gstIncluded: d.gstIncluded !== false,
+      extraDeliveryCharge: typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0
+        ? d.extraDeliveryCharge
         : undefined,
+      freeDelivery: d.freeDelivery === true ? true : undefined,
       variants: Array.isArray(d.variants) ? d.variants : undefined,
       availability: Array.isArray(d.availability) ? d.availability : undefined,
       // sellerDiscounts is a runtime-computed field not stored on the product doc.
@@ -172,6 +197,19 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
   // canonical productId → (seller UID or phone → SellerPriceEntry)
   const sellerPrices = new Map<string, Map<string, SellerPriceEntry>>();
 
+  // Retailer-specific commercial settings read straight from each seller's product
+  // copy — the source of truth. canonical productId → (seller UID/phone → settings).
+  type SellerCommercial = Partial<Pick<CartItem, 'gstApplicable' | 'gstRate' | 'gstIncluded' | 'extraDeliveryCharge' | 'freeDelivery'>>;
+  const sellerCommercial = new Map<string, Map<string, SellerCommercial>>();
+  const commercialFromDoc = (d: Record<string, unknown>): SellerCommercial => ({
+    ...(d.gstApplicable === true ? { gstApplicable: true } : {}),
+    ...(typeof d.gstRate === 'number' && d.gstRate >= 0 ? { gstRate: d.gstRate } : {}),
+    // Default included; carry explicit false so exclusive GST is preserved.
+    ...(d.gstApplicable === true ? { gstIncluded: d.gstIncluded !== false } : {}),
+    ...(typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0 ? { extraDeliveryCharge: d.extraDeliveryCharge } : {}),
+    ...(d.freeDelivery === true ? { freeDelivery: true } : {}),
+  });
+
   await Promise.all(
     uniqueProductIds.map(async (productId) => {
       try {
@@ -179,11 +217,13 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
           query(collection(db, 'products'), where('originalProductId', '==', productId))
         );
         const byKey = new Map<string, SellerPriceEntry>();
+        const commByKey = new Map<string, SellerCommercial>();
         snap.forEach(docSnap => {
           const d = docSnap.data();
           const price = Number(d.price || 0);
           const discountPct = Number(d.effectiveDiscountPct ?? d.discountPct ?? 0);
           const entry: SellerPriceEntry = { price, discountPct };
+          const comm = commercialFromDoc(d);
           // Index by every identifier we might have saved as storeId / sellerPhone
           [
             String(d.ownerId       || ''),
@@ -193,9 +233,10 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
             String(d.manufacturerPhone || ''),
           ]
             .filter(Boolean)
-            .forEach(key => byKey.set(key, entry));
+            .forEach(key => { byKey.set(key, entry); commByKey.set(key, comm); });
         });
         sellerPrices.set(productId, byKey);
+        sellerCommercial.set(productId, commByKey);
       } catch { /* silent — non-existent or inaccessible */ }
     })
   );
@@ -338,8 +379,7 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
         qty: item.quantity,
         sellMode: 'pending',
         ...(variantUnit ? { variantUnit } : {}),
-        ...(product.gstApplicable ? { gstApplicable: true } : {}),
-        ...(product.gstRate !== undefined ? { gstRate: product.gstRate } : {}),
+        // GST + delivery are retailer-specific and resolved once a store is chosen.
       });
     } else {
       // Assigned item — restore store with pricing.
@@ -399,6 +439,36 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
         storedPhone ??
         (/^\+91[6-9]\d{9}$/.test(storeId) ? storeId : undefined);
 
+      // ── Retailer-specific GST + delivery ──────────────────────────────────────
+      // 1) Values persisted on the stored line (what the buyer saw at add time) win.
+      // 2) Else read the SELLER'S OWN copy doc (source of truth) via the commercial map.
+      // 3) Else — only for the manufacturer's own product (no copy exists) — the
+      //    canonical product's settings.
+      const persistedCommercial: SellerCommercial = {
+        ...(item.gstApplicable ? { gstApplicable: true } : {}),
+        ...(item.gstRate != null ? { gstRate: item.gstRate } : {}),
+        // Preserve explicit false (exclusive) — not just true.
+        ...(item.gstIncluded !== undefined ? { gstIncluded: item.gstIncluded } : {}),
+        ...(item.extraDeliveryCharge != null && item.extraDeliveryCharge > 0 ? { extraDeliveryCharge: item.extraDeliveryCharge } : {}),
+        ...(item.freeDelivery ? { freeDelivery: true } : {}),
+      };
+      const persistedHasAny =
+        item.gstApplicable !== undefined || item.gstRate !== undefined || item.gstIncluded !== undefined ||
+        item.extraDeliveryCharge !== undefined || item.freeDelivery !== undefined;
+      const commMap = sellerCommercial.get(item.productId);
+      const fromCopy = commMap?.get(storeId) ?? (storedPhone ? commMap?.get(storedPhone) : undefined);
+      const canonicalCommercial: SellerCommercial = {
+        ...(product.gstApplicable ? { gstApplicable: true } : {}),
+        ...(product.gstRate != null ? { gstRate: product.gstRate } : {}),
+        // product.gstIncluded is already the correctly-defaulted boolean (see ProductCache).
+        ...(product.gstApplicable ? { gstIncluded: product.gstIncluded } : {}),
+        ...(product.extraDeliveryCharge ? { extraDeliveryCharge: product.extraDeliveryCharge } : {}),
+        ...(product.freeDelivery ? { freeDelivery: true } : {}),
+      };
+      const commercial: SellerCommercial = persistedHasAny
+        ? persistedCommercial
+        : (fromCopy !== undefined ? fromCopy : canonicalCommercial);
+
       result.push({
         productId: item.productId,
         sellerId: storeId,
@@ -413,8 +483,7 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
         qty: item.quantity,
         sellMode: 'online_delivery',
         ...(variantUnit ? { variantUnit } : {}),
-        ...(product.gstApplicable ? { gstApplicable: true } : {}),
-        ...(product.gstRate !== undefined ? { gstRate: product.gstRate } : {}),
+        ...commercial,
       });
     }
   }

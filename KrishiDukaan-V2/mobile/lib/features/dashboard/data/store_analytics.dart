@@ -17,6 +17,26 @@ enum AnalyticsPeriod {
       .firstWhere((p) => p.key == key, orElse: () => AnalyticsPeriod.week);
 }
 
+/// An explicit start/end window for the Custom Date Range filter, alongside
+/// the preset Week/Month/Year periods above. Both bounds are inclusive
+/// calendar days (local midnight) — mirrors web's analytics-firestore.ts
+/// getDaySeries, just built from a picked range instead of a fixed day count.
+class AnalyticsRange {
+  final DateTime start;
+  final DateTime end;
+
+  AnalyticsRange({required DateTime start, required DateTime end})
+      : start = DateTime(start.year, start.month, start.day),
+        end = DateTime(end.year, end.month, end.day);
+
+  int get dayCount => end.difference(start).inDays + 1;
+
+  List<DateTime> get days =>
+      List.generate(dayCount, (i) => start.add(Duration(days: i)));
+
+  List<String> dayKeys() => days.map(StoreAnalyticsRepository.dayKey).toList();
+}
+
 /// Reach and engagement numbers for one seller over one period — the figures
 /// the weekly/monthly/yearly digest notification quotes.
 class StoreAnalytics {
@@ -54,7 +74,7 @@ class StoreAnalyticsRepository {
   StoreAnalyticsRepository({FirebaseFirestore? db})
       : _db = db ?? FirebaseFirestore.instance;
 
-  static String _dayKey(DateTime d) =>
+  static String dayKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
@@ -63,7 +83,7 @@ class StoreAnalyticsRepository {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     return List.generate(
-        days, (i) => _dayKey(today.subtract(Duration(days: days - 1 - i))));
+        days, (i) => dayKey(today.subtract(Duration(days: days - 1 - i))));
   }
 
   static int _sumByDay(dynamic map, List<String> keys) {
@@ -76,9 +96,15 @@ class StoreAnalyticsRepository {
     return total;
   }
 
-  Future<StoreAnalytics> fetch(String sellerPhone, AnalyticsPeriod period) async {
+  /// [customRange] overrides [period] when set — the Custom Date Range
+  /// filter picks an explicit start/end instead of one of the presets.
+  Future<StoreAnalytics> fetch(
+    String sellerPhone,
+    AnalyticsPeriod period, {
+    AnalyticsRange? customRange,
+  }) async {
     if (sellerPhone.isEmpty) return const StoreAnalytics();
-    final keys = _dayKeysFor(period.days);
+    final keys = customRange?.dayKeys() ?? _dayKeysFor(period.days);
 
     var productViews = 0, clicks = 0, calls = 0, directions = 0;
 

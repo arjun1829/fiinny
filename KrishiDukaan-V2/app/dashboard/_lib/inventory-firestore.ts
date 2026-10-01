@@ -128,11 +128,15 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     dosage: data.dosage ? String(data.dosage) : undefined,
     bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
     variants: Array.isArray(data.variants) ? data.variants as { unit: string; price: number; stock?: number }[] : undefined,
-    // GST fields
+    // GST fields — gstRate may be a predefined slab or a custom rate.
     gstApplicable: data.gstApplicable === true,
-    gstRate: ([0, 5, 12, 18, 28] as const).includes(data.gstRate as 0 | 5 | 12 | 18 | 28)
-      ? (data.gstRate as 0 | 5 | 12 | 18 | 28)
+    gstRate: typeof data.gstRate === "number" && data.gstRate >= 0 ? data.gstRate : 0,
+    gstIncluded: data.gstIncluded !== false, // default included (business rule)
+    // Delivery — per-product surcharge on top of the seller's weight-slab charge.
+    extraDeliveryCharge: typeof data.extraDeliveryCharge === "number" && data.extraDeliveryCharge > 0
+      ? data.extraDeliveryCharge
       : 0,
+    freeDelivery: data.freeDelivery === true,
   };
 }
 
@@ -177,6 +181,33 @@ function mapInventory(id: string, data: Record<string, unknown>): InventoryDoc {
  * though they appear in the marketplace (which matches by phone). Each query is
  * individually ownership-scoped so the Firestore `products` rule still covers it.
  */
+/**
+ * Stand-in inventory row built from the product doc itself, for a product
+ * whose `inventory` document is missing. Used only as a fallback so the
+ * product still appears (see fetchRetailerInventoryRows); `inventoryId` is
+ * empty, which is how callers tell a synthetic row from a real one.
+ */
+function syntheticInventoryFor(p: ProductDoc): InventoryDoc {
+  const raw = p as unknown as Record<string, unknown>;
+  const stock = Number(raw.stockQuantity ?? raw.stock ?? 0);
+  return {
+    id: "",
+    productId: p.id,
+    stockQuantity: Number.isFinite(stock) ? stock : 0,
+    sellingPrice: Number(p.price ?? 0),
+    reorderThreshold: 5,
+    updatedAt: (raw.updatedAt as InventoryDoc["updatedAt"]) ?? null,
+    discountEnabled: false,
+    discountType: "percentage",
+    discountPct: 0,
+    discountFixedAmt: 0,
+    discountStartDate: null,
+    discountEndDate: null,
+    bulkDiscountEnabled: false,
+    bulkDiscountTiers: [],
+  } as InventoryDoc;
+}
+
 async function fetchProductsByOwner(
   ownerId: string,
   ownerType: "manufacturer" | "retailer",
@@ -394,8 +425,18 @@ export async function fetchRetailerInventoryRows(
   const inventoryMap = await fetchInventoryForRetailer(ownerId, retailerDocId, retailerPhone);
 
   const rows: InventoryRow[] = products.flatMap((p) => {
-    const inv = inventoryMap.get(p.id);
-    if (!inv) return [];
+    // A product with no `inventory` doc used to be dropped silently — the
+    // seller's own item simply vanished from their dashboard with no error,
+    // and admin viewing that seller saw an empty inventory. It is a real
+    // failure mode: 82 live products across 15 sellers were invisible this
+    // way (assignment flows and older app builds that wrote the product
+    // without its inventory row).
+    //
+    // The product doc already carries price/stockQuantity, so a missing
+    // inventory row is recoverable — fall back to it rather than hiding
+    // stock the seller believes they listed. syntheticInventoryFor keeps
+    // the shape identical so every field below reads the same either way.
+    const inv = inventoryMap.get(p.id) ?? syntheticInventoryFor(p);
     const status = deriveStockStatus(inv.stockQuantity, inv.reorderThreshold);
     const raw = p as unknown as Record<string, unknown>;
     return [
@@ -418,6 +459,9 @@ export async function fetchRetailerInventoryRows(
         sellMode: p.sellMode ?? "online_delivery",
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
+        gstIncluded: p.gstIncluded ?? true, // default included (business rule)
+        extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
+        freeDelivery: p.freeDelivery ?? false,
         assignedByManufacturer: inv.assignedByManufacturer === true,
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
@@ -529,6 +573,9 @@ export async function fetchManufacturerCatalogueRows(
       sellMode: p.sellMode ?? "online_delivery",
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
+      gstIncluded: p.gstIncluded ?? true, // default included (business rule)
+      extraDeliveryCharge: p.extraDeliveryCharge ?? 0,
+      freeDelivery: p.freeDelivery ?? false,
       assignedByManufacturer: false,
       source: p.source ?? "manufacturer_inventory",
       ownerId: p.ownerId,
@@ -614,7 +661,14 @@ export type AddProductInventoryInput = {
   customFields?: { title: string; value: string }[];
   /** GST configuration for this product. */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
   /** @deprecated Legacy fertilizer flat fields. */
   nitrogen?: string;
   phosphorus?: string;
@@ -703,6 +757,11 @@ export async function createProductAndInventory(
     // GST fields
     gstApplicable: input.gstApplicable ?? false,
     gstRate: input.gstApplicable ? (input.gstRate ?? 0) : 0,
+    // Business default is INCLUDED — only exclusive when the seller explicitly set it.
+    gstIncluded: input.gstApplicable ? (input.gstIncluded ?? true) : false,
+    // Delivery — per-product surcharge on top of the global weight-slab charge
+    extraDeliveryCharge: input.extraDeliveryCharge ?? 0,
+    freeDelivery: input.freeDelivery ?? false,
     // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 
@@ -882,6 +941,10 @@ export type InventoryUpdateInput = {
   stockQuantity: number;
   sellingPrice: number;
   reorderThreshold: number;
+  /** Per-pack-size stock. Supplied when the product is sold in several sizes;
+   *  written to the seller's product copy and mirrored into the canonical
+   *  availability[] entry so the marketplace shows the right size as stocked. */
+  variants?: { unit: string; price: number; stock?: number }[];
 };
 
 export async function updateInventoryRecord(
@@ -932,6 +995,9 @@ export async function updateInventoryRecord(
         console.log("[updateInventoryRecord] price sync → products/" + copyId, { price: patch.sellingPrice });
         updateDoc(doc(db, "products", copyId), {
           price: patch.sellingPrice,
+          // Per-size stock lives on the copy's variants array; the flat
+          // stockQuantity on the inventory doc is only the aggregate.
+          ...(patch.variants !== undefined ? { variants: patch.variants } : {}),
           updatedAt: serverTimestamp(),
         }).catch(() => {});
       }
@@ -951,6 +1017,7 @@ export async function updateInventoryRecord(
           },
           patch.sellingPrice,
           patch.stockQuantity > 0 ? "In Stock" : "Out of Stock",
+          patch.variants,
         );
       }
     } catch (e) {
@@ -1310,6 +1377,7 @@ async function syncAvailabilityPriceStock(
   match: { ownerId: string; phone: string },
   sellingPrice: number,
   stockLevel: string,
+  variants?: { unit: string; price: number; stock?: number }[],
 ): Promise<void> {
   const rootRef = doc(db, "products", rootProductId);
   const snap = await getDoc(rootRef);
@@ -1329,7 +1397,15 @@ async function syncAvailabilityPriceStock(
       (match.phone && (storePhone === match.phone || storeId === match.phone));
     if (!matches) return entry;
     changed = true;
-    return { ...entry, sellingPrice, stockLevel };
+    // The marketplace's seller tiles read this array, so per-size stock has to
+    // land here too — otherwise a size the seller just restocked still shows
+    // as unavailable on the product page.
+    return {
+      ...entry,
+      sellingPrice,
+      stockLevel,
+      ...(variants !== undefined ? { variants } : {}),
+    };
   });
 
   if (changed) await updateDoc(rootRef, { availability: updated });

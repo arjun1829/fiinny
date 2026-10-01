@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/product_validation.dart';
+import '../../../core/widgets/online_delivery_prompt.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/models/listing_model.dart';
@@ -17,6 +18,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../marketplace/data/catalog_repository.dart';
 import '../data/dashboard_repository.dart';
+import '../widgets/gst_delivery_fields.dart';
 import '../providers/dashboard_provider.dart';
 import '../../../core/data/product_schema_repository.dart';
 import '../widgets/product_form_sections.dart';
@@ -336,6 +338,42 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
   }
 
   void _showAddListingSheet(BuildContext context, WidgetRef ref) {
+    final seatStatsAsync = ref.read(seatStatsProvider(widget.sellerPhone));
+    final stats = seatStatsAsync.asData?.value;
+    if (stats != null && (stats.totalPurchased <= 0 || stats.available <= 0)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Seat Limit Reached'),
+          content: Text(
+            stats.totalPurchased <= 0
+                ? 'You do not have an active subscription. Please purchase seats to add products to your store.'
+                : 'You have used all ${stats.totalPurchased} available seats. Please purchase additional seats to add more products.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.push('/subscription');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text(
+                'Buy More Seats',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -728,7 +766,25 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;
-  String _sellMode = 'online_delivery';
+  // GST is INCLUDED in the entered price by default (web's business rule).
+  bool _gstIncluded = true;
+  bool _freeDelivery = false;
+  final _extraDeliveryCtrl = TextEditingController();
+  // Matches web's add-product-inventory-form.tsx exactly: "New products
+  // default to offline; seller opts in when account delivery is enabled."
+  // This used to default to 'online_delivery', so every product added from
+  // the app went live for home delivery — GST or not, account delivery
+  // switched on or not — the moment a seller tapped Add, without them ever
+  // touching this field.
+  String _sellMode = 'offline_store_only';
+
+  // Account-level "Online Delivery" flag (users/{phone}.onlineDelivery,
+  // toggled from Settings, gated there behind a GST number). null while
+  // loading. Mirrors web's `accountDeliveryEnabled`: the GST/Sell Mode
+  // section below only appears once this is true, so a seller who never
+  // turned delivery on never sees a toggle that would silently commit them
+  // to it.
+  bool? _accountDeliveryEnabled;
 
   // Web-parity product detail fields (see product_form_sections.dart).
   // categoryInfo values are String, except `chips` fields which are
@@ -754,6 +810,17 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         });
       }
     });
+    _refreshAccountDelivery();
+  }
+
+  Future<void> _refreshAccountDelivery() async {
+    final isManufacturer =
+        ref.read(currentUserProvider).value?.isManufacturer ?? false;
+    final enabled = await DashboardRepository().fetchAccountOnlineDelivery(
+      widget.sellerPhone,
+      isManufacturer: isManufacturer,
+    );
+    if (mounted) setState(() => _accountDeliveryEnabled = enabled);
   }
 
   @override
@@ -765,6 +832,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     _addressCtrl.dispose();
     _customUnitCtrl.dispose();
     _customSizeCtrl.dispose();
+    _extraDeliveryCtrl.dispose();
     for (final c in _imageUrlCtrls) {
       c.dispose();
     }
@@ -1130,10 +1198,6 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                           rows: _customFields,
                           onChanged: (rows) => _customFields = rows,
                         ),
-                        ProductVideoSection(
-                          initialValue: _videoUrl,
-                          onChanged: (v) => _videoUrl = v,
-                        ),
                       ],
                     );
                   },
@@ -1319,6 +1383,13 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 ...List.generate(5, (i) => _buildImageRow(i)),
                 const SizedBox(height: 16),
 
+                // Matches web's field order: video comes right after images,
+                // before GST & Delivery. Used to sit above Pack Sizes instead.
+                ProductVideoSection(
+                  initialValue: _videoUrl,
+                  onChanged: (v) => _videoUrl = v,
+                ),
+
                 // Store Address
                 Text(
                   'Store Address (Optional)',
@@ -1337,105 +1408,66 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   ),
                 ),
                 // ── GST & Sell Mode ──────────────────────────────────────
+                // Matches web exactly: this whole section is hidden until
+                // Online Delivery is switched on for the ACCOUNT (Settings),
+                // which itself requires a GST number. A seller who hasn't
+                // done that never sees a toggle that could commit them to
+                // online selling — the product is simply created offline.
                 const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
+                if (_accountDeliveryEnabled == true) ...[
+                  GstDeliveryFields(
+                    gstApplicable: _gstApplicable,
+                    gstRate: _gstRate,
+                    gstIncluded: _gstIncluded,
+                    freeDelivery: _freeDelivery,
+                    extraDeliveryCtrl: _extraDeliveryCtrl,
+                    price: double.tryParse(_priceCtrl.text.trim()) ?? 0,
+                    onGstApplicable: (v) => setState(() => _gstApplicable = v),
+                    onGstRate: (v) => setState(() => _gstRate = v),
+                    onGstIncluded: (v) => setState(() => _gstIncluded = v),
+                    onFreeDelivery: (v) => setState(() => _freeDelivery = v),
                   ),
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 4,
-                        ),
-                        title: Text(
-                          'GST Applicable',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w600,
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: DropdownButtonFormField<String>(
+                        value: _sellMode,
+                        decoration: InputDecoration(
+                          labelText: 'Sell Mode',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
                           ),
                         ),
-                        subtitle: Text(
-                          _gstApplicable
-                              ? 'GST will be applied'
-                              : 'No GST on this product',
-                          style: AppTextStyles.caption,
-                        ),
-                        value: _gstApplicable,
-                        activeThumbColor: AppColors.primary,
-                        onChanged: (v) => setState(() => _gstApplicable = v),
-                      ),
-                      if (_gstApplicable)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                          child: DropdownButtonFormField<double>(
-                            value: _gstRate,
-                            decoration: InputDecoration(
-                              labelText: 'GST Rate (%)',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
-                            items: [0.0, 5.0, 12.0, 18.0, 28.0]
-                                .map(
-                                  (rate) => DropdownMenuItem<double>(
-                                    value: rate,
-                                    child: Text('${rate.toInt()}%'),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) {
-                              if (v != null) setState(() => _gstRate = v);
-                            },
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'online_delivery',
+                            child: Text('Online Delivery'),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: DropdownButtonFormField<String>(
-                      value: _sellMode,
-                      decoration: InputDecoration(
-                        labelText: 'Sell Mode',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
+                          DropdownMenuItem(
+                            value: 'offline_store_only',
+                            child: Text('Offline Store Only'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _sellMode = v);
+                        },
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'online_delivery',
-                          child: Text('Online Delivery'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'offline_store_only',
-                          child: Text('Offline Store Only'),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) setState(() => _sellMode = v);
-                      },
                     ),
                   ),
-                ),
+                ] else if (_accountDeliveryEnabled == false)
+                  OnlineDeliveryPrompt(onReturned: _refreshAccountDelivery),
 
                 const SizedBox(height: 80),
               ],
@@ -1593,6 +1625,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         }
       }
 
+      final isCopy = _selectedCatalog != null;
       final catalogId =
           _selectedCatalog?.id ??
           FirebaseFirestore.instance.collection('catalog').doc().id;
@@ -1601,6 +1634,8 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         sellerPhone: widget.sellerPhone,
         sellerName: widget.sellerName,
         catalogId: catalogId,
+        isCopy: isCopy,
+        originalProductId: isCopy ? catalogId : null,
         price: basePrice,
         stockQuantity: totalStock,
         sellerAddress: _addressCtrl.text.trim().isNotEmpty
@@ -1614,7 +1649,10 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         isActive: true,
         sellMode: _sellMode,
         gstApplicable: _gstApplicable,
-        gstRate: _gstRate,
+        gstRate: _gstApplicable ? _gstRate : 0.0,
+        gstIncluded: _gstIncluded,
+        freeDelivery: _freeDelivery,
+        extraDeliveryCharge: GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text),
         // Drop empty values so a product never carries a blank map/array.
         categoryInfo: Map<String, dynamic>.fromEntries(
           _categoryInfo.entries.where((e) {
@@ -1628,26 +1666,34 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         videoUrl: _videoUrl,
       );
 
-      // Choosing online delivery for a product must also switch the
-      // ACCOUNT-level flag on, otherwise the web dashboard's Delivery Settings
-      // page stays locked ("Online delivery disabled") and the seller can never
-      // reach their delivery charges — it gates on users/{phone}.onlineDelivery,
-      // which nothing on mobile used to write.
-      if (_sellMode != 'offline_store_only') {
-        await DashboardRepository().setAccountOnlineDelivery(
-          widget.sellerPhone,
-          enabled: true,
-          isManufacturer:
-              ref.read(currentUserProvider).value?.isManufacturer ?? false,
-        );
-      }
+      // No account-level write here on purpose. The ACCOUNT flag
+      // (users/{phone}.onlineDelivery) is only ever switched on via the
+      // gated toggle in Settings, which requires a GST number first — same
+      // as web, where Add Product never touches it either. This form can
+      // only produce sellMode: 'online_delivery' at all when that flag is
+      // already true (see the GST & Sell Mode section above), so there is
+      // nothing left to sync here; the auto-write this used to do was
+      // exactly how a product silently enabled online delivery for the
+      // whole account with no GST and no confirmation.
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving: $e')));
+        final msg = e.toString().replaceAll('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 4),
+            action: msg.toLowerCase().contains('seat')
+                ? SnackBarAction(
+                    label: 'Buy Seats',
+                    textColor: Colors.white,
+                    onPressed: () => context.push('/subscription'),
+                  )
+                : null,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1685,8 +1731,15 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
   bool _gstApplicable = false;
   double _gstRate = 18.0;
+  bool _gstIncluded = true;
+  bool _freeDelivery = false;
+  late final TextEditingController _extraDeliveryCtrl;
   String _sellMode = 'online_delivery';
   bool _saving = false;
+
+  // Same account-level gate as the Add Listing sheet — see its comment.
+  // null while loading.
+  bool? _accountDeliveryEnabled;
 
   // Active toggle
   late bool _isActive;
@@ -1716,7 +1769,15 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     );
     _isActive = widget.listing.isActive;
     _gstApplicable = widget.listing.gstApplicable ?? false;
-    _gstRate = widget.listing.gstRate ?? 18.0;
+    // A stored rate of 0 with GST off means "never set": offer 18 as the start.
+    _gstRate = (widget.listing.gstRate ?? 0) > 0 ? widget.listing.gstRate! : 18.0;
+    _gstIncluded = widget.listing.gstIncluded;
+    _freeDelivery = widget.listing.freeDelivery;
+    _extraDeliveryCtrl = TextEditingController(
+      text: widget.listing.extraDeliveryCharge > 0
+          ? widget.listing.extraDeliveryCharge.toString().replaceFirst(RegExp(r'\.0$'), '')
+          : '',
+    );
     _sellMode = widget.listing.sellMode ?? 'online_delivery';
     _variants = widget.listing.variants
         .map(
@@ -1732,6 +1793,16 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     });
     _discountActive = widget.listing.discount?.isActive ?? false;
     _discountPct = widget.listing.discount?.percentage ?? 10;
+
+    _refreshAccountDelivery();
+  }
+
+  Future<void> _refreshAccountDelivery() async {
+    final enabled = await DashboardRepository().fetchAccountOnlineDelivery(
+      widget.listing.sellerPhone,
+      isManufacturer: widget.listing.sellerType == 'manufacturer',
+    );
+    if (mounted) setState(() => _accountDeliveryEnabled = enabled);
   }
 
   @override
@@ -1739,6 +1810,7 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     _priceCtrl.dispose();
     _stockCtrl.dispose();
     _lowStockCtrl.dispose();
+    _extraDeliveryCtrl.dispose();
     for (final c in _imageUrlCtrls) {
       c.dispose();
     }
@@ -1804,104 +1876,62 @@ class _EditListingSheetState extends State<_EditListingSheet> {
             const SizedBox(height: 16),
 
             // ── GST & Sell Mode ──────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
+            // Same account-level gate as Add Listing — see its comment.
+            if (_accountDeliveryEnabled == true) ...[
+              GstDeliveryFields(
+                gstApplicable: _gstApplicable,
+                gstRate: _gstRate,
+                gstIncluded: _gstIncluded,
+                freeDelivery: _freeDelivery,
+                extraDeliveryCtrl: _extraDeliveryCtrl,
+                price: double.tryParse(_priceCtrl.text.trim()) ?? 0,
+                discountPct: _discountActive ? _discountPct : 0,
+                onGstApplicable: (v) => setState(() => _gstApplicable = v),
+                onGstRate: (v) => setState(() => _gstRate = v),
+                onGstIncluded: (v) => setState(() => _gstIncluded = v),
+                onFreeDelivery: (v) => setState(() => _freeDelivery = v),
               ),
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    title: Text(
-                      'GST Applicable',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    value: _sellMode,
+                    decoration: InputDecoration(
+                      labelText: 'Sell Mode',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
                       ),
                     ),
-                    subtitle: Text(
-                      _gstApplicable
-                          ? 'GST will be applied'
-                          : 'No GST on this product',
-                      style: AppTextStyles.caption,
-                    ),
-                    value: _gstApplicable,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (v) => setState(() => _gstApplicable = v),
-                  ),
-                  if (_gstApplicable)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: DropdownButtonFormField<double>(
-                        value: _gstRate,
-                        decoration: InputDecoration(
-                          labelText: 'GST Rate (%)',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        items: [0.0, 5.0, 12.0, 18.0, 28.0]
-                            .map(
-                              (rate) => DropdownMenuItem<double>(
-                                value: rate,
-                                child: Text('${rate.toInt()}%'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) setState(() => _gstRate = v);
-                        },
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'online_delivery',
+                        child: Text('Online Delivery'),
                       ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: DropdownButtonFormField<String>(
-                  value: _sellMode,
-                  decoration: InputDecoration(
-                    labelText: 'Sell Mode',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
+                      DropdownMenuItem(
+                        value: 'offline_store_only',
+                        child: Text('Offline Store Only'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _sellMode = v);
+                    },
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'online_delivery',
-                      child: Text('Online Delivery'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'offline_store_only',
-                      child: Text('Offline Store Only'),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _sellMode = v);
-                  },
                 ),
               ),
-            ),
+            ] else if (_accountDeliveryEnabled == false)
+              OnlineDeliveryPrompt(onReturned: _refreshAccountDelivery),
             const SizedBox(height: 16),
 
             // Base price & stock
@@ -2221,16 +2251,34 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           .where((v) => v.label.isNotEmpty)
           .toList();
 
+      // stockQuantity is the AGGREGATE across pack sizes, so when variants exist
+      // it is their sum rather than the flat field. Using the flat number hid the
+      // whole product whenever it read 0, even with stock left in other sizes,
+      // because availability is derived from it. Matches addListing (totalStock)
+      // and the web seller dashboard.
+      final effectiveStock = variants.isNotEmpty
+          ? variants.fold<int>(0, (acc, v) => acc + (v.stock ?? 0))
+          : stock;
+
       // A blank or non-positive entry means "use the default", stored as null.
       final parsedThreshold = int.tryParse(_lowStockCtrl.text.trim());
       final lowStockThreshold =
           (parsedThreshold != null && parsedThreshold > 0) ? parsedThreshold : null;
 
       final effectiveDiscountPct = _discountActive ? _discountPct : 0.0;
+      // Matches web's edit-product-modal.tsx exactly: if the ACCOUNT's
+      // Online Delivery is off, the product is written as offline/no-GST
+      // regardless of whatever this sheet's fields currently hold — the
+      // section above is hidden in that case, but a stale 'online_delivery'
+      // value could otherwise survive from before delivery was turned off.
+      final accountGateOpen = _accountDeliveryEnabled != false;
+      final effectiveSellMode =
+          accountGateOpen ? _sellMode : 'offline_store_only';
+      final effectiveGstApplicable = accountGateOpen && _gstApplicable;
       final updates = <String, dynamic>{
         'price': price,
-        'stock': stock > 0 ? 'In Stock' : 'Out of Stock',
-        'stockQuantity': stock,
+        'stock': effectiveStock > 0 ? 'In Stock' : 'Out of Stock',
+        'stockQuantity': effectiveStock,
         'isActive': _isActive,
         // Null clears any per-product override, putting the product back on
         // the server default rather than pinning it at some stale number.
@@ -2251,10 +2299,17 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         'discountEnabled': _discountActive,
         'discountPct': _discountPct,
         'effectiveDiscountPct': effectiveDiscountPct,
-        'sellMode': _sellMode,
-        'gstApplicable': _gstApplicable,
-        'gstRate': _gstRate,
-        'isOnline': _sellMode != 'offline_store_only',
+        'sellMode': effectiveSellMode,
+        'gstApplicable': effectiveGstApplicable,
+        'gstRate': effectiveGstApplicable ? _gstRate : 0.0,
+        // Same rules as the web's Edit Product: included only when GST applies,
+        // and Free Delivery zeroes the extra charge.
+        'gstIncluded': effectiveGstApplicable ? _gstIncluded : false,
+        'freeDelivery': accountGateOpen && _freeDelivery,
+        'extraDeliveryCharge': (accountGateOpen && !_freeDelivery)
+            ? GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text)
+            : 0.0,
+        'isOnline': effectiveSellMode != 'offline_store_only',
       };
 
       final repo = DashboardRepository();
@@ -2269,35 +2324,54 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         await repo.syncMarketMirror(
           widget.listing.id,
           sellingPrice: price,
-          stockLevel: stock > 0 ? 'In Stock' : 'Out of Stock',
+          stockLevel: effectiveStock > 0 ? 'In Stock' : 'Out of Stock',
           discountPct: effectiveDiscountPct,
           isProductActive: _isActive,
+          isOnline: effectiveSellMode != 'offline_store_only',
         );
         await repo.syncInventoryDoc(
           widget.listing.id,
           sellingPrice: price,
-          stockQuantity: stock,
+          stockQuantity: effectiveStock,
           isProductActive: _isActive,
           discountEnabled: _discountActive,
           discountPct: _discountPct,
           effectiveDiscountPct: effectiveDiscountPct,
+          gstApplicable: effectiveGstApplicable,
+          gstRate: effectiveGstApplicable ? _gstRate : 0.0,
+          gstIncluded: _gstIncluded,
+          extraDeliveryCharge: GstDeliveryFields.parseExtra(_extraDeliveryCtrl.text),
+          freeDelivery: accountGateOpen && _freeDelivery,
         );
       }
 
-      // Switching a product to online delivery must also turn the
-      // ACCOUNT-level flag on — see setAccountOnlineDelivery. Without it the
-      // web Delivery Settings page stays locked and the seller never sees their
-      // delivery charges.
-      if (_sellMode != 'offline_store_only' &&
-          widget.listing.sellerPhone.isNotEmpty) {
-        await repo.setAccountOnlineDelivery(
-          widget.listing.sellerPhone,
-          enabled: true,
-          isManufacturer: widget.listing.sellerType == 'manufacturer',
-        );
-      }
+      // No account-level write here — same reasoning as Add Listing. The
+      // ACCOUNT flag only ever changes via the gated Settings toggle
+      // (GST required first); this sheet can only produce
+      // effectiveSellMode: 'online_delivery' when that flag is already
+      // true, so there is nothing to sync, and auto-writing it here was
+      // exactly how editing an unrelated field (price, stock…) could
+      // silently commit the whole account to online selling.
 
       if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceAll('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 4),
+            action: msg.toLowerCase().contains('seat')
+                ? SnackBarAction(
+                    label: 'Buy Seats',
+                    textColor: Colors.white,
+                    onPressed: () => context.push('/subscription'),
+                  )
+                : null,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -2349,6 +2423,10 @@ class _DiscountSheetState extends State<_DiscountSheet> {
   DateTime? _endDate;
   bool _saving = false;
 
+  // ── Bulk (quantity-tier) discount — independent of the base discount ────
+  late bool _bulkEnabled;
+  late List<BulkDiscountTierModel> _bulkTiers;
+
   @override
   void initState() {
     super.initState();
@@ -2365,6 +2443,36 @@ class _DiscountSheetState extends State<_DiscountSheet> {
     );
     _startDate = d?.startDate;
     _endDate = d?.endDate;
+    _bulkEnabled = widget.listing.bulkDiscountEnabled;
+    _bulkTiers = List.of(widget.listing.bulkDiscountTiers);
+  }
+
+  void _addTier() {
+    final existingQtys = _bulkTiers.map((t) => t.minQty);
+    final nextQty = existingQtys.isEmpty
+        ? 5
+        : existingQtys.reduce((a, b) => a > b ? a : b) + 5;
+    final nextPct = _bulkTiers.isEmpty
+        ? 5.0
+        : (_bulkTiers.last.discountPct + 5).clamp(1, 99).toDouble();
+    setState(() => _bulkTiers = [
+          ..._bulkTiers,
+          BulkDiscountTierModel(minQty: nextQty, discountPct: nextPct),
+        ]);
+  }
+
+  void _removeTier(int i) =>
+      setState(() => _bulkTiers = [..._bulkTiers]..removeAt(i));
+
+  void _updateTier(int i, {int? minQty, double? discountPct}) {
+    setState(() {
+      final t = _bulkTiers[i];
+      _bulkTiers = [..._bulkTiers];
+      _bulkTiers[i] = BulkDiscountTierModel(
+        minQty: minQty ?? t.minQty,
+        discountPct: discountPct ?? t.discountPct,
+      );
+    });
   }
 
   @override
@@ -2387,20 +2495,35 @@ class _DiscountSheetState extends State<_DiscountSheet> {
 
   /// Mirrors web's validation so the app can't save a discount web rejects.
   String? get _validationError {
-    if (!_isActive) return null;
-    if (_type == 'fixed_amount') {
-      final amt = _fixedAmount;
-      if (amt <= 0) return 'Enter a discount amount greater than 0.';
-      if (amt >= widget.listing.price) {
-        return 'Discount must be less than the price '
-            '(₹${widget.listing.price.toStringAsFixed(0)}).';
+    if (_isActive) {
+      if (_type == 'fixed_amount') {
+        final amt = _fixedAmount;
+        if (amt <= 0) return 'Enter a discount amount greater than 0.';
+        if (amt >= widget.listing.price) {
+          return 'Discount must be less than the price '
+              '(₹${widget.listing.price.toStringAsFixed(0)}).';
+        }
+      } else if (_percentage < 1 || _percentage > 99) {
+        return 'Percentage must be between 1 and 99.';
       }
-    } else if (_percentage < 1 || _percentage > 99) {
-      return 'Percentage must be between 1 and 99.';
+      if (_startDate != null && _endDate != null &&
+          !_endDate!.isAfter(_startDate!)) {
+        return 'End date must be after the start date.';
+      }
     }
-    if (_startDate != null && _endDate != null &&
-        !_endDate!.isAfter(_startDate!)) {
-      return 'End date must be after the start date.';
+    // Bulk tiers are independent of the base discount toggle, so this check
+    // runs regardless of _isActive — matches web's discount-panel.
+    if (_bulkEnabled && _bulkTiers.isNotEmpty) {
+      for (final t in _bulkTiers) {
+        if (t.minQty < 1) return 'Bulk tier quantity must be at least 1.';
+        if (t.discountPct <= 0 || t.discountPct > 99) {
+          return 'Bulk tier discount must be 1–99%.';
+        }
+      }
+      final qtys = _bulkTiers.map((t) => t.minQty).toSet();
+      if (qtys.length != _bulkTiers.length) {
+        return 'Bulk tiers cannot have duplicate quantities.';
+      }
     }
     return null;
   }
@@ -2414,152 +2537,301 @@ class _DiscountSheetState extends State<_DiscountSheet> {
         top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Discount Settings', style: AppTextStyles.heading2),
-          const SizedBox(height: 16),
+      // Must scroll: with the base discount, dates, preview AND the bulk tier
+      // ladder this sheet is taller than a phone screen, and a bare Column
+      // silently clips everything past the fold — including the Save button.
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Discount Settings', style: AppTextStyles.heading2),
+            const SizedBox(height: 16),
 
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Enable Discount'),
-            value: _isActive,
-            activeThumbColor: AppColors.primary,
-            onChanged: (v) => setState(() => _isActive = v),
-          ),
-          const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable Discount'),
+              value: _isActive,
+              activeThumbColor: AppColors.primary,
+              onChanged: (v) => setState(() => _isActive = v),
+            ),
+            const SizedBox(height: 12),
 
-          // Type selector — web offers percentage OR a flat rupee amount.
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'percentage', label: Text('Percentage')),
-              ButtonSegment(value: 'fixed_amount', label: Text('Fixed ₹')),
-            ],
-            selected: {_type},
-            onSelectionChanged: _isActive
-                ? (sel) => setState(() => _type = sel.first)
-                : null,
-            showSelectedIcon: false,
-          ),
-          const SizedBox(height: 12),
-
-          if (_type == 'percentage')
-            Row(
-              children: [
-                Text(
-                  'Discount: ${_percentage.toInt()}%',
-                  style: AppTextStyles.bodyMedium,
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _percentage.clamp(1, 99),
-                    min: 1,
-                    // Web validates 1–99; the app's old 80 cap silently
-                    // refused discounts web allows.
-                    max: 99,
-                    divisions: 98,
-                    activeColor: AppColors.primary,
-                    onChanged: _isActive
-                        ? (v) => setState(() => _percentage = v)
-                        : null,
-                  ),
-                ),
+            // Type selector — web offers percentage OR a flat rupee amount.
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'percentage', label: Text('Percentage')),
+                ButtonSegment(value: 'fixed_amount', label: Text('Fixed ₹')),
               ],
-            )
-          else
-            TextField(
-              controller: _fixedCtrl,
-              enabled: _isActive,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Discount amount (₹)',
-                prefixText: '₹ ',
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              selected: {_type},
+              onSelectionChanged: _isActive
+                  ? (sel) => setState(() => _type = sel.first)
+                  : null,
+              showSelectedIcon: false,
             ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-          // Live price preview, same as web's panel.
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceVariant,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Text('Buyer pays', style: AppTextStyles.bodySmall),
-                const Spacer(),
-                if (_isActive && _previewPrice < widget.listing.price) ...[
+            if (_type == 'percentage')
+              Row(
+                children: [
                   Text(
-                    '₹${widget.listing.price.toStringAsFixed(0)}',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.onSurfaceVariant,
-                      decoration: TextDecoration.lineThrough,
+                    'Discount: ${_percentage.toInt()}%',
+                    style: AppTextStyles.bodyMedium,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _percentage.clamp(1, 99),
+                      min: 1,
+                      // Web validates 1–99; the app's old 80 cap silently
+                      // refused discounts web allows.
+                      max: 99,
+                      divisions: 98,
+                      activeColor: AppColors.primary,
+                      onChanged: _isActive
+                          ? (v) => setState(() => _percentage = v)
+                          : null,
                     ),
                   ),
-                  const SizedBox(width: 6),
                 ],
-                Text(
-                  '₹${_previewPrice.toStringAsFixed(0)}',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
+              )
+            else
+              TextField(
+                controller: _fixedCtrl,
+                enabled: _isActive,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Discount amount (₹)',
+                  prefixText: '₹ ',
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+
+            // Live price preview, same as web's panel.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Text('Buyer pays', style: AppTextStyles.bodySmall),
+                  const Spacer(),
+                  if (_isActive && _previewPrice < widget.listing.price) ...[
+                    Text(
+                      '₹${widget.listing.price.toStringAsFixed(0)}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    '₹${_previewPrice.toStringAsFixed(0)}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _DatePickerField(
+                    label: 'Start Date',
+                    value: _startDate,
+                    enabled: _isActive,
+                    onPicked: (d) => setState(() => _startDate = d),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DatePickerField(
+                    label: 'End Date',
+                    value: _endDate,
+                    enabled: _isActive,
+                    onPicked: (d) => setState(() => _endDate = d),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 20),
 
-          Row(
-            children: [
-              Expanded(
-                child: _DatePickerField(
-                  label: 'Start Date',
-                  value: _startDate,
-                  enabled: _isActive,
-                  onPicked: (d) => setState(() => _startDate = d),
+            // ── Bulk (quantity-tier) discounts — matches web's Bulk Discounts
+            // panel exactly. Independent of the base discount above: a seller
+            // can run one, the other, or both at once.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _bulkEnabled
+                    ? AppColors.primary.withValues(alpha: 0.05)
+                    : AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _bulkEnabled
+                      ? AppColors.primary.withValues(alpha: 0.3)
+                      : AppColors.divider,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _DatePickerField(
-                  label: 'End Date',
-                  value: _endDate,
-                  enabled: _isActive,
-                  onPicked: (d) => setState(() => _endDate = d),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
-              child: _saving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.layers_outlined,
+                          size: 18, color: AppColors.onSurfaceVariant),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Bulk Discounts',
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(fontWeight: FontWeight.w600)),
                       ),
-                    )
-                  : const Text('Save Discount'),
+                      Switch(
+                        value: _bulkEnabled,
+                        activeThumbColor: AppColors.primary,
+                        onChanged: (v) => setState(() => _bulkEnabled = v),
+                      ),
+                    ],
+                  ),
+                  if (_bulkEnabled) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Customers buying more units get a bigger discount. '
+                      'Higher tiers override lower ones.',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 10),
+                    ...List.generate(_bulkTiers.length, (i) {
+                      final t = _bulkTiers[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            const Text('Buy'),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 56,
+                              child: TextFormField(
+                                key: ValueKey('tier-qty-$i-${t.minQty}'),
+                                initialValue: t.minQty.toString(),
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                decoration: const InputDecoration(isDense: true),
+                                onChanged: (v) {
+                                  final n = int.tryParse(v);
+                                  if (n != null && n >= 1) {
+                                    _updateTier(i, minQty: n);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('+ units →'),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 56,
+                              child: TextFormField(
+                                key: ValueKey('tier-pct-$i-${t.discountPct}'),
+                                initialValue: t.discountPct.toInt().toString(),
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                decoration: const InputDecoration(isDense: true),
+                                onChanged: (v) {
+                                  final n = double.tryParse(v);
+                                  if (n != null && n >= 1 && n <= 99) {
+                                    _updateTier(i, discountPct: n);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('% off'),
+                            const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: AppColors.error,
+                              onPressed: () => _removeTier(i),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    if (_bulkTiers.length < 6)
+                      TextButton.icon(
+                        onPressed: _addTier,
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add tier'),
+                      ),
+                    if (_bulkTiers.isNotEmpty && widget.listing.price > 0) ...[
+                      const SizedBox(height: 4),
+                      ...(List.of(_bulkTiers)
+                            ..sort((a, b) => a.minQty - b.minQty))
+                          .map((t) {
+                        final finalPrice = (widget.listing.price *
+                                (1 - t.discountPct / 100))
+                            .clamp(0, widget.listing.price);
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              Text('Buy ${t.minQty}+ units',
+                                  style: AppTextStyles.bodySmall
+                                      .copyWith(color: AppColors.onSurfaceVariant)),
+                              const Spacer(),
+                              Text(
+                                '₹${finalPrice.toStringAsFixed(0)}',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.success),
+                              ),
+                              const SizedBox(width: 6),
+                              Text('${t.discountPct.toInt()}% OFF',
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.success)),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Save Discount'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2585,6 +2857,10 @@ class _DiscountSheetState extends State<_DiscountSheet> {
         fixedAmount: _fixedAmount,
         startDate: _startDate,
         endDate: _endDate,
+        bulkEnabled: _bulkEnabled,
+        bulkTiers: _bulkEnabled
+            ? _bulkTiers.map((t) => t.toMap()).toList()
+            : const [],
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {

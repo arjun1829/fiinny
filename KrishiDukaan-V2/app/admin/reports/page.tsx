@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Mail, RefreshCw, Search, Send, SendHorizonal, Users } from "lucide-react";
 import { getUsers, invalidateUsers } from "../_lib/admin-data";
 import { buildReportDataClientSide } from "../../lib/reports/build-report-client";
+import { authedJsonHeaders } from "../../lib/authed-fetch";
 
 type Manufacturer = {
   id: string;
@@ -73,7 +74,7 @@ export default function AdminReportsPage() {
 
       const res = await fetch("/api/email/manufacturer-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authedJsonHeaders(),
         body: JSON.stringify({ reportData, sentBy: "admin" }),
       });
       const json = (await res.json()) as { ok: boolean; sentTo?: string; error?: string };
@@ -114,7 +115,7 @@ export default function AdminReportsPage() {
 
         const res = await fetch("/api/email/manufacturer-report", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authedJsonHeaders(),
           body: JSON.stringify({ reportData, sentBy: "admin" }),
         });
         const json = (await res.json()) as { ok: boolean };

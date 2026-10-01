@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/utils/order_status_label.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -110,11 +111,14 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (status) {
-      'pending' => AppColors.statusPending,
+      'placed' => AppColors.statusPending,
       'accepted' => AppColors.statusAccepted,
       'dispatched' => AppColors.statusDispatched,
+      'out_for_delivery' => AppColors.statusDispatched,
       'delivered' => AppColors.statusDelivered,
+      'rejected' => AppColors.statusCancelled,
       'cancelled' => AppColors.statusCancelled,
+      'reassigning' => AppColors.warning,
       _ => AppColors.onSurfaceVariant,
     };
 
@@ -126,7 +130,7 @@ class _StatusChip extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
-        status[0].toUpperCase() + status.substring(1),
+        orderStatusLabel(status),
         style: AppTextStyles.caption
             .copyWith(color: color, fontWeight: FontWeight.w600),
       ),

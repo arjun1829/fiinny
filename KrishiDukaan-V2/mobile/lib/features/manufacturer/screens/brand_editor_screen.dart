@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
@@ -28,6 +29,14 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
   // Image fields
   final _logoCtrl = TextEditingController();
   final _bannerCtrl = TextEditingController();
+
+  // Brand colors — same two fields and same defaults as web
+  // (app/dashboard/_lib/brand-page-types.ts DEFAULT_CUSTOMIZATION). Neither
+  // is currently rendered on the public brand page on EITHER platform
+  // (BrandView.tsx never reads them) — this is parity with what web's
+  // editor actually does, not new rendering behavior.
+  String _primaryColor = '#154212';
+  String _accentColor = '#f57c00';
 
   // Certifications
   final _certInputCtrl = TextEditingController();
@@ -86,6 +95,16 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
               style: AppTextStyles.heading2.copyWith(color: Colors.white),
             ),
             actions: [
+              // Opens the same BrandScreen a shopper sees at /brand/:phone —
+              // web's Company page links out to /brand/{slug} for the
+              // identical purpose. Shows the last SAVED state, same as web's
+              // link (neither previews unsaved edits), so save first to see
+              // a change reflected here.
+              IconButton(
+                tooltip: 'Preview brand page',
+                icon: const Icon(Icons.visibility_outlined, color: Colors.white),
+                onPressed: () => context.push('/brand/${user.phone}'),
+              ),
               TextButton(
                 onPressed: _saving ? null : () => _save(user.phone),
                 child: Text(
@@ -122,6 +141,12 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
                       socialProofCtrl: _socialProofCtrl,
                       logoCtrl: _logoCtrl,
                       bannerCtrl: _bannerCtrl,
+                      primaryColor: _primaryColor,
+                      accentColor: _accentColor,
+                      onPrimaryColorChanged: (c) =>
+                          setState(() => _primaryColor = c),
+                      onAccentColorChanged: (c) =>
+                          setState(() => _accentColor = c),
                       certInputCtrl: _certInputCtrl,
                       certifications: _certifications,
                       videoInputCtrl: _videoInputCtrl,
@@ -159,6 +184,12 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
       // support both 'banner' (web) and legacy 'coverImage'
       _bannerCtrl.text =
           data?['banner'] as String? ?? data?['coverImage'] as String? ?? '';
+      _primaryColor = (data?['primaryColor'] as String?)?.isNotEmpty == true
+          ? data!['primaryColor'] as String
+          : '#154212';
+      _accentColor = (data?['accentColor'] as String?)?.isNotEmpty == true
+          ? data!['accentColor'] as String
+          : '#f57c00';
       _certifications = List<String>.from(
         data?['certifications'] as List? ?? [],
       );
@@ -214,6 +245,8 @@ class _BrandEditorScreenState extends ConsumerState<BrandEditorScreen>
         'socialProof': _socialProofCtrl.text.trim(),
         'logo': _logoCtrl.text.trim(),
         'banner': _bannerCtrl.text.trim(),
+        'primaryColor': _primaryColor,
+        'accentColor': _accentColor,
         'certifications': _certifications,
         'videos': _videos,
         'updatedAt': DateTime.now().toIso8601String(),
@@ -249,6 +282,10 @@ class _BrandTab extends StatefulWidget {
   final TextEditingController socialProofCtrl;
   final TextEditingController logoCtrl;
   final TextEditingController bannerCtrl;
+  final String primaryColor;
+  final String accentColor;
+  final ValueChanged<String> onPrimaryColorChanged;
+  final ValueChanged<String> onAccentColorChanged;
   final TextEditingController certInputCtrl;
   final List<String> certifications;
   final TextEditingController videoInputCtrl;
@@ -268,6 +305,10 @@ class _BrandTab extends StatefulWidget {
     required this.socialProofCtrl,
     required this.logoCtrl,
     required this.bannerCtrl,
+    required this.primaryColor,
+    required this.accentColor,
+    required this.onPrimaryColorChanged,
+    required this.onAccentColorChanged,
     required this.certInputCtrl,
     required this.certifications,
     required this.videoInputCtrl,
@@ -427,6 +468,28 @@ class _BrandTabState extends State<_BrandTab> {
                   ),
                 ),
               ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Brand Colors
+        _Section(
+          title: 'Brand Colors',
+          child: Wrap(
+            spacing: 24,
+            runSpacing: 16,
+            children: [
+              _ColorPickerField(
+                label: 'Primary Color',
+                hex: widget.primaryColor,
+                onChanged: widget.onPrimaryColorChanged,
+              ),
+              _ColorPickerField(
+                label: 'Accent Color',
+                hex: widget.accentColor,
+                onChanged: widget.onAccentColorChanged,
+              ),
             ],
           ),
         ),
@@ -822,6 +885,241 @@ class _Section extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// Parses a `#RRGGBB` string web's `<input type="color">` always produces.
+/// Falls back to black on anything malformed rather than throwing, since a
+/// hand-edited Firestore doc or an old app build could leave a bad value.
+Color _colorFromHex(String hex) {
+  final cleaned = hex.replaceFirst('#', '');
+  final value = int.tryParse(cleaned, radix: 16);
+  if (value == null || cleaned.length != 6) return Colors.black;
+  return Color(0xFF000000 | value);
+}
+
+String _colorToHex(Color color) {
+  return '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+}
+
+/// A colour swatch + hex label, matching web's `<input type="color">` +
+/// hex-readout pair. Tapping opens a small picker: a hex field (validated
+/// against the same #RRGGBB shape the browser control always produces) plus
+/// a grid of common brand-friendly swatches for a quick pick without typing.
+class _ColorPickerField extends StatelessWidget {
+  final String label;
+  final String hex;
+  final ValueChanged<String> onChanged;
+
+  const _ColorPickerField({
+    required this.label,
+    required this.hex,
+    required this.onChanged,
+  });
+
+  Future<void> _openPicker(BuildContext context) async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => _ColorPickerDialog(initialHex: hex, title: label),
+    );
+    if (picked != null) onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _openPicker(context),
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _colorFromHex(hex),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.onSurfaceVariant.withValues(alpha: 0.3),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: AppTextStyles.bodyMedium),
+              Text(hex.toUpperCase(),
+                  style: const TextStyle(
+                      color: AppColors.onSurfaceVariant, fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small set of ready-made swatches for a quick pick, plus the exact hex
+/// input a seller who already knows their brand color needs. No new
+/// dependency is added for this — a full HSV wheel is more than the "pick a
+/// color" the web `<input type="color">` offers.
+const List<Color> _kColorPresets = [
+  Color(0xFF154212), // web's default primary
+  Color(0xFFF57C00), // web's default accent
+  Color(0xFF1B5E20),
+  Color(0xFF2E7D32),
+  Color(0xFF0D47A1),
+  Color(0xFF1565C0),
+  Color(0xFFB71C1C),
+  Color(0xFFD32F2F),
+  Color(0xFFE65100),
+  Color(0xFFEF6C00),
+  Color(0xFF4A148C),
+  Color(0xFF6A1B9A),
+  Color(0xFF212121),
+  Color(0xFF37474F),
+  Color(0xFF00695C),
+  Color(0xFF00838F),
+];
+
+class _ColorPickerDialog extends StatefulWidget {
+  final String initialHex;
+  final String title;
+  const _ColorPickerDialog({required this.initialHex, required this.title});
+
+  @override
+  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
+}
+
+class _ColorPickerDialogState extends State<_ColorPickerDialog> {
+  late final TextEditingController _hexCtrl;
+  late Color _preview;
+  String? _error;
+
+  static final _hexPattern = RegExp(r'^#[0-9a-fA-F]{6}$');
+
+  @override
+  void initState() {
+    super.initState();
+    _hexCtrl = TextEditingController(text: widget.initialHex.toUpperCase());
+    _preview = _colorFromHex(widget.initialHex);
+  }
+
+  @override
+  void dispose() {
+    _hexCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onHexChanged(String value) {
+    setState(() {
+      if (_hexPattern.hasMatch(value)) {
+        _preview = _colorFromHex(value);
+        _error = null;
+      } else {
+        _error = 'Enter a hex color like #154212';
+      }
+    });
+  }
+
+  void _pickPreset(Color color) {
+    final hex = _colorToHex(color);
+    setState(() {
+      _preview = color;
+      _hexCtrl.text = hex.toUpperCase();
+      _error = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _preview,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.onSurfaceVariant.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _hexCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 7,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: 'Hex color',
+                      hintText: '#154212',
+                      counterText: '',
+                      errorText: _error,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onChanged: _onHexChanged,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final preset in _kColorPresets)
+                  InkWell(
+                    onTap: () => _pickPreset(preset),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: preset,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _colorToHex(preset).toUpperCase() ==
+                                  _hexCtrl.text.toUpperCase()
+                              ? AppColors.primary
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _error == null
+              ? () => Navigator.pop(context, _hexCtrl.text.toUpperCase())
+              : null,
+          child: const Text('Use color'),
+        ),
+      ],
     );
   }
 }

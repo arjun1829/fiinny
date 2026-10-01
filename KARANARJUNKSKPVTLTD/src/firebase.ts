@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from "firebase/auth";
 import { getStorage } from "firebase/storage";
-import { getFunctions } from "firebase/functions";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 import { getPerformance } from "firebase/performance";
 
 export const firebaseConfig = {
@@ -22,6 +22,14 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 export const functions = getFunctions(app, 'asia-south1');
+
+// Local development only. Guarded by VITE_USE_EMULATOR so production builds are
+// never affected. Start with: firebase emulators:start --only functions,auth,firestore
+if (import.meta.env.VITE_USE_EMULATOR === 'true') {
+    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, 'localhost', 8080);
+    connectFunctionsEmulator(functions, 'localhost', 5001);
+}
 
 // ✅ Firebase Performance Monitoring (tracks page load, network calls)
 export const perf = getPerformance(app);

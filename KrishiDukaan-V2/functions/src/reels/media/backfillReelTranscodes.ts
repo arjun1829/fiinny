@@ -52,7 +52,7 @@ const MAX_BATCH = 50;
 const DEFAULT_BATCH = 10;
 
 /** Mirrors the isAdmin() rule: an admin doc sits at users/{uid} or users/{phone}. */
-async function callerIsAdmin(uid: string, tokenPhone?: string): Promise<boolean> {
+export async function callerIsAdmin(uid: string, tokenPhone?: string): Promise<boolean> {
   const db = admin.firestore();
 
   const direct = await db.doc(`users/${uid}`).get();

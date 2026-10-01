@@ -14,6 +14,8 @@ import {
 import { SearchableDropdown } from "../_components/searchable-dropdown";
 import { getSubscriptions, getUsers, getPlans, invalidateUsers, invalidateSubscriptions } from "../_lib/admin-data";
 import { PLAN_FEATURE_CATALOG, featureLabel } from "../_lib/plan-features";
+import { FinanceOverview } from "../_components/analytics/finance-overview";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 
 // Thin wrapper around the new server-validated admin routes (plan CRUD,
 // subscription assign/edit/cancel) — these mutate pricing/entitlements
@@ -81,17 +83,124 @@ const EMPTY_MANUAL: ManualForm = {
   userDocId: "", paymentId: "", orderId: "", seats: "1", durationMonths: "1",
 };
 
+// ─── Date filter — shared by Active Subscriptions (startDate) and Failed
+// Payments (timestamp), mirroring the Custom Date Range pattern already on
+// Analytics (app/dashboard/analytics/page.tsx). ──────────────────────────
+type DateFilterKey = "all" | "today" | "7d" | "30d" | "custom";
+type DateRange = { from: number | null; to: number | null };
+
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function dateRangeFor(key: DateFilterKey, customFrom: string, customTo: string): DateRange {
+  const now = Date.now();
+  switch (key) {
+    case "today": {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return { from: start.getTime(), to: null };
+    }
+    case "7d":
+      return { from: now - 7 * 24 * 60 * 60 * 1000, to: null };
+    case "30d":
+      return { from: now - 30 * 24 * 60 * 60 * 1000, to: null };
+    case "custom":
+      return {
+        from: customFrom ? new Date(`${customFrom}T00:00:00`).getTime() : null,
+        to: customTo ? new Date(`${customTo}T23:59:59.999`).getTime() : null,
+      };
+    default:
+      return { from: null, to: null };
+  }
+}
+
+/** A Firestore Timestamp, millis, or Date — whatever the doc happens to carry. */
+function toMillisLoose(v: any): number {
+  if (!v) return 0;
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v.toDate === "function") return v.toDate().getTime();
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number") return v;
+  return 0;
+}
+
+function DateFilterControl({ value, onChange, customFrom, customTo, onCustomFromChange, onCustomToChange }: {
+  value: DateFilterKey;
+  onChange: (v: DateFilterKey) => void;
+  customFrom: string;
+  customTo: string;
+  onCustomFromChange: (v: string) => void;
+  onCustomToChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        {([
+          { key: "all", label: "Any date" },
+          { key: "today", label: "Today" },
+          { key: "7d", label: "Last 7 days" },
+          { key: "30d", label: "Last 30 days" },
+          { key: "custom", label: "Custom range" },
+        ] as { key: DateFilterKey; label: string }[]).map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => onChange(opt.key)}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all whitespace-nowrap shrink-0 ${
+              value === opt.key ? "bg-primary text-white" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {value === "custom" && (
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-3">
+          <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+            From
+            <input type="date" value={customFrom} max={customTo || undefined}
+              onChange={(e) => onCustomFromChange(e.target.value)}
+              className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface" />
+          </label>
+          <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+            To
+            <input type="date" value={customTo} min={customFrom || undefined} max={toDateInputValue(new Date())}
+              onChange={(e) => onCustomToChange(e.target.value)}
+              className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface" />
+          </label>
+          {(customFrom || customTo) && (
+            <button type="button" onClick={() => { onCustomFromChange(""); onCustomToChange(""); }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface">
+              Clear dates
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSubscriptionsPage() {
   const [subs, setSubs] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
   const [failedPayments, setFailedPayments] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'subscriptions' | 'plans' | 'failedPayments'>('subscriptions');
+  const [activeTab, setActiveTab] = useState<'subscriptions' | 'plans' | 'failedPayments' | 'finance'>('subscriptions');
   const [loading, setLoading] = useState(true);
   const [failedPaymentsError, setFailedPaymentsError] = useState<string | null>(null);
   const [failedPaymentsSearch, setFailedPaymentsSearch] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [subDateFilter, setSubDateFilter] = useState<DateFilterKey>("all");
+  const [subCustomFrom, setSubCustomFrom] = useState("");
+  const [subCustomTo, setSubCustomTo] = useState("");
+  const [fpDateFilter, setFpDateFilter] = useState<DateFilterKey>("all");
+  const [fpCustomFrom, setFpCustomFrom] = useState("");
+  const [fpCustomTo, setFpCustomTo] = useState("");
 
   // Actions state
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -204,7 +313,13 @@ export default function AdminSubscriptionsPage() {
     return u?.name || u?.email || null;
   };
 
+  const fpDateRange = dateRangeFor(fpDateFilter, fpCustomFrom, fpCustomTo);
   const filteredFailedPayments = failedPayments.filter((fp) => {
+    if (fpDateRange.from !== null || fpDateRange.to !== null) {
+      const ms = toMillisLoose(fp.timestamp);
+      if (fpDateRange.from !== null && ms < fpDateRange.from) return false;
+      if (fpDateRange.to !== null && ms > fpDateRange.to) return false;
+    }
     const q = failedPaymentsSearch.trim().toLowerCase();
     if (!q) return true;
     const userName = resolveFailedPaymentUserName(fp);
@@ -215,6 +330,7 @@ export default function AdminSubscriptionsPage() {
       .some((v) => String(v).toLowerCase().includes(q));
   });
 
+  const subDateRange = dateRangeFor(subDateFilter, subCustomFrom, subCustomTo);
   const filtered = subs
     .filter(s => {
       const q = search.toLowerCase();
@@ -223,6 +339,11 @@ export default function AdminSubscriptionsPage() {
       const nameStr = `${user?.name || ""} ${user?.email || ""} ${phone}`.toLowerCase();
       const matchSearch = !q || nameStr.includes(q) || (s.razorpayPaymentId || "").toLowerCase().includes(q);
       const matchStatus = statusFilter === "all" || s.subscriptionStatus === statusFilter;
+      if (subDateRange.from !== null || subDateRange.to !== null) {
+        const ms = toMillisLoose(s.startDate);
+        if (subDateRange.from !== null && ms < subDateRange.from) return false;
+        if (subDateRange.to !== null && ms > subDateRange.to) return false;
+      }
       return matchSearch && matchStatus;
     })
     .sort((a, b) => {
@@ -559,7 +680,15 @@ export default function AdminSubscriptionsPage() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('finance')}
+          className={`pb-2 px-1 font-semibold text-sm ${activeTab === 'finance' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+        >
+          Finance
+        </button>
       </div>
+
+      {activeTab === 'finance' && <FinanceOverview />}
 
       {activeTab === 'plans' && (
         <PlansTab
@@ -656,6 +785,16 @@ export default function AdminSubscriptionsPage() {
         ))}
       </div>
 
+      {/* Date filter */}
+      <DateFilterControl
+        value={subDateFilter}
+        onChange={setSubDateFilter}
+        customFrom={subCustomFrom}
+        customTo={subCustomTo}
+        onCustomFromChange={setSubCustomFrom}
+        onCustomToChange={setSubCustomTo}
+      />
+
       {/* Sort toggle */}
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-on-surface-variant font-medium shrink-0">Sort:</span>
@@ -708,7 +847,7 @@ export default function AdminSubscriptionsPage() {
                     <p className="text-[11px] sm:text-xs text-on-surface-variant font-mono truncate">{sub.ownerPhone || sub.ownerId || "—"}</p>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${sub.isCustom ? "bg-purple-50 text-purple-700 border border-purple-200" : "bg-surface-container text-on-surface-variant"}`}>
-                        <Package className="h-2.5 w-2.5" /> {sub.planName || (sub.isCustom ? "Custom" : "Standard")}
+                        <Package className="h-2.5 w-2.5" /> {subscriptionPlanLabel(sub)}
                       </span>
                       {sub.basePlanPrice != null && Number(sub.basePlanPrice) !== Number(sub.amountPaid) && (
                         <span className="text-[10px] text-on-surface-variant">
@@ -1055,21 +1194,31 @@ export default function AdminSubscriptionsPage() {
           )}
 
           {!failedPaymentsError && failedPayments.length > 0 && (
-            <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-2.5">
-              <Search className="h-4 w-4 text-outline shrink-0" />
-              <input
-                type="text"
-                placeholder="Search by user name, phone, or payment/order ID…"
-                value={failedPaymentsSearch}
-                onChange={e => setFailedPaymentsSearch(e.target.value)}
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
+            <>
+              <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant rounded-2xl px-4 py-2.5">
+                <Search className="h-4 w-4 text-outline shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search by user name, phone, or payment/order ID…"
+                  value={failedPaymentsSearch}
+                  onChange={e => setFailedPaymentsSearch(e.target.value)}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant"
+                />
+                {failedPaymentsSearch && (
+                  <button type="button" onClick={() => setFailedPaymentsSearch("")} className="text-outline hover:text-on-surface">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <DateFilterControl
+                value={fpDateFilter}
+                onChange={setFpDateFilter}
+                customFrom={fpCustomFrom}
+                customTo={fpCustomTo}
+                onCustomFromChange={setFpCustomFrom}
+                onCustomToChange={setFpCustomTo}
               />
-              {failedPaymentsSearch && (
-                <button type="button" onClick={() => setFailedPaymentsSearch("")} className="text-outline hover:text-on-surface">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
+            </>
           )}
 
           {!failedPaymentsError && failedPayments.length === 0 ? (
@@ -1453,7 +1602,7 @@ function AssignSubscriptionModal({
 
   return (
     <div className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4">
-      <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-5 py-4 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-on-surface">Assign Subscription</h2>
@@ -1546,7 +1695,7 @@ function AssignSubscriptionModal({
 
               <div>
                 <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-2">Features</label>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
                   {PLAN_FEATURE_CATALOG.map(f => (
                     <label key={f.key} className="flex items-center gap-2 rounded-xl border border-outline-variant/30 px-3 py-2 text-sm cursor-pointer hover:bg-surface-container-low">
                       <input type="checkbox" checked={form.features.includes(f.key)} onChange={() => toggleFeature(f.key)}

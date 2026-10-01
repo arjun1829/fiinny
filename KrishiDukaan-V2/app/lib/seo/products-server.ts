@@ -106,13 +106,59 @@ function mapProduct(id: string, data: Record<string, unknown>): SeoProduct {
   };
 }
 
-/** True if the doc is a public, canonical, listable product (not a copy/inactive). */
-function isListable(data: Record<string, unknown>): boolean {
+/**
+ * True if the doc is a public, canonical, listable product (not a copy/inactive).
+ *
+ * THE SINGLE DEFINITION OF "has a product page". getProductById() gates the
+ * /products/[slug] route on this, and the sitemap emits exactly the docs that
+ * pass it — so any surface that renders a /products/… link must agree with it,
+ * or it links to a guaranteed 404. Exported for exactly that reason: the brand,
+ * store and reel surfaces each grew their own near-miss copy of this rule and
+ * each drifted (see isProductPageServable below).
+ */
+export function isListable(data: Record<string, unknown>): boolean {
   if (data.isActive === false) return false;
   if (COPY_SOURCES.has(str(data.source))) return false;
   if (!data.name || !data.image) return false;
   if (!Number.isFinite(Number(data.price))) return false;
   return true;
+}
+
+/**
+ * Does /products/{buildProductSlug(name, id)} actually resolve for this id?
+ *
+ * The link-time counterpart to isListable: surfaces that hold only a product
+ * *id* (a reel's linkedProductId, a store's canonicalId) cannot evaluate the
+ * predicate themselves, because they never read the product doc. One batched
+ * lookup answers it for a whole page's worth of links.
+ *
+ * Returns the subset of `ids` that will render a 200. Fails OPEN on error —
+ * an unreachable Firestore degrades to "show the links" rather than silently
+ * emptying a brand or store page of its entire product grid.
+ */
+export async function filterServableProductIds(
+  ids: string[],
+): Promise<Set<string>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return new Set();
+  try {
+    const db = getClientDb();
+    const results = await Promise.all(
+      unique.map(async (id) => {
+        try {
+          const snap = await getDoc(doc(db, "products", id));
+          if (!snap.exists()) return null;
+          return isListable(snap.data() as Record<string, unknown>) ? id : null;
+        } catch {
+          return id; // fail open for this id
+        }
+      }),
+    );
+    return new Set(results.filter((id): id is string => id !== null));
+  } catch (err) {
+    console.warn("[seo/products-server] filterServableProductIds failed:", err);
+    return new Set(unique); // fail open
+  }
 }
 
 // ─── Slug helpers ─────────────────────────────────────────────────────────

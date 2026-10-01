@@ -71,11 +71,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     ));
   }
 
-  Future<void> _finish() async {
+  /// Both buttons mark the welcome screen seen so it never shows again —
+  /// the only difference is where the user lands. "Continue without login"
+  /// drops them on the marketplace as a guest; ordering still asks them to
+  /// sign in when they try (see product_detail_screen's cart guard).
+  Future<void> _go(String route) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kWelcomeSeenPref, true);
     if (!mounted) return;
-    context.go('/login');
+    context.go(route);
   }
 
   @override
@@ -108,43 +112,63 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ),
           ),
 
-          // ── Bottom CTA → continue to login / onboarding ───────────────
+          // ── Bottom CTAs: Login (primary) + Continue without login ─────
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Padding(
-              padding: EdgeInsets.fromLTRB(28, 0, 28, bottomPad + 26),
-              child: SizedBox(
-                width: double.infinity,
-                height: 58,
-                child: FilledButton(
-                  onPressed: _finish,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.secondary,
-                    foregroundColor: AppColors.onSecondary,
-                    elevation: 6,
-                    shadowColor: Colors.black54,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Get Started',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onSecondary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17,
+              padding: EdgeInsets.fromLTRB(28, 0, 28, bottomPad + 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: () => _go('/login'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.secondary,
+                        foregroundColor: AppColors.onSecondary,
+                        elevation: 6,
+                        shadowColor: Colors.black54,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.arrow_forward_rounded, size: 20),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Login',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.onSecondary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_rounded, size: 20),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => _go('/'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                    child: Text(
+                      'Continue without login',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

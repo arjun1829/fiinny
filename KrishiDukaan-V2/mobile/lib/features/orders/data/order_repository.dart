@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/models/order_model.dart';
+import '../../../core/utils/delivery_utils.dart';
 
 class OrderRepository {
   final _db = FirebaseFirestore.instance;
@@ -59,7 +60,12 @@ class OrderRepository {
 
   /// First non-empty ownership field on a product doc, phone-first, or ''.
   static String _ownerOf(Map<String, dynamic> d) {
-    for (final field in ['retailerPhone', 'ownerPhone', 'retailerId', 'ownerId']) {
+    // manufacturerPhone/createdByPhone: a manufacturer's own canonical listing
+    // may carry only these (see manufacturer_repository.addCatalogProduct).
+    for (final field in [
+      'retailerPhone', 'ownerPhone', 'manufacturerPhone', 'createdByPhone',
+      'retailerId', 'ownerId',
+    ]) {
       final v = (d[field] as String?)?.trim();
       if (v != null && v.isNotEmpty) return v;
     }
@@ -74,7 +80,15 @@ class OrderRepository {
     required Map<String, dynamic> customerAddress,
     required String razorpayOrderId,
     required String razorpayPaymentId,
-    required Map<String, double> deliveryChargesBySeller,
+
+    /// Each seller's pricing — the SERVER's figures when create-cart-order
+    /// returned them (what the customer was actually charged), else the
+    /// checkout estimate. Keyed by seller phone.
+    required Map<String, SellerPricing> pricingBySeller,
+
+    /// The address state that picked the delivery slab; stored so the order
+    /// (and its invoice) show which slab set applied.
+    String? customerDeliveryState,
   }) async {
     final user = FirebaseAuth.instance.currentUser!;
 
@@ -96,12 +110,12 @@ class OrderRepository {
       final sellerItems = entry.value;
       final sellerName = sellerItems.first.sellerName;
 
-      final subtotal = sellerItems.fold(
-          0.0, (acc, i) => acc + i.price * i.quantity);
-      final sellerGst = sellerItems.fold(
-          0.0, (acc, i) => acc + i.lineGst);
-      final deliveryCharge = deliveryChargesBySeller[sellerPhone] ?? 0.0;
-      final grandTotal = subtotal + sellerGst + deliveryCharge;
+      final sp = _pricingFor(sellerPhone, pricingBySeller, sellerItems);
+      final subtotal = sp.subtotal;
+      final deliveryCharge = sp.deliveryCharge;
+      // Included GST is already inside the prices; only EXCLUDED GST was added.
+      final grandTotal = sp.total;
+      final state = (customerDeliveryState ?? '').trim();
 
       final orderRef = _db.collection('orders').doc();
       batch.set(orderRef, {
@@ -131,12 +145,32 @@ class OrderRepository {
                   'listingId': i.listingId,
                   'gstApplicable': i.gstApplicable,
                   'gstRate': i.gstRate,
+                  // Per unit: backed out of the price when included, on top when
+                  // not — what the invoice's tax column shows.
                   'gstAmount': i.unitGst,
+                  // True when gstAmount was already inside `price` and was NOT
+                  // added to the total. The invoice needs this to tell them apart.
+                  'gstIncluded': i.gstIncluded,
                 })
             .toList(),
         'subtotal': subtotal,
-        'totalGst': sellerGst,
+        // All GST in the order (included + added) — for the invoice.
+        'totalGst': sp.gstTotal,
+        // The part actually ADDED to the payable total (0 → field omitted).
+        if (sp.gstAdded > 0) 'totalGstAdded': sp.gstAdded,
         'deliveryCharge': deliveryCharge,
+        // Frozen delivery breakdown as charged (slab, extra, free, waived, and
+        // which slab set applied), so the invoice never recomputes from
+        // today's settings.
+        'deliveryBreakdown': {
+          ...sp.delivery.toMap(),
+          if (state.isNotEmpty) 'customerDeliveryState': state,
+        },
+        if (state.isNotEmpty) 'customerDeliveryState': state,
+        // `grandTotal` is the canonical final-total field (web writes it too);
+        // `total` is kept as a mirror for backward compatibility with older
+        // readers and the OrderModel fallback. Both hold the same value.
+        'grandTotal': grandTotal,
         'total': grandTotal,
         // Rules require status == 'placed' on order create
         'status': 'placed',
@@ -151,6 +185,48 @@ class OrderRepository {
     }
 
     await batch.commit();
+  }
+
+  /// This seller's pricing: the server's / estimate's figure when there is one
+  /// (matched on the phone's last 10 digits, since keys appear as "+91…" and
+  /// bare), otherwise computed here from the lines with no delivery settings.
+  SellerPricing _pricingFor(
+    String sellerPhone,
+    Map<String, SellerPricing> bySeller,
+    List<CartItemModel> sellerItems,
+  ) {
+    final direct = bySeller[sellerPhone];
+    if (direct != null) return direct;
+    String tail(String v) {
+      final d = v.replaceAll(RegExp(r'\D'), '');
+      return d.length >= 10 ? d.substring(d.length - 10) : '';
+    }
+
+    final want = tail(sellerPhone);
+    if (want.isNotEmpty) {
+      for (final e in bySeller.entries) {
+        if (tail(e.key) == want) return e.value;
+      }
+    }
+    return computeSellerPricing(
+      sellerPhone,
+      [
+        for (final i in sellerItems)
+          CartPricingLine(
+            sellerKey: sellerPhone,
+            unitPrice: i.price,
+            qty: i.quantity,
+            weightKg: 0,
+            gstApplicable: i.gstApplicable,
+            gstRate: i.gstRate,
+            gstIncluded: i.gstIncluded,
+            extraDeliveryCharge: i.extraDeliveryCharge,
+            freeDelivery: i.freeDelivery,
+          ),
+      ],
+      null,
+      null,
+    );
   }
 
   /// Streams all orders for the current user — as buyer and as seller.
@@ -205,6 +281,66 @@ class OrderRepository {
       sub1.cancel();
       sub2?.cancel();
       sub3?.cancel();
+    };
+    return controller.stream;
+  }
+
+  /// Streams the orders where the current user is the SELLER — the source of
+  /// truth for their earnings.
+  ///
+  /// Orders are keyed inconsistently across platforms: mobile writes the
+  /// seller's phone into both `sellerPhone` and `sellerId`, while web orders
+  /// can carry the seller's Auth UID in `sellerId`. Querying only one field
+  /// would silently under-report what a seller is owed, so both are queried
+  /// and the results deduped.
+  ///
+  /// Each query silences its own errors rather than adding to the stream: a
+  /// permission denial on one must not blank out the others (the same trap
+  /// that previously made the orders screens flash data and then error).
+  Stream<List<OrderModel>> watchSellerOrders() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value([]);
+
+    final phone = user.phoneNumber ?? '';
+
+    final controller = StreamController<List<OrderModel>>();
+    List<DocumentSnapshot> byPhone = [];
+    List<DocumentSnapshot> byId = [];
+    List<DocumentSnapshot> byUid = [];
+
+    void emit() {
+      final seen = <String>{};
+      final orders = [...byPhone, ...byId, ...byUid]
+          .where((d) => seen.add(d.id))
+          .map((d) {
+            try { return OrderModel.fromFirestore(d); } catch (_) { return null; }
+          })
+          .whereType<OrderModel>()
+          .toList();
+      if (!controller.isClosed) controller.add(orders);
+    }
+
+    final subs = <StreamSubscription>[];
+    if (phone.isNotEmpty) {
+      subs.add(_db.collection('orders')
+          .where('sellerPhone', isEqualTo: phone)
+          .snapshots()
+          .listen((s) { byPhone = s.docs; emit(); }, onError: (_) {}));
+      subs.add(_db.collection('orders')
+          .where('sellerId', isEqualTo: phone)
+          .snapshots()
+          .listen((s) { byId = s.docs; emit(); }, onError: (_) {}));
+    }
+    // Legacy web orders that recorded the seller's Auth UID.
+    subs.add(_db.collection('orders')
+        .where('sellerId', isEqualTo: user.uid)
+        .snapshots()
+        .listen((s) { byUid = s.docs; emit(); }, onError: (_) {}));
+
+    controller.onCancel = () {
+      for (final s in subs) {
+        s.cancel();
+      }
     };
     return controller.stream;
   }

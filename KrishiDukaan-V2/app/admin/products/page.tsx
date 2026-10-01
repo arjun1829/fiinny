@@ -15,9 +15,16 @@ const ADMIN_SEAT_STATS = { totalPurchased: 99, activeUsed: 0, available: 99, exp
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
+  // Raw docs preserved for promoted-copy detection (retailer-only listings with no canonical match).
+  const [allRawDocs, setAllRawDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+  const [stockFilter, setStockFilter] = useState<"all" | "In Stock" | "Low Stock" | "Out of Stock">("all");
+  const [assignedFilter, setAssignedFilter] = useState<"all" | "assigned" | "unassigned">("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "price_asc" | "price_desc">("name");
   // Renders only a window of the (already-fetched) product list at a time — the admin
   // catalog table is heavy per-row (images, badges, several buttons), so painting all
   // of it at once was the dominant slowness, separate from the network fetch itself.
@@ -94,6 +101,7 @@ export default function AdminProductsPage() {
     return Promise.all([getProducts({ force }), fetchAdminAssignedCopies().catch(() => [])])
       .then(([docs, raw]) => {
         setProducts(mapAdminProductDocs(docs));
+        setAllRawDocs(docs);
         setRawProducts(raw);
         const age = cacheAge(CACHE_KEYS.products);
         setDataAge(age === null ? Date.now() : Date.now() - age);
@@ -230,7 +238,11 @@ export default function AdminProductsPage() {
     }
 
     const result: MarketplaceProduct[] = [];
+    const canonicalNames = new Set<string>();
+
     for (const [key, list] of Array.from(groups.entries())) {
+      canonicalNames.add(key);
+
       // Find canonical one in group: prefer manufacturer_inventory, then admin, then retailer_inventory
       const canonical = list.find(p => p.source === 'manufacturer_inventory')
         || list.find(p => p.source === 'admin')
@@ -272,20 +284,56 @@ export default function AdminProductsPage() {
         allDocIds,
       } as any);
     }
+
+    // Promoted copies: retailer-only listings (a copy whose name has no canonical match)
+    // that the marketplace promotes to standalone cards. Include them here so the
+    // admin count matches the market and admins can see all buyable products.
+    const promotedByName = new Map<string, any>();
+    for (const raw of allRawDocs) {
+      if (!COPY_SOURCES.has(String(raw.source ?? ''))) continue;
+      if (raw.isActive === false) continue;
+      if (!raw.name || !raw.price) continue;
+      if (!(raw.ownerId || raw.retailerId || raw.retailerPhone)) continue;
+      const key = String(raw.name).toLowerCase().trim();
+      if (canonicalNames.has(key)) continue;
+      if (!promotedByName.has(key)) promotedByName.set(key, raw);
+    }
+    for (const raw of Array.from(promotedByName.values())) {
+      const mapped = mapAdminProductDocs([raw])[0];
+      if (mapped) result.push(mapped);
+    }
+
     return result;
-  }, [products]);
+  }, [products, allRawDocs]);
+
+  const min = minPrice.trim() ? Number(minPrice) : null;
+  const max = maxPrice.trim() ? Number(maxPrice) : null;
 
   const filtered = useMemo(() => {
-    return groupedProducts.filter(p => {
+    const result = groupedProducts.filter(p => {
       const q = search.toLowerCase();
       const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
       const matchCat = catFilter === "all" || p.category === catFilter;
-      return matchSearch && matchCat;
+      const matchStock = stockFilter === "all" || p.stock === stockFilter;
+      if (min !== null && !Number.isNaN(min) && p.price < min) return false;
+      if (max !== null && !Number.isNaN(max) && p.price > max) return false;
+      if (assignedFilter !== "all") {
+        const docIds = (p as any).allDocIds || [p.id];
+        const n = docIds.reduce((sum: number, docId: string) => sum + (assignmentsByOriginal.get(docId) ?? []).length, 0);
+        if (assignedFilter === "assigned" && n === 0) return false;
+        if (assignedFilter === "unassigned" && n > 0) return false;
+      }
+      return matchSearch && matchCat && matchStock;
     });
-  }, [groupedProducts, search, catFilter]);
+    const sorted = [...result];
+    if (sortBy === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === "price_asc") sorted.sort((a, b) => a.price - b.price);
+    else if (sortBy === "price_desc") sorted.sort((a, b) => b.price - a.price);
+    return sorted;
+  }, [groupedProducts, search, catFilter, stockFilter, assignedFilter, min, max, sortBy, assignmentsByOriginal]);
 
   // Reset the visible window whenever the result set changes underneath it.
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, catFilter]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, catFilter, stockFilter, assignedFilter, min, max, sortBy]);
 
   const visibleProducts = filtered.slice(0, visibleCount);
 
@@ -386,6 +434,61 @@ export default function AdminProductsPage() {
         <Search className="h-4 w-4 text-outline shrink-0" />
         <input type="text" placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)}
           className="flex-1 bg-transparent border-none focus:ring-0 text-sm text-on-surface placeholder-on-surface-variant" />
+        {search && (
+          <button type="button" onClick={() => setSearch("")} className="text-outline hover:text-on-surface">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-on-surface-variant">Stock</span>
+          <select value={stockFilter} onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
+            className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1.5 text-xs outline-none focus:border-primary appearance-none">
+            <option value="all">Any stock status</option>
+            <option value="In Stock">In Stock</option>
+            <option value="Low Stock">Low Stock</option>
+            <option value="Out of Stock">Out of Stock</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-on-surface-variant">Sellers</span>
+          <select value={assignedFilter} onChange={e => setAssignedFilter(e.target.value as typeof assignedFilter)}
+            className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1.5 text-xs outline-none focus:border-primary appearance-none">
+            <option value="all">Any</option>
+            <option value="assigned">Assigned to sellers</option>
+            <option value="unassigned">Not yet assigned</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-on-surface-variant">Min price (₹)</span>
+          <input type="number" min={0} value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0"
+            className="w-24 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1.5 text-xs outline-none focus:border-primary" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-on-surface-variant">Max price (₹)</span>
+          <input type="number" min={0} value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="—"
+            className="w-24 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1.5 text-xs outline-none focus:border-primary" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold text-on-surface-variant">Sort by</span>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+            className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1.5 text-xs outline-none focus:border-primary appearance-none">
+            <option value="name">Name (A–Z)</option>
+            <option value="price_asc">Price (low to high)</option>
+            <option value="price_desc">Price (high to low)</option>
+          </select>
+        </label>
+        {(stockFilter !== "all" || assignedFilter !== "all" || minPrice || maxPrice || sortBy !== "name") && (
+          <button
+            type="button"
+            onClick={() => { setStockFilter("all"); setAssignedFilter("all"); setMinPrice(""); setMaxPrice(""); setSortBy("name"); }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {loading ? (

@@ -67,12 +67,19 @@ env:
   - variable: RAZORPAY_KEY_SECRET
     secret: RAZORPAY_KEY_SECRET
 
+  # Verifies webhook calls from Razorpay -> /api/webhooks/razorpay. Generated
+  # by Razorpay when the webhook is created in Dashboard -> Settings ->
+  # Webhooks (a DIFFERENT value from RAZORPAY_KEY_SECRET above) — create the
+  # matching secret in Secret Manager before this deploys, or the webhook
+  # route will reject every call.
+  - variable: RAZORPAY_WEBHOOK_SECRET
+    secret: RAZORPAY_WEBHOOK_SECRET
+
   # ─── Cron ──────────────────────────────────────────────────────────────────
   - variable: CRON_SECRET
-    value: krishidukan-cron-2026
+    # Rotated value lives in Secret Manager, never in this file.
+    secret: CRON_SECRET
 
-  - variable: NEXT_PUBLIC_CRON_SECRET
-    value: krishidukan-cron-2026
 
   # ─── Firebase Admin SDK ────────────────────────────────────────────────────
   - variable: FIREBASE_PROJECT_ID
@@ -83,6 +90,15 @@ env:
 
   - variable: FIREBASE_PRIVATE_KEY
     secret: FIREBASE_PRIVATE_KEY
+
+  # ─── Google Analytics 4 (Data API) ─────────────────────────────────────────
+  # Numeric GA4 property id for the Admin Analytics → Engagement tab (DAU/MAU).
+  # Find it in GA4 Admin → Property Settings → "PROPERTY ID" (a number, NOT the
+  # G-XXXX measurement id). The Firebase Admin service account above must be
+  # granted at least "Viewer" on this GA4 property (GA4 Admin → Property access
+  # management) for the Data API to return data.
+  - variable: GA4_PROPERTY_ID
+    value: "" # TODO: set to the numeric GA4 property id, e.g. "123456789"
 
   # ─── WhatsApp Cloud API ────────────────────────────────────────────────────
   # Store via: firebase apphosting:secrets:set WA_ACCESS_TOKEN

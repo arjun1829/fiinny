@@ -21,6 +21,80 @@ class CatalogRepository {
   // Cache snapshots to return as doc page cursors
   final _docCache = <String, DocumentSnapshot>{};
 
+  /// Lightweight, bounded fetch for Home's preview rails (Trending /
+  /// Featured / Top Deals) — together they only ever show ~30 cards, and
+  /// [ProductCard] only reads price/discount/name/image/rating/distance from
+  /// each one, none of which need [fetchAllMergedProducts]'s full
+  /// cross-catalog seller merge. That merge scans the ENTIRE `products`
+  /// collection *and* the ENTIRE `productReviews` collection on every call —
+  /// Home was paying that cost (which only grows as the catalog does) just
+  /// to render 30 cards, and it was the main reason the home screen got
+  /// slower to open the more products/reviews existed. Marketplace search
+  /// and category browsing still go through fetchAllMergedProducts, which
+  /// genuinely needs every doc to compute a correct lowest-price/seller-count
+  /// across sellers — Home doesn't merge sellers at all here, so a canonical
+  /// product's OWN discount is used rather than the highest across copies.
+  ///
+  /// Ordered by createdAt so "latest" products are naturally favoured; a
+  /// product doc with no createdAt field is skipped by Firestore's orderBy
+  /// (unlike fetchAllMergedProducts, which sorts those last instead of
+  /// dropping them) — acceptable here since this is a discovery preview, not
+  /// the definitive catalog listing.
+  Future<List<CatalogModel>> fetchHomeRailProducts({int limit = 60}) async {
+    final snap = await _db
+        .collection(_col)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+
+    final products = snap.docs
+        .where((doc) {
+          final data = doc.data() as Map<String, dynamic>? ?? {};
+          return data['isActive'] != false;
+        })
+        .map((doc) => CatalogModel.fromFirestore(doc))
+        .where((p) =>
+            p.name.isNotEmpty &&
+            p.imageUrl.isNotEmpty &&
+            p.price.isFinite &&
+            !_copySources.contains(p.source))
+        .toList();
+
+    if (products.isEmpty) return products;
+
+    // Ratings scoped to just these candidates instead of every review ever
+    // submitted on the platform.
+    final ids = products.map((p) => p.id).where((id) => id.isNotEmpty).toList();
+    final ratingAgg = <String, _RatingAgg>{};
+    for (var i = 0; i < ids.length; i += 30) {
+      final chunk = ids.sublist(i, i + 30 > ids.length ? ids.length : i + 30);
+      try {
+        final reviewsSnap = await _db
+            .collection('productReviews')
+            .where('catalogId', whereIn: chunk)
+            .get();
+        for (final doc in reviewsSnap.docs) {
+          final data = doc.data();
+          final catalogId = (data['catalogId'] ?? '').toString();
+          final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+          if (catalogId.isEmpty || rating <= 0.0) continue;
+          final cur = ratingAgg[catalogId] ?? _RatingAgg(0.0, 0);
+          ratingAgg[catalogId] = _RatingAgg(cur.sum + rating, cur.count + 1);
+        }
+      } catch (_) {
+        // Ratings are decoration here — a failed chunk just leaves those
+        // products on their own doc-level rating fallback below.
+      }
+    }
+
+    return products.map((p) {
+      final agg = ratingAgg[p.id];
+      final count = agg?.count ?? 0;
+      if (count == 0) return p;
+      return p.copyWith(rating: agg!.sum / count, reviewCount: count);
+    }).toList();
+  }
+
   Future<List<CatalogModel>> fetchAllMergedProducts() async {
     try {
       final futures = await Future.wait([
@@ -135,7 +209,8 @@ class CatalogRepository {
       for (final p in raw) {
         final key = p.name.toLowerCase().trim();
         recordSellerDiscount(key, p.id, p.retailerPhone, p.maxDiscountPct);
-        markOnline(key, p.isOnline == true);
+        final pIsOnline = p.sellMode != 'offline_store_only' && p.isOnline != false;
+        markOnline(key, pIsOnline);
 
         final ids = idsByKey[key] ?? [];
         ids.add(p.id);
@@ -177,7 +252,7 @@ class CatalogRepository {
             storeName: secondary.store,
             stockLevel: secondary.stock ?? 'In Stock',
             sellingPrice: secondary.price,
-            isOnline: secondary.isOnline,
+            isOnline: secondary.sellMode != 'offline_store_only' && secondary.isOnline != false,
             variants: secondary.variants,
           ));
         }
@@ -197,8 +272,10 @@ class CatalogRepository {
       for (final copy in retailerCopies) {
         if (copy.name.isEmpty || copy.price <= 0.0) continue;
         final key = copy.name.toLowerCase().trim();
-        final canonical = byName[key];
-        if (canonical == null) continue;
+
+        final copyStoreId = copy.retailerId ?? '';
+        final copyPhone = copy.retailerPhone;
+        if (copyStoreId.isEmpty && (copyPhone == null || copyPhone.isEmpty)) continue;
 
         final copyIds = idsByKey[key] ?? [];
         if (!copyIds.contains(copy.id)) {
@@ -206,11 +283,34 @@ class CatalogRepository {
           idsByKey[key] = copyIds;
         }
 
-        final copyStoreId = copy.retailerId ?? '';
-        final copyPhone = copy.retailerPhone;
-        if (copyStoreId.isEmpty && (copyPhone == null || copyPhone.isEmpty)) continue;
+        final copyIsOnline = copy.sellMode != 'offline_store_only' && copy.isOnline != false;
+        markOnline(key, copyIsOnline);
 
-        markOnline(key, copy.isOnline == true);
+        final copyDiscountPct = copy.maxDiscountPct;
+        recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
+
+        final canonical = byName[key];
+        if (canonical == null) {
+          // No canonical product exists for this item yet. Promote this copy
+          // to a standalone marketplace product so the retailer's listing is visible.
+          final avEntry = AvailabilityEntry(
+            storeId: copyStoreId,
+            storePhone: copyPhone,
+            storeName: copy.store,
+            stockLevel: copy.stock ?? 'In Stock',
+            sellingPrice: copy.price,
+            isOnline: copyIsOnline,
+            variants: copy.variants,
+          );
+          byName[key] = copy.copyWith(
+            availability: [avEntry],
+            variants: copy.variants,
+            maxDiscountPct: copyDiscountPct,
+            isOnline: copyIsOnline,
+            sellMode: copyIsOnline ? 'online_delivery' : 'offline_store_only',
+          );
+          continue;
+        }
 
         final av = canonical.availability != null ? List<AvailabilityEntry>.from(canonical.availability!) : <AvailabilityEntry>[];
         
@@ -224,9 +324,6 @@ class CatalogRepository {
           }
         }
 
-        final copyDiscountPct = copy.maxDiscountPct;
-        recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
-
         if (existingIndex != -1) {
           final existing = av[existingIndex];
           av[existingIndex] = AvailabilityEntry(
@@ -235,7 +332,7 @@ class CatalogRepository {
             storeName: existing.storeName,
             stockLevel: existing.stockLevel,
             sellingPrice: copy.price,
-            isOnline: copy.isOnline ?? existing.isOnline,
+            isOnline: copyIsOnline,
             variants: copy.variants ?? existing.variants,
           );
         } else {
@@ -245,7 +342,7 @@ class CatalogRepository {
             storeName: copy.store,
             stockLevel: copy.stock ?? 'In Stock',
             sellingPrice: copy.price,
-            isOnline: copy.isOnline,
+            isOnline: copyIsOnline,
             variants: copy.variants,
           ));
         }
@@ -307,7 +404,7 @@ class CatalogRepository {
                   storeName: p.store,
                   stockLevel: p.stock ?? 'In Stock',
                   sellingPrice: p.price,
-                  isOnline: p.isOnline,
+                  isOnline: p.sellMode != 'offline_store_only' && p.isOnline != false,
                 ),
               ];
 

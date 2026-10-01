@@ -10,6 +10,7 @@ import {
 } from "../../_lib/manufacturer-retailers-firestore";
 import { fetchAllUsers, fetchAllRetailers, fetchStores } from "../../../firebase";
 import { useI18n } from "../../../i18n/I18nContext";
+import { authedJsonHeaders } from "../../../lib/authed-fetch";
 
 declare global {
   interface Window {
@@ -406,7 +407,7 @@ export function AddRetailerModal({
       if (trimmedEmail) {
         fetch("/api/email/invite", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authedJsonHeaders(),
           body: JSON.stringify({
             retailerEmail: trimmedEmail,
             shopName: shopName.trim(),

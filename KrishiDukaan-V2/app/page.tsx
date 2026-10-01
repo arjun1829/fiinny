@@ -23,9 +23,11 @@ import BrandView from './views/BrandView';
 import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
-import { motion, AnimatePresence } from 'framer-motion';
-import { auth, db, fetchMarketplaceProducts, fetchStores, syncInitialData, getUserProfile, fetchHubs, createOrdersFromCart, updateOrderPayment, trackPageView, requestRoleUpgrade, logFailedPayment } from './firebase';
+import { motion } from 'framer-motion';
+import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
+import type { Banner } from './firebase';
 import { acceptManufacturerInvite } from './lib/invite/invite-acceptance-service';
+import { readPendingReferral } from './lib/referral-client';
 import { fetchInviteDetailsForSignup } from './lib/invite/fetch-invite-for-signup';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -36,6 +38,7 @@ import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
 import { calcDiscount } from './utils/discount';
+import { computeLinePricing } from './utils/gst';
 import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
 
 import { Navbar } from '../components/shared/navbar';
@@ -59,6 +62,48 @@ type UserProfile = {
 
 const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
 const HOME_PRODUCTS_LIMIT = 12;
+
+/**
+ * Bounded fetch for Home's "Top Picks" rail. Hits a small, store-free server
+ * route that ranks by live-discount → discount % → newest (see
+ * /api/home/top-picks) and returns ~10 merged cards — so the homepage renders
+ * from a bounded read instead of pulling the whole `products` + `productReviews`
+ * collections into the browser on every boot. The full catalogue is loaded
+ * lazily by ensureCatalogLoaded() the first time a product/cart/map view opens.
+ */
+async function fetchTopPicks(): Promise<MarketplaceProduct[]> {
+  const res = await fetch('/api/home/top-picks');
+  if (!res.ok) throw new Error(`Top Picks fetch failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.products) ? (data.products as MarketplaceProduct[]) : [];
+}
+
+/**
+ * Resolve the RETAILER-SPECIFIC commercial settings (GST + delivery) for the cart
+ * line. When the buyer has picked a store, its availability entry is authoritative —
+ * absence of a field there means that seller doesn't apply it (e.g. no GST), so we
+ * must NOT fall back to the master product. The canonical `product.*` is used only
+ * when no per-seller entry exists at all. Returns a partial CartItem to spread.
+ */
+function resolveSellerCommercial(
+  entry: NonNullable<MarketplaceProduct["availability"]>[number] | undefined,
+  product: MarketplaceProduct,
+): Partial<CartItem> {
+  const hasEntry = !!entry;
+  const gstApplicable = hasEntry ? entry!.gstApplicable === true : product.gstApplicable === true;
+  const gstRate = hasEntry ? entry!.gstRate : product.gstRate;
+  // Business default is INCLUDED — a line is only exclusive when explicitly false.
+  // Always propagate the boolean (not just when true) so exclusive GST survives all
+  // the way to the cart/checkout calculation instead of defaulting back to included.
+  const gstIncluded = hasEntry ? entry!.gstIncluded !== false : product.gstIncluded !== false;
+  const extraDeliveryCharge = hasEntry ? entry!.extraDeliveryCharge : product.extraDeliveryCharge;
+  const freeDelivery = hasEntry ? entry!.freeDelivery === true : product.freeDelivery === true;
+  return {
+    ...(gstApplicable && gstRate ? { gstApplicable: true, gstRate, gstIncluded } : {}),
+    ...(extraDeliveryCharge && extraDeliveryCharge > 0 ? { extraDeliveryCharge } : {}),
+    ...(freeDelivery ? { freeDelivery: true } : {}),
+  };
+}
 
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
 // Falls back to a "not found" message if the manufacturer has no slug set up yet.
@@ -109,11 +154,7 @@ export default function App() {
   const [coordinates, setCoordinates] = useState({ lat: 18.5204, lng: 73.8567 });
   const [productSearch, setProductSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [maxDistance, setMaxDistance] = useState(1000);
-  const [showFilters, setShowFilters] = useState(false);
-  const [inStockOnly, setInStockOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'none' | 'price-low' | 'price-high'>('none');
-  
+
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', phone: '', email: '', isPaid: false });
@@ -123,8 +164,18 @@ export default function App() {
     userRole === 'admin' ? 'customer' : userRole;
   
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
+  // Bounded product slice powering Home's rails only. Home no longer reads the
+  // whole catalogue on boot; the full list (allProducts) is loaded lazily by
+  // ensureCatalogLoaded() when a product/cart/map view is first opened.
+  const [homeRailProducts, setHomeRailProducts] = useState<MarketplaceProduct[]>([]);
+  // Home's "Latest Reels" rail — owned here (not inside HomeView) so it survives
+  // HomeView's remount on every Home⇄detail navigation and /api/reels is hit
+  // once per session instead of once per return to Home.
+  const [homeReels, setHomeReels] = useState<any[]>([]);
+  const [homeReelsLoading, setHomeReelsLoading] = useState(true);
   const [allStores, setAllStores] = useState<any[]>([]);
   const [hubs, setHubs] = useState<any[]>([]);
+  const [banners, setBanners] = useState<Banner[]>([]);
   const [selectedHubId, setSelectedHubId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartLoaded, setCartLoaded] = useState(false);
@@ -177,7 +228,11 @@ export default function App() {
     // this view through navigation, but 'subscription' is in VALID_VIEWS, so
     // ?view=subscription would render the retailer pitch to them — SubscriptionView
     // treats every non-manufacturer role as a retailer.
-    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer') {
+    // Exception: someone who arrived from a sales referral link may buy as a
+    // customer — paying upgrades them to retailer (updateSubscriptionStatus),
+    // same as the mobile app.
+    if (view === 'subscription' && userRole !== 'retailer' && userRole !== 'manufacturer'
+        && !(userRole && readPendingReferral())) {
       return 'home';
     }
     if (userRole === 'retailer' && view === 'become-retailer') {
@@ -510,28 +565,156 @@ export default function App() {
   const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
   const [locationSource, setLocationSource] = useState<'browser' | 'cached' | 'default'>('default');
 
+  // Guards ensureStoresLoaded so the full /retailers read happens at most once
+  // per session, no matter how many store-dependent views the user opens.
+  const storesLoadedRef = useRef(false);
+  const [storesLoading, setStoresLoading] = useState(false);
+
+  // Lazily fetch the full store/retailer list the FIRST time the user opens a
+  // store-dependent view (Stores/Map, Market, Product, Cart). Home never calls
+  // this — that read used to run unconditionally on every home load and was the
+  // single biggest source of Firestore reads. Idempotent: the ref is set before
+  // the await so concurrent navigations coalesce into one fetch.
+  const ensureStoresLoaded = useCallback(async () => {
+    if (storesLoadedRef.current) return;
+    storesLoadedRef.current = true;
+    setStoresLoading(true);
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const stores = await fetchStores();
+      setAllStores(stores);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /retailers read fires exactly once,
+        // on demand — and never on the home view.
+        console.info(`[stores] lazy fetchStores() → ${stores.length} stores in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load stores:', err);
+      storesLoadedRef.current = false; // allow a retry on the next store-view open
+    } finally {
+      setStoresLoading(false);
+    }
+  }, []);
+
+  // Guards ensureHubsLoaded so the full /hubs read happens at most once per
+  // session. Home used to read the entire hubs collection on every load just to
+  // populate the "Shop by Crop" strip, which falls back to a static list until
+  // real hubs arrive — so this read is now deferred until that section is
+  // actually reached (see HomeView's onHubsNeeded).
+  const hubsLoadedRef = useRef(false);
+
+  const ensureHubsLoaded = useCallback(async () => {
+    if (hubsLoadedRef.current) return;
+    hubsLoadedRef.current = true;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const fetchedHubs = await fetchHubs();
+      setHubs(fetchedHubs);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full /hubs read fires exactly once, on
+        // demand (when the Shop-by-Crop section is reached) — never on home load.
+        console.info(`[hubs] lazy fetchHubs() → ${fetchedHubs.length} hubs in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load hubs:', err);
+      hubsLoadedRef.current = false; // allow a retry the next time the section is reached
+    }
+  }, []);
+
+  // Guards ensureCatalogLoaded so the full products + productReviews read happens
+  // at most once per session. Home used to run this on every boot (via loadData)
+  // just to render ~10 rail cards; it now renders those from a bounded API page,
+  // and the full in-memory catalogue is deferred until a view that genuinely
+  // needs it (Product Detail related-products / cart line resolution / map
+  // product overlay) is opened.
+  const catalogLoadedRef = useRef(false);
+
+  const ensureCatalogLoaded = useCallback(async () => {
+    if (catalogLoadedRef.current) return;
+    catalogLoadedRef.current = true;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try {
+      const products = await fetchMarketplaceProducts();
+      setAllProducts(products);
+      if (process.env.NODE_ENV !== 'production') {
+        const ms = typeof performance !== 'undefined' ? Math.round(performance.now() - t0) : 0;
+        // Dev diagnostic: confirms the full products/productReviews read fires
+        // exactly once, on demand — and never on the home view.
+        console.info(`[catalog] lazy fetchMarketplaceProducts() → ${products.length} products in ${ms}ms (one-time, on-demand)`);
+      }
+    } catch (err) {
+      console.error('Failed to lazy-load catalog:', err);
+      catalogLoadedRef.current = false; // allow a retry on the next catalog-view open
+    }
+  }, []);
+
+  // Single choke point for on-demand store loading. Watching currentView (rather
+  // than hooking navigate) covers every entry path into a store-dependent view:
+  // in-app navigation, direct deep links (route is applied via setCurrentView),
+  // and browser back/forward. 'home' and 'hub' never trigger it.
+  //
+  // Market and Product Detail are deliberately EXCLUDED:
+  //   • Market cards render from product-level data only (no retailer info), so
+  //     Market must never trigger the full /retailers read.
+  //   • Product Detail fetches ONLY the retailers that stock the open product,
+  //     paginated on demand (see ProductDetailView) — not the whole collection.
+  // Only the store picker (cart) and the locator (map) need the full list.
+  useEffect(() => {
+    const STORE_DEPENDENT_VIEWS = new Set(['cart', 'map']);
+    if (STORE_DEPENDENT_VIEWS.has(currentView)) {
+      void ensureStoresLoaded();
+    }
+  }, [currentView, ensureStoresLoaded]);
+
+  // Companion choke point for the full product catalogue. Product Detail can
+  // still stand alone (it self-fetches its own doc by id when the catalogue is
+  // absent — see ProductDetailView), but the in-memory list powers its
+  // related-products rail, the cart's per-line store resolution, and the map's
+  // product overlay, so those three views warm it. Home and Market never do:
+  // Home uses the bounded rail fetch, Market its own paginated API.
+  useEffect(() => {
+    const CATALOG_DEPENDENT_VIEWS = new Set(['product', 'cart', 'map']);
+    if (CATALOG_DEPENDENT_VIEWS.has(currentView)) {
+      void ensureCatalogLoaded();
+    }
+  }, [currentView, ensureCatalogLoaded]);
+
   const loadData = async (attempt = 1) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       trackPageView('home');
 
-      let products = await fetchMarketplaceProducts();
-      let stores = await fetchStores();
-      let fetchedHubs = await fetchHubs();
+      // Home's rails only need a small, bounded slice, so this fetches just the
+      // first page of the SAME cursor-paginated route the Market grid uses —
+      // NOT the whole catalogue. The full products + productReviews read that
+      // used to run here on every boot is now deferred to ensureCatalogLoaded()
+      // (fired only when a product/cart/map view is opened).
+      //
+      // The full /retailers read (fetchStores) is likewise NOT here — it is lazy
+      // via ensureStoresLoaded() (store-dependent views only). Hubs are lazy too:
+      // the "Shop by Crop" strip falls back to a static list until HomeView's
+      // onHubsNeeded fires when that section scrolls into view (ensureHubsLoaded).
 
-      if (products.length === 0 || stores.length === 0 || fetchedHubs.length === 0) {
-        await syncInitialData(PRODUCTS, STORES, INVENTORY);
-        products = await fetchMarketplaceProducts();
-        stores = await fetchStores();
-        fetchedHubs = await fetchHubs();
-      }
+      // An empty read is NOT a reason to write. This used to call
+      // syncInitialData(PRODUCTS, STORES, INVENTORY), which had every visitor's
+      // browser seed the hardcoded demo catalogue into production Firestore --
+      // the likeliest source of the test shops in the live store locator. An
+      // empty result now renders as empty, which is the truth.
 
-      setAllProducts(products);
-      setAllStores(stores);
-      setHubs(fetchedHubs);
+      const railProducts = await fetchTopPicks();
+      setHomeRailProducts(railProducts);
 
-      if (products.length === 0) {
+      // Banners are a non-critical homepage enhancement — HomeView falls back
+      // to its built-in default slides if this fails or returns empty, so a
+      // failure here must never block the rest of the page from loading.
+      fetchBanners().then(setBanners).catch((err) => {
+        console.warn('Failed to fetch banners, homepage will use default slides:', err);
+      });
+
+      if (railProducts.length === 0) {
         setErrorMsg('No products found in database even after sync. Please check your Firestore rules.');
       }
     } catch (error: any) {
@@ -554,6 +737,13 @@ export default function App() {
         hadUserRef.current = true;
         const profileData = await getUserProfile(firebaseUser.uid);
         if (profileData) {
+          // Activity signal (DAU/MAU/retention). Throttled to ~1 write/user/day
+          // and best-effort — never blocks the login flow.
+          void trackUserActivity({
+            userId: profileData.phone || firebaseUser.uid,
+            role: profileData.role as string | undefined,
+            registeredAt: (profileData as any).createdAt ?? null,
+          });
           setUserRole(profileData.role as UserRole);
           const isPaid = profileData.isPaid || false;
           setUserProfile({
@@ -679,6 +869,25 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Latest Reels for the home rail — fetched once for the app's lifetime (page.tsx
+  // never remounts on view changes), so returning to Home reuses this instead of
+  // re-hitting /api/reels each time. Cancellable so a fast unmount doesn't setState
+  // on a torn-down tree.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/reels?limit=10')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setHomeReels(data.reels ?? []);
+        setHomeReelsLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setHomeReelsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const handleAuthSuccess = (firebaseUser: any, profile: any) => {
     setUser(firebaseUser);
     setUserRole(profile.role);
@@ -691,6 +900,17 @@ export default function App() {
       totalSeats: profile.totalSeats || 0,
       productCount: profile.productCount || 0
     });
+
+    // Arrived from a sales referral link: straight to checkout, whatever the
+    // role — an already-paid seller gets the buy-more page instead.
+    if (readPendingReferral()) {
+      if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
+        window.location.href = '/dashboard/upgrade';
+      } else {
+        navigate('subscription', { replace: true });
+      }
+      return;
+    }
 
     if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
       navigate('subscription', { replace: true });
@@ -867,9 +1087,16 @@ export default function App() {
     });
   }, [productsWithDistance, productSearch, storeNameById]);
 
+  // Home renders from the bounded Top Picks fetch (fetchTopPicks). The
+  // full-catalogue-derived slice is only a fallback for the case where the
+  // catalogue happens to already be loaded (e.g. returning to Home after
+  // visiting a product/cart/map view) but the rail fetch came back empty.
   const homeProducts = useMemo(
-    () => searchedProducts.slice(0, HOME_PRODUCTS_LIMIT),
-    [searchedProducts]
+    () =>
+      homeRailProducts.length > 0
+        ? homeRailProducts
+        : searchedProducts.slice(0, HOME_PRODUCTS_LIMIT),
+    [homeRailProducts, searchedProducts]
   );
 
   const searchedStores = useMemo(() => {
@@ -894,37 +1121,51 @@ export default function App() {
     });
   }, [storesWithDistance, productSearch]);
 
-  const marketProducts = useMemo(() => {
-    let filtered = searchedProducts;
-    
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(
-        (product) => product.category?.toLowerCase() === selectedCategory.toLowerCase()
-      );
-    }
-
-    if (maxDistance < 1000) { 
-      filtered = filtered.filter((product) => (product as any).distanceKm <= maxDistance);
-    }
-
-    if (inStockOnly) {
-      filtered = filtered.filter((product) => {
-        const stock = product.stock.toLowerCase();
-        return stock === 'in stock' || stock === 'fast selling' || stock === 'trending';
-      });
-    }
-
-    if (sortBy === 'price-low') {
-      filtered = [...filtered].sort((a, b) => a.price - b.price);
-    } else if (sortBy === 'price-high') {
-      filtered = [...filtered].sort((a, b) => b.price - a.price);
-    }
-
-    return filtered;
-  }, [searchedProducts, selectedCategory, maxDistance, inStockOnly, sortBy]);
-
   const navigateToProduct = (id: string) => {
     navigate('product', { productId: id });
+  };
+
+  // Resolves a Banner Management "internal route" CTA (e.g. "/market",
+  // "/hub/tomato", "/become-retailer") to the app's view-based navigation.
+  // Unrecognized routes fall back to a full navigation via window.location
+  // so an admin typo never dead-ends the click.
+  const navigateToRoute = (route: string) => {
+    const [path, query] = route.split('?');
+    const segments = path.split('/').filter(Boolean);
+    const params = new URLSearchParams(query);
+
+    switch (segments[0]) {
+      case '':
+      case undefined:
+        navigate('home');
+        return;
+      case 'market':
+        if (params.get('category')) setSelectedCategory(params.get('category')!);
+        navigate('market');
+        return;
+      case 'hub':
+        navigate('hub', { hubId: segments[1] });
+        return;
+      case 'product':
+        if (segments[1]) navigateToProduct(segments[1]);
+        return;
+      case 'brand':
+        navigate('brand', { manufacturerId: segments[1] });
+        return;
+      case 'become-retailer':
+      case 'login':
+        navigate('login');
+        return;
+      case 'stores':
+      case 'map':
+        navigate('map');
+        return;
+      case 'blog':
+        window.location.href = route;
+        return;
+      default:
+        window.location.href = route;
+    }
   };
 
   const addToCart = (product: MarketplaceProduct, variant?: { unit: string; price: number; stock?: number }) => {
@@ -965,7 +1206,8 @@ export default function App() {
           qty: 1,
           sellMode: "pending" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // GST + delivery are retailer-specific and resolved when a store is chosen
+          // (see onAssignStore). A pending line has no seller yet, so none are set.
         },
       ];
     });
@@ -989,7 +1231,7 @@ export default function App() {
     .reduce((sum, item) => sum + item.price * item.qty, 0);
 
   // Core order creation — called after successful payment
-  const createOrdersAfterPayment = async (paymentDetails?: any) => {
+  const createOrdersAfterPayment = async (paymentDetails?: any, serverBreakdown?: any[]) => {
     const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
     const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
 
@@ -998,6 +1240,12 @@ export default function App() {
       customerName: checkoutInfo.customerName,
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
+      // The finalized delivery-address state — decides in/out-of-state slabs so
+      // the order's persisted delivery charge matches what the server charged.
+      customerDeliveryState: checkoutInfo.addressState.trim(),
+      // The server's per-seller figures (what was actually charged), so each order
+      // records exactly that. Undefined for older responses → local calculation.
+      serverBreakdown,
       items: readyItems,
       payment: paymentDetails,
     });
@@ -1006,6 +1254,13 @@ export default function App() {
       ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
       : "";
     setCheckoutMessage(`✅ Payment successful! Order placed. ${orderIds.length} seller order(s) created.${pendingMsg}`);
+
+    // Don't leave the customer on the checkout page — take them to their orders.
+    // A global toast carries the confirmation across the navigation, and a short
+    // beat lets the success state register before the view switches to /?view=orders.
+    setToastMsg(`✅ Payment successful! ${orderIds.length} order${orderIds.length > 1 ? "s" : ""} placed.`);
+    setToastType("success");
+    setTimeout(() => navigate("orders"), 1200);
   };
 
   const placeOrders = async (grandTotal?: number) => {
@@ -1032,13 +1287,33 @@ export default function App() {
       return;
     }
 
-    // grandTotal includes delivery charges computed by CartView's useDeliveryEstimates hook.
-    // Fall back to product subtotal if grandTotal wasn't passed (shouldn't happen).
+    // grandTotal (from CartView) = discounted subtotal + added GST (exclusive-GST
+    // lines) + delivery. The server now computes delivery independently (state-aware,
+    // from authoritative slabs) and MUST NOT trust a client delivery figure — so we
+    // send the exclusive-GST-added portion on its own (clientGstAdded) and let the
+    // server rebuild the payable total as serverSubtotal + serverDelivery + GST.
+    // clientDelivery is still sent as a last-resort fallback only.
     const clientSubtotal = readyItems.reduce((s, i) => s + i.price * i.qty, 0);
+    // Exclusive GST that is charged ON TOP of the price (inclusive GST is already in
+    // the price and never added). Same helper the Cart/order/invoice use.
+    const clientGstAdded = Number(
+      readyItems.reduce((sum, item) => {
+        const pricing = computeLinePricing({
+          unitPrice: item.price,
+          qty: item.qty,
+          gstApplicable: item.gstApplicable,
+          gstRate: item.gstRate,
+          gstIncluded: item.gstIncluded,
+        });
+        return sum + (pricing.included ? 0 : pricing.gstTotal);
+      }, 0).toFixed(2),
+    );
     const clientGrandTotal = (grandTotal && grandTotal > 0) ? grandTotal : clientSubtotal;
-    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal);
+    const clientDelivery = Math.max(0, clientGrandTotal - clientSubtotal - clientGstAdded);
+    // The customer's finalized delivery-address state decides in/out-of-state slabs.
+    const customerDeliveryState = checkoutInfo.addressState.trim();
 
-    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGrandTotal:", clientGrandTotal);
+    console.log("[Checkout] clientSubtotal:", clientSubtotal, "clientDelivery:", clientDelivery, "clientGstAdded:", clientGstAdded, "clientGrandTotal:", clientGrandTotal, "state:", customerDeliveryState);
     console.log("[Checkout] readyItems:", readyItems.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantUnit: i.variantUnit, sellerPhone: i.sellerPhone })));
 
     setCheckoutLoading(true);
@@ -1067,12 +1342,23 @@ export default function App() {
             sellerId:    i.sellerId,
             sellerPhone: i.sellerPhone,
             qty:         i.qty,
+            // variantUnit drives the server's weight-based slab lookup.
+            variantUnit: i.variantUnit,
           })),
           userId:          user.uid,
           clientSubtotal,
           clientDelivery,
+          clientGstAdded,
           clientGrandTotal,
+          // Server picks the in/out-of-state slab from this vs the seller's state.
+          customerDeliveryState,
           note: `Cart: ${readyItems.length} item(s)`,
+          // Sent BEFORE payment so the server already holds everything needed
+          // to rebuild this order if the post-payment write below never runs
+          // (closed tab, dropped network). See app/lib/order-recovery.ts.
+          customerName:    checkoutInfo.customerName.trim(),
+          customerPhone:   checkoutInfo.customerPhone.trim(),
+          customerAddress,
         }),
       });
 
@@ -1124,7 +1410,7 @@ export default function App() {
                 amount: rzpOrder.amount / 100,
                 status: "paid",
                 paidAt: new Date().toISOString(),
-              });
+              }, rzpOrder.sellerBreakdown);
             } else {
               setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
@@ -1141,19 +1427,52 @@ export default function App() {
           },
         },
       });
-      // Cart-checkout failures were never logged anywhere — the admin's
-      // Failed Payments tab (app/admin/subscriptions/page.tsx) only ever
-      // received entries from the subscription-purchase page, so a failed
-      // cart payment was invisible to admin short of checking Razorpay's own
-      // dashboard directly. Mirrors the logging SubscriptionView.tsx already
-      // does on its own failure callback.
-      rzp.on("payment.failed", (response: any) => {
-        logFailedPayment(user.uid, response.error, {
-          orderId: rzpOrder.id,
-          // Paise, matching SubscriptionView's existing call and what the admin
-          // Failed Payments card expects (it renders fp.amount / 100).
-          amount: rzpOrder.amount,
-        });
+      // The SDK saying "failed" is not proof the payment failed: a UPI collect
+      // approved slightly late is captured by Razorpay after the checkout has
+      // already given up watching, which is how a customer gets charged and
+      // told it failed in the same breath. So report the failure to the server,
+      // which asks Razorpay directly before recording anything — and if the
+      // money was in fact captured, finish the order instead of showing an
+      // error. Mobile already reconciles this way (checkout_screen.dart).
+      rzp.on("payment.failed", async (response: any) => {
+        try {
+          const idTokenForFailure = await user.getIdToken();
+          const res = await fetch("/api/payment/attempt-failed", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idTokenForFailure}`,
+            },
+            body: JSON.stringify({
+              razorpay_order_id: rzpOrder.id,
+              error: response?.error ?? null,
+            }),
+          });
+          const data = await res.json();
+
+          if (data?.status === "captured") {
+            // Money is on Razorpay's books — create the order rather than
+            // telling a paying customer their payment failed.
+            await createOrdersAfterPayment({
+              razorpayOrderId: rzpOrder.id,
+              razorpayPaymentId: data.paymentId,
+              // No signature exists on this path: the checkout reported failure,
+              // so Razorpay never handed one back. The payment is confirmed by
+              // the server reading Razorpay's own records instead, which is a
+              // stronger guarantee than a client-supplied signature.
+              reconciled: true,
+              amount: rzpOrder.amount / 100,
+              status: "paid",
+              paidAt: new Date().toISOString(),
+            }, rzpOrder.sellerBreakdown);
+            setCheckoutLoading(false);
+            return;
+          }
+        } catch {
+          // Reconciliation itself failed — fall through to the cautious message
+          // below rather than leaving the customer with no feedback at all.
+        }
+
         setCheckoutLoading(false);
         setCheckoutMessage(
           "❌ Payment failed. If any amount was deducted, it will be refunded automatically within 5-7 business days.",
@@ -1273,7 +1592,8 @@ export default function App() {
           qty: 1,
           sellMode: "online_delivery" as const,
           ...(variantUnit ? { variantUnit } : {}),
-          ...(product.gstApplicable && product.gstRate ? { gstApplicable: true, gstRate: product.gstRate } : {}),
+          // Retailer-specific GST + delivery from the SELECTED store's listing.
+          ...resolveSellerCommercial(availEntry, product),
         },
       ];
     });
@@ -1386,6 +1706,10 @@ export default function App() {
           <HomeView
             products={homeProducts}
             hubs={hubs}
+            banners={banners}
+            reels={homeReels}
+            reelsLoading={homeReelsLoading}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -1402,12 +1726,13 @@ export default function App() {
             }}
             onAddToCart={addToCart}
             onRegisterClick={() => navigate('login')}
+            onNavigateRoute={navigateToRoute}
           />
         );
       case 'market':
         return (
           <MarketView
-            products={marketProducts}
+            searchQuery={productSearch}
             onProductClick={navigateToProduct}
             onAddToCart={addToCart}
             onBuyNow={handleBuyNow}
@@ -1415,7 +1740,6 @@ export default function App() {
             onGoToCart={() => navigate("cart")}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            storesWithDistance={storesWithDistance}
           />
         );
       case 'hub':
@@ -1442,6 +1766,7 @@ export default function App() {
           onBack={() => navigate('market')}
           onStoreClick={(storeId) => navigateToMap(storeId, selectedProductId)}
           storesWithDistance={storesWithDistance}
+          userCoords={coordinates}
           onProductClick={navigateToProduct}
           onViewSellerAll={(storeName) => {
             setProductSearch(storeName);
@@ -1495,9 +1820,29 @@ export default function App() {
               );
               const resolvedSellerPhone: string | undefined = (assignedStore as any)?.phone || undefined;
 
+              // Resolve the chosen store's OWN GST + delivery from its availability
+              // entry (retailer-specific). This overrides anything the line carried.
               setCartItems((prev) => {
                 const pendingItem = prev.find(item => cartItemKey(item) === itemKey);
                 if (!pendingItem) return prev;
+
+                const productForItem = mergedProducts.find(p => p.id === pendingItem.productId);
+                const assignEntry = productForItem?.availability?.find(
+                  (a) =>
+                    (sellerId && a.storeId === sellerId) ||
+                    (resolvedSellerPhone && (a.storePhone === resolvedSellerPhone || a.storeId === resolvedSellerPhone)),
+                );
+                // Absent fields mean this seller doesn't apply them — clear stale values.
+                const commercial: Partial<CartItem> = productForItem
+                  ? resolveSellerCommercial(assignEntry, productForItem)
+                  : {};
+                const commercialReset = {
+                  gstApplicable: commercial.gstApplicable,
+                  gstRate: commercial.gstRate,
+                  gstIncluded: commercial.gstIncluded,
+                  extraDeliveryCharge: commercial.extraDeliveryCharge,
+                  freeDelivery: commercial.freeDelivery,
+                };
 
                 // An "online_delivery" line is the SAME cart entry only when it shares
                 // the product, the newly-chosen seller AND the same package size.
@@ -1527,6 +1872,8 @@ export default function App() {
                         ...(storePrice != null ? { price: storePrice } : {}),
                         ...(discountPct != null ? { discountPct } : { discountPct: undefined }),
                         ...(originalPrice != null ? { originalPrice } : { originalPrice: undefined }),
+                        // Retailer-specific GST + delivery (cleared if this seller has none).
+                        ...commercialReset,
                       }
                     : item
                 );
@@ -1569,6 +1916,7 @@ export default function App() {
             onBack={() => { setMapFilterProductId(null); navigate('home'); }}
             selectedStoreId={selectedStoreId}
             onStoreSelect={setSelectedStoreId}
+            loading={storesLoading}
             stores={mapFilterProductId
               ? (() => {
                   const prod = mergedProducts.find(p => p.id === mapFilterProductId);
@@ -1766,6 +2114,7 @@ export default function App() {
         return (
           <SignupView
             inviteCode={signupInviteCode}
+            defaultRole={typeof window !== 'undefined' && readPendingReferral() ? 'retailer' : undefined}
             onInviteConsumed={() => {
               setSignupInviteCode(null);
               // Also remove the inviteCode from the URL immediately so the param
@@ -1798,6 +2147,10 @@ export default function App() {
           <HomeView
             products={homeProducts}
             hubs={hubs}
+            banners={banners}
+            reels={homeReels}
+            reelsLoading={homeReelsLoading}
+            onHubsNeeded={ensureHubsLoaded}
             onProductClick={navigateToProduct}
             onHubClick={(hubId) => {
               setProductSearch('');
@@ -1809,6 +2162,7 @@ export default function App() {
             }}
             onAddToCart={addToCart}
             onRegisterClick={() => navigate('login')}
+            onNavigateRoute={navigateToRoute}
           />
         );
     }
@@ -1832,7 +2186,6 @@ export default function App() {
         externalUser={user}
         externalUserRole={userRole}
         externalUserProfile={userProfile}
-        allProducts={allProducts}
         allStores={allStores}
         onProductClick={navigateToProduct}
         onStoreClick={navigateToMap}
@@ -1843,17 +2196,22 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentView}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            {renderView()}
-          </motion.div>
-        </AnimatePresence>
+        {/* Keyed on currentView so each view remounts with its enter animation.
+            Deliberately NOT wrapped in <AnimatePresence mode="wait">: the detail
+            views (ProductDetailView / HubView) each contain their OWN nested
+            AnimatePresence, and a nested exit animation could leave the parent
+            waiting on an exit that never completed — so the incoming view (most
+            visibly Home on Back) was never mounted and the content area went
+            blank until a full reload. Without the exit-wait, the next view mounts
+            immediately on every navigation, Back included. */}
+        <motion.div
+          key={currentView}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {renderView()}
+        </motion.div>
       </main>
 
       <Footer

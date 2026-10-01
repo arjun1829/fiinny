@@ -9,16 +9,44 @@
     ],
     "rewrites": [
       {
+        "source": "/api/saas/subscription",
+        "function": "getSaaSSubscription",
+        "region": "asia-south1"
+      },
+      {
+        "source": "/api/saas/order",
+        "function": "createSaaSOrder",
+        "region": "asia-south1"
+      },
+      {
+        "source": "/api/saas/verify",
+        "function": "verifySaaSPayment",
+        "region": "asia-south1"
+      },
+      {
+        "source": "/api/users/reset-password",
+        "function": "resetTenantUserPassword",
+        "region": "asia-south1"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
     ]
   },
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
   },
   "functions": [
     {

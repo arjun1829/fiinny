@@ -84,5 +84,22 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="upi" android:host="pay"/>
         </intent>
+
+        <!-- Android 11+ package visibility: without these, canLaunchUrl()
+             returns false for tel: and https: links, so the seller's "Call"
+             and "WhatsApp" buttons (enquiries, orders) reported "could not
+             open" even though a dialler and WhatsApp were installed. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

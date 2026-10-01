@@ -6,6 +6,7 @@ import { Users, Box, Layers, CreditCard, ShieldCheck, TrendingUp, Store, AlertTr
 import { db } from "../firebase";
 import { collection, query, where, orderBy, limit, getDocs, getCountFromServer } from "firebase/firestore";
 import { getProducts } from "./_lib/admin-data";
+import { countMarketplaceProducts } from "./_lib/marketplace-count";
 import { readSnapshot, writeSnapshot, STATS_TTL_MS } from "./_lib/admin-cache";
 import { RefreshButton } from "./_components/refresh-button";
 
@@ -29,13 +30,13 @@ function StatCard({ label, value, icon: Icon, color, onClick }: { label: string;
 
 /** Everything the overview renders, in a shape that survives JSON round-tripping. */
 type OverviewSnapshot = {
-  stats: { total: number; retailers: number; manufacturers: number; admins: number; paid: number; products: number; hubs: number };
+  stats: { total: number; retailers: number; manufacturers: number; admins: number; paid: number; products: number; productsCanonical: number; productsPromoted: number; hubs: number };
   recentUsers: { id: string; name: string; email: string; role: string; isPaid: boolean }[];
 };
 
 const SNAPSHOT_KEY = "overview";
 
-const EMPTY_STATS = { total: 0, retailers: 0, manufacturers: 0, admins: 0, paid: 0, products: 0, hubs: 0 };
+const EMPTY_STATS = { total: 0, retailers: 0, manufacturers: 0, admins: 0, paid: 0, products: 0, productsCanonical: 0, productsPromoted: 0, hubs: 0 };
 
 export default function AdminPage() {
   const router = useRouter();
@@ -65,11 +66,10 @@ export default function AdminPage() {
       getProducts({ force }),
     ])
       .then(([totalSnap, retailersSnap, manufacturersSnap, adminsSnap, paidSnap, hubsSnap, recentSnap, products]) => {
-        // Filter out copies and group by name (same as Products tab) — this needs
-        // every product doc's name, so it's left as a full fetch (not a cheap count).
-        const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
-        const catalogProducts = products.filter(p => !COPY_SOURCES.has(String((p as any).source ?? "")));
-        const uniqueNames = new Set(catalogProducts.map(p => String((p as any).name ?? "").toLowerCase().trim()).filter(Boolean));
+        // Same rule the marketplace uses to build its cards, so this number and
+        // the buyer-facing "Showing N products" can never disagree. Needs every
+        // product doc, so it stays a full fetch rather than a cheap count.
+        const marketCount = countMarketplaceProducts(products as any[]);
 
         const nextStats = {
           total: totalSnap.data().count,
@@ -77,7 +77,9 @@ export default function AdminPage() {
           manufacturers: manufacturersSnap.data().count,
           admins: adminsSnap.data().count,
           paid: paidSnap.data().count,
-          products: uniqueNames.size,
+          products: marketCount.total,
+          productsCanonical: marketCount.canonical,
+          productsPromoted: marketCount.promotedCopies,
           hubs: hubsSnap.data().count,
         };
         const nextRecent = recentSnap.docs.map(d => {
@@ -188,7 +190,7 @@ export default function AdminPage() {
           onClick={() => router.push('/admin/subscriptions')}
         />
         <StatCard 
-          label="Total Products" 
+          label={`Marketplace Products (${stats.productsCanonical} catalogue + ${stats.productsPromoted} retailer-only)`}
           value={stats.products} 
           icon={Box} 
           color="bg-secondary/10 text-secondary"

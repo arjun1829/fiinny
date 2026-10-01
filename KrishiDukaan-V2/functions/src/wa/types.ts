@@ -9,18 +9,27 @@ export type NotificationStatus =
   | "failed"     // permanently failed after all retries
   | "cancelled"; // cancelled before sending (e.g. order cancelled)
 
-export type NotificationType = "subscription" | "order" | "onboarding" | "general";
+export type NotificationType = "subscription" | "order" | "onboarding" | "enquiry" | "general";
 
 export type WaTemplate =
   | "subscription_welcome"
   | "subscription_expiry"
   | "order_notification"
   | "order_confirmation_customer"
+  | "order_accept_pending"
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
   | "manufacturer_network_summary"
   | "payment_failed_app_update"
+  | "retailer_seat_promotion"
+  | "enquiry_notification"
+  | "order_reassign_offer"
+  | "new_product_reminder"
+  | "kyc_pending"
+  | "kyc_success"
+  | "app_update"
+  | "reel_promo_hindi"
   | "generic";
 
 /** Dynamic values substituted into the template at render time (for audit/debug). */
@@ -54,7 +63,12 @@ export interface WaDateTimeParam {
   date_time: { fallback_value: string };
 }
 
-export type WaComponentParam = WaTextParam | WaCurrencyParam | WaDateTimeParam;
+export interface WaImageParam {
+  type: "image";
+  image: { id: string } | { link: string };
+}
+
+export type WaComponentParam = WaTextParam | WaCurrencyParam | WaDateTimeParam | WaImageParam;
 
 export interface WaTemplateComponent {
   type: "header" | "body" | "button";

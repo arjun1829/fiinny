@@ -9,6 +9,10 @@ class NetworkRetailerModel {
   final String? email;
   final String inviteCode;
   final String status; // invited | active | revoked
+  /// Street / locality. Web's edit modal has always had this field; the app
+  /// did not, and because the address map is written whole, every mobile edit
+  /// was silently blanking it.
+  final String? line1;
   final String? city;
   final String? state;
   final String? pincode;
@@ -16,6 +20,7 @@ class NetworkRetailerModel {
   final String onboardingStatus;
   final String retailerDocId;
   final String retailerId;
+  final GeoPoint? geo;
 
   const NetworkRetailerModel({
     required this.id,
@@ -26,6 +31,7 @@ class NetworkRetailerModel {
     this.email,
     required this.inviteCode,
     required this.status,
+    this.line1,
     this.city,
     this.state,
     this.pincode,
@@ -33,6 +39,7 @@ class NetworkRetailerModel {
     required this.onboardingStatus,
     required this.retailerDocId,
     required this.retailerId,
+    this.geo,
   });
 
   bool get isActive => status == 'active';
@@ -50,6 +57,7 @@ class NetworkRetailerModel {
       email: d['retailerEmail'] as String? ?? d['email'] as String?,
       inviteCode: d['inviteCode'] as String? ?? '',
       status: d['status'] as String? ?? 'invited',
+      line1: addr?['line1'] as String?,
       city: addr?['city'] as String?,
       state: addr?['state'] as String?,
       pincode: addr?['pincode'] as String?,
@@ -57,6 +65,7 @@ class NetworkRetailerModel {
       onboardingStatus: d['onboardingStatus'] as String? ?? 'pending',
       retailerDocId: d['retailerDocId'] as String? ?? '',
       retailerId: d['retailerId'] as String? ?? '',
+      geo: d['geo'] as GeoPoint?,
     );
   }
 }

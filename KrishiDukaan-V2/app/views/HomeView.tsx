@@ -1,53 +1,146 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ICONS, CROPS, PRODUCTS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketplaceProduct } from '../../types/product';
-import { Hub } from '../firebase';
+import { Hub, Banner } from '../firebase';
 import { useI18n } from '../i18n/I18nContext';
 import { PlayCircle, Video, Eye } from 'lucide-react';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { Tag } from 'lucide-react';
+import { BannerSlideVisual } from '../components/BannerSlide';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
   hubs?: Hub[];
+  /**
+   * Called the first time the "Shop by Crop" section scrolls into view, so the
+   * parent can lazily read the /hubs collection only when it's actually needed.
+   * Until then the section renders from the static CROPS fallback.
+   */
+  onHubsNeeded?: () => void;
+  /**
+   * Banners from Firestore (Admin > Banners). When omitted/empty, HomeView
+   * falls back to its built-in default slides so the homepage never renders
+   * empty before any banners are migrated in.
+   */
+  banners?: Banner[];
+  /**
+   * Latest reels for the home rail. Owned by the parent (page.tsx) and passed in
+   * so they survive HomeView's remount on every Home⇄detail navigation — HomeView
+   * used to fetch these itself on mount, which re-hit /api/reels on every return
+   * to Home. Kept alongside banners/products, which are already parent-owned.
+   */
+  reels?: any[];
+  reelsLoading?: boolean;
   onProductClick: (id: string) => void;
   onHubClick: (hubId?: string) => void;
   onCategoryClick?: (categoryId: string) => void;
   onMarketSearch?: (query: string) => void;
   onAddToCart?: (product: MarketplaceProduct) => void;
   onRegisterClick?: () => void;
+  onNavigateRoute?: (route: string) => void;
 }
 
 type Slide = {
   id: string;
   eyebrow: string;
+  /** Falsy (empty string/null) means no title — the shared BannerSlideVisual skips rendering the title block entirely. */
   title: React.ReactNode;
   subtitle: string;
   ctaLabel: string;
+  ctaEnabled: boolean;
   bgClass: string;
   bgImg?: string;
+  bgImgMobile?: string;
   imgUrl?: string;
-  onCta: 'powerPlus' | 'market' | 'retailer';
+  onCta: 'powerPlus' | 'market' | 'retailer' | 'link';
+  link?: { type: 'internal' | 'external'; value: string };
+};
+
+/** Maps a Firestore Banner doc to the Slide shape the carousel renders. */
+function bannerToSlide(b: Banner): Slide {
+  return {
+    id: b.id,
+    eyebrow: b.title,
+    title: b.title.trim() ? b.title.split('\n').map((line, i, arr) => (
+      <span key={i}>
+        {line}
+        {i < arr.length - 1 && <br />}
+      </span>
+    )) : null,
+    subtitle: b.subtitle,
+    ctaLabel: b.ctaLabel,
+    ctaEnabled: b.ctaEnabled,
+    // '' means "No Overlay" (see GRADIENT_PRESETS / ImageField in the admin
+    // Banners page) — pre-existing docs always carry a real gradient value.
+    bgClass: b.bgClass ?? '',
+    bgImg: b.bgImg,
+    bgImgMobile: b.bgImgMobile,
+    imgUrl: b.imgUrl,
+    onCta: 'link',
+    link: b.ctaLink,
+  };
+}
+
+// Direction-aware slide+fade for the hero carousel (see the AnimatePresence
+// block below). `direction` (+1/-1, from goToSlide) picks which side the
+// incoming slide starts from and the outgoing slide exits toward, so
+// forward and backward navigation always animate toward the correct side —
+// module-level (not per-render) since it has no dependency on props/state.
+const heroSlideVariants = {
+  enter: (direction: number) => ({ x: direction > 0 ? '100%' : '-100%', opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (direction: number) => ({ x: direction > 0 ? '-100%' : '100%', opacity: 0 }),
 };
 
 export default function HomeView({
   products = PRODUCTS,
   hubs = [],
+  banners = [],
+  reels = [],
+  reelsLoading = false,
+  onHubsNeeded,
   onProductClick,
   onHubClick,
   onCategoryClick,
   onMarketSearch,
   onAddToCart,
   onRegisterClick,
+  onNavigateRoute,
 }: HomeViewProps) {
   const { t } = useI18n();
 
+  // Lazily trigger the parent's /hubs read the first time the "Shop by Crop"
+  // section is about to enter the viewport. The section renders from the static
+  // CROPS fallback until real hubs arrive, so nothing blocks on this. Fires once.
+  const shopByCropRef = useRef<HTMLElement | null>(null);
+  const hubsRequestedRef = useRef(false);
+  useEffect(() => {
+    if (hubsRequestedRef.current || !onHubsNeeded) return;
+    const el = shopByCropRef.current;
+    if (!el) return;
+    // No IntersectionObserver (very old browser / SSR edge) → just request now.
+    if (typeof IntersectionObserver === 'undefined') {
+      hubsRequestedRef.current = true;
+      onHubsNeeded();
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && !hubsRequestedRef.current) {
+        hubsRequestedRef.current = true;
+        onHubsNeeded();
+        observer.disconnect();
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onHubsNeeded]);
+
   // Prepare crop list for "Shop by Crop"
   // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
-  const displayCrops = hubs.length > 0 
+  const displayCrops = hubs.length > 0
     ? hubs.map(h => ({ 
         id: h.id, 
         name: h.name, 
@@ -59,7 +152,10 @@ export default function HomeView({
     .filter((p) => p.name === 'Power Plus' && p.manufacturerId === 'karanarjun-mfg')
     .sort((a, b) => a.price - b.price);
 
-  const slides: Slide[] = [
+  // Built-in default slides — used only as a fallback when Banner Management
+  // (Admin > Banners) has no published+enabled banners yet, so the homepage
+  // never renders an empty hero section.
+  const defaultSlides: Slide[] = [
     {
       id: 'rooted',
       eyebrow: 'Modern Produce, Rooted Locally',
@@ -71,6 +167,7 @@ export default function HomeView({
       subtitle:
         'Find the freshest harvest and agricultural supplies directly from local stores in your area.',
       ctaLabel: 'Explore Products',
+      ctaEnabled: true,
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1400&q=80',
       onCta: 'market',
@@ -86,6 +183,7 @@ export default function HomeView({
       subtitle:
         'Fresh agri supplies from trusted local stores — no middlemen, no fakes.',
       ctaLabel: 'Explore products',
+      ctaEnabled: true,
       bgClass: 'from-emerald-950 via-emerald-900/85 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=1400&q=80',
       onCta: 'market',
@@ -100,6 +198,7 @@ export default function HomeView({
       ),
       subtitle: 'Trusted by 75,800+ farmers. Stimulates root growth, improves fruit colour & weight.',
       ctaLabel: 'Shop Power Plus',
+      ctaEnabled: true,
       bgClass: 'from-emerald-950 via-emerald-900/90 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1400&q=80',
       imgUrl: '/product-images/Product_Images/Power Plus.png',
@@ -116,29 +215,38 @@ export default function HomeView({
       subtitle:
         'Join 50+ dealers stocking trusted agri products. Manage inventory, get listed nearby.',
       ctaLabel: 'Join the network',
+      ctaEnabled: true,
       bgClass: 'from-amber-950 via-orange-900/90 to-amber-800/10',
       bgImg: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1400&q=80',
       onCta: 'retailer',
     },
   ];
 
-  const [slideIdx, setSlideIdx] = useState(0);
+  // Dynamic banners (Firestore) take over once any exist; otherwise the
+  // built-in default slides keep the homepage looking exactly as before.
+  const publishedBanners = banners
+    .filter(b => b.enabled && b.status === 'published')
+    .sort((a, b) => a.order - b.order);
+  const slides: Slide[] = publishedBanners.length > 0
+    ? publishedBanners.map(bannerToSlide)
+    : defaultSlides;
+
+  // [index, direction] travel together so every navigation path (autoplay,
+  // arrows, dots) can drive the same direction-aware slide animation below —
+  // direction is +1 (advancing, slides in from the right) or -1 (going back,
+  // slides in from the left). Framer Motion's `custom` prop reads it to pick
+  // which side each slide's enter/exit variant animates from.
+  const [[slideIdx, direction], setSlide] = useState<[number, number]>([0, 1]);
+  const goToSlide = (next: number, dir: number) => setSlide([(next + slides.length) % slides.length, dir]);
+
   useEffect(() => {
-    const id = setInterval(() => setSlideIdx((i) => (i + 1) % slides.length), 6000);
+    // Clamp immediately if the slide count shrinks/changes (e.g. banners
+    // finish loading after the default slides were shown first).
+    setSlide(([i, d]) => [i >= slides.length ? 0 : i, d]);
+    const id = setInterval(() => setSlide(([i]) => [(i + 1) % slides.length, 1]), 6000);
     return () => clearInterval(id);
   }, [slides.length]);
 
-  const [reels, setReels] = useState<any[]>([]);
-  const [reelsLoading, setReelsLoading] = useState(true);
-  useEffect(() => {
-    fetch("/api/reels?limit=10")
-      .then((r) => r.json())
-      .then((data) => {
-        setReels(data.reels ?? []);
-        setReelsLoading(false);
-      })
-      .catch(() => setReelsLoading(false));
-  }, []);
 
   const goToSlideCta = (s: Slide) => {
     if (s.onCta === 'powerPlus') {
@@ -148,6 +256,14 @@ export default function HomeView({
       onCategoryClick?.('all');
     } else if (s.onCta === 'retailer') {
       onRegisterClick?.();
+    } else if (s.onCta === 'link' && s.link) {
+      if (s.link.type === 'external') {
+        window.open(s.link.value, '_blank', 'noopener,noreferrer');
+      } else if (onNavigateRoute) {
+        onNavigateRoute(s.link.value);
+      } else {
+        window.location.href = s.link.value;
+      }
     }
   };
 
@@ -168,54 +284,29 @@ export default function HomeView({
       {/* Hero — rotating carousel */}
       <section data-tour="hero" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
         <div className="relative rounded-3xl overflow-hidden shadow-ambient min-h-[340px] md:min-h-[400px]">
-          <AnimatePresence mode="wait">
+          {/*
+            mode="popLayout" (not "wait") lets the outgoing and incoming
+            slides animate CONCURRENTLY instead of the old "wait" mode, which
+            fully finished the exit fade before the enter animation even
+            started — that gap was the abrupt disappear-then-appear cut.
+            `custom={direction}` feeds slideVariants below so every nav path
+            (autoplay, arrows, dots — all now going through goToSlide) drives
+            the same direction-aware slide+fade, matching the +1/-1 they pass.
+          */}
+          <AnimatePresence mode="popLayout" custom={direction} initial={false}>
             {slides.map((s, i) =>
               i === slideIdx ? (
                 <motion.div
                   key={s.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.5 }}
+                  custom={direction}
+                  variants={heroSlideVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
                   className="absolute inset-0 flex items-center overflow-hidden"
                 >
-                  {s.bgImg && (
-                    <img
-                      src={s.bgImg}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                  )}
-                  <div className={`absolute inset-0 bg-gradient-to-r ${s.bgClass}`} />
-                  <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
-                  <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-black/10 blur-3xl" />
-                  <div className="relative z-10 flex flex-col md:flex-row items-center gap-8 w-full px-8 md:px-14 py-10">
-                    <div className="flex-1 max-w-xl text-white">
-                      <h1 className="text-4xl md:text-6xl font-bold leading-[1.05] mb-4">
-                        {s.title}
-                      </h1>
-                      <p className="text-white/85 text-base md:text-lg mb-7 max-w-md">
-                        {s.subtitle}
-                      </p>
-                      <button
-                        onClick={() => goToSlideCta(s)}
-                        className="bg-white text-on-surface font-bold px-6 py-2.5 rounded-xl shadow-xl inline-flex items-center gap-2"
-                      >
-                        <ICONS.ArrowRight className="w-5 h-5" />
-                        {s.ctaLabel}
-                      </button>
-                    </div>
-                    {s.imgUrl && (
-                      <div className="flex-shrink-0 w-48 md:w-64">
-                        <img
-                          src={s.imgUrl}
-                          alt=""
-                          className="w-full h-auto object-contain drop-shadow-2xl"
-                        />
-                      </div>
-                    )}
-                  </div>
+                  <BannerSlideVisual slide={s} onCtaClick={() => goToSlideCta(s)} />
                 </motion.div>
               ) : null
             )}
@@ -226,7 +317,7 @@ export default function HomeView({
             {slides.map((_, i) => (
               <button
                 key={i}
-                onClick={() => setSlideIdx(i)}
+                onClick={() => goToSlide(i, i > slideIdx ? 1 : -1)}
                 className={`h-1.5 rounded-full transition-all ${
                   i === slideIdx ? 'w-8 bg-white' : 'w-1.5 bg-white/50'
                 }`}
@@ -237,14 +328,14 @@ export default function HomeView({
 
           {/* Arrows */}
           <button
-            onClick={() => setSlideIdx((i) => (i - 1 + slides.length) % slides.length)}
+            onClick={() => goToSlide(slideIdx - 1, -1)}
             className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-white/20 backdrop-blur-md text-white rounded-full items-center justify-center hover:bg-white/30 transition-colors"
             aria-label="Previous slide"
           >
             <ICONS.ChevronRight className="w-5 h-5 rotate-180" />
           </button>
           <button
-            onClick={() => setSlideIdx((i) => (i + 1) % slides.length)}
+            onClick={() => goToSlide(slideIdx + 1, 1)}
             className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 bg-white/20 backdrop-blur-md text-white rounded-full items-center justify-center hover:bg-white/30 transition-colors"
             aria-label="Next slide"
           >
@@ -285,7 +376,7 @@ export default function HomeView({
       </section>
 
       {/* Shop by Crop */}
-      <section data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
+      <section ref={shopByCropRef} data-tour="shop-by-crop" className="px-4 md:px-10 max-w-7xl mx-auto w-full">
         <div className="flex items-center gap-2 mb-6">
           <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('shopByCrop')}</h2>
           <HelperIcon
@@ -370,7 +461,7 @@ export default function HomeView({
       <section className="px-4 md:px-10 max-w-7xl mx-auto w-full py-8 bg-white shadow-sm border-y border-surface-container mt-6">
         <div className="flex justify-between items-end mb-6">
           <div className="flex items-center gap-2">
-            <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('trendingNearYou')}</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-on-surface">{t('topPicks')}</h2>
             <HelperIcon
               size="sm"
               variant="ghost"
@@ -482,7 +573,7 @@ export default function HomeView({
             );
           }) : (
             <div className="col-span-full py-10 text-center bg-surface-container-low rounded-3xl border border-dashed border-surface-container">
-              <p className="text-on-surface-variant font-medium">{t('noTrending')}</p>
+              <p className="text-on-surface-variant font-medium">{t('noTopPicks')}</p>
             </div>
           )}
         </div>

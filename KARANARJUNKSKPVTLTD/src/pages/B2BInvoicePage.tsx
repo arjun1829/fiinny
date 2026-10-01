@@ -3,7 +3,7 @@ import { Save, Loader2, Printer, Plus, Trash2, UserPlus, ArrowLeft, Truck, Lock,
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import UpiQrCode from '../components/UpiQrCode';
 import {
-    addDoc, collection, getDoc, getDocs, runTransaction, serverTimestamp, updateDoc, writeBatch, doc,
+    addDoc, collection, deleteDoc, getDoc, getDocs, runTransaction, serverTimestamp, updateDoc, writeBatch, doc,
     query, where, limit, onSnapshot
 } from 'firebase/firestore';
 import { prepareStockDeduction, recordStockMovements, formatLowStockAlert } from '../utils/stockDeduction';
@@ -240,7 +240,7 @@ export default function B2BInvoicePage() {
             buyerGstin: r.gstin || prev.buyerGstin,
             buyerState: r.state || prev.buyerState,
         }));
-        if (!searchParams.get('orderId')) setPreviousBalance(String(Number(r.outstandingAmount) || 0));
+        if (!searchParams.get('orderId')) applyRetailerBalance(r);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [prefilledRetailerId, retailers]);
 
@@ -327,12 +327,36 @@ export default function B2BInvoicePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows.map(r => r.productId).join(','), tenantId]);
 
-    // Pull the partner's running dues (the same outstandingAmount the Worklist
-    // shows) into Previous Balance. Skipped while editing a saved invoice, whose
-    // own previousBalance is restored from the order and must not be overwritten.
-    const applyRetailerBalance = (r: any) => {
+    // Pull the partner's running dues into Previous Balance, computed the same
+    // way Worklist → Retailer Details derives "Outstanding Dues" — live from
+    // salesOrders + the payments subcollection — rather than the retailer
+    // doc's `outstandingAmount` cache. That cache is a best-effort counter
+    // several flows (Digital Khata entries/payments, some payment edits) never
+    // write back to, so it silently drifts from the real balance shown on the
+    // Retailer Details page. Skipped while editing a saved invoice, whose own
+    // previousBalance is restored from the order and must not be overwritten.
+    const applyRetailerBalance = async (r: any) => {
         if (prefilledOrderId) return;
-        setPreviousBalance(String(Number(r?.outstandingAmount) || 0));
+        if (!tenantId || !r?.id) {
+            setPreviousBalance(String(Number(r?.outstandingAmount) || 0));
+            return;
+        }
+        try {
+            const [ordersSnap, paymentsSnap] = await Promise.all([
+                getDocs(query(getTenantCollection(db, tenantId, 'salesOrders'), where('retailerId', '==', r.id))),
+                getDocs(getTenantCollection(db, tenantId, 'retailers', r.id, 'payments')),
+            ]);
+            const totalSales = ordersSnap.docs.reduce((s, d) => {
+                const so = d.data() as any;
+                if (so.deleted) return s;
+                return s + Number(so.grandTotal ?? so.netAmount ?? so.totalAmount ?? 0);
+            }, 0);
+            const totalPaid = paymentsSnap.docs.reduce((s, d) => s + Number((d.data() as any).amount ?? 0), 0);
+            setPreviousBalance(String(Math.max(0, totalSales - totalPaid)));
+        } catch (e) {
+            console.error('Failed to compute live outstanding balance:', e);
+            setPreviousBalance(String(Number(r?.outstandingAmount) || 0));
+        }
     };
 
     // ─── Auto-fill buyer by phone ───
@@ -604,6 +628,10 @@ ${styles}
                     return 'confirmed';
                 })(),
                 paymentStatus: header.modeOfPayment === 'Cash' ? 'Paid' : 'Pending',
+                // amountPaid mirrors paymentStatus here so the same field every other
+                // screen reads (WorklistDetailsPage's order cards, Add Payment, etc.)
+                // agrees with the "Paid" badge instead of showing full outstanding.
+                amountPaid: header.modeOfPayment === 'Cash' ? netAmount : 0,
             };
 
             let savedOrderId = prefilledOrderId || '';
@@ -685,6 +713,13 @@ ${styles}
                             totalPaid: Math.max(0, Number(rData.totalPaid || 0) - (wasPaid ? prevNetAmount : 0)),
                         });
                     }
+                    // Also remove the stale Cash auto-payment recorded under the old retailer.
+                    const stalePayments = await getDocs(query(
+                        getTenantCollection(db, tenantId, 'retailers', prevRetailerId, 'payments'),
+                        where('orderId', '==', savedOrderId),
+                        where('source', '==', 'b2b_invoice_cash'),
+                    ));
+                    for (const d of stalePayments.docs) await deleteDoc(d.ref);
                 }
 
                 // Apply this invoice's contribution to the (current) retailer's financials.
@@ -718,6 +753,43 @@ ${styles}
                             totalPaid: Math.max(0, newTotalPaid),
                             lastOrderedAt: serverTimestamp()
                         });
+                    }
+
+                    // Keep the retailer's payments subcollection in sync with this
+                    // invoice's Cash auto-payment, since Total Sales/Amount Paid on
+                    // the Worklist and Partner Worklist pages are computed by summing
+                    // that subcollection, not by reading paymentStatus off the order.
+                    const cashPaymentsQuery = query(
+                        getTenantCollection(db, tenantId, 'retailers', header.retailerId, 'payments'),
+                        where('orderId', '==', savedOrderId),
+                        where('source', '==', 'b2b_invoice_cash'),
+                    );
+                    const existingCashPayments = await getDocs(cashPaymentsQuery);
+                    const isPaidNow = header.modeOfPayment === 'Cash';
+
+                    if (isPaidNow) {
+                        if (existingCashPayments.empty) {
+                            await addDoc(getTenantCollection(db, tenantId, 'retailers', header.retailerId, 'payments'), {
+                                amount: netAmount,
+                                paymentDate: header.invoiceDate,
+                                paymentMethod: 'Cash',
+                                notes: `B2B GST Invoice ${invNo}`,
+                                orderId: savedOrderId,
+                                orderNumber: invNo,
+                                linkedOrderIds: [savedOrderId],
+                                unallocatedAmount: 0,
+                                source: 'b2b_invoice_cash',
+                                createdAt: serverTimestamp(),
+                            });
+                        } else {
+                            await updateDoc(existingCashPayments.docs[0].ref, {
+                                amount: netAmount,
+                                paymentDate: header.invoiceDate,
+                                orderNumber: invNo,
+                            });
+                        }
+                    } else if (!existingCashPayments.empty) {
+                        await deleteDoc(existingCashPayments.docs[0].ref);
                     }
                 }
             } catch (bookkeepingErr) {

@@ -1,0 +1,35 @@
+{
+    "name": "KrishiDukaan Sales",
+    "short_name": "KD Sales",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FFFBF5",
+    "theme_color": "#0F391B",
+    "description": "Field team app for the KrishiDukaan sales executives.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

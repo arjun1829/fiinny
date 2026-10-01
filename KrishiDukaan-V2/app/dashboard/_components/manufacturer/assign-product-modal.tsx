@@ -11,6 +11,7 @@ import { db, fetchAllMarketplaceProducts } from "../../../firebase";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import type { RetailerSeatListing, Subscription } from "../../_types/subscriptions";
 import type { MarketplaceProduct } from "../../../../types/product";
+import { authedJsonHeaders } from "../../../lib/authed-fetch";
 
 type AssignProductModalProps = {
   manufacturerId: string;
@@ -142,7 +143,7 @@ export function AssignProductModal({
         if (!emailToUse) return;
         fetch("/api/email/product-assigned", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await authedJsonHeaders(),
           body: JSON.stringify({
             retailerEmail: emailToUse,
             shopName: retailer.shopName || retailer.ownerName,

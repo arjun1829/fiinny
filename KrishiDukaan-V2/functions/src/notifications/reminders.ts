@@ -84,6 +84,105 @@ export const remindIncompleteProfiles = onSchedule(
   }
 );
 
+// ─── Incomplete payout details ───────────────────────────────────────────────
+
+/** Bank fields payoutAccounts/{phone} needs before a seller can be verified
+ *  for payouts — see app/dashboard/payouts/page.tsx's own validation. */
+const REQUIRED_BANK_FIELDS: Array<{ key: string; label: string }> = [
+  { key: "accountHolderName", label: "account holder name" },
+  { key: "accountNumber", label: "bank account number" },
+  { key: "ifsc", label: "IFSC code" },
+];
+
+/** Required KYC doc types — mirrors app/dashboard/_components/kyc-documents.tsx
+ *  and mobile's payouts_screen.dart _kDocSpecs (GST certificate excluded on
+ *  purpose in both — it's the one optional doc). */
+const REQUIRED_DOC_TYPES: Array<{ key: string; label: string }> = [
+  { key: "pan_card", label: "PAN card" },
+  { key: "cancelled_cheque", label: "cancelled cheque" },
+  { key: "address_proof", label: "address proof" },
+  { key: "owner_photo", label: "owner photo" },
+  { key: "trade_license", label: "trade license" },
+];
+
+/** What's still missing before Razorpay can activate this seller for payouts. */
+function missingPayoutItems(payout: Record<string, unknown>): string[] {
+  const missing: string[] = [];
+  for (const f of REQUIRED_BANK_FIELDS) {
+    if (!String(payout[f.key] ?? "").trim()) missing.push(f.label);
+  }
+  const docs = (payout.documents ?? {}) as Record<string, unknown>;
+  for (const d of REQUIRED_DOC_TYPES) {
+    if (!docs[d.key]) missing.push(d.label);
+  }
+  return missing;
+}
+
+/**
+ * Reminds a paid seller with incomplete payout details, at most once a day,
+ * until everything required is on file. Only paid sellers are considered —
+ * an unpaid account cannot reach the dashboard this points to at all
+ * (canAccessDashboard = isSeller && isPaid), so reminding them would open a
+ * screen they're paywalled out of.
+ *
+ * Skips a seller already verified (nothing missing that matters at that
+ * point) — payoutAccounts.status stays authoritative even if a later profile
+ * edit technically blanks a field, since re-verification is a support flow,
+ * not something this reminder should nag about.
+ */
+export const remindIncompletePayoutDetails = onSchedule(
+  { schedule: "30 10 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 540 },
+  async () => {
+    const today = istDayKey();
+    let sent = 0;
+
+    for (const role of SELLER_ROLES) {
+      const snap = await db()
+        .collection("users")
+        .where("role", "==", role)
+        .where("isPaid", "==", true)
+        .get();
+
+      for (const doc of snap.docs) {
+        const d = doc.data() as Record<string, unknown>;
+        const phone = String(d.phone ?? doc.id).trim();
+        if (!phone) continue;
+        if (String(d.payoutReminderOn ?? "") === today) continue;
+
+        const payoutSnap = await db().collection("payoutAccounts").doc(phone).get();
+        const payout = payoutSnap.exists ? (payoutSnap.data() as Record<string, unknown>) : {};
+        if (payout.status === "verified") continue;
+
+        const missing = missingPayoutItems(payout);
+        if (missing.length === 0) continue;
+
+        const list =
+          missing.length === 1
+            ? missing[0]
+            : missing.length <= 3
+            ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`
+            : `${missing.slice(0, 2).join(", ")} and ${missing.length - 2} more`;
+
+        try {
+          await notify(
+            phone,
+            "payout_incomplete",
+            "Finish setting up your payouts 💰",
+            `Still needed: ${list}. We can't send you money until this is complete.`,
+            { missing: missing.join("|") }
+          );
+          await doc.ref.update({ payoutReminderOn: today });
+          sent++;
+        } catch (err) {
+          logger.error(`[remindIncompletePayoutDetails] failed for ${phone}`, err);
+        }
+      }
+    }
+
+    logger.info(`[remindIncompletePayoutDetails] sent ${sent}`);
+  }
+);
+
 // ─── Subscription expiry ─────────────────────────────────────────────────────
 
 /** Milestone reminders; below the smallest one it becomes a daily nudge. */

@@ -247,18 +247,20 @@ function ActionsCell({
     <div className="flex flex-col gap-1 min-w-[120px]">
       {err && <p className="text-[10px] text-red-600">{err}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* Edit — own products only (name, images, specs) */}
-        {isOwn && (
-          <button
-            type="button" onClick={onEdit}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-          >
-            <Pencil className="h-3 w-3" /> {t('editBtn')}
-          </button>
-        )}
+        {/* Edit — own products AND assigned copies. An assigned product is a
+            retailer-owned COPY (its own products doc, source "manufacturer_assigned",
+            linked to the master via manufacturerProductId). Editing it via
+            row.productId writes only to the copy, so the master and other
+            retailers' copies are untouched. */}
+        <button
+          type="button" onClick={onEdit}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+        >
+          <Pencil className="h-3 w-3" /> {t('editBtn')}
+        </button>
 
-        {/* Stock & price — assigned products, which have no Edit button.
-            Without this an assigned product is stuck at stock 0 forever. */}
+        {/* Stock & price — assigned products. Kept alongside Edit as a quick
+            inline stock adjustment without opening the full editor. */}
         {!isOwn && onToggleStock && (
           <button
             type="button" onClick={onToggleStock}
@@ -473,18 +475,18 @@ function MobileProductCard({
 
       {/* ── Action buttons row — own and assigned products ──────────────────── */}
       <div className="border-t border-outline-variant/15 px-3 py-2.5 flex flex-wrap items-center gap-2">
-        {/* Edit — own products only (name, images, specs) */}
-        {isOwn && (
-          <button
-            type="button"
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-          >
-            <Pencil className="h-3 w-3" /> {t('editBtn')}
-          </button>
-        )}
+        {/* Edit — own products AND assigned copies. Editing an assigned copy
+            writes only to the retailer's own copy doc (row.productId), never the
+            master product or other retailers' copies. */}
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+        >
+          <Pencil className="h-3 w-3" /> {t('editBtn')}
+        </button>
 
-        {/* Stock & price — assigned products, which have no Edit button */}
+        {/* Stock & price — assigned products, quick inline adjustment */}
         {!isOwn && onToggleStock && row.inventoryId && (
           <button
             type="button"
@@ -572,6 +574,7 @@ function MobileProductCard({
             stockQuantity={row.stockQuantity}
             sellingPrice={row.sellingPrice}
             reorderThreshold={row.reorderThreshold}
+            variants={row.variants}
             onSaved={async () => { onToggleStock?.(); await onUpdated(); }}
             onCancel={() => onToggleStock?.()}
           />
@@ -663,7 +666,6 @@ export function InventoryTable({
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catVariants')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catSource')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catStatus')}</th>
-                <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catLastUpdated')}</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium md:px-4">{t('catActions')}</th>
               </tr>
             </thead>
@@ -671,9 +673,6 @@ export function InventoryTable({
               {rows.map((r) => {
                 const status = deriveStockStatus(r.stockQuantity, r.reorderThreshold);
                 const isInactive = !r.isActive;
-                const updatedLabel = r.updatedAt
-                  ? r.updatedAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
-                  : "—";
 
                 return (
                   <tr key={r.productId} className={cn("hover:bg-surface-container/60 transition-colors", isInactive && "opacity-60")}>
@@ -726,9 +725,6 @@ export function InventoryTable({
                       </div>
                     </td>
 
-                    {/* Updated */}
-                    <td className="whitespace-nowrap px-3 py-3 text-on-surface-variant md:px-4 text-xs">{updatedLabel}</td>
-
                     {/* Actions */}
                     <td className="px-3 py-3 md:px-4">
                       <ActionsCell
@@ -749,6 +745,7 @@ export function InventoryTable({
                               stockQuantity={r.stockQuantity}
                               sellingPrice={r.sellingPrice}
                               reorderThreshold={r.reorderThreshold}
+                              variants={r.variants}
                               onSaved={async () => { setStockId(null); await onUpdated(); }}
                               onCancel={() => setStockId(null)}
                             />

@@ -1,4 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+/* Sora is used only by the marketing homepage (src/components/landing/home/*)
+   for display headings. Additive — the ERP theme/body font is unchanged. */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&display=swap');
 
 :root {
   /* Brand Colors - Mature Emerald & Premium Gold */
@@ -521,3 +524,30 @@ select.input-field option {
 .themed-scroll::-webkit-scrollbar-track { background: transparent; }
 .themed-scroll::-webkit-scrollbar-thumb { background-color: var(--surface-border); border-radius: 20px; }
 .themed-scroll::-webkit-scrollbar-thumb:hover { background-color: var(--primary-light); }
+
+/* --- Marketing homepage (src/components/landing/home/*) responsive rules --- */
+/* These classes are used ONLY on the public landing page. Scoped so the ERP is
+   unaffected. Desktop layout lives in the components' inline styles; below the
+   breakpoints we collapse the multi-column grids to single column. */
+@media (max-width: 900px) {
+  .home-hero-grid { grid-template-columns: 1fr !important; }
+  .home-hero-grid h1 { font-size: 3rem !important; }
+  .home-steps-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .home-steps-line { display: none !important; }
+  .home-problem-row {
+    grid-template-columns: 48px 1fr !important;
+    row-gap: 0.5rem !important;
+  }
+  .home-problem-row .home-problem-arrow { display: none !important; }
+}
+@media (max-width: 560px) {
+  .home-steps-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Landing navbar: collapse desktop nav into a hamburger + mobile panel. */
+@media (max-width: 900px) {
+  .home-nav-desktop { display: none !important; }
+  .home-nav-actions-desktop { display: none !important; }
+  .home-nav-hamburger { display: inline-flex !important; }
+  .home-nav-mobile { display: flex !important; }
+}

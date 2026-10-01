@@ -92,11 +92,42 @@ String? _youtubeId(String raw) {
 
 class BrandScreen extends ConsumerWidget {
   final String manufacturerPhone;
-  const BrandScreen({super.key, required this.manufacturerPhone});
+
+  /// True when the signed-in manufacturer is looking at THEIR OWN page from
+  /// the dashboard. Shows an Edit action in the hero and, when no page exists
+  /// yet, a set-up prompt instead of "Brand not found". The Company Page
+  /// drawer link used to jump straight into the editor; sellers asked to see
+  /// the page as customers see it first, and edit only when they want to.
+  final bool isOwner;
+
+  const BrandScreen({
+    super.key,
+    required this.manufacturerPhone,
+    this.isOwner = false,
+  });
+
+  /// Where the owner's Edit action goes. Pops back here; the brand provider
+  /// is invalidated on return so the preview reflects the save immediately.
+  static const editRoute = '/dashboard/manufacturer/brand/edit';
+
+  Future<void> _openEditor(BuildContext context, WidgetRef ref) async {
+    await context.push(editRoute);
+    ref.invalidate(_brandProvider(manufacturerPhone));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final brandAsync = ref.watch(_brandProvider(manufacturerPhone));
+
+    // These three don't depend on the brand doc's content, only on the
+    // phone we already have — but the tab widgets that watch them aren't
+    // built until brandAsync has data, so without this they were queued
+    // behind the brand fetch instead of running alongside it. Pre-warming
+    // them here means products/dealers/reviews are already in flight (or
+    // done) by the time their tabs actually mount.
+    ref.watch(_brandProductsProvider(manufacturerPhone));
+    ref.watch(_brandRetailersProvider(manufacturerPhone));
+    ref.watch(storeReviewsProvider(manufacturerPhone));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -104,14 +135,20 @@ class BrandScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) => const ErrorView(message: 'Brand not found.'),
         data: (brand) {
-          if (brand == null) return const ErrorView(message: 'Brand not found.');
+          if (brand == null) {
+            if (isOwner) return _SetUpPrompt(onSetUp: () => _openEditor(context, ref));
+            return const ErrorView(message: 'Brand not found.');
+          }
 
           return DefaultTabController(
             length: 4,
             child: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) {
                 return [
-                  _BrandHero(brand: brand),
+                  _BrandHero(
+                    brand: brand,
+                    onEdit: isOwner ? () => _openEditor(context, ref) : null,
+                  ),
                   SliverToBoxAdapter(
                     child: _BrandStatsHeader(
                       brand: brand,
@@ -161,7 +198,9 @@ class BrandScreen extends ConsumerWidget {
 
 class _BrandHero extends StatelessWidget {
   final BrandModel brand;
-  const _BrandHero({required this.brand});
+  /// Non-null only for the owner viewing their own page.
+  final VoidCallback? onEdit;
+  const _BrandHero({required this.brand, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +209,22 @@ class _BrandHero extends StatelessWidget {
       pinned: true,
       backgroundColor: const Color(0xFF0A1F08),
       foregroundColor: Colors.white,
+      actions: [
+        if (onEdit != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.tonalIcon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Edit'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.18),
+                foregroundColor: Colors.white,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
@@ -1469,4 +1524,54 @@ class _RetailerCard extends ConsumerWidget {
         child: const Center(
             child: Icon(Icons.storefront, size: 26, color: Colors.white)),
       );
+}
+
+
+/// Owner has no company page yet — offer to create it rather than showing
+/// "Brand not found" for their own store.
+class _SetUpPrompt extends StatelessWidget {
+  final VoidCallback onSetUp;
+  const _SetUpPrompt({required this.onSetUp});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        title: Text('Company Page',
+            style: AppTextStyles.heading2.copyWith(color: Colors.white)),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.business_outlined,
+                  size: 56, color: AppColors.primary),
+              const SizedBox(height: 16),
+              Text('Your company page is not set up yet',
+                  style: AppTextStyles.heading3, textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                'Add your logo, banner, story and contact details — this is '
+                'what customers and dealers see when they look you up.',
+                style: AppTextStyles.body
+                    .copyWith(color: AppColors.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: onSetUp,
+                icon: const Icon(Icons.add),
+                label: const Text('Set up company page'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

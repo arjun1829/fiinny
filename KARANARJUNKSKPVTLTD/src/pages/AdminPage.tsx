@@ -4,8 +4,9 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { firebaseConfig, db } from '../firebase';
 import { getTenantCollection } from '../utils/tenantPath';
+import { functionUrl } from '../utils/functionsUrl';
 import { logAudit } from '../utils/auditLog';
-import { Shield, ShieldAlert, UserCog, UserPlus, Loader2, Mail, Lock, User as UserIcon, Edit2, Trash2, X, Save, Store, Factory, Trash } from 'lucide-react';
+import { Shield, ShieldAlert, UserCog, UserPlus, Loader2, Mail, Lock, User as UserIcon, Edit2, Trash2, X, Save, Store, Factory, Trash, KeyRound } from 'lucide-react';
 import RecentlyDeletedPage from './RecentlyDeletedPage';
 import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../contexts/AuthContext';
@@ -15,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 
 export default function AdminPage() {
     const { t } = useTranslation();
-    const { userRole, currentUser, tenantId, userName, customRoles } = useAuth();
+    const { userRole, currentUser, tenantId, userName, customRoles, permissions } = useAuth();
     const { showToast } = useToast();
     const [activeSection, setActiveSection] = useState<'staff' | 'retailer' | 'manufacturer' | 'trash'>('staff');
     const [users, setUsers] = useState<any[]>([]);
@@ -57,16 +58,26 @@ export default function AdminPage() {
     const [editUserForm, setEditUserForm] = useState<{ id: string, name: string, email: string } | null>(null);
     const [updateLoading, setUpdateLoading] = useState(false);
 
+    // Reset Password States (within Edit User modal)
+    const [resetPassword, setResetPassword] = useState('');
+    const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+    const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+    const [resetPasswordError, setResetPasswordError] = useState('');
+
+
+    // Tenant-scoped user list query — always filter by the caller's tenantId.
+    // The master tenant has tenantId == 'master', so master admins see only
+    // master users. No special-casing; no cross-tenant reads.
+    const tenantUsersQuery = () => {
+        if (!tenantId) return null;
+        return query(collection(db, 'users'), where('tenantId', '==', tenantId));
+    };
 
     useEffect(() => {
         const fetchUsers = async () => {
+            const q = tenantUsersQuery();
+            if (!q) { setLoading(false); return; }
             try {
-                let q;
-                if (tenantId === 'master') {
-                    q = collection(db, 'users');
-                } else {
-                    q = query(collection(db, 'users'), where('tenantId', '==', tenantId));
-                }
                 const querySnapshot = await getDocs(q);
                 const usersData = querySnapshot.docs.map(doc => ({
                     id: doc.id,
@@ -90,13 +101,14 @@ export default function AdminPage() {
             } catch (e) { console.error(e); }
         };
 
-        if (userRole === 'admin') {
+        const hasAccess = userRole === 'admin' || (userRole !== null && permissions[userRole]?.['admin'] === true);
+        if (hasAccess) {
             fetchUsers();
             fetchLinked();
         } else {
             setLoading(false);
         }
-    }, [userRole, tenantId]);
+    }, [userRole, tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
     const handleCreateUser = async (e: React.FormEvent) => {
@@ -104,32 +116,44 @@ export default function AdminPage() {
         setCreateLoading(true);
         setCreateError('');
 
+        // Unique app name prevents "duplicate-app" errors from a leaked previous instance.
+        const secondaryApp = initializeApp(firebaseConfig, 'StaffCreate_' + Date.now());
+        let createdAuthUser: { delete: () => Promise<void> } | null = null;
+
         try {
-            // Note: In a real production app, you'd use Firebase Admin SDK or a Cloud Function
-            // to create users without signing out the current admin.
-            // For this project, we'll use a secondary Firebase app instance to create the user.
-            const secondaryApp = initializeApp(firebaseConfig, 'Secondary');
             const secondaryAuth = getAuth(secondaryApp);
 
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newEmail, newPassword);
-            const newUser = userCredential.user;
+            createdAuthUser = userCredential.user;
 
-            // Create the user document in Firestore
-            await setDoc(doc(db, 'users', newUser.uid), {
-                name: newName,
-                email: newEmail,
-                role: newRole,
-                tenantId: tenantId || 'master',
-                assignedDistricts: newRole === 'sales' ? newDistricts : [],
-                createdAt: serverTimestamp()
-            });
+            if (!tenantId) throw new Error('No tenant assigned to the current admin — cannot create user.');
 
-            // Refresh user list
-            const querySnapshot = await getDocs(collection(db, 'users'));
-            setUsers(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            try {
+                await setDoc(doc(db, 'users', userCredential.user.uid), {
+                    name: newName,
+                    email: newEmail,
+                    role: newRole,
+                    tenantId,
+                    assignedDistricts: newRole === 'sales' ? newDistricts : [],
+                    createdAt: serverTimestamp()
+                });
+            } catch (firestoreError) {
+                // Roll back the Auth account so it doesn't become orphaned.
+                await createdAuthUser.delete().catch((delErr: any) =>
+                    console.error('Rollback delete failed — Auth account may be orphaned:', delErr)
+                );
+                throw firestoreError;
+            }
+
+            // Refresh user list — scoped to this tenant only
+            const refreshQ = tenantUsersQuery();
+            if (refreshQ) {
+                const querySnapshot = await getDocs(refreshQ);
+                setUsers(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            }
 
             if (tenantId && currentUser) {
-                logAudit({ db, tenantId, userId: currentUser.uid, userName: userName || currentUser.email || 'Admin', userRole: userRole || 'admin', module: 'Manage Users', action: 'Create', entityName: newName, entityId: newUser.uid, remarks: `Role: ${newRole} · Email: ${newEmail}` });
+                logAudit({ db, tenantId, userId: currentUser.uid, userName: userName || currentUser.email || 'Admin', userRole: userRole || 'admin', module: 'Manage Users', action: 'Create', entityName: newName, entityId: userCredential.user.uid, remarks: `Role: ${newRole} · Email: ${newEmail}` });
             }
 
             // Reset form
@@ -142,13 +166,29 @@ export default function AdminPage() {
             setShowCreateForm(false);
             alert(t('admin.create_success', { name: newName }));
 
-            // Clean up secondary app
-            await deleteApp(secondaryApp);
         } catch (error: any) {
             console.error("Error creating user:", error);
-            setCreateError(error.message || t('admin.create_error'));
+
+            if (error.code === 'auth/email-already-in-use') {
+                // Distinguish orphaned Auth account (no Firestore doc) from a genuine duplicate.
+                const dupQ = query(collection(db, 'users'), where('email', '==', newEmail), where('tenantId', '==', tenantId));
+                const dupSnap = await getDocs(dupQ).catch(() => null);
+                if (!dupSnap || dupSnap.empty) {
+                    setCreateError(
+                        'This email already has a Firebase Auth account but no matching user record in this tenant. ' +
+                        'A previous creation attempt may have failed mid-way. ' +
+                        'Please contact support to clear the orphaned account before retrying.'
+                    );
+                } else {
+                    setCreateError('A user with this email already exists in your tenant.');
+                }
+            } else {
+                setCreateError(error.message || t('admin.create_error'));
+            }
         } finally {
             setCreateLoading(false);
+            // Always clean up the secondary app, even on failure.
+            await deleteApp(secondaryApp).catch(() => {});
         }
     };
 
@@ -160,11 +200,12 @@ export default function AdminPage() {
             const secondaryApp = initializeApp(firebaseConfig, 'SecondaryR_' + Date.now());
             const secondaryAuth = getAuth(secondaryApp);
             const cred = await createUserWithEmailAndPassword(secondaryAuth, inviteRetailerEmail, inviteRetailerPassword);
+            if (!tenantId) throw new Error('No tenant assigned — cannot invite retailer.');
             await setDoc(doc(db, 'users', cred.user.uid), {
                 email: inviteRetailerEmail,
                 name: retailers.find(r => r.id === inviteRetailerId)?.name || 'Retailer',
                 role: 'retailer',
-                tenantId: tenantId || 'master',
+                tenantId,
                 linkedId: inviteRetailerId,
                 assignedRetailers: [inviteRetailerId],
                 createdAt: serverTimestamp()
@@ -185,11 +226,12 @@ export default function AdminPage() {
             const secondaryApp = initializeApp(firebaseConfig, 'SecondaryM_' + Date.now());
             const secondaryAuth = getAuth(secondaryApp);
             const cred = await createUserWithEmailAndPassword(secondaryAuth, inviteMfgEmail, inviteMfgPassword);
+            if (!tenantId) throw new Error('No tenant assigned — cannot invite manufacturer.');
             await setDoc(doc(db, 'users', cred.user.uid), {
                 email: inviteMfgEmail,
                 name: manufacturers.find(m => m.id === inviteMfgId)?.name || 'Manufacturer',
                 role: 'manufacturer',
-                tenantId: tenantId || 'master',
+                tenantId,
                 linkedId: inviteMfgId,
                 createdAt: serverTimestamp()
             });
@@ -231,13 +273,67 @@ export default function AdminPage() {
                 email: editUserForm.email
             });
             setUsers(users.map(u => u.id === editUserForm.id ? { ...u, name: editUserForm.name, email: editUserForm.email } : u));
-            setEditUserForm(null);
+            closeEditUser();
             alert(t('admin.update_success'));
         } catch (error) {
             console.error("Error updating user:", error);
             alert(t('admin.update_error'));
         } finally {
             setUpdateLoading(false);
+        }
+    };
+
+    // Close the edit modal and clear the reset-password sub-form.
+    const closeEditUser = () => {
+        setEditUserForm(null);
+        setResetPassword('');
+        setResetPasswordConfirm('');
+        setResetPasswordError('');
+    };
+
+    const handleResetPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editUserForm) return;
+
+        setResetPasswordError('');
+        if (resetPassword.length < 6) {
+            setResetPasswordError(t('admin.password_min_length'));
+            return;
+        }
+        if (resetPassword !== resetPasswordConfirm) {
+            setResetPasswordError(t('admin.password_mismatch'));
+            return;
+        }
+
+        setResetPasswordLoading(true);
+        try {
+            if (!currentUser) throw new Error('Not signed in');
+            // Deployed 1st-gen HTTP function called directly over HTTPS
+            // (functionUrl derives the URL from the active Firebase project +
+            // region). The server verifies the caller is a business admin of the
+            // target's tenant and applies the password via the Admin SDK — the
+            // password never touches Firestore and is not logged.
+            const idToken = await currentUser.getIdToken();
+            const res = await fetch(functionUrl('resetTenantUserPassword'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                body: JSON.stringify({ targetUid: editUserForm.id, newPassword: resetPassword }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+
+            if (tenantId && currentUser) {
+                logAudit({ db, tenantId, userId: currentUser.uid, userName: userName || currentUser.email || 'Admin', userRole: userRole || 'admin', module: 'Manage Users', action: 'Update', entityName: editUserForm.name || editUserForm.email || editUserForm.id, entityId: editUserForm.id, remarks: 'Password reset' });
+            }
+
+            showToast(t('admin.reset_password_success'), 'success');
+            // Auto-close the reset-password form/modal and return to the user view.
+            closeEditUser();
+        } catch (error: any) {
+            console.error('Error resetting password:', error);
+            setResetPasswordError(error?.message || t('admin.reset_password_error'));
+        } finally {
+            setResetPasswordLoading(false);
         }
     };
 
@@ -277,7 +373,10 @@ export default function AdminPage() {
         }
     };
 
-    if (userRole !== 'admin') {
+    // Admit the admin role (plan-gated upstream; admin bypasses role matrix) plus any
+    // role the business admin has explicitly granted 'admin' screen access in the Role Matrix.
+    const canManageUsers = userRole === 'admin' || (userRole !== null && permissions[userRole]?.['admin'] === true);
+    if (!canManageUsers) {
         return (
             <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--danger)' }}>
                 <ShieldAlert size={48} style={{ margin: '0 auto 1rem auto' }} />
@@ -477,7 +576,7 @@ export default function AdminPage() {
             {editUserForm && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
                     <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '2rem', position: 'relative' }}>
-                        <button onClick={() => setEditUserForm(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+                        <button onClick={closeEditUser} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
                         <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <Edit2 size={24} color="var(--primary-light)" /> {t('admin.edit_title')}
                         </h2>
@@ -502,6 +601,40 @@ export default function AdminPage() {
                                 {updateLoading ? <Loader2 size={18} className="animate-spin" /> : <><Save size={18} /> {t('admin.update_button')}</>}
                             </button>
                         </form>
+
+                        {/* Reset Password — tenant-scoped, verified server-side */}
+                        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--surface-border)' }}>
+                            <h3 style={{ fontSize: '1rem', margin: '0 0 0.35rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <KeyRound size={18} color="var(--primary-light)" /> {t('admin.reset_password')}
+                            </h3>
+                            <p style={{ margin: '0 0 1rem 0', color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>{t('admin.reset_password_hint')}</p>
+
+                            {resetPasswordError && (
+                                <div style={{ padding: '0.6rem 0.75rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                                    {resetPasswordError}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label>{t('admin.new_password')}</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Lock size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                                        <input required type="password" minLength={6} autoComplete="new-password" className="input-field" style={{ paddingLeft: '2.75rem' }} placeholder="••••••••" value={resetPassword} onChange={e => setResetPassword(e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="input-group" style={{ marginBottom: 0 }}>
+                                    <label>{t('admin.confirm_password')}</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <Lock size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                                        <input required type="password" minLength={6} autoComplete="new-password" className="input-field" style={{ paddingLeft: '2.75rem' }} placeholder="••••••••" value={resetPasswordConfirm} onChange={e => setResetPasswordConfirm(e.target.value)} />
+                                    </div>
+                                </div>
+                                <button type="submit" className="btn btn-secondary" disabled={resetPasswordLoading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                                    {resetPasswordLoading ? <Loader2 size={18} className="animate-spin" /> : <><KeyRound size={18} /> {t('admin.reset_password_button')}</>}
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             )}

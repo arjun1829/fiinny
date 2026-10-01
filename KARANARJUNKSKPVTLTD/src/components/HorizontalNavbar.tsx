@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import type { AppScreen } from '../contexts/AuthContext';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
+import { navFeatureGroupForPath, isFeatureGroupAllowed } from '../utils/subscriptionCatalog';
 
 type NavItem = { path: string; label: string; icon: React.ReactNode; screenKey: AppScreen; exact?: boolean };
 
@@ -81,8 +82,16 @@ function mergeOrder(saved: string[]): string[] {
 
 export default function HorizontalNavbar() {
   const location = useLocation();
-  const { userRole, permissions, tenantId } = useAuth();
+  const { userRole, permissions, tenantId, hasPlanScreen, planEntitlements } = useAuth();
   const can = useFeaturePermissions();
+
+  // Subscription gate — a nav item is visible only if the tenant's plan includes
+  // the module (screen) and its feature group (for screen-sharing/screenless ones).
+  const planAllowsNav = (path: string, screenKey: AppScreen): boolean => {
+    if (!hasPlanScreen(screenKey)) return false;
+    const grp = navFeatureGroupForPath(path);
+    return !grp || isFeatureGroupAllowed(grp, planEntitlements);
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -132,6 +141,10 @@ export default function HorizontalNavbar() {
 
   const visibleItems = (isOwner || isSalesUser) ? orderedNav.filter(item => {
     if (!userRole || !permissions) return false;
+
+    // Subscription gate first — hidden if the tenant's plan excludes this module
+    // (or its feature group). Applies to every role, mirrors the route + drawer.
+    if (!planAllowsNav(item.path, item.screenKey)) return false;
 
     // Sales keeps its own minimal workspace nav.
     if (isSalesUser) return SALES_NAV_PATHS.includes(item.path);

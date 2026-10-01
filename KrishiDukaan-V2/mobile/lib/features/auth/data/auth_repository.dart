@@ -76,6 +76,36 @@ class AuthRepository {
       'productCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    // 3. For retailers, initialize retailer and profile docs so the store is discoverable
+    if (role == 'retailer') {
+      await Future.wait([
+        _db.collection('retailers').doc(phone).set({
+          'userId': uid,
+          'retailerId': uid,
+          'role': 'retailer',
+          'name': name,
+          'shopName': name,
+          'ownerName': name,
+          'phone': phone,
+          'ownerPhone': phone,
+          'active': true,
+          'status': 'Active',
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true)),
+        _db.collection('profiles').doc(phone).set({
+          'uid': uid,
+          'phone': phone,
+          'role': 'retailer',
+          'name': name,
+          'shopName': name,
+          'ownerName': name,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true)),
+      ]);
+    }
   }
 
   /// Saves profile-completion fields. Mirrors the web: writes the completion
@@ -95,6 +125,16 @@ class AuthRepository {
     String? gstin,
     String? googleMapsUrl,
     String? logoUrl,
+    String? secondaryPhone,
+    String? website,
+    String? bannerUrl,
+    /// {instagram, facebook, whatsapp, youtube} — same shape web writes as
+    /// `socialLinks`. Pass null to leave the existing map untouched.
+    Map<String, String>? socialLinks,
+    /// Shop coordinates from "Use my current location". Written as `geo` —
+    /// the GeoPoint the web profile writes and the store locator reads
+    /// first. Null leaves any existing pin untouched.
+    GeoPoint? geo,
   }) async {
     final isSeller = role == 'retailer' || role == 'manufacturer';
 
@@ -136,6 +176,13 @@ class AuthRepository {
         // Buyer-facing "open in Google Maps" prefers this over coordinates.
         'googleMapsUrl': ?googleMapsUrl,
         if (logoUrl != null && logoUrl.isNotEmpty) 'logo': logoUrl,
+        // Same keys the web dashboard writes (profile-persistence.ts):
+        // `banner`/`website`/`secondaryPhone` flat, socials under `socialLinks`.
+        'secondaryPhone': ?secondaryPhone,
+        'website': ?website,
+        if (bannerUrl != null && bannerUrl.isNotEmpty) 'banner': bannerUrl,
+        'socialLinks': ?socialLinks,
+        'geo': ?geo,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -157,6 +204,11 @@ class AuthRepository {
         'state': ?state,
         'gstin': ?gstin,
         if (logoUrl != null && logoUrl.isNotEmpty) 'logo': logoUrl,
+        'secondaryPhone': ?secondaryPhone,
+        'website': ?website,
+        if (bannerUrl != null && bannerUrl.isNotEmpty) 'banner': bannerUrl,
+        'socialLinks': ?socialLinks,
+        'geo': ?geo,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }

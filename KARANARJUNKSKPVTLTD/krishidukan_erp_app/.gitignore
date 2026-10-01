@@ -9,3 +9,9 @@ android/key.properties
 android/*.jks
 *.jks
 *.keystore
+
+# Gradle/Kotlin build caches — machine-local, binary, and a constant merge-conflict source
+android/.gradle/
+android/.kotlin/
+# Machine-specific SDK paths; Flutter regenerates this on every build
+android/local.properties

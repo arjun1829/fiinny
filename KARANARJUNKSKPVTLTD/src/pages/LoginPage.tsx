@@ -21,6 +21,16 @@ export default function LoginPage() {
 
     const navigate = useNavigate();
 
+    // Post-login redirect target (e.g. /login?redirect=/pricing), used so a visitor
+    // who chose a plan while logged out returns to continue it. Restricted to internal
+    // absolute paths ("/x", not "//host") to prevent open-redirect abuse; falls back
+    // to /dashboard. AuthContext still applies its own onboarding/subscription gates.
+    const rawRedirect = searchParams.get('redirect');
+    const redirectTo =
+        rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+            ? rawRedirect
+            : '/dashboard';
+
     // Pre-select signup mode if ?signup=true in URL
     useEffect(() => {
         if (searchParams.get('signup') === 'true') {
@@ -34,7 +44,7 @@ export default function LoginPage() {
         try {
             await signInWithPopup(auth, googleProvider);
             // AuthContext will handle redirect — if no tenantId → /client-onboarding
-            navigate('/dashboard');
+            navigate(redirectTo);
         } catch (err: any) {
             console.error(err);
             setError(t('auth.error_google'));
@@ -76,7 +86,7 @@ export default function LoginPage() {
                         throw err;
                     }
                 }
-                navigate('/dashboard');
+                navigate(redirectTo);
             } else {
                 // Sign up -> Name is required
                 if (!fullName.trim()) {

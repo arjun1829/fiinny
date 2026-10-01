@@ -58,7 +58,7 @@ export interface StockMovementInput {
   qtyOut: number;
   remainingBatchQty: number;
   remainingStock: number;
-  type: 'purchase' | 'sale_pos' | 'sale_b2b';
+  type: 'purchase' | 'sale_pos' | 'sale_b2b' | 'sales_return';
   sourceType: string;
   sourceId: string;
   sourceNumber: string;
@@ -197,6 +197,95 @@ export async function prepareStockDeduction(
   }
 
   return { valid: errors.length === 0, errors, warnings, stockWarnings, batchUpdates, productUpdates, movements };
+}
+
+// ── Sales Return: prepare stock RESTORE (read-only, no Firestore writes) ──────
+
+export interface ReturnStockLine {
+  productId: string;
+  productName: string;
+  qty: number;        // quantity being returned (must be > 0)
+  batchNo?: string;   // batch the goods were originally sold from
+}
+
+/** A single batch that should have `qtyToAdd` added back to it. */
+export interface BatchRestore {
+  batchDocId: string;
+  batchNumber: string;
+  productId: string;
+  productName: string;
+  qtyToAdd: number;
+}
+
+/** Product-level restore (loosePieces), aggregated across return lines. */
+export interface ProductRestore {
+  productId: string;
+  productName: string;
+  qtyToAdd: number;
+  isBatchModel: boolean;   // true when the product tracks inventoryBatches
+}
+
+export interface ReturnStockPlan {
+  batchRestores: BatchRestore[];
+  productRestores: ProductRestore[];
+}
+
+/**
+ * Mirror of prepareStockDeduction, but for a Sales Return: it resolves WHICH
+ * inventoryBatches doc each returned line should be added back to, and how much
+ * each product's loosePieces should rise. It performs the read-only queries
+ * (which a Firestore transaction cannot run) so the caller's transaction can
+ * simply `tx.get()` the specific doc refs this returns and apply the increments
+ * atomically.
+ *
+ * Restore target per line:
+ *   • Batch-tracked product → the batch matching the original `batchNo`; if that
+ *     batch no longer exists (depleted/removed), the earliest-expiry (FEFO) batch;
+ *     product.loosePieces always rises by the returned qty to mirror the batch total.
+ *   • Non-batch product → product.loosePieces only (caller recomputes box/loose split).
+ *
+ * No writes happen here. Stock only changes when the caller commits.
+ */
+export async function prepareStockReturn(
+  tenantId: string,
+  lines: ReturnStockLine[],
+): Promise<ReturnStockPlan> {
+  const batchAgg = new Map<string, BatchRestore>();
+  const productAgg = new Map<string, ProductRestore>();
+
+  for (const line of lines) {
+    if (!line.productId || line.qty <= 0) continue;
+
+    const snap = await getDocs(
+      query(
+        getTenantCollection(db, tenantId, 'inventoryBatches'),
+        where('productId', '==', line.productId),
+      ),
+    );
+    const batches = snap.docs.map(d => ({ id: d.id, ...d.data() } as BatchDoc));
+    const isBatchModel = batches.length > 0;
+
+    // Aggregate product-level restore (same product may span multiple lines).
+    const pa = productAgg.get(line.productId)
+      ?? { productId: line.productId, productName: line.productName, qtyToAdd: 0, isBatchModel };
+    pa.qtyToAdd += line.qty;
+    pa.isBatchModel = isBatchModel;
+    productAgg.set(line.productId, pa);
+
+    if (!isBatchModel) continue;
+
+    // Prefer the original batch; else restore into the earliest-expiry batch.
+    let target = line.batchNo ? batches.find(b => b.batchNumber === line.batchNo) : undefined;
+    if (!target) target = [...batches].sort(fefoSort)[0];
+    if (!target) continue;
+
+    const ba = batchAgg.get(target.id)
+      ?? { batchDocId: target.id, batchNumber: target.batchNumber, productId: line.productId, productName: line.productName, qtyToAdd: 0 };
+    ba.qtyToAdd += line.qty;
+    batchAgg.set(target.id, ba);
+  }
+
+  return { batchRestores: [...batchAgg.values()], productRestores: [...productAgg.values()] };
 }
 
 // ── Record movements (best-effort, called after the sale batch commits) ───────

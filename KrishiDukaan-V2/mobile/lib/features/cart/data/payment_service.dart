@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
@@ -51,27 +52,58 @@ class PaymentService {
   ///   clientDelivery     – extra charges on top of the subtotal
   ///   clientGrandTotal   – clientSubtotal + clientDelivery
   ///
-  /// IMPORTANT — amount contract: the server charges
-  /// `serverSubtotal + clientDelivery` and has no GST field, so GST must be
-  /// folded into `clientDelivery`. This mirrors the web client, which sends
-  /// `clientDelivery = grandTotal - subtotal` (delivery + GST combined).
-  /// Do NOT add a separate gst field here without also changing the server,
-  /// or the buyer would be double-charged.
+  /// AMOUNT CONTRACT — the server is the authority on what is charged.
+  ///
+  /// A current server (create-cart-order with lib/cart-pricing) prices the
+  /// items itself — by the pack size in `items[].variantUnit` — and computes
+  /// delivery (slab chosen by `customerDeliveryState`, extra, free) and any
+  /// exclusive GST itself. `clientGstAdded` being present is what marks this a
+  /// current client; the client figures below are then only compared, never
+  /// trusted. The response carries `sellerBreakdown` (per seller: subtotal,
+  /// GST, delivery breakdown, total) and `amount` (paise) — callers show the
+  /// customer THAT and write the order from it.
+  ///
+  /// A server that has not been redeployed yet ignores `clientGstAdded` and
+  /// charges `serverSubtotal + clientDelivery`, so `clientDelivery` still carries
+  /// delivery AND the added GST folded together, as it always has. A current
+  /// server ignores that field for a current client. Both therefore charge the
+  /// right amount whichever is live.
   ///
   /// Returns the full Razorpay order object. Use `result['id']` as the
   /// Razorpay order_id (NOT `result['orderId']` – that field doesn't exist).
   Future<Map<String, dynamic>> createCartOrder({
     required List<CartItemModel> items,
     required String userId,
+
+    /// The app's own estimate of delivery alone (no GST).
     required double clientDelivery,
+
+    /// GST ADDED on top of the prices (exclusive lines only). Included GST is
+    /// already in the prices and is not part of this.
     required double clientGst,
+
+    /// The address state — picks a pan-India seller's in-state or out-of-state
+    /// slab on the server.
+    String? customerDeliveryState,
+
+    /// Checkout details sent BEFORE payment. Until these were sent, the
+    /// address only reached the server in createOrdersAfterPayment — the one
+    /// step that can fail after Razorpay has already captured the money
+    /// (killed app, dropped network, late UPI confirmation). With them on the
+    /// server up front, the payment.captured webhook can rebuild a complete
+    /// order even when that step never runs.
+    String? customerName,
+    String? customerPhone,
+    Map<String, dynamic>? customerAddress,
+    Map<String, double>? deliveryBySeller,
   }) async {
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw Exception('Not authenticated');
 
     final clientSubtotal =
         items.fold<double>(0.0, (sum, i) => sum + i.price * i.quantity);
-    // Fold GST into the delivery figure — see the amount contract above.
+    // Delivery + added GST folded, for a server not yet redeployed — see the
+    // amount contract above.
     final deliveryPlusGst = clientDelivery + clientGst;
     final clientGrandTotal = clientSubtotal + deliveryPlusGst;
 
@@ -80,6 +112,16 @@ class PaymentService {
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
+        // Tags the paymentAttempts record as coming from the app. Without it
+        // create-cart-order defaults source to 'web', so every app failure
+        // showed up as a web one in Admin -> Payments and an app-specific
+        // checkout problem would have been invisible in the numbers.
+        //
+        // Not sent from a browser build: a custom header has to be named in
+        // the server's Access-Control-Allow-Headers or the browser blocks the
+        // whole request ("Failed to fetch"), and running in a browser IS a
+        // web client, so 'web' is the honest label there anyway.
+        if (!kIsWeb) 'x-client': 'mobile',
       },
       body: jsonEncode({
         // Map mobile cart fields → web API contract
@@ -92,12 +134,22 @@ class PaymentService {
           'sellerId': i.sellerPhone,
           'sellerPhone': i.sellerPhone,
           'qty': i.quantity,
+          // The pack size: the server prices this size (not the base price)
+          // and derives the shipment weight from it.
+          if (i.variantLabel != null && i.variantLabel!.isNotEmpty)
+            'variantUnit': i.variantLabel,
         }).toList(),
         'userId': userId,
         'clientSubtotal': clientSubtotal,
         'clientDelivery': deliveryPlusGst,
+        'clientGstAdded': clientGst,
         'clientGrandTotal': clientGrandTotal,
+        'customerDeliveryState': ?customerDeliveryState,
         'note': 'Mobile Cart Order',
+        'customerName': ?customerName,
+        'customerPhone': ?customerPhone,
+        'customerAddress': ?customerAddress,
+        'deliveryBySeller': ?deliveryBySeller,
       }),
     );
 
@@ -155,11 +207,19 @@ class PaymentService {
     }
   }
 
-  /// Records a genuine payment failure to the `failedPayments` collection so
-  /// it shows up in the admin dashboard's Failed Payments tab — mirrors
-  /// `logFailedPayment` in app/firebase.ts (web). Previously nothing on
-  /// mobile ever wrote here, so admin had to check Razorpay's own dashboard
-  /// directly for any failure a mobile customer hit.
+  /// Records a genuine payment failure so admin can see it.
+  ///
+  /// Reports to `/api/payment/attempt-failed`, which updates the server-side
+  /// `paymentAttempts` row behind Admin → Payments. That row already carries
+  /// the priced basket, so admin sees WHICH products the customer was buying —
+  /// something the client has no way to attach here.
+  ///
+  /// The endpoint re-checks Razorpay before believing us, so a late capture is
+  /// recorded as paid rather than filed as a failure.
+  ///
+  /// Also still writes the legacy `failedPayments` document that the older
+  /// admin Subscriptions → Failed Payments tab reads, so that view keeps
+  /// working until it is retired.
   ///
   /// Call this only for a CONFIRMED failure (i.e. after [checkOrderStatus]
   /// shows the payment was not captured) — never for the SDK's own timeout
@@ -171,11 +231,45 @@ class PaymentService {
     String message, {
     String? orderId,
     int? amount,
+    /// 'cart' or 'subscription'.
+    ///
+    /// A cart failure is recorded ONLY server-side, in paymentAttempts
+    /// (Admin -> Payments), which already holds the buyer, the basket and the
+    /// failure reason. It deliberately does not also go to `failedPayments`:
+    /// that collection backs Admin -> Subscriptions -> Failed Payments, whose
+    /// every row offers an "Activate Subscription" button — an action that
+    /// makes no sense for a product order and could grant a subscription off
+    /// the back of a failed grocery purchase.
+    required String kind,
   }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       final db = FirebaseFirestore.instance;
+
+      // Server-side attempt record (Admin → Payments).
+      if (orderId != null) {
+        try {
+          final token = await user.getIdToken();
+          await http.post(
+            Uri.parse('${AppConfig.apiBaseUrl}/api/payment/attempt-failed'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'razorpay_order_id': orderId,
+              'error': {'description': message},
+            }),
+          );
+        } catch (_) {
+          // Best-effort — the legacy write below still records something.
+        }
+      }
+
+      // Subscription failures additionally go to the legacy queue, which is
+      // where an admin can act on them (activate the subscription manually).
+      if (kind != 'subscription') return;
 
       String? phone;
       try {
@@ -184,6 +278,7 @@ class PaymentService {
       } catch (_) {}
 
       await db.collection('failedPayments').add({
+        'kind': kind,
         'userId': user.uid,
         'userPhone': phone ?? user.uid,
         'userUid': user.uid,

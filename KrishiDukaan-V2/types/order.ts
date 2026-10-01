@@ -1,11 +1,41 @@
 export type SellerType = "retailer" | "manufacturer";
 
+/**
+ * Canonical order lifecycle, in progression order:
+ *   placed → accepted → dispatched → out_for_delivery → delivered
+ * with two terminal off-ramps from any pre-dispatch state: `rejected` (the
+ * seller or admin declines — see /api/orders/reject) and `cancelled` (the
+ * customer backs out themselves — see /api/orders/cancel). Kept as separate
+ * values on purpose: a seller reading "rejected" should mean their own
+ * decision, not "the customer changed their mind" showing up as if it were
+ * one. Both auto-refund online payments via app/lib/order-refund.ts.
+ *
+ * `dispatched` means the seller has handed the parcel off / packed it out of
+ * their stock; `out_for_delivery` means it is physically on its way to the
+ * customer's door. They are deliberately distinct because a seller who ships
+ * via a transporter can sit in `dispatched` for a day or more, and a customer
+ * seeing "out for delivery" for that long assumes something is wrong.
+ */
 export type OrderStatus =
   | "placed"
   | "accepted"
+  | "dispatched"
   | "out_for_delivery"
   | "delivered"
-  | "rejected";
+  | "rejected"
+  | "cancelled"
+  /** The original seller rejected; the order is offered to other sellers for
+   *  24h before the customer is refunded (app/lib/order-reassignment.ts). */
+  | "reassigning";
+
+/** Progression order, shared by every timeline and "can advance to" check. */
+export const ORDER_STATUS_FLOW: OrderStatus[] = [
+  "placed",
+  "accepted",
+  "dispatched",
+  "out_for_delivery",
+  "delivered",
+];
 
 export type StatusHistoryEntry = {
   status: OrderStatus;
@@ -30,7 +60,13 @@ export type CartItem = {
   variantUnit?: string;
   /** GST — copied from the product at add-to-cart time */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
+  gstRate?: number;
+  /** When true, gstRate is already included in `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+  /** Per-product delivery surcharge (₹), added on top of the seller's weight-slab charge. */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
 };
 
 /**
@@ -57,6 +93,10 @@ export type CustomerAddressObject = {
   phone?: string;
   address?: string;
   city?: string;
+  /** Optional, from the app's checkout (web joins these into its string). */
+  district?: string;
+  /** Delivery-address state — what picks in/out-of-state delivery slabs. */
+  state?: string;
   pincode?: string;
 };
 
@@ -74,7 +114,11 @@ export function formatCustomerAddress(addr: CustomerAddress | undefined | null):
   if (!addr) return "";
   if (typeof addr === "string") return addr.trim();
   if (typeof addr !== "object") return String(addr);
-  return [addr.address, addr.city, addr.pincode].filter(Boolean).join(", ").trim();
+  // Same order the web's pre-joined string uses: area, city, district, state, pincode.
+  return [addr.address, addr.city, addr.district, addr.state, addr.pincode]
+    .filter(Boolean)
+    .join(", ")
+    .trim();
 }
 
 export type OrderItem = {
@@ -89,8 +133,11 @@ export type OrderItem = {
   variantUnit?: string;
   /** GST per unit — persisted for invoice generation */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
-  gstAmount?: number; // GST per unit = price * gstRate / 100
+  gstRate?: number;
+  /** GST per unit. Exclusive: price*rate/100. Inclusive: component backed out of price. */
+  gstAmount?: number;
+  /** When true, gstAmount was already inside `price` and was NOT added to the total. */
+  gstIncluded?: boolean;
 };
 
 /**
@@ -152,6 +199,28 @@ export type PaymentInfo = {
   status: PaymentStatus;
   amount: number; // in INR
   paidAt?: string; // ISO timestamp
+
+  // ── Payout accounting (rupees) ──────────────────────────────────────────
+  /** Razorpay's own charge, fetched from the payment entity after capture. */
+  gatewayFee?: number;
+  gatewayTax?: number;
+  /** KrishiDukan's cut on this order. Stored per order, not derived from a
+   *  rate, so a historical payout keeps the fee actually applied to it. */
+  platformFee?: number;
+  /** Set once money has moved (or a manual payout was recorded). Doubles as the
+   *  idempotency guard that stops an order being paid out twice. */
+  transferId?: string;
+  transferredAt?: string;
+  /** 'processing' while a manual bank transfer is in flight, 'paid' once done. */
+  payoutStatus?: "processing" | "paid";
+  payoutMethod?: string;
+  payoutAmount?: number;
+  payoutInitiatedAt?: string;
+  payoutBankRef?: string;
+  payoutNote?: string;
+  /** Rupees refunded to the customer on this order. */
+  refundedAmount?: number;
+  refundId?: string;
 };
 
 export type InvoiceMetadata = {
@@ -177,10 +246,27 @@ export type OrderDoc = {
   mrpSubtotal?: number;
   /** Sum of price * qty across all items (after discounts, excl. GST) */
   subtotal: number;
-  /** Sum of all per-line GST amounts */
+  /** Sum of all per-line GST amounts (both included and excluded lines) — for the invoice. */
   totalGst?: number;
-  /** Weight-based delivery charge from seller's delivery settings */
+  /** Portion of GST that was ADDED to the payable total (excluded-GST lines only). 0 for
+   *  all-inclusive orders. `grandTotal = subtotal + deliveryCharge + totalGstAdded`. */
+  totalGstAdded?: number;
+  /** Actual delivery charge added to the payable total (0 when free delivery applied). */
   deliveryCharge?: number;
+  /**
+   * Frozen delivery breakdown as charged, so the invoice never recomputes from
+   * current slab settings and historical invoices stay correct.
+   *   slab   — weight-slab component actually applied (0 if free)
+   *   extra  — per-product extra actually applied (0 if free)
+   *   free   — Free Delivery overrode the charge (every item shipped free)
+   *   waived — what would have been charged, shown struck-through as "FREE" (0 if not free)
+   */
+  deliveryBreakdown?: {
+    slab: number;
+    extra: number;
+    free: boolean;
+    waived: number;
+  };
   /** subtotal + deliveryCharge + totalGst */
   grandTotal?: number;
   /** Same value under the name the Flutter checkout writes. Read via orderGrandTotal(). */

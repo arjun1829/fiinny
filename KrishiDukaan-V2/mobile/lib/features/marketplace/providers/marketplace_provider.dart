@@ -4,6 +4,7 @@ import '../../../core/constants/app_config.dart';
 import '../../../core/providers/user_provider.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/home_banner_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/models/store_model.dart';
 import '../../../core/models/listing_model.dart';
@@ -424,17 +425,51 @@ final allMergedProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref)
   );
 });
 
+/// Bounded product feed backing Home's three rails (Trending / Featured /
+/// Top Deals) — see [CatalogRepository.fetchHomeRailProducts] for why this
+/// is deliberately NOT [allMergedProductsProvider]: that one scans the whole
+/// products + productReviews collections on every load, which was the main
+/// cause of a slow Home screen. Distance enrichment works the same way as
+/// allMergedProductsProvider (non-blocking on the stores list).
+final rawHomeRailProductsProvider = FutureProvider<List<CatalogModel>>((
+  ref,
+) async {
+  return ref.read(catalogRepositoryProvider).fetchHomeRailProducts();
+});
+
+final homeRailProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((
+  ref,
+) {
+  final productsAsync = ref.watch(rawHomeRailProductsProvider);
+  final storesAsync = ref.watch(storesListProvider);
+  final userLocation = ref.watch(locationProvider).value;
+
+  return productsAsync.when(
+    data: (products) {
+      final stores = storesAsync.value ?? [];
+      final enriched = enrichProductsWithNearestStoreDistance(
+        products: products,
+        stores: stores,
+        userLocation: userLocation,
+      );
+      return AsyncValue.data(enriched);
+    },
+    error: (err, stack) => AsyncValue.error(err, stack),
+    loading: () => const AsyncValue.loading(),
+  );
+});
+
 /// "Featured Products" — the slice AFTER the one Trending shows.
 ///
-/// Both rails read the same merged catalogue, so taking from the top for both
+/// Both rails read the same bounded feed, so taking from the top for both
 /// would render two identical rows now that each shows 10 instead of 3. This
 /// offsets past Trending's window, mirroring how `_ReelsRail(skipCount:)`
 /// already keeps the home page's two reel rows from repeating themselves.
-/// When the catalogue is too small to offer a disjoint slice, it falls back to
+/// When the feed is too small to offer a disjoint slice, it falls back to
 /// the top of the list rather than rendering an empty section.
 final featuredProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
   const railSize = 10;
-  final allAsync = ref.watch(allMergedProductsProvider);
+  final allAsync = ref.watch(homeRailProductsProvider);
   return allAsync.when(
     data: (all) {
       final distinct = all.skip(railSize).take(railSize).toList();
@@ -447,10 +482,12 @@ final featuredProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) 
   );
 });
 
-/// Products with the biggest seller discounts, highest first — powers the
-/// "Top Deals" rail on the home page.
+/// Products with the biggest discounts, highest first — powers the "Top
+/// Deals" rail on the home page. Not merged across sellers (see
+/// fetchHomeRailProducts), so this reflects each canonical product's own
+/// discount rather than the highest offered by any of its retailer copies.
 final topDealsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
-  final allAsync = ref.watch(allMergedProductsProvider);
+  final allAsync = ref.watch(homeRailProductsProvider);
   return allAsync.when(
     data: (all) {
       final deals = all.where((p) => p.maxDiscountPct > 0).toList()
@@ -464,7 +501,7 @@ final topDealsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
 
 /// "Trending Near You" — exactly as it works on the web (taking the top products)
 final trendingProductsProvider = Provider<AsyncValue<List<CatalogModel>>>((ref) {
-  final allAsync = ref.watch(allMergedProductsProvider);
+  final allAsync = ref.watch(homeRailProductsProvider);
   return allAsync.when(
     data: (all) => AsyncValue.data(all.take(10).toList()),
     error: (err, stack) => AsyncValue.error(err, stack),
@@ -652,9 +689,8 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
         price: price,
         stockQty: stockQty,
         // Online ordering (Buy Now / Add to Cart) is shown ONLY when the seller
-        // has explicitly turned on online delivery (isOnline == true). A missing
-        // flag means they never enabled it, so default to offline — otherwise
-        // every store would wrongly get buy buttons.
+        // has explicitly turned on online delivery (isOnline == true), AND neither
+        // the product nor the store has disabled online selling.
         //
         // The account-level switch overrides the per-product one: a seller who
         // turns online selling OFF in Settings must stop selling online
@@ -663,7 +699,14 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
         // account flag as off while this only blocks an EXPLICIT false — 427
         // of 442 live retailer docs have no such field, and blocking on
         // absence would silently stop online orders for nearly all of them.
-        isOnline: av.isOnline == true && !(store?.onlineSellingDisabled ?? false),
+        //
+        // In addition, if the product itself is configured as 'offline_store_only'
+        // or isOnline == false, online ordering is blocked even if a stale
+        // availability[] entry still has isOnline: true.
+        isOnline: av.isOnline == true &&
+            product.sellMode != 'offline_store_only' &&
+            product.isOnline != false &&
+            !(store?.onlineSellingDisabled ?? false),
         variants: av.variants ?? [],
         store: store,
       );
@@ -680,6 +723,7 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
     );
     // Same two-switch rule as the availability path above.
     final isOnline = product.sellMode != 'offline_store_only' &&
+        product.isOnline != false &&
         !(ownerStore?.onlineSellingDisabled ?? false);
     final ownerStockQty = (product.stock?.toLowerCase() == 'out of stock')
         ? 0
@@ -795,3 +839,18 @@ final moreFromRetailerProvider =
           .read(catalogRepositoryProvider)
           .fetchMoreFromRetailer(args.phone, excludeId: args.excludeId);
     });
+
+/// Live homepage banners from Admin > Banners — the same `banners` docs the
+/// website's hero carousel shows, so an admin's add / remove / reorder /
+/// publish reaches the app without a release. Filtered to live banners
+/// client-side (as the web does) so no composite index is needed.
+final homeBannersProvider = StreamProvider<List<HomeBannerModel>>((ref) {
+  return FirebaseFirestore.instance
+      .collection('banners')
+      .orderBy('order')
+      .snapshots()
+      .map((snap) => snap.docs
+          .map(HomeBannerModel.fromFirestore)
+          .where((b) => b.isLive && b.image.isNotEmpty)
+          .toList());
+});

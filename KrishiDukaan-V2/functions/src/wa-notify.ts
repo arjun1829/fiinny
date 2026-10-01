@@ -6,14 +6,17 @@ type WaTemplate =
   | "subscription_expiry"
   | "order_notification"
   | "order_confirmation_customer"
+  | "order_accept_pending"
   | "retailer_onboarding"
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
   | "manufacturer_network_summary"
+  | "enquiry_notification"
+  | "order_reassign_offer"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;
-type NotificationType = "subscription" | "order" | "onboarding" | "general";
+type NotificationType = "subscription" | "order" | "onboarding" | "enquiry" | "general";
 
 interface WaSourceEvent {
   event: string;

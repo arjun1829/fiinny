@@ -3,10 +3,15 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(() => {
+  return {
   build: {
     chunkSizeWarningLimit: 1500,
   },
+
+  // No dev proxy: the SaaS/reset-password functions are called directly over
+  // HTTPS at their asia-south1 cloudfunctions.net URLs (see src/utils/functionsUrl.ts),
+  // so `/api/*` no longer needs proxying in `npm run dev` / `npm run dev:uat`.
   plugins: [
     react(),
     VitePWA({
@@ -89,5 +94,6 @@ export default defineConfig({
       }
     })
   ],
+  }
 })
 

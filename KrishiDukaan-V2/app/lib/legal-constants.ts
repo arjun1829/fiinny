@@ -51,6 +51,13 @@ export const LEGAL_ROUTES = {
   terms: "/terms",
   privacy: "/privacy",
   sellerTerms: "/seller-terms",
+  /**
+   * Google Merchant Center asks for a single URL "where your return policy can
+   * be read by customers" and fetches it. /terms clause 8 covers the substance,
+   * but pointing a reviewer at one clause inside a long agreement is how a
+   * verification fails, so the policy also stands alone here.
+   */
+  returns: "/return-policy",
 } as const;
 
 /**

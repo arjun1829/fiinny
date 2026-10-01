@@ -5,7 +5,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/utils/image_utils.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// StateProvider moved to the legacy export in Riverpod 3.
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../core/constants/app_config.dart';
+import '../../../core/models/home_banner_model.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
@@ -21,6 +26,25 @@ import '../../reels/providers/reels_provider.dart';
 import '../../reels/screens/shop_profile_screen.dart' show StandaloneReelsFeed;
 import '../../../core/models/reel_model.dart';
 import '../../../core/utils/format_count.dart';
+
+/// Re-rolled on every pull-to-refresh so Home's two reel rails show a
+/// different pick each time. Lives at module level so BOTH rails read the
+/// same value — they shuffle one shared list with it and then take disjoint
+/// slices, which is what guarantees a reel never shows up in both sections.
+final homeReelsShuffleProvider =
+    StateProvider<int>((ref) => DateTime.now().millisecondsSinceEpoch);
+
+/// The slice of the feed one reel rail shows: shuffle the whole feed with
+/// [seed], then take 4 starting at [skipCount]. Both rails call this with the
+/// same list and seed but different offsets (0 and 4), so their results are
+/// disjoint by construction — that's what keeps the same reel out of both
+/// sections. Generic so the invariant can be unit-tested without building
+/// ReelModels.
+@visibleForTesting
+List<T> homeRailSlice<T>(List<T> feed, int seed, int skipCount) {
+  final shuffled = [...feed]..shuffle(Random(seed));
+  return shuffled.skip(skipCount).take(4).toList();
+}
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -41,13 +65,37 @@ class HomeScreen extends ConsumerWidget {
     return ('Good evening', '🌾');
   }
 
+  /// Pull-to-refresh. Re-rolls the reel shuffle and refetches what Home
+  /// renders, awaiting the new futures so the spinner stays up until the
+  /// fresh data has actually landed instead of snapping away instantly.
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.read(homeReelsShuffleProvider.notifier).state =
+        DateTime.now().millisecondsSinceEpoch;
+    ref.invalidate(reelsFeedProvider);
+    ref.invalidate(rawHomeRailProductsProvider);
+    try {
+      await Future.wait([
+        ref.read(reelsFeedProvider.future),
+        ref.read(rawHomeRailProductsProvider.future),
+      ]);
+    } catch (_) {
+      // Each rail renders its own empty/error state — a failed refetch should
+      // just end the spinner, not throw out of the refresh gesture.
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(currentUserProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () => _refresh(ref),
+        child: CustomScrollView(
+        // Always scrollable so the pull gesture still works on a short page.
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverAppBar(
             floating: true,
@@ -247,6 +295,7 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -517,7 +566,10 @@ class _BecomeRetailerBanner extends StatelessWidget {
             ),
           ),
           OutlinedButton(
-            onPressed: () => context.go('/become-retailer'),
+            // Paying for seats on /subscription is what upgrades a consumer to
+            // retailer (subscription_screen.dart); /become-retailer was never
+            // an app route, so this button opened go_router's error page.
+            onPressed: () => context.push('/subscription'),
             child: const Text('Start'),
           ),
         ],
@@ -531,9 +583,16 @@ class _BecomeRetailerBanner extends StatelessWidget {
 class _Promo {
   final String title;
   final String subtitle;
+  /// Button label; empty hides the button (image-only admin banners).
   final String cta;
   final String image; // background photo
-  final List<Color> colors; // brand tint painted over the photo (+ fallback)
+  /// Tint painted over the photo, left to right. Null = no overlay.
+  final List<Color>? colors;
+  /// Optional product image shown on the right (admin banners only).
+  final String? foreground;
+  /// `app` — [route] is an app route; `internal` — a website route from
+  /// Admin > Banners, mapped by [_openPromo]; `external` — a full URL.
+  final String linkType;
   final String route;
 
   const _Promo({
@@ -542,21 +601,36 @@ class _Promo {
     required this.cta,
     required this.image,
     required this.colors,
+    this.foreground,
+    this.linkType = 'app',
     required this.route,
   });
+
+  factory _Promo.fromBanner(HomeBannerModel b) => _Promo(
+        title: b.title,
+        subtitle: b.subtitle,
+        cta: b.ctaEnabled ? b.ctaLabel : '',
+        image: b.image,
+        colors: b.overlay,
+        foreground: b.foregroundImage,
+        linkType: b.linkType,
+        route: b.linkValue,
+      );
 }
 
-// Banner photos are easy to swap — just change the `image` URL. The `colors`
-// tint keeps the white text readable over any photo and acts as the fallback
-// if the image fails to load.
-const _promos = <_Promo>[
+// Fallback only — shown when Admin > Banners has no published banners (or
+// they can't be loaded), so the home screen never opens on an empty hero.
+final _defaultPromos = <_Promo>[
   _Promo(
     title: 'Best prices on\nfertilizers & seeds',
     subtitle: 'Compare nearby stores and save on every order',
     cta: 'Shop deals',
     image:
         'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=800&q=80',
-    colors: [AppColors.primary, AppColors.primaryLight],
+    colors: [
+      AppColors.primary.withValues(alpha: 0.92),
+      AppColors.primaryLight.withValues(alpha: 0.45),
+    ],
     route: '/marketplace',
   ),
   _Promo(
@@ -565,7 +639,10 @@ const _promos = <_Promo>[
     cta: 'Browse catalog',
     image:
         'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=800&q=80',
-    colors: [Color(0xFF0E7490), Color(0xFF22D3EE)],
+    colors: [
+      const Color(0xFF0E7490).withValues(alpha: 0.92),
+      const Color(0xFF22D3EE).withValues(alpha: 0.45),
+    ],
     route: '/marketplace',
   ),
   _Promo(
@@ -574,29 +651,113 @@ const _promos = <_Promo>[
     cta: 'Open store locator',
     image:
         'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=800&q=80',
-    colors: [Color(0xFFB45309), Color(0xFFF59E0B)],
+    colors: [
+      const Color(0xFFB45309).withValues(alpha: 0.92),
+      const Color(0xFFF59E0B).withValues(alpha: 0.45),
+    ],
     route: '/stores',
   ),
 ];
 
-class _PromoCarousel extends StatefulWidget {
+/// Bottom-nav tabs — reached with go() so the shell switches tab; every
+/// other route is pushed so Back returns to Home.
+const _tabRoutes = {'/', '/marketplace', '/hubs', '/stores', '/reels'};
+
+/// Opens a banner's link. Admin > Banners stores WEBSITE routes (`/market`,
+/// `/hub/{id}`, …, see navigateToRoute in app/page.tsx); they are mapped to
+/// the app's own screens here. A route the app has no screen for opens on
+/// the website rather than dead-ending the tap.
+Future<void> _openPromo(BuildContext context, WidgetRef ref, _Promo p) async {
+  final value = p.route.trim();
+  if (value.isEmpty) return;
+
+  Future<void> openWeb(Uri uri) async {
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  if (p.linkType == 'external') {
+    final uri = Uri.tryParse(value);
+    if (uri != null && uri.hasScheme) await openWeb(uri);
+    return;
+  }
+
+  String? appRoute;
+  if (p.linkType == 'app') {
+    appRoute = value;
+  } else {
+    final uri = Uri.parse(value.startsWith('/') ? value : '/$value');
+    final seg = uri.pathSegments;
+    final id = seg.length > 1 ? seg[1] : null;
+    final loggedIn = ref.read(currentUserProvider).value != null;
+    switch (seg.isEmpty ? '' : seg[0]) {
+      case '':
+        appRoute = '/';
+      case 'market':
+      case 'marketplace':
+        final category = uri.queryParameters['category'];
+        appRoute = category != null && category.isNotEmpty
+            ? '/marketplace?category=${Uri.encodeComponent(category)}'
+            : '/marketplace';
+      case 'hub':
+      case 'hubs':
+        appRoute = id != null ? '/hubs/$id' : '/hubs';
+      case 'product':
+      case 'products':
+        if (id != null) appRoute = '/product/$id';
+      case 'brand':
+        if (id != null) appRoute = '/brand/$id';
+      case 'stores':
+      case 'map':
+        appRoute = '/stores';
+      case 'reels':
+        appRoute = '/reels';
+      case 'cart':
+        appRoute = '/cart';
+      // The web's "become a seller" banners link to /login (sign-up picks
+      // the role there). A signed-in user is past that step: in the app,
+      // buying seats is what turns them into a seller.
+      case 'become-retailer':
+      case 'sell':
+      case 'subscription':
+      case 'login':
+        appRoute = loggedIn ? '/subscription' : '/login';
+    }
+    if (appRoute == null) {
+      await openWeb(Uri.parse('${AppConfig.apiBaseUrl}${uri.toString()}'));
+      return;
+    }
+  }
+
+  if (!context.mounted) return;
+  final path = Uri.parse(appRoute).path;
+  if (_tabRoutes.contains(path)) {
+    context.go(appRoute);
+  } else {
+    context.push(appRoute);
+  }
+}
+
+class _PromoCarousel extends ConsumerStatefulWidget {
   const _PromoCarousel();
 
   @override
-  State<_PromoCarousel> createState() => _PromoCarouselState();
+  ConsumerState<_PromoCarousel> createState() => _PromoCarouselState();
 }
 
-class _PromoCarouselState extends State<_PromoCarousel> {
+class _PromoCarouselState extends ConsumerState<_PromoCarousel> {
   final _controller = PageController(viewportFraction: 0.92);
   Timer? _timer;
   int _page = 0;
+  int _count = 0;
 
   @override
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_controller.hasClients) return;
-      final next = (_page + 1) % _promos.length;
+      if (!mounted || !_controller.hasClients || _count < 2) return;
+      final next = (_page + 1) % _count;
       _controller.animateToPage(
         next,
         duration: const Duration(milliseconds: 450),
@@ -614,6 +775,18 @@ class _PromoCarouselState extends State<_PromoCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    final bannersAsync = ref.watch(homeBannersProvider);
+    // Admin banners once any are live; the built-in slides otherwise (none
+    // published, or the read failed). While the first read is in flight a
+    // plain card holds the space, so the defaults don't flash and get swapped.
+    final List<_Promo>? promos = bannersAsync.when(
+      data: (b) => b.isEmpty ? _defaultPromos : b.map(_Promo.fromBanner).toList(),
+      error: (_, _) => _defaultPromos,
+      loading: () => null,
+    );
+    _count = promos?.length ?? 0;
+    if (_page >= _count && _count > 0) _page = 0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Responsive hero height instead of a flat 150px — that read as
@@ -621,21 +794,40 @@ class _PromoCarouselState extends State<_PromoCarousel> {
         // fixed height looked especially cramped next to the rest of the
         // page). Scales with the available width, clamped to a sane range.
         final cardHeight = (constraints.maxWidth * 0.55).clamp(190.0, 230.0);
+        if (promos == null) {
+          return Column(
+            children: [
+              Container(
+                height: cardHeight,
+                margin: EdgeInsets.symmetric(
+                    horizontal: constraints.maxWidth * 0.04 + 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
+        }
         return Column(
           children: [
             SizedBox(
               height: cardHeight,
               child: PageView.builder(
                 controller: _controller,
-                itemCount: _promos.length,
+                itemCount: promos.length,
                 onPageChanged: (i) => setState(() => _page = i),
-                itemBuilder: (_, i) => _PromoCard(promo: _promos[i]),
+                itemBuilder: (_, i) => _PromoCard(
+                  promo: promos[i],
+                  onTap: () => _openPromo(context, ref, promos[i]),
+                ),
               ),
             ),
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_promos.length, (i) {
+              children: List.generate(promos.length, (i) {
                 final active = i == _page;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
@@ -658,22 +850,29 @@ class _PromoCarouselState extends State<_PromoCarousel> {
 
 class _PromoCard extends StatelessWidget {
   final _Promo promo;
-  const _PromoCard({required this.promo});
+  final VoidCallback onTap;
+  const _PromoCard({required this.promo, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final base = promo.colors?.first.withValues(alpha: 1) ?? AppColors.primary;
+    final hasTitle = promo.title.isNotEmpty;
+    final hasSubtitle = promo.subtitle.isNotEmpty;
+    final hasCta = promo.cta.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: GestureDetector(
-        onTap: () => context.go(promo.route),
+        // The whole card follows the link, not just the button — image-only
+        // banners have no button at all.
+        onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             // Solid base = fallback colour shown while/if the photo can't load.
-            color: promo.colors.first,
+            color: base,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: promo.colors.first.withValues(alpha: 0.3),
+                color: base.withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -688,73 +887,95 @@ class _PromoCard extends StatelessWidget {
                 CachedNetworkImage(
                   imageUrl: resolveImageUrl(promo.image),
                   fit: BoxFit.cover,
-                  memCacheWidth: 800,
+                  memCacheWidth: 1000,
                   fadeInDuration: const Duration(milliseconds: 250),
                   placeholder: (_, _) => _tintGradient(),
                   errorWidget: (_, _, _) => _tintGradient(),
                 ),
-                // Brand-coloured tint so the white text stays readable over
-                // any photo (strongest on the left where the text sits).
+                // Tint so the white text stays readable over any photo
+                // (strongest on the left where the text sits).
                 _tintGradient(),
+                if (promo.foreground != null)
+                  Positioned(
+                    right: 12,
+                    top: 16,
+                    bottom: 16,
+                    width: 120,
+                    child: CachedNetworkImage(
+                      imageUrl: resolveImageUrl(promo.foreground!),
+                      fit: BoxFit.contain,
+                      memCacheWidth: 400,
+                      errorWidget: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
                 Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: EdgeInsets.fromLTRB(
+                      20, 20, promo.foreground != null ? 140 : 20, 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        promo.title,
-                        style: AppTextStyles.heading1.copyWith(
-                          color: Colors.white,
-                          height: 1.15,
-                          fontSize: 24,
-                          shadows: const [
-                            Shadow(color: Colors.black45, blurRadius: 6),
-                          ],
+                      if (hasTitle)
+                        Text(
+                          promo.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.heading1.copyWith(
+                            color: Colors.white,
+                            height: 1.15,
+                            fontSize: 24,
+                            shadows: const [
+                              Shadow(color: Colors.black45, blurRadius: 6),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        promo.subtitle,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: Colors.white.withValues(alpha: 0.95),
-                          shadows: const [
-                            Shadow(color: Colors.black38, blurRadius: 5),
-                          ],
+                      if (hasTitle && hasSubtitle) const SizedBox(height: 8),
+                      if (hasSubtitle)
+                        Text(
+                          promo.subtitle,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            shadows: const [
+                              Shadow(color: Colors.black38, blurRadius: 5),
+                            ],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
                       // Pushes the CTA to the bottom so the extra hero height
                       // reads as deliberate whitespace, not empty padding.
                       const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              promo.cta,
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.onSurface,
-                                fontWeight: FontWeight.w800,
+                      if (hasCta)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  promo.cta,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: AppColors.onSurface,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(
-                              Icons.arrow_forward,
-                              size: 16,
-                              color: AppColors.onSurface,
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.arrow_forward,
+                                size: 16,
+                                color: AppColors.onSurface,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -766,18 +987,19 @@ class _PromoCard extends StatelessWidget {
     );
   }
 
-  Widget _tintGradient() => DecoratedBox(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: [
-          promo.colors.first.withValues(alpha: 0.92),
-          promo.colors.last.withValues(alpha: 0.45),
-        ],
+  Widget _tintGradient() {
+    final colors = promo.colors;
+    if (colors == null || colors.isEmpty) return const SizedBox.shrink();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: colors.length == 1 ? [colors.first, colors.first] : colors,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 // ─────────────────────────── Benefits strip ────────────────────────────────
@@ -954,30 +1176,24 @@ class _ReelsRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reelsAsync = ref.watch(reelsFeedProvider);
+    final shuffleSeed = ref.watch(homeReelsShuffleProvider);
     return reelsAsync.maybeWhen(
       data: (reels) {
         if (reels.isEmpty) return const SizedBox.shrink();
-        
-        // Seeded from the feed's identity so the selection is stable across
-        // rebuilds (an unseeded shuffle changed which reels the cards showed
-        // on every home rebuild, so the tapped thumbnail no longer matched
-        // what the card was rendering).
-        final seed = reels.length ^ reels.first.id.hashCode;
-        List<ReelModel> displayReels;
-        if (skipCount > 0) {
-          if (reels.length > 4) {
-            final remaining = reels.skip(skipCount).toList();
-            remaining.shuffle(Random(seed));
-            displayReels = remaining.take(4).toList();
-          } else {
-            // Not enough reels to be entirely disjoint. Just mix the existing ones.
-            final mixed = reels.toList();
-            mixed.shuffle(Random(seed));
-            displayReels = mixed.take(4).toList();
-          }
-        } else {
-          displayReels = reels.take(4).toList();
-        }
+
+        // Both rails shuffle the SAME feed with the SAME seed and then take
+        // disjoint windows out of it — [0..4) up top, [4..8) at the bottom —
+        // so a reel can never land in both sections. The old code took the
+        // feed's first 4 for the top rail (so it never changed at all) and
+        // shuffled the rest with a seed derived from the feed's contents (so
+        // it never changed either), and when fewer than 5 reels existed the
+        // bottom rail re-shuffled the whole list and repeated the top four.
+        //
+        // The seed only moves on pull-to-refresh, so the cards stay put while
+        // the page is scrolled: an unseeded shuffle re-rolled on every
+        // rebuild, and a tapped thumbnail then opened a different reel than
+        // the one it was showing.
+        final displayReels = homeRailSlice(reels, shuffleSeed, skipCount);
 
         if (displayReels.isEmpty) return const SizedBox.shrink();
         return Column(
@@ -1024,6 +1240,17 @@ class _ReelsRail extends ConsumerWidget {
   }
 }
 
+/// A reel's poster: its own thumbnail, else the image of the product it
+/// links to. Null when neither exists, so the caller can skip the image
+/// entirely rather than request an empty URL.
+String? _reelThumb(ReelModel reel) {
+  final thumb = reel.thumbnailUrl;
+  if (thumb != null && thumb.isNotEmpty) return thumb;
+  final product = reel.linkedProductImageUrl;
+  if (product != null && product.isNotEmpty) return product;
+  return null;
+}
+
 class _ReelRailCard extends ConsumerWidget {
   final ReelModel reel;
 
@@ -1067,11 +1294,15 @@ class _ReelRailCard extends ConsumerWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (reel.thumbnailUrl != null && reel.thumbnailUrl!.isNotEmpty) ...[
+            // Falls back to the linked product image the way the reels feed
+            // already does (reels_feed_screen.dart). Reels uploaded before
+            // server-side poster generation shipped carry no thumbnailUrl, and
+            // without a fallback those cards render as a bare gradient.
+            if (_reelThumb(reel) != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: CachedNetworkImage(
-                  imageUrl: resolveImageUrl(reel.thumbnailUrl!),
+                  imageUrl: resolveImageUrl(_reelThumb(reel)),
                   fit: BoxFit.cover,
                   errorWidget: (context, url, error) => const SizedBox.shrink(),
                 ),

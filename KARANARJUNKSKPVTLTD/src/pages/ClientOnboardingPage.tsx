@@ -121,7 +121,7 @@ export default function ClientOnboardingPage() {
 
             setDone(true);
             setTimeout(() => {
-                window.location.href = '/dashboard';
+                window.location.href = '/pricing';
             }, 1800);
         } catch (error) {
             console.error('Error onboarding client:', error);
@@ -265,7 +265,7 @@ export default function ClientOnboardingPage() {
                                 <CheckCircle2 size={44} color="var(--primary-light)" className="pulse-success" />
                             </motion.div>
                             <h2 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Store is Ready! 🚀</h2>
-                            <p style={{ color: 'var(--text-secondary)' }}>Welcome to the KaranArjun family. We're launching your dashboard...</p>
+                            <p style={{ color: 'var(--text-secondary)' }}>Welcome to Fiinny! Choose a plan to start using your ERP...</p>
                         </motion.div>
                     ) : (
                         renderStep()

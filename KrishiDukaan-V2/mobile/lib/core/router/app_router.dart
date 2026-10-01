@@ -23,11 +23,13 @@ import '../../features/brand/screens/brand_screen.dart';
 import '../../features/dashboard/screens/inventory_screen.dart';
 import '../../features/dashboard/screens/seller_orders_screen.dart';
 import '../../features/dashboard/screens/subscription_dashboard_screen.dart';
+import '../../features/dashboard/screens/payouts_screen.dart';
 import '../../features/dashboard/screens/delivery_settings_screen.dart';
 import '../../features/dashboard/screens/subscription_screen.dart';
 import '../../features/dashboard/screens/dashboard_profile_screen.dart';
 import '../../features/dashboard/screens/dashboard_analytics_screen.dart';
 import '../../features/dashboard/screens/dashboard_reviews_screen.dart';
+import '../../features/enquiries/screens/enquiry_screen.dart';
 import '../../features/dashboard/screens/dashboard_reels_screen.dart';
 import '../../features/manufacturer/screens/manufacturer_dashboard_screen.dart';
 import '../../features/manufacturer/screens/retailer_network_screen.dart';
@@ -140,6 +142,21 @@ String? _translateExternalLink(Uri uri) {
     if (id != null) return '/product/$id';
   }
 
+  // Sales / marketing referral link (app/subscribe on the web):
+  // /subscribe?ref=CODE[&plan=<planKey>][&seats=<n>] → the subscription
+  // screen with the code applied and the offer's plan preselected. Not the
+  // manufacturer inviteCode below — a different feature.
+  if (segments.length == 1 && segments[0] == 'subscribe') {
+    final q = uri.queryParameters;
+    final params = <String, String>{
+      if ((q['ref'] ?? q['code'] ?? '').isNotEmpty) 'ref': q['ref'] ?? q['code']!,
+      if ((q['plan'] ?? '').isNotEmpty) 'plan': q['plan']!,
+      if ((q['seats'] ?? '').isNotEmpty) 'seats': q['seats']!,
+      'from': 'link',
+    };
+    return Uri(path: '/subscription', queryParameters: params).toString();
+  }
+
   // Manufacturer invite link: WebLinks.invite → /?inviteCode={code}
   final invite = uri.queryParameters['inviteCode'];
   if (invite != null && invite.isNotEmpty) {
@@ -204,11 +221,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthPath =
           path == '/login' || path == '/login/otp' || path == '/onboarding';
 
-      const protectedPaths = ['/checkout', '/orders', '/dashboard'];
+      const protectedPaths = ['/checkout', '/orders', '/dashboard', '/subscription'];
       final needsAuth = protectedPaths.any((p) => path.startsWith(p));
 
       if (!isLoggedIn && needsAuth) {
-        return '/login?redirect=${Uri.encodeComponent(path)}';
+        // Keep the query for the subscription screen: a referral link's code
+        // and offer (?ref=&plan=&seats=) must survive login / signup.
+        final target = path.startsWith('/subscription') ? state.uri.toString() : path;
+        return '/login?redirect=${Uri.encodeComponent(target)}';
       }
 
       if (isLoggedIn && isAuthPath) {
@@ -344,6 +364,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => _RootBackFallback(
           child: SubscriptionScreen(
             reason: state.uri.queryParameters['reason'],
+            // Referral link (/subscribe on the web): code + optional offer.
+            referralCode: state.uri.queryParameters['ref'],
+            offerPlanId: state.uri.queryParameters['plan'],
+            fromReferralLink: state.uri.queryParameters['from'] == 'link',
             // A subscription_expiry notification passes the user's current
             // plan so renewal is one tap on Pay.
             initialSeats: int.tryParse(
@@ -481,13 +505,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard/orders',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const _RootBackFallback(child: SellerOrdersScreen()),
+        // ?tab=requests — the order-offer notification and WhatsApp alert
+        // land on the Requests tab (same query web's /dashboard/orders reads).
+        builder: (_, state) => _RootBackFallback(
+          child: SellerOrdersScreen(
+            initialTab: state.uri.queryParameters['tab'],
+          ),
+        ),
       ),
       GoRoute(
         path: '/dashboard/subscription',
         parentNavigatorKey: _rootKey,
         builder: (_, _) =>
             const _RootBackFallback(child: SubscriptionDashboardScreen()),
+      ),
+      GoRoute(
+        path: '/dashboard/payouts',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const _RootBackFallback(child: PayoutsScreen()),
       ),
       GoRoute(
         path: '/dashboard/delivery',
@@ -513,6 +548,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/dashboard/reviews',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const _RootBackFallback(child: DashboardReviewsScreen()),
+      ),
+      // Buyer enquiries — lost checkouts this seller can still win back. Path
+      // matches web's /dashboard/enquiry, which the WhatsApp alert links to.
+      GoRoute(
+        path: '/dashboard/enquiry',
+        parentNavigatorKey: _rootKey,
+        // ?id= — from the enquiry notification: that buyer is shown first.
+        builder: (_, state) => _RootBackFallback(
+          child: EnquiryScreen(focusId: state.uri.queryParameters['id']),
+        ),
       ),
       GoRoute(
         path: '/dashboard/reels',
@@ -548,8 +593,16 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: AssignProductScreen(initialRetailerPhone: phone));
         },
       ),
+      // Company Page: preview first (the page as customers see it, with an
+      // Edit action), editor one level deeper. Previously the drawer link
+      // went straight into the editor.
       GoRoute(
         path: '/dashboard/manufacturer/brand',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const _RootBackFallback(child: _MyBrandPreview()),
+      ),
+      GoRoute(
+        path: BrandScreen.editRoute,
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const _RootBackFallback(child: BrandEditorScreen()),
       ),
@@ -756,3 +809,20 @@ class ReelsNavigatorObserver extends NavigatorObserver {
   }
 }
 
+
+
+/// The signed-in manufacturer's own company page, in owner mode. Resolves the
+/// phone from the current user so the drawer link needs no parameter.
+class _MyBrandPreview extends ConsumerWidget {
+  const _MyBrandPreview();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(currentUserProvider).value;
+    final phone = user?.phone ?? '';
+    if (phone.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return BrandScreen(manufacturerPhone: phone, isOwner: true);
+  }
+}

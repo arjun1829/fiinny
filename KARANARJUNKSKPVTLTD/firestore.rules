@@ -1,67 +1,323 @@
 rules_version = '2';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Fiinny ERP — Hardened Firestore Security Rules (UAT)
+//
+//  Security model:
+//   • Tenant boundary is enforced via getUserData().tenantId == tenantId.
+//     Users can never access another tenant's data.
+//   • Master tenant ('master') uses root-level collections (no /tenants/ prefix).
+//     This is preserved as-is via getTenantCollection() in tenantPath.ts.
+//   • Public access is explicitly granted only where required by the product
+//     (storefront, payment landing, V-Checkout, feedback submit).
+//   • Cloud Functions use Admin SDK (bypasses these rules) — write: if false
+//     rules express intent and prevent any client from writing those docs.
+//   • The permissive catch-all has been REMOVED. Any unlisted path fails closed.
+// ─────────────────────────────────────────────────────────────────────────────
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Reads the caller's user document. Returns null if not found.
     function getUserData() {
       let docRef = /databases/$(database)/documents/users/$(request.auth.uid);
       return exists(docRef) ? get(docRef).data : null;
     }
-    
-    function hasRole(roleName) {
-      let data = getUserData();
-      return data != null && data.role == roleName;
-    }
-    
-    function getLinkedId() {
-      let data = getUserData();
-      return data != null ? data.linkedId : null;
-    }
 
+    // True if caller is admin, analyst, or legacy master role.
     function isAdminOrAnalyst() {
-      let data = getUserData();
-      return data != null && (data.role == 'admin' || data.role == 'analyst' || data.role == 'master');
+      let d = getUserData();
+      return d != null && (d.role == 'admin' || d.role == 'analyst' || d.role == 'master');
     }
 
+    // True if caller is a shopkeeper (POS/B2C operator).
+    function isShopkeeper() {
+      let d = getUserData();
+      return d != null && d.role == 'shopkeeper';
+    }
+
+    // True if caller is a field sales user.
     function isSales() {
-      let data = getUserData();
-      return data != null && data.role == 'sales';
+      let d = getUserData();
+      return d != null && d.role == 'sales';
     }
-    
-    // Users collection
+
+    // True if caller's role matches the given name.
+    function hasRole(roleName) {
+      let d = getUserData();
+      return d != null && d.role == roleName;
+    }
+
+    // Returns the caller's linkedId (for portal users tied to a retailer/manufacturer).
+    function getLinkedId() {
+      let d = getUserData();
+      return d != null ? d.linkedId : null;
+    }
+
+    // True if the caller belongs to the given tenant.
+    // This is the primary tenant boundary check — used in every tenant-scoped rule.
+    function isTenantMember(tenantId) {
+      let d = getUserData();
+      return d != null && d.tenantId == tenantId;
+    }
+
+    // True if the caller belongs to the master tenant (root-level collections).
+    // Used to prevent non-master tenant admins from accessing master root data.
+    function isMasterTenant() {
+      let d = getUserData();
+      return d != null && d.tenantId == 'master';
+    }
+
+    // Platform super admin — either the master tenant's admin/analyst, OR the
+    // dedicated platform account identified by email. The email branch mirrors
+    // AuthContext (SUPER_ADMIN_EMAIL), which grants the Super Admin UI by email
+    // and carries no tenant; without it, collection-wide reads (tenants,
+    // tenantSubscriptions) from that account fail with permission-denied.
+    // Owns the global plan catalogue and assigns subscriptions. (Phase 2A.)
+    function isSuperAdmin() {
+      return (isMasterTenant() && isAdminOrAnalyst())
+        || (request.auth != null
+            && request.auth.token.email != null
+            && request.auth.token.email.lower() == 'superadmin@fiinny.com');
+    }
+
+    // ── Global: User identity ─────────────────────────────────────────────────
+    // /users/{uid} is root-level (global identity, never tenant-scoped).
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read, write: if request.auth != null && isAdminOrAnalyst();
+      // ── Own document (login, profile, onboarding) ──────────────────────────
+      // Any authenticated user can read and update their own doc.
+      // Self-create is allowed (first login / signup flow).
+      // Self-update is unrestricted so onboarding can set tenantId from null.
+      allow read, create: if request.auth != null && request.auth.uid == userId;
+      allow update:       if request.auth != null && request.auth.uid == userId;
+
+      // ── Platform Super Admin: cross-tenant read (support / "view business") ──
+      // Read-only so the Super Admin can render a tenant's Admin → user-management
+      // view while impersonating. Never grants write — the tenant's users/roles are
+      // never modified by the Super Admin. Regular users are unaffected.
+      allow read: if request.auth != null && isSuperAdmin();
+
+      // ── Admin / Analyst: tenant-scoped user management ────────────────────
+      // Reads: only documents whose tenantId matches the caller's own tenantId.
+      // This makes the /users collection query with where('tenantId','==',x)
+      // provably safe — Firestore can guarantee no cross-tenant docs are returned.
+      allow read: if request.auth != null && isAdminOrAnalyst()
+        && getUserData() != null
+        && resource.data.tenantId == getUserData().tenantId;
+
+      // Create: the new user doc must belong to the caller's own tenant.
+      allow create: if request.auth != null && isAdminOrAnalyst()
+        && getUserData() != null
+        && request.resource.data.tenantId == getUserData().tenantId;
+
+      // Update: caller and target must share the same tenant; tenantId is
+      // immutable by admin (prevents moving a user into another tenant).
+      allow update: if request.auth != null && isAdminOrAnalyst()
+        && getUserData() != null
+        && resource.data.tenantId == getUserData().tenantId
+        && request.resource.data.tenantId == resource.data.tenantId;
+
+      // Delete: only within the caller's own tenant.
+      allow delete: if request.auth != null && isAdminOrAnalyst()
+        && getUserData() != null
+        && resource.data.tenantId == getUserData().tenantId;
+    }
+
+    // ── Global: Module catalog ────────────────────────────────────────────────
+    // Read-only for all authenticated users; written exclusively by Cloud Functions.
+    match /posModules/{moduleId} {
+      allow read:  if request.auth != null;
+      allow write: if false;
+    }
+
+    // ── Global: Subscription plan catalogue (Phase 2A) ────────────────────────
+    // Platform config, kept separate from tenant data. Any authenticated user may
+    // read the catalogue (a tenant reads its own plan's entitlements). Only the
+    // platform super admin (master tenant admin) may create/edit plans.
+    match /plans/{planId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // ── Global: Public pricing projection (read-only mirror of plans/*.pricing) ─
+    // A world-readable copy of ONLY the customer-facing pricing subset (name,
+    // tagline, prices, features, limits, badge) so the landing page and logged-out
+    // /pricing show the same Super-Admin-managed prices as authenticated users.
+    // NEVER contains entitlement config (screens/features/modules/landing path).
+    // Writable only by the platform super admin — mirrors the plans/* write rule —
+    // and written alongside the authoritative plans/{id} doc.
+    match /publicPlans/{planId} {
+      allow read:  if true;
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // ── Global: Plan promotions (time-boxed % discounts) ──────────────────────
+    // Discounts applied ON TOP of a plan's base price; the base price in
+    // plans/{id}.pricing is never overwritten. Applied dynamically by the public
+    // /pricing page and (authoritatively) by the Razorpay Cloud Functions.
+    //   • Any authenticated user may read only ACTIVE promotions — the /pricing
+    //     query filters where('isActive','==',true), satisfying this per-doc rule.
+    //   • The super admin reads the full set (incl. inactive) and is the only writer.
+    match /planPromotions/{promoId} {
+      allow read:  if request.auth != null && resource.data.isActive == true;
+      allow read:  if request.auth != null && isSuperAdmin();
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // ── Global: Careers — job openings (platform content) ─────────────────────
+    // Public marketing content, managed only by the platform super admin.
+    //   • Public (even unauthenticated) may read ONLY published openings — the
+    //     /careers page queries where('status','==','published'), which satisfies
+    //     this per-document rule for both get and list.
+    //   • Super admin reads the full collection (drafts/closed) and is the only
+    //     writer. Normal authenticated users get neither read of drafts nor write.
+    match /jobOpenings/{jobId} {
+      allow read:  if resource.data.status == 'published';
+      allow read:  if request.auth != null && isSuperAdmin();
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // ── Global: Tenant → plan assignment (Phase 2A) ───────────────────────────
+    // Deliberately NOT on the tenant root doc (which business admins can edit) so
+    // a business admin can never self-escalate their plan. Readable by the owning
+    // tenant's members (to resolve entitlements) and the super admin; writable
+    // ONLY by the super admin.
+    match /tenantSubscriptions/{tenantId} {
+      allow read:  if request.auth != null && (isSuperAdmin() || isTenantMember(tenantId));
+      allow write: if request.auth != null && isSuperAdmin();
+    }
+
+    // ── Global: SaaS payment ledger (Phase 2A) ────────────────────────────────
+    // Transaction/audit records for Razorpay subscription payments, keyed by
+    // razorpayPaymentId. Written EXCLUSIVELY by Cloud Functions (verifySaaSPayment)
+    // via the Admin SDK — no client may create or modify a payment record.
+    // Readable by the owning tenant's members (their own billing history) and the
+    // platform super admin. Kept separate from the finance `payments` collection.
+    match /saasPayments/{razorpayPaymentId} {
+      allow read:  if request.auth != null && (
+        isSuperAdmin() ||
+        (resource.data.tenantId != null && isTenantMember(resource.data.tenantId))
+      );
+      allow write: if false;
+    }
+
+    // ── Global: Support tickets ───────────────────────────────────────────────
+    // Raised by authenticated business users from the ERP Help Center and handled
+    // by the platform Super Admin. Kept as a dedicated root collection, separate
+    // from payments, feedback, finance and audit logs.
+    //   • Read: the Super Admin reads every ticket; a tenant member reads ONLY
+    //     tickets belonging to their own tenant (the client query filters by
+    //     tenantId, which this per-document rule proves safe).
+    //   • Create: a tenant member may create a ticket ONLY for their own tenant,
+    //     stamped with their own uid/email, starting as 'open' and with no admin
+    //     fields — so identity, status and the admin response cannot be forged.
+    //   • Update/Delete: Super Admin only. Business users can never mutate a ticket
+    //     (protects status, priority and adminResponse from tampering).
+    match /supportTickets/{ticketId} {
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||
+        (getUserData() != null && resource.data.tenantId == getUserData().tenantId)
+      );
+      allow create: if request.auth != null && getUserData() != null
+        && request.resource.data.tenantId == getUserData().tenantId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email
+        && request.resource.data.status == 'open'
+        && !('adminResponse' in request.resource.data);
+      allow update, delete: if request.auth != null && isSuperAdmin();
+    }
+
+     // ── Global: Platform audit log (Super Admin action trail) ─────────────────
+    // Append-only record of privileged Super Admin actions in the platform console
+    // (/super-admin). Deliberately separate from the tenant-scoped /auditLogs
+    // (business-level, readable by any master admin) so this trail is
+    // Super-Admin-only and tamper-proof.
+    //   • Read/Create: Super Admin only.
+    //   • Create additionally requires actorUid == the caller's own uid, so the
+    //     actor identity cannot be forged by the client.
+    //   • Update/Delete: never — the log is immutable.
+    match /platformAuditLogs/{logId} {
+      allow read:   if request.auth != null && isSuperAdmin();
+      allow create: if request.auth != null && isSuperAdmin()
+        && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
     }
     
-    // Online Orders schema
-    match /onlineOrders/{orderId} {
-      allow read, write: if request.auth != null && isAdminOrAnalyst();
+    // ── Global: Public payment landing pages ──────────────────────────────────
+    // Unauthenticated customers open payment links and mark them paid.
+    match /paymentLinks_public/{docId} {
+      allow read:   if true;
+      allow create: if request.auth != null && isAdminOrAnalyst();
+      allow update: if true;  // Customer marks payment; app-level token validation applies
+      allow delete: if request.auth != null && isAdminOrAnalyst();
     }
-    
-    // Master collections (tenantId = 'master')
-    match /retailers/{rId} {
-      allow read: if request.auth != null && (isAdminOrAnalyst() || (hasRole('retailer') && getLinkedId() == rId));
+
+    // ── Global: Public storefront configuration ───────────────────────────────
+    // Unauthenticated visitors browse the storefront; admin configures it.
+    match /publicConfig/{docId} {
+      allow read:  if true;
       allow write: if request.auth != null && isAdminOrAnalyst();
-      
+    }
+
+    // ── Global: Cloud Function-only collections ───────────────────────────────
+    // These are written exclusively via Admin SDK; no client access permitted.
+    match /systemLogs/{docId} {
+      allow read, write: if false;
+    }
+    match /metrics/{path=**} {
+      allow read, write: if false;
+    }
+    match /aiUsage/{path=**} {
+      allow read, write: if false;
+    }
+
+    // ── Master-tenant: Root-level operational collections ─────────────────────
+    // getTenantCollection(db, 'master', ...) resolves to root-level paths.
+    // These rules mirror the tenant-scoped rules below for the master tenant.
+
+    match /retailers/{rId} {
+      allow read: if request.auth != null && (
+        isAdminOrAnalyst() || isSales() || isShopkeeper() ||
+        (hasRole('retailer') && getLinkedId() == rId)
+      );
+      allow create: if request.auth != null && (isAdminOrAnalyst() || isShopkeeper());
+      allow update: if request.auth != null && (isAdminOrAnalyst() || isShopkeeper());
+      allow delete: if request.auth != null && isAdminOrAnalyst();
+
+      match /payments/{payId} {
+        allow read, write: if request.auth != null && isAdminOrAnalyst();
+      }
+      match /notes/{noteId} {
+        allow read, write: if request.auth != null && isAdminOrAnalyst();
+      }
+      // tasks, paymentAllocations, orders, and any future subcollections
       match /{subcollection=**} {
-        allow read, write: if request.auth != null && (isAdminOrAnalyst() || (hasRole('retailer') && getLinkedId() == rId));
+        allow read, write: if request.auth != null && (
+          isAdminOrAnalyst() ||
+          (hasRole('retailer') && getLinkedId() == rId)
+        );
       }
     }
-    
+
     match /manufacturers/{mId} {
-      allow read: if request.auth != null && (isAdminOrAnalyst() || (hasRole('manufacturer') && getLinkedId() == mId));
+      allow read: if request.auth != null && (
+        isAdminOrAnalyst() || (hasRole('manufacturer') && getLinkedId() == mId)
+      );
       allow write: if request.auth != null && isAdminOrAnalyst();
     }
-    
+
     match /salesOrders/{soId} {
       allow read: if request.auth != null && (
-        isAdminOrAnalyst() || isSales() ||
-        (hasRole('retailer') && resource.data.retailerId == getLinkedId()) ||
+        isAdminOrAnalyst() || isSales() || isShopkeeper() ||
+        (hasRole('retailer') && resource.data.retailerId == getLinkedId())
+      );
+      allow create: if request.auth != null && (isAdminOrAnalyst() || isSales() || isShopkeeper());
+      allow update: if request.auth != null && (
+        isAdminOrAnalyst() || isSales() || isShopkeeper() ||
         (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
       );
-      allow update: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
-      allow create: if request.auth != null && (isAdminOrAnalyst() || isSales());
       allow delete: if request.auth != null && isAdminOrAnalyst();
     }
 
@@ -72,40 +328,239 @@ service cloud.firestore {
       );
       allow write: if request.auth != null && isAdminOrAnalyst();
     }
-    
+
     match /products/{pId} {
-      allow read: if request.auth != null; // Everyone can read products
+      allow read:  if request.auth != null;
       allow write: if request.auth != null && isAdminOrAnalyst();
     }
-    
-    // Global module catalog — all authenticated users can read, only Cloud Functions write
-    match /posModules/{moduleId} {
-      allow read: if request.auth != null;
+
+    match /onlineOrders/{orderId} {
+      allow read, write: if request.auth != null && isAdminOrAnalyst();
+    }
+
+    // ── Master-tenant: Root-level collections without existing rules ──────────
+    // Every collection that Phase 1A only covered under /tenants/{tenantId}/
+    // must also have an explicit root-level rule, because the master tenant
+    // routes ALL getTenantCollection(db, 'master', ...) calls to root paths.
+    // isMasterTenant() prevents non-master tenant admins from reading root data.
+
+    // Business settings — profile, invoice branding, role matrix, Razorpay, etc.
+    // All master tenant members need read access (AuthContext loads rolePermissions
+    // and featurePermissions for every role during login).
+    match /settings/{settingDoc} {
+      allow read:  if request.auth != null && isMasterTenant();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Audit Log — append-only by any master tenant member, admin reads.
+    match /auditLogs/{logId} {
+      allow create:         if request.auth != null && isMasterTenant();
+      allow read:           if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+      allow update, delete: if false;
+    }
+
+    // POS bill counter, B2B invoice counter, PO number, payment counter.
+    match /counters/{counterId} {
+      allow read, write: if request.auth != null && isMasterTenant() &&
+        (isAdminOrAnalyst() || isShopkeeper());
+    }
+
+    // Feedback form — public create, master admin reads.
+    match /feedback/{feedbackId} {
+      allow create:         if true;
+      allow read:           if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+      allow update, delete: if false;
+    }
+
+    // V-Checkout sessions.
+    match /vcheckoutSessions/{sessionId} {
+      allow read:   if true;
+      allow create: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // Store products — public read for the online storefront.
+    match /storeProducts/{spId} {
+      allow read:  if true;
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Invoices (B2B GST invoices).
+    match /invoices/{invoiceId} {
+      allow read: if request.auth != null && isMasterTenant() &&
+        (isAdminOrAnalyst() || isSales() || isShopkeeper());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Internal payment links (tenant-scoped links, not paymentLinks_public).
+    match /paymentLinks/{linkId} {
+      allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Quotations, Purchase Orders, Delivery Challans.
+    match /quotations/{qId} {
+      allow read:  if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isSales());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /purchaseOrders/{poId} {
+      allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /deliveryChallans/{dcId} {
+      allow read:  if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isSales());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Transporters — read by all operational master staff for booking.
+    match /transporters/{tId} {
+      allow read:  if request.auth != null && isMasterTenant() &&
+        (isAdminOrAnalyst() || isSales() || isShopkeeper());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Supplier master, subcollections, and all related documents.
+    match /suppliers/{supplierId} {
+      allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+      match /priceList/{itemId} {
+        allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+      }
+    }
+    match /supplierInvoices/{siId}          { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /supplierPayments/{spId}          { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /supplierPaymentReminders/{sprId} { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /supplierComments/{scId}          { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /supplierTasks/{stId}             { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+
+    // Inventory.
+    match /rateSheet/{rsId} {
+      allow read:  if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isShopkeeper());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /ratesheetItems/{riId} {
+      allow read:  if request.auth != null && isMasterTenant();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /inventoryBatches/{batchId} {
+      allow read:  if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isShopkeeper());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /godowns/{godownId}   { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /stockMovements/{smId}{ allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+
+    // Loyalty (POS — shopkeeper reads/writes for POS customer loyalty).
+    match /loyalty/{customerId} {
+      allow read, write: if request.auth != null && isMasterTenant() &&
+        (isAdminOrAnalyst() || isShopkeeper());
+    }
+
+    // Returns, Expenses.
+    match /returns/{returnId}   { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /expenses/{expenseId} { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+
+    // Sales Targets (note: SalesTargetsPage/AdminPage use raw doc(db,'tenants',tenantId,...)
+    // so master targets go to /tenants/master/salesTargets — covered by tenant rules.
+    // This root rule covers any getTenantCollection-routed access).
+    match /salesTargets/{targetId} {
+      allow read:  if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isSales());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Invoice Templates.
+    match /invoice_templates/{templateId} {
+      allow read:  if request.auth != null && isMasterTenant() &&
+        (isAdminOrAnalyst() || isShopkeeper() || isSales());
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // Finance — Cloud Function-owned ledger (write: false for clients).
+    match /glAccounts/{acctId}  { allow read: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); allow write: if false; }
+    match /journalEntries/{entryId} { allow read: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); allow write: if false; }
+    match /accounts/{accountId} {
+      allow read: if request.auth != null && (
+        (isMasterTenant() && isAdminOrAnalyst()) ||
+        (hasRole('retailer')     && getLinkedId() == accountId) ||
+        (hasRole('manufacturer') && getLinkedId() == accountId)
+      );
+      allow create: if request.auth != null && isMasterTenant() && isAdminOrAnalyst()
+        && request.resource.data.arBalance == 0 && request.resource.data.apBalance == 0;
+      allow update: if request.auth != null && isMasterTenant() && isAdminOrAnalyst()
+        && request.resource.data.arBalance == resource.data.arBalance
+        && request.resource.data.apBalance == resource.data.apBalance;
+      allow delete: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+    match /bills/{billId}             { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /payments/{paymentId}       { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /cashApplications/{caId}    { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /bankAccounts/{baId}        { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /creditReviews/{crId}       { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /collectionActivities/{aId} { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /promiseToPay/{ptpId}       { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /disputes/{dId}             { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /promotions/{pId}           { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /promotionClaims/{pcId}     { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+    match /contracts/{cId}            { allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst(); }
+
+    // Module subscriptions for master tenant.
+    match /modules/{moduleId} {
+      allow read:  if request.auth != null && isMasterTenant();
       allow write: if false;
     }
 
-    // Tenant specific collections
+    // UI schemas — master-tenant root path. The master tenant routes
+    // getTenantCollection(db,'master','ui_schemas') to this root collection, so it
+    // needs an explicit rule (the permissive catch-all was removed). All master
+    // tenant members read to render DynamicForm / configurable profiles; only
+    // admin/analyst edit via the Schema Builder.
+    match /ui_schemas/{moduleId} {
+      allow read:  if request.auth != null && isMasterTenant();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
+    }
+
+    // ── Tenant-scoped collections ─────────────────────────────────────────────
     match /tenants/{tenantId} {
-      // Allow users to read their own tenant, or master
-      allow read: if request.auth != null && (tenantId == 'master' || (getUserData() != null && getUserData().tenantId == tenantId));
 
-      // Allow users to create their own tenant during onboarding
-      allow write: if request.auth != null && (
-        tenantId == 'tenant_' + request.auth.uid ||
-        (getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst())
+      // Tenant root document.
+      // Super admin may read/list every tenant (Super Admin subscription screen).
+      allow read: if request.auth != null && (
+        tenantId == 'master' ||
+        isSuperAdmin() ||
+        (getUserData() != null && getUserData().tenantId == tenantId)
       );
+      allow create: if request.auth != null && tenantId == 'tenant_' + request.auth.uid;
+      allow update: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      allow delete: if false;
 
-      // Module subscriptions — only Cloud Functions write, tenant members read
+      // Module subscriptions — Cloud Function writes, tenant members read.
       match /modules/{moduleId} {
-        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId;
+        allow read:  if request.auth != null && isTenantMember(tenantId);
         allow write: if false;
       }
 
-      // Audit Log — append-only by any authenticated tenant member; read by admin only.
-      // Documents must never be updated or deleted (immutable audit trail).
+      // Settings — all tenant members read (needed for role/permission resolution
+      // and branding in invoice rendering). Admin/analyst write only.
+      match /settings/{settingDoc} {
+        allow read:  if request.auth != null && isTenantMember(tenantId);
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // UI schemas — configurable-profile field definitions (e.g. Retailer Configurable
+      // Profile in Worklist detail Overview). All tenant members read; admin/analyst write.
+      match /ui_schemas/{moduleId} {
+        allow read:  if request.auth != null && isTenantMember(tenantId);
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Counters — transactional auto-increment used by billing (POS + B2B).
+      // Shopkeeper needs posBillCounter; admin/analyst need invoice and PO counters.
+      match /counters/{counterId} {
+        allow read, write: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+      }
+
+      // Audit Log — append-only by any tenant member; admin reads only.
       match /auditLogs/{logId} {
-        allow create: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId;
-        allow read:   if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow create:         if request.auth != null && isTenantMember(tenantId);
+        allow read:           if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         allow update, delete: if false;
       }
 
@@ -151,136 +606,281 @@ service cloud.firestore {
 
       // Feedback — public create (no auth), tenant members read
       match /feedback/{feedbackId} {
-        allow create: if true;
-        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow create:         if true;
+        allow read:           if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         allow update, delete: if false;
       }
 
-      // V-Checkout sessions — public read by token, Cloud Function updates, admin creates
+      // V-Checkout sessions — public read/update (cart submit); admin creates.
       match /vcheckoutSessions/{sessionId} {
-        allow read: if true;
-        allow create: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow read:   if true;
+        allow create: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         allow update: if true;  // Customer submits cart via public page
         allow delete: if false;
       }
 
-      // Products — public read for V-Checkout product browsing
+      // Products — public read for V-Checkout and storefront browsing.
       match /products/{pId} {
-        allow read: if true;
-        allow write: if request.auth != null && isAdminOrAnalyst();
+        allow read:  if true;
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
 
-      match /retailers/{rId} {
-        allow read: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('retailer') && getLinkedId() == rId));
-        allow write: if request.auth != null && isAdminOrAnalyst();
+      // Store products — public read for the online storefront.
+      match /storeProducts/{spId} {
+        allow read:  if true;
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
 
-        // payments and notes subcollections used by both B2B partners and POS customer profiles
+      // Retailers — admin/analyst/sales/shopkeeper manage; retailer portal reads own doc.
+      match /retailers/{rId} {
+        allow read: if request.auth != null && (
+          (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
+          (hasRole('retailer') && getLinkedId() == rId)
+        );
+        allow create: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+        allow update: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+        allow delete: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+
         match /payments/{payId} {
-          allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+          allow read, write: if request.auth != null &&
+            isTenantMember(tenantId) && isAdminOrAnalyst();
         }
         match /notes/{noteId} {
-          allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+          allow read, write: if request.auth != null &&
+            isTenantMember(tenantId) && isAdminOrAnalyst();
         }
-
+        // tasks, paymentAllocations, orders, and any future subcollections
         match /{subcollection=**} {
-          allow read, write: if request.auth != null && (isAdminOrAnalyst() || (hasRole('retailer') && getLinkedId() == rId));
+          allow read, write: if request.auth != null && (
+            (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
+            (hasRole('retailer') && getLinkedId() == rId)
+          );
         }
       }
 
+      // Manufacturers.
       match /manufacturers/{mId} {
-        allow read: if request.auth != null && (isAdminOrAnalyst() || (hasRole('manufacturer') && getLinkedId() == mId));
-        allow write: if request.auth != null && isAdminOrAnalyst();
+        allow read: if request.auth != null && (
+          (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
+          (hasRole('manufacturer') && getLinkedId() == mId)
+        );
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
 
+      // Sales Orders — created by admin/analyst/sales/shopkeeper (POS + B2B + Khata).
       match /salesOrders/{soId} {
         allow read: if request.auth != null && (
-          isAdminOrAnalyst() || isSales() ||
+          (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
           (hasRole('retailer') && resource.data.retailerId == getLinkedId()) ||
           (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
         );
-        allow update: if request.auth != null && (isAdminOrAnalyst() || isSales() || (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId()));
-        allow create: if request.auth != null && (isAdminOrAnalyst() || isSales());
-        allow delete: if request.auth != null && isAdminOrAnalyst();
+        allow create: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales() || isShopkeeper());
+        allow update: if request.auth != null && (
+          (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
+          (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
+        );
+        allow delete: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
 
+      // Orders (dispatch/fulfillment).
       match /orders/{oId} {
         allow read: if request.auth != null && (
-          isAdminOrAnalyst() || isSales() ||
+          (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales())) ||
           (hasRole('retailer') && resource.data.retailerId == getLinkedId())
         );
-        allow write: if request.auth != null && isAdminOrAnalyst();
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
 
+      // Online Orders.
       match /onlineOrders/{orderId} {
-        allow read, write: if request.auth != null && isAdminOrAnalyst();
+        allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
 
-      // ─── Finance operations (HighRadius-style O2C + S2P) ──────────────────
-      // The ledger (glAccounts, journalEntries) and party balances are owned by
-      // Cloud Functions (Admin SDK bypasses these rules). Clients read, never
-      // write. NOTE: full DB-level enforcement also requires retiring the
-      // permissive `match /{document=**}` catch-all at the bottom of this file
-      // (a tracked hardening step) — until then these write:false rules express
-      // intent and bind once the catch-all is removed.
+      // Invoices (B2B GST invoices).
+      match /invoices/{invoiceId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales() || isShopkeeper());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
 
-      // Chart of accounts — Function-written only.
+      // Internal payment links (tenant-scoped, separate from paymentLinks_public).
+      match /paymentLinks/{linkId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Quotations.
+      match /quotations/{qId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Purchase Orders.
+      match /purchaseOrders/{poId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Delivery Challans.
+      match /deliveryChallans/{dcId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Transporters — read by all operational staff for booking selection.
+      match /transporters/{tId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales() || isShopkeeper());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Supplier master and subcollections.
+      match /suppliers/{supplierId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+        match /priceList/{itemId} {
+          allow read, write: if request.auth != null &&
+            isTenantMember(tenantId) && isAdminOrAnalyst();
+        }
+      }
+      match /supplierInvoices/{siId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /supplierPayments/{spId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /supplierPaymentReminders/{sprId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /supplierComments/{scId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /supplierTasks/{stId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Inventory collections.
+      match /rateSheet/{rsId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /ratesheetItems/{riId} {
+        allow read:  if request.auth != null && isTenantMember(tenantId);
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /inventoryBatches/{batchId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /godowns/{godownId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /stockMovements/{smId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Loyalty (POS customer loyalty points — shopkeeper reads/writes for POS).
+      match /loyalty/{customerId} {
+        allow read, write: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper());
+      }
+
+      // Returns.
+      match /returns/{returnId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Expenses.
+      match /expenses/{expenseId} {
+        allow read, write: if request.auth != null &&
+          isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Sales Targets.
+      match /salesTargets/{targetId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isSales());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // Invoice Templates.
+      match /invoice_templates/{templateId} {
+        allow read: if request.auth != null && isTenantMember(tenantId) &&
+          (isAdminOrAnalyst() || isShopkeeper() || isSales());
+        allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+
+      // ── Finance operations (HighRadius-style O2C + S2P) ───────────────────
+      // glAccounts and journalEntries are Cloud Function-owned (Admin SDK writes).
       match /glAccounts/{acctId} {
-        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow read:  if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         allow write: if false;
       }
-
-      // Double-entry journal — Function-written only.
       match /journalEntries/{entryId} {
-        allow read: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow read:  if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         allow write: if false;
       }
-
-      // Unified party master. Staff manage master + credit fields; the
-      // arBalance / apBalance fields are Function-owned and must not change on a
-      // client write. Linked retailer/manufacturer portals may read their own.
+      // Unified party master — balance fields are Function-owned and immutable by clients.
       match /accounts/{accountId} {
         allow read: if request.auth != null && (
-          (getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()) ||
-          (hasRole('retailer') && getLinkedId() == accountId) ||
+          (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
+          (hasRole('retailer')     && getLinkedId() == accountId) ||
           (hasRole('manufacturer') && getLinkedId() == accountId)
         );
-        allow create: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()
-          && request.resource.data.arBalance == 0 && request.resource.data.apBalance == 0;
-        allow update: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst()
+        allow create: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst()
+          && request.resource.data.arBalance == 0
+          && request.resource.data.apBalance == 0;
+        allow update: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst()
           && request.resource.data.arBalance == resource.data.arBalance
           && request.resource.data.apBalance == resource.data.apBalance;
-        allow delete: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
+        allow delete: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
+      }
+      match /bills/{billId}             { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /payments/{paymentId}       { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /cashApplications/{caId}    { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /bankAccounts/{baId}        { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /creditReviews/{crId}       { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /collectionActivities/{aId} { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /promiseToPay/{ptpId}       { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /disputes/{dId}             { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /promotions/{pId}           { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /promotionClaims/{pcId}     { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+      match /contracts/{cId}            { allow read, write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst(); }
+
+      // ── Platform Super Admin: cross-tenant access (support / "view business") 
+      match /{document=**} {
+        allow read, write: if request.auth != null && isSuperAdmin();
       }
 
-      // Operational finance documents — staff CRUD; Functions post the matching
-      // journal entries. These are source docs, not the ledger itself.
-      match /bills/{billId}             { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /payments/{paymentId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /cashApplications/{caId}    { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /bankAccounts/{baId}        { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /creditReviews/{crId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /collectionActivities/{aId} { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /promiseToPay/{ptpId}       { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /disputes/{dId}             { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /promotions/{pId}           { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /promotionClaims/{pcId}     { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
-      match /contracts/{cId}            { allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst(); }
+    } // end /tenants/{tenantId}
 
-      match /settings/rolePermissions {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null && request.auth.uid != null && isAdminOrAnalyst();
-      }
-
-      // Expense Tracker — admin/analyst full CRUD; no employee link required
-      match /expenses/{expenseId} {
-        allow read, write: if request.auth != null && getUserData() != null && getUserData().tenantId == tenantId && isAdminOrAnalyst();
-      }
+    // ── analytics ─────────────────────────────────────────────────────────────
+    // Namespace owned by the standalone KrishiDukan Analytics app
+    // (../krishidukan-analytics). Platform-level data, isolated from all
+    // tenant-scoped ERP collections. Holds normalized monthly Firebase Analytics
+    // reports, e.g. analytics/{category}/months/{YYYY-MM}/rows/{rowId}.
+    // Restricted to the platform super admin, matching how other platform-wide
+    // collections (plans, platformAuditLogs, tenantSubscriptions) are gated and
+    // the analytics app's own client-side authorization check. Real writes arrive
+    // in a later phase (CSV import).
+    match /analytics/{document=**} {
+      allow read, write: if request.auth != null && isSuperAdmin();
     }
-    
-    // Fallback: Default allow all for backward compatibility where needed, but log warning in our minds
-    // We keep this to ensure we don't accidentally block the user out of their existing schemas
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
+
+  } // end /databases/{database}/documents
 }

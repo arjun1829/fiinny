@@ -31,8 +31,16 @@ export type MarketplaceProduct = {
 
   /** GST configuration — set by the manufacturer/owner, applies to all sellers of this product */
   gstApplicable?: boolean;
-  gstRate?: 0 | 5 | 12 | 18 | 28;
-  
+  /** Predefined (0/5/12/18/28) or a custom seller-entered rate. */
+  gstRate?: number;
+  /** When true, gstRate is already baked into `price` (extract, don't add again). */
+  gstIncluded?: boolean;
+
+  /** Per-product delivery surcharge added ON TOP of the seller's weight-slab charge (₹). */
+  extraDeliveryCharge?: number;
+  /** When true, this product ships free — it adds no weight/charge to the seller's delivery fee. */
+  freeDelivery?: boolean;
+
   /** Legacy display fields — present on older documents only */
   stock?: string;
   store?: string;
@@ -55,6 +63,15 @@ export type MarketplaceProduct = {
      * the correct price per selected variant and hide stores that don't stock a size.
      */
     variants?: { unit: string; price: number; stock?: number }[];
+    /**
+     * This store's OWN commercial settings, mirrored from its product copy so cart /
+     * checkout use the retailer-specific configuration — never the master product's.
+     */
+    gstApplicable?: boolean;
+    gstRate?: number;
+    gstIncluded?: boolean;
+    extraDeliveryCharge?: number;
+    freeDelivery?: boolean;
   }[];
 
   /** Lowest selling price across all stores that stock this product (pre-discount) */

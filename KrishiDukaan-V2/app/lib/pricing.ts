@@ -75,6 +75,47 @@ export interface DurationPrice {
    * declares the rule; the client filtering it drives is a courtesy.
    */
   roles?: string[];
+  /**
+   * Which of the two plan families the checkout shows this row under.
+   *
+   *   standard — a packaged plan: a fixed price for a fixed number of listings
+   *              (flatPrice + includedListings are REQUIRED). The seller picks a
+   *              period, never a quantity.
+   *   custom   — the original self-serve ladder: a price per listing, seller
+   *              picks how many. Also any legacy bundle row with no tier.
+   *
+   * Absent means custom, so every ladder saved before tiers existed keeps
+   * behaving exactly as it did. See tierOf().
+   */
+  tier?: PlanTier;
+  /**
+   * Optional "was" price in rupees, shown struck through next to the real
+   * price (e.g. Standard Yearly: ~~14,400~~ 11,000). DISPLAY ONLY — nothing is
+   * ever charged from it; computeAmount() never reads it.
+   */
+  compareAtPrice?: number;
+}
+
+/** The two plan families on the subscription page (Standard / Custom toggle). */
+export type PlanTier = "standard" | "custom";
+
+/** Tier of a ladder row. Rows saved before tiers existed are custom. */
+export function tierOf(d: DurationPrice): PlanTier {
+  return d.tier === "standard" ? "standard" : "custom";
+}
+
+/** The ladder rows shown under one tier of the toggle, in period order. */
+export function plansForTier(durations: DurationPrice[], tier: PlanTier): DurationPrice[] {
+  return durations.filter((d) => tierOf(d) === tier);
+}
+
+/**
+ * Plan name stored on the subscription record ("Standard" / "Custom").
+ * Snapshotted at purchase, so a later edit or delete of the ladder row never
+ * changes what an old subscription says it was.
+ */
+export function planNameFor(d: DurationPrice): string {
+  return tierOf(d) === "standard" ? "Standard" : "Custom";
 }
 
 /**
@@ -82,6 +123,28 @@ export interface DurationPrice {
  * fallback only — the live prices come from Firestore.
  */
 export const DEFAULT_DURATIONS: DurationPrice[] = [
+  // Standard — packaged 100-listing plans (the toggle's default tab).
+  // pricePerSeat is only the per-listing equivalent, kept so every row stays a
+  // valid ladder entry; the flat price is what is charged.
+  {
+    id: "standard-monthly",
+    tier: "standard",
+    months: 1,
+    pricePerSeat: 21,
+    flatPrice: 2100,
+    includedListings: 100,
+  },
+  {
+    id: "standard-yearly",
+    tier: "standard",
+    months: 12,
+    pricePerSeat: 110,
+    flatPrice: 11000,
+    includedListings: 100,
+    compareAtPrice: 14400,
+    badge: "Save 24%",
+  },
+  // Custom — price per listing; the seller picks the quantity.
   { months: 1, pricePerSeat: 21 },
   { months: 3, pricePerSeat: 54, badge: "Save 14%" },
   { months: 6, pricePerSeat: 90, badge: "Save 29%" },
@@ -138,10 +201,31 @@ export function parseDurations(raw: unknown): DurationPrice[] | null {
       roles = cleaned.length ? Array.from(new Set(cleaned)) : undefined;
     }
 
+    // Tier: absent = custom. An unknown value is a data error, not "custom" —
+    // saving a typo must fail loudly rather than move a plan between tabs.
+    const rawTier = (item as DurationPrice)?.tier as unknown;
+    let tier: PlanTier | undefined;
+    if (rawTier !== undefined && rawTier !== null && rawTier !== "") {
+      if (rawTier !== "standard" && rawTier !== "custom") return null;
+      tier = rawTier;
+    }
+    // A Standard plan IS a fixed price for a fixed number of listings; without
+    // both it would silently fall back to per-listing billing.
+    if (tier === "standard" && flat === undefined) return null;
+
+    const rawCompare = (item as DurationPrice)?.compareAtPrice as unknown;
+    let compareAtPrice: number | undefined;
+    if (rawCompare !== undefined && rawCompare !== null && rawCompare !== "") {
+      compareAtPrice = Number(rawCompare);
+      if (!Number.isInteger(compareAtPrice) || compareAtPrice <= 0) return null;
+    }
+
     out.push({
       ...(id ? { id } : {}),
+      ...(tier === "standard" ? { tier } : {}),
       months,
       pricePerSeat: price,
+      ...(compareAtPrice !== undefined ? { compareAtPrice } : {}),
       ...(roles ? { roles } : {}),
       ...(typeof badge === "string" && badge.trim() ? { badge: badge.trim() } : {}),
       ...(flat !== undefined ? { flatPrice: flat, includedListings: incl } : {}),
@@ -184,7 +268,10 @@ export function planFor(
   if (Number.isFinite(months)) {
     // Period match must never silently pick a bundle: a client that only knows
     // about per-listing pricing would show one price and be charged another.
-    const byMonths = durations.find((d) => d.months === months && !isFlatPlan(d));
+    // Nor a Standard plan, for the same reason.
+    const byMonths = durations.find(
+      (d) => d.months === months && !isFlatPlan(d) && tierOf(d) === "custom",
+    );
     if (byMonths) return byMonths;
   }
   return null;
@@ -195,7 +282,10 @@ export function priceFor(
   durations: DurationPrice[],
   months: number,
 ): number | null {
-  return durations.find((d) => d.months === months)?.pricePerSeat ?? null;
+  return (
+    durations.find((d) => d.months === months && tierOf(d) === "custom")
+      ?.pricePerSeat ?? null
+  );
 }
 
 /** Per-month equivalent, for display only ("₹12/month" on a yearly plan). */
@@ -237,6 +327,19 @@ export interface PromoCode {
   /** Percentage off the order subtotal, 1–100. */
   discountPercent: number;
   active: boolean;
+  /**
+   * Billing-period months this code applies to (e.g. [12] = yearly only).
+   * Absent or empty means the code is valid for every plan.
+   */
+  applicablePlans?: number[];
+  /** Minimum normalised seat count required. Absent = no minimum. */
+  minSeats?: number;
+  /** Maximum normalised seat count allowed. Absent = no maximum. */
+  maxSeats?: number;
+  /** ISO date YYYY-MM-DD; code is not valid before this date. Absent = immediate. */
+  startDate?: string;
+  /** ISO date YYYY-MM-DD; code expires after this date. Absent = never expires. */
+  endDate?: string;
 }
 
 /**
@@ -245,6 +348,9 @@ export interface PromoCode {
  * The field is `discountPercent` — matching what SubscriptionView already reads.
  * Anything outside 1–100 is rejected rather than clamped: a 0% or 150% code is a
  * data error, and silently "fixing" it would charge an amount nobody intended.
+ * New optional fields (applicablePlans, minSeats, maxSeats, startDate, endDate) are
+ * parsed when present; absent fields leave the code unrestricted on that dimension
+ * so existing documents without these fields continue to work unchanged.
  */
 export function parsePromo(raw: unknown): PromoCode | null {
   const d = raw as Record<string, unknown> | null | undefined;
@@ -255,7 +361,120 @@ export function parsePromo(raw: unknown): PromoCode | null {
   if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
     return null;
   }
-  return { code, discountPercent, active: d.active !== false };
+
+  let applicablePlans: number[] | undefined;
+  if (Array.isArray(d.applicablePlans) && d.applicablePlans.length > 0) {
+    const plans = (d.applicablePlans as unknown[])
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    if (plans.length > 0) applicablePlans = plans;
+  }
+
+  let minSeats: number | undefined;
+  if (d.minSeats != null) {
+    const n = Number(d.minSeats);
+    if (Number.isInteger(n) && n > 0) minSeats = n;
+  }
+
+  let maxSeats: number | undefined;
+  if (d.maxSeats != null) {
+    const n = Number(d.maxSeats);
+    if (Number.isInteger(n) && n > 0) maxSeats = n;
+  }
+
+  const isoDate = (v: unknown): string | undefined =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
+
+  return {
+    code,
+    discountPercent,
+    active: d.active !== false,
+    ...(applicablePlans ? { applicablePlans } : {}),
+    ...(minSeats !== undefined ? { minSeats } : {}),
+    ...(maxSeats !== undefined ? { maxSeats } : {}),
+    ...(isoDate(d.startDate) ? { startDate: isoDate(d.startDate) } : {}),
+    ...(isoDate(d.endDate) ? { endDate: isoDate(d.endDate) } : {}),
+  };
+}
+
+/** Human label for a billing period, used in promo eligibility messages. */
+export function planLabel(months: number): string {
+  return months === 12 ? "Yearly" : months === 1 ? "Monthly" : `${months} Month`;
+}
+
+/** The purchase a promo code is being checked against. */
+export interface PromoContext {
+  /** Billing period of the selected plan, in months. */
+  months: number;
+  /** Normalised seat count the seller is buying. */
+  seatCount: number;
+}
+
+/**
+ * Result of checking a promo against a purchase. A flat shape (rather than a
+ * discriminated union) on purpose: this project builds with `strict: false`, so
+ * boolean-discriminant narrowing does not work — `error` present means it does
+ * not apply, `error` absent means the discount is live.
+ */
+export interface PromoEvaluation {
+  /** Percentage off, or 0 when the code does not apply. */
+  discountPercent: number;
+  /** Uppercased code when it applies; absent otherwise. */
+  code?: string;
+  /** Seller-facing reason the code does not apply; absent when it does. */
+  error?: string;
+}
+
+/**
+ * THE single source of truth for whether a promo code applies to a purchase.
+ *
+ * Both the checkout UI (SubscriptionView) and the server (create-order) call
+ * this against the same promoCodes/ document, so the discount a seller is shown
+ * and the discount the server actually grants are computed by identical rules
+ * and messages — they cannot drift, and a rule added here takes effect in both
+ * places at once. The server remains the final authority: the client's result
+ * only improves UX; create-order re-runs this before charging.
+ *
+ * `raw` is a promoCodes/ document as stored (the caller has already resolved the
+ * code to a document; a missing code is the caller's own "not found" case).
+ * Returns the discount to apply when every condition passes, or a single
+ * seller-facing reason for the first condition that fails.
+ */
+export function evaluatePromo(raw: unknown, ctx: PromoContext): PromoEvaluation {
+  const promo = parsePromo(raw);
+  if (!promo) return { discountPercent: 0, error: "Invalid or expired promo code." };
+
+  if (!promo.active) {
+    return { discountPercent: 0, error: "This promo code has been deactivated." };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (promo.startDate && today < promo.startDate) {
+    return { discountPercent: 0, error: "This promo code is not yet active." };
+  }
+  if (promo.endDate && today > promo.endDate) {
+    return { discountPercent: 0, error: "This promo code has expired." };
+  }
+
+  if (promo.applicablePlans?.length && !promo.applicablePlans.includes(ctx.months)) {
+    const names = promo.applicablePlans.map(planLabel).join(", ");
+    return { discountPercent: 0, error: `This promo code is only valid for: ${names}.` };
+  }
+
+  if (promo.minSeats !== undefined && ctx.seatCount < promo.minSeats) {
+    return {
+      discountPercent: 0,
+      error: `This promo code requires a minimum of ${promo.minSeats} seats.`,
+    };
+  }
+  if (promo.maxSeats !== undefined && ctx.seatCount > promo.maxSeats) {
+    return {
+      discountPercent: 0,
+      error: `This promo code is only valid for up to ${promo.maxSeats} seats.`,
+    };
+  }
+
+  return { discountPercent: promo.discountPercent, code: promo.code };
 }
 
 /**
@@ -278,6 +497,11 @@ export function computeAmount(d: DurationPrice, seats: number): number {
  */
 export function billableSeats(d: DurationPrice, seats: number): number {
   const n = Math.max(1, Math.floor(Number(seats)) || 1);
+  // A Standard plan is one fixed pack: it always grants its full listing
+  // count, whatever quantity the client happened to send.
+  if (tierOf(d) === "standard" && typeof d.includedListings === "number") {
+    return d.includedListings;
+  }
   if (typeof d.flatPrice === "number" && typeof d.includedListings === "number") {
     return Math.min(n, d.includedListings);
   }
@@ -314,4 +538,25 @@ export function isFlatPlan(d: DurationPrice): boolean {
 export function applyDiscount(subtotal: number, discountPercent: number): number {
   const discounted = Math.ceil(subtotal * (1 - discountPercent / 100));
   return Math.max(0, discounted);
+}
+
+/**
+ * The plan name to SHOW for a subscription record.
+ *
+ * Before Standard plans existed, every self-serve checkout (web and app) saved
+ * `planName: "Standard"` even though each one was a per-listing purchase — i.e.
+ * what is now called Custom. Records written since carry `planTier`, so only a
+ * record WITHOUT planTier that says "Standard" is that legacy mislabel.
+ * Admin-assigned names ("Admin Assigned", named plans) pass through unchanged.
+ */
+export function subscriptionPlanLabel(sub: {
+  planName?: unknown;
+  planTier?: unknown;
+  isCustom?: unknown;
+}): string {
+  const name = typeof sub.planName === "string" ? sub.planName.trim() : "";
+  if (sub.planTier === "standard") return name || "Standard";
+  if (sub.planTier === "custom" || sub.isCustom === true) return name || "Custom";
+  if (!name || name === "Standard") return "Custom";
+  return name;
 }

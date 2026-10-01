@@ -28,6 +28,8 @@ const WA_WEBHOOK_VERIFY_TOKEN = defineSecret("WA_WEBHOOK_VERIFY_TOKEN");
 const WA_TEST_ACCESS_TOKEN    = defineSecret("WA_TEST_ACCESS_TOKEN");
 const WA_TEST_PHONE_NUMBER_ID = defineSecret("WA_TEST_PHONE_NUMBER_ID");
 // WA_TEST_RECIPIENTS is non-sensitive (just verified phone numbers), set in functions/.env.
+// Header image media IDs — uploaded once to WhatsApp Media API; expire after ~30d of non-use.
+const WA_REEL_PROMO_HEADER_ID  = defineSecret("WA_REEL_PROMO_HEADER_ID");
 
 
 /**
@@ -39,7 +41,7 @@ export const sendWaNotification = onDocumentCreated(
   {
     document: "waNotifications/{id}",
     region: REGION,
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID],
   },
   async (event) => {
     await processSingleNotification(event.params.id);
@@ -56,11 +58,21 @@ export const retryWaNotifications = onSchedule(
     region: REGION,
     timeoutSeconds: 120,
     memory: "256MiB",
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID],
   },
   async () => {
-    await resetStuckAndFailed(25);
-    await processPendingNotifications(25);
+    try {
+      await resetStuckAndFailed(25);
+      await processPendingNotifications(25);
+    } catch (err) {
+      console.error(
+        "[retryWaNotifications] Scheduled run failed:",
+        err instanceof Error ? (err.stack ?? err.message) : String(err)
+      );
+      // Re-throw so the invocation is marked as failed in Cloud Functions
+      // metrics/alerts rather than silently reporting success.
+      throw err;
+    }
   }
 );
 

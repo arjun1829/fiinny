@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Save, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Save, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { getTenantCollection } from '../utils/tenantPath';
 import { LOCATION_DATA, STATES } from '../utils/locationData';
+import { checkContactNumber } from '../utils/phoneValidator';
 
 const INITIAL_FORM = {
     name: '',
@@ -28,9 +30,11 @@ export default function OnboardingPage() {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const [numberError, setNumberError] = useState<string | null>(null);
     const { t } = useTranslation();
 
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
     const pendingHref = useRef<string | null>(null);
 
@@ -80,6 +84,7 @@ export default function OnboardingPage() {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+        if (name === 'number' && numberError) setNumberError(null);
     };
 
     const { tenantId } = useAuth();
@@ -87,6 +92,14 @@ export default function OnboardingPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!tenantId) return;
+
+        const numberCheck = checkContactNumber(formData.number);
+        if (!numberCheck.valid) {
+            setNumberError(numberCheck.error || 'Enter a valid contact number');
+            return;
+        }
+        setNumberError(null);
+
         setIsSubmitting(true);
         setSubmitStatus('idle');
 
@@ -100,7 +113,12 @@ export default function OnboardingPage() {
                 outstandingAmount: 0
             });
             setSubmitStatus('success');
+            // Reset the form BEFORE navigating so the unsaved-changes guard stays quiet.
             setFormData({ ...INITIAL_FORM });
+            // Surface the confirmation via the shared top-right toast, then land the
+            // user back on the Worklist where the new partner now appears.
+            showToast(t('onboarding.register_success'), 'success');
+            navigate('/worklist');
         } catch (err) {
             console.error("Error adding document: ", err);
             setSubmitStatus('error');
@@ -146,7 +164,13 @@ export default function OnboardingPage() {
                                 placeholder="+91..."
                                 value={formData.number}
                                 onChange={handleChange}
+                                aria-invalid={!!numberError}
                             />
+                            {numberError && (
+                                <span style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                                    {numberError}
+                                </span>
+                            )}
                         </div>
 
                         <div className="input-group animate-slide-in delay-200" style={{ animationFillMode: 'forwards' }}>
@@ -253,12 +277,6 @@ export default function OnboardingPage() {
                             <option value="Big">{t('onboarding.big_distributor')}</option>
                         </select>
                     </div>
-
-                    {submitStatus === 'success' && (
-                        <div style={{ padding: '1rem', background: 'hsla(142, 60%, 40%, 0.1)', color: 'var(--success)', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <CheckCircle2 size={18} /> {t('onboarding.register_success')}
-                        </div>
-                    )}
 
                     {submitStatus === 'error' && (
                         <div style={{ padding: '1rem', background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

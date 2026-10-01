@@ -22,8 +22,19 @@ interface PosCustomer {
     channel?: string;
 }
 
+// Digits-only phone, matching the normaliser used across POS/Khata/Worklist.
+const phoneKey = (v: unknown): string => String(v ?? '').replace(/\D/g, '');
+
+type SOEntry = {
+    retailerId?: string; phoneNumber?: string; customerPhone?: string;
+    customerName?: string; retailerName?: string; invoiceType?: string;
+    deleted?: boolean; status?: string; paymentStatus?: string;
+    grandTotal?: number; netAmount?: number; totalAmount?: number; amount?: number;
+    amountPaid?: number; paidAmount?: number; createdAt?: any;
+};
+
 function customerType(channel?: string): { label: string; color: string; bg: string } {
-    if (channel === 'pos') return { label: 'Walk-in', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' };
+    if (channel === 'pos') return { label: 'B2C', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' };
     return { label: 'B2B Retailer', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' };
 }
 
@@ -52,6 +63,8 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
     const navigate = useNavigate();
 
     const [customers, setCustomers] = useState<PosCustomer[]>([]);
+    const [salesOrders, setSalesOrders] = useState<SOEntry[]>([]);
+    const [paymentsByRetailer, setPaymentsByRetailer] = useState<Map<string, number>>(new Map());
     const [loading, setLoading]     = useState(true);
     const [search, setSearch]       = useState('');
     const [districtFilter, setDistrictFilter] = useState('');
@@ -59,15 +72,37 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
     const [sortKey, setSortKey]     = useState<SortKey>('lastOrder');
     const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('desc');
 
+    // Live financials, not the `retailers.totalSales/outstandingAmount` cache —
+    // that field is a best-effort counter Digital Khata's manual-entry and
+    // payment flows never write to, so it drifts from the real balance for any
+    // customer billed/paid through Khata. Mirrors the same live sources Digital
+    // Khata (B2C) and Partner Worklist (B2B) already use, so this table agrees
+    // with both of those screens instead of introducing a third figure.
     useEffect(() => {
         if (!tenantId) return;
         (async () => {
             try {
-                const snap = await getDocs(query(
-                    getTenantCollection(db, tenantId, 'retailers'),
-                    orderBy('createdAt', 'desc'),
-                ));
-                setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as PosCustomer)));
+                const [retailersSnap, salesOrdersSnap] = await Promise.all([
+                    getDocs(query(getTenantCollection(db, tenantId, 'retailers'), orderBy('createdAt', 'desc'))),
+                    getDocs(getTenantCollection(db, tenantId, 'salesOrders')),
+                ]);
+                const custs = retailersSnap.docs.map(d => ({ id: d.id, ...d.data() } as PosCustomer));
+                setCustomers(custs);
+                setSalesOrders(salesOrdersSnap.docs.map(d => d.data() as SOEntry));
+
+                // Payments live only in the B2B retailers' subcollection — fetch
+                // per retailer, same as Partner Worklist.
+                const b2bIds = custs.filter(c => c.channel !== 'pos').map(c => c.id);
+                const pmtSnaps = await Promise.all(
+                    b2bIds.map(rId => getDocs(getTenantCollection(db, tenantId, 'retailers', rId, 'payments')))
+                );
+                const pmtMap = new Map<string, number>();
+                pmtSnaps.forEach((snap, idx) => {
+                    const rId = b2bIds[idx];
+                    const sum = snap.docs.reduce((s, p) => s + Number(p.data().amount ?? 0), 0);
+                    pmtMap.set(rId, sum);
+                });
+                setPaymentsByRetailer(pmtMap);
             } catch (e) {
                 console.error('CustomersPage fetch error:', e);
             } finally {
@@ -75,6 +110,47 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
             }
         })();
     }, [tenantId]);
+
+    // Per-customer live Total Sales / Outstanding.
+    // B2B: same formula as WorklistDetailsPage/WorklistPage — sum(salesOrders by
+    // retailerId, excluding deleted) minus sum(payments subcollection).
+    // B2C: same formula as Digital Khata — bills matched by normalized name
+    // (fallback phone), excluding B2B/cancelled/deleted, each bill's own
+    // outstanding = total − its own amountPaid/paidAmount.
+    const liveFinancials = useMemo(() => {
+        const map = new Map<string, { totalSales: number; outstanding: number }>();
+        for (const c of customers) {
+            const isB2B = c.channel !== 'pos';
+            if (isB2B) {
+                const bills = salesOrders.filter(o => o.retailerId === c.id && !o.deleted);
+                const totalSales = bills.reduce((s, o) => s + Number(o.grandTotal ?? o.netAmount ?? o.totalAmount ?? 0), 0);
+                const totalPaid = paymentsByRetailer.get(c.id) ?? 0;
+                map.set(c.id, { totalSales, outstanding: Math.max(0, totalSales - totalPaid) });
+            } else {
+                const nameKey = (c.name || '').trim().toLowerCase();
+                const phoneDigits = phoneKey(c.number);
+                const bills = salesOrders.filter(o => {
+                    if (o.invoiceType === 'B2B_GST' || o.deleted) return false;
+                    if (String(o.status || '').toLowerCase() === 'cancelled') return false;
+                    const oName = String(o.customerName || o.retailerName || '').trim().toLowerCase();
+                    const oPhone = phoneKey(o.customerPhone || o.phoneNumber);
+                    return nameKey ? oName === nameKey : (phoneDigits ? oPhone.slice(-10) === phoneDigits.slice(-10) : false);
+                });
+                let totalSales = 0, outstanding = 0;
+                for (const o of bills) {
+                    const total = Number(o.grandTotal ?? o.netAmount ?? o.totalAmount ?? o.amount ?? 0);
+                    const rawPaid = o.amountPaid ?? o.paidAmount;
+                    const paid = rawPaid !== undefined && rawPaid !== null
+                        ? Number(rawPaid) || 0
+                        : (String(o.paymentStatus || '').toLowerCase() === 'paid' ? total : 0);
+                    totalSales += total;
+                    outstanding += Math.max(0, total - paid);
+                }
+                map.set(c.id, { totalSales, outstanding });
+            }
+        }
+        return map;
+    }, [customers, salesOrders, paymentsByRetailer]);
 
     const districts = useMemo(() => {
         const s = new Set(customers.map(c => c.district).filter(Boolean) as string[]);
@@ -118,8 +194,8 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
             switch (sortKey) {
                 case 'name':        return asc * (a.name || '').localeCompare(b.name || '');
                 case 'district':    return asc * (a.district || '').localeCompare(b.district || '');
-                case 'totalSales':  return asc * ((a.totalSales ?? 0) - (b.totalSales ?? 0));
-                case 'outstanding': return asc * ((a.outstandingAmount ?? 0) - (b.outstandingAmount ?? 0));
+                case 'totalSales':  return asc * ((liveFinancials.get(a.id)?.totalSales ?? 0) - (liveFinancials.get(b.id)?.totalSales ?? 0));
+                case 'outstanding': return asc * ((liveFinancials.get(a.id)?.outstanding ?? 0) - (liveFinancials.get(b.id)?.outstanding ?? 0));
                 case 'lastOrder':
                 default: {
                     const tA = a.lastOrderedAt?.seconds ?? a.createdAt?.seconds ?? 0;
@@ -129,14 +205,14 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
             }
         });
         return res;
-    }, [customers, search, districtFilter, sortKey, sortDir]);
+    }, [customers, search, districtFilter, typeFilter, sortKey, sortDir, liveFinancials]);
 
     const totals = useMemo(() => ({
-        sales:        customers.reduce((s, c) => s + (c.totalSales ?? 0), 0),
-        outstanding:  customers.reduce((s, c) => s + (c.outstandingAmount ?? 0), 0),
+        sales:        customers.reduce((s, c) => s + (liveFinancials.get(c.id)?.totalSales ?? 0), 0),
+        outstanding:  customers.reduce((s, c) => s + (liveFinancials.get(c.id)?.outstanding ?? 0), 0),
         walkin:       customers.filter(c => c.channel === 'pos').length,
         b2b:          customers.filter(c => c.channel !== 'pos').length,
-    }), [customers]);
+    }), [customers, liveFinancials]);
 
     if (userRole !== 'admin' && userRole !== 'analyst') {
         return <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--danger)' }}>Access restricted.</div>;
@@ -184,14 +260,15 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
                         style={{ paddingLeft: '2rem', margin: 0, height: '36px', fontSize: '0.85rem' }}
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-                {/* Type filter pills */}
-                <div style={{ display: 'flex', gap: '0.3rem' }}>
-                    {([['all', 'All'], ['pos', 'Walk-in'], ['b2b', 'B2B']] as const).map(([v, l]) => (
-                        <button key={v} onClick={() => setTypeFilter(v)}
-                            style={{ padding: '0.3rem 0.75rem', borderRadius: '20px', border: `1px solid ${typeFilter === v ? 'var(--primary-light)' : 'var(--surface-border)'}`, background: typeFilter === v ? 'var(--primary-light)' : 'transparent', color: typeFilter === v ? '#fff' : 'var(--text-secondary)', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                            {l}
-                        </button>
-                    ))}
+                {/* Type filter dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--surface-base)', padding: '0 0.65rem', borderRadius: '8px', border: `1px solid ${typeFilter !== 'all' ? 'var(--primary-light)' : 'var(--surface-border)'}`, height: '36px' }}>
+                    <Users size={13} color={typeFilter !== 'all' ? 'var(--primary-light)' : 'var(--text-tertiary)'} />
+                    <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'all' | 'pos' | 'b2b')}
+                        style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: '0.83rem', color: typeFilter !== 'all' ? 'var(--primary-light)' : 'var(--text-secondary)', fontWeight: typeFilter !== 'all' ? 700 : 400, cursor: 'pointer' }}>
+                        <option value="all">All</option>
+                        <option value="b2b">B2B</option>
+                        <option value="pos">B2C</option>
+                    </select>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--surface-base)', padding: '0 0.65rem', borderRadius: '8px', border: `1px solid ${districtFilter ? 'var(--primary-light)' : 'var(--surface-border)'}`, height: '36px' }}>
                     <MapPin size={13} color={districtFilter ? 'var(--primary-light)' : 'var(--text-tertiary)'} />
@@ -250,6 +327,7 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
                             <tbody>
                                 {filtered.map(c => {
                                     const ct = customerType(c.channel);
+                                    const fin = liveFinancials.get(c.id);
                                     return (
                                     <tr key={c.id}
                                         onClick={() => navigate(`/customers/${c.id}`)}
@@ -269,11 +347,11 @@ export default function CustomersPage({ fullWidth = false }: { fullWidth?: boole
                                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{c.atPost || '—'}</td>
                                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{c.taluka || '—'}</td>
                                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{c.district || '—'}</td>
-                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 700, color: (c.outstandingAmount ?? 0) > 0 ? '#ef4444' : 'var(--text-tertiary)' }}>
-                                            {(c.outstandingAmount ?? 0) > 0 ? fmtINR(c.outstandingAmount!) : '—'}
+                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 700, color: (fin?.outstanding ?? 0) > 0 ? '#ef4444' : 'var(--text-tertiary)' }}>
+                                            {(fin?.outstanding ?? 0) > 0 ? fmtINR(fin!.outstanding) : '—'}
                                         </td>
                                         <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{fmtDate(c.lastOrderedAt)}</td>
-                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>{fmtINR(c.totalSales ?? 0)}</td>
+                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>{fmtINR(fin?.totalSales ?? 0)}</td>
                                     </tr>
                                     );
                                 })}

@@ -14,6 +14,22 @@ void main() {
       expect(routeForNotification('order_update', {}), '/orders');
     });
 
+    test('order offer opens the Requests tab', () {
+      // Sent by functions/src/notifications/reassignment.ts when another
+      // seller rejects an order this seller could fulfil.
+      expect(routeForNotification('order_offer', {'orderId': 'o1'}),
+          '/dashboard/orders?tab=requests');
+    });
+
+    test('abandoned-checkout enquiry opens the seller enquiry list', () {
+      // Must stay in step with web's /dashboard/enquiry — the WhatsApp
+      // template for the same event links there, so the two platforms have to
+      // agree on the path.
+      expect(routeForNotification('enquiry', {'enquiryId': 'e1'}),
+          '/dashboard/enquiry?id=e1');
+      expect(routeForNotification('enquiry', {}), '/dashboard/enquiry');
+    });
+
     test('inventory and low stock open the product for editing', () {
       expect(
         routeForNotification('inventory_added', {'productId': 'p1'}),

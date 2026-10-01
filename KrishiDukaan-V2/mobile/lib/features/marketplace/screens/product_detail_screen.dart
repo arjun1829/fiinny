@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +18,7 @@ import '../../../core/models/listing_model.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/models/review_model.dart';
 import '../../../core/models/store_model.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/cart_provider.dart';
 import '../../../core/models/cart_model.dart';
 import '../../../core/utils/currency_utils.dart';
@@ -56,9 +59,15 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   int _activeImageIdx = 0;
 
   // Sellers are nearest-first; only the closest few are shown until the
-  // shopper taps "Show all". Keeps long seller lists from dominating the page.
-  static const _kStorePreviewLimit = 5;
-  bool _showAllStores = false;
+  // shopper taps "See more" — each tap reveals another batch rather than
+  // building every remaining tile at once. Each _SellerTile fires its own
+  // bulk-discount queries in initState, so a product with 300 sellers used
+  // to fire ~300 x 2-3 Firestore queries the instant "Show all" was tapped;
+  // paging by _kStorePageSize keeps that bounded no matter how many sellers
+  // a product has.
+  static const _kStorePreviewLimit = 10;
+  static const _kStorePageSize = 10;
+  int _visibleStoreCount = _kStorePreviewLimit;
 
   @override
   void initState() {
@@ -423,6 +432,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     required bool buyNow,
   }) async {
     if (options.isEmpty) return;
+    if (!ensureSignedInForCart(context, ref)) return;
 
     // Auto-select the best store instead of interrupting with a picker.
     // buildStoreOptions has already dropped any store that cannot supply the
@@ -505,6 +515,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     return catalog.unit;
   }
 
+  /// "18" for 18.0, "12.5" for 12.5 — no pointless ".0".
+  static String _fmtRate(double r) =>
+      r == r.roundToDouble() ? r.toInt().toString() : r.toString();
+
   /// GST for a cart line: the seller copy's own fields when present, otherwise
   /// the canonical product's — mirrors web, where GST lives on the product data.
   static ({bool applicable, double rate}) _gstFor(
@@ -521,10 +535,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   void _addOptionToCart(CatalogModel catalog, StoreOption opt) {
     final listing = opt.listing;
     final gst = _gstFor(listing, catalog);
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: catalog.id,
             catalogName: catalog.name,
             catalogImage: catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
@@ -538,8 +549,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             variantLabel: _selectedVariantLabel(catalog),
             gstApplicable: gst.applicable,
             gstRate: gst.rate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    // Then this STORE's own GST + delivery settings replace the product-level
+    // guess (fire-and-forget: the cart re-prices itself when they arrive).
+    unawaited(notifier.resolveCommercial(item));
   }
 
   void _showFullImage(BuildContext context, String imageUrl) {
@@ -768,15 +783,21 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ],
             ],
           ),
-          // GST is charged on top at checkout (same as web's cart), so the
-          // label must not claim the price is inclusive.
+          // GST note — product-level settings; the store you buy from can
+          // override them at the cart. Same wording as the website:
+          //  included → the price already contains it; excluded → added at checkout.
           if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '+ ${catalog.gstRate!.toStringAsFixed(0)}% GST added at checkout',
+                catalog.gstIncluded
+                    ? 'Incl. ${_fmtRate(catalog.gstRate!)}% GST'
+                    : '+ ${_fmtRate(catalog.gstRate!)}% GST at checkout',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.onSurfaceVariant,
+                  color: catalog.gstIncluded
+                      ? AppColors.onSurfaceVariant
+                      : const Color(0xFFB45309),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -1230,10 +1251,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               }
               final sellerDiscounts = catalog.sellerDiscounts;
               final total = listings.length;
-              final hasMore = total > _kStorePreviewLimit;
-              final visible = (hasMore && !_showAllStores)
-                  ? listings.take(_kStorePreviewLimit).toList()
-                  : listings;
+              final shownCount =
+                  _visibleStoreCount < total ? _visibleStoreCount : total;
+              final hasMore = shownCount < total;
+              final visible = listings.take(shownCount).toList();
               return Column(
                 children: [
                   ...visible.map(
@@ -1255,7 +1276,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           0.0,
                     ),
                   ),
-                  if (hasMore) _buildStoresToggle(total),
+                  if (hasMore) _buildStoresToggle(total, shownCount),
                 ],
               );
             },
@@ -1265,25 +1286,22 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     );
   }
 
-  /// "Show all N stores" / "Show less" toggle shown when more sellers exist
-  /// than the preview limit.
-  Widget _buildStoresToggle(int total) {
-    final hidden = total - _kStorePreviewLimit;
+  /// "See more" toggle shown when more sellers exist than are currently
+  /// rendered — reveals the next batch of _kStorePageSize sellers per tap
+  /// rather than every remaining one at once (see _visibleStoreCount comment).
+  Widget _buildStoresToggle(int total, int shownCount) {
+    final hidden = total - shownCount;
+    final nextBatch = hidden < _kStorePageSize ? hidden : _kStorePageSize;
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
-          onPressed: () => setState(() => _showAllStores = !_showAllStores),
-          icon: Icon(
-            _showAllStores ? Icons.expand_less : Icons.expand_more,
-            size: 18,
+          onPressed: () => setState(
+            () => _visibleStoreCount += _kStorePageSize,
           ),
-          label: Text(
-            _showAllStores
-                ? 'Show less'
-                : 'Show all $total stores (+$hidden more)',
-          ),
+          icon: const Icon(Icons.expand_more, size: 18),
+          label: Text('See more ($nextBatch of $hidden remaining)'),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.primary,
             side: const BorderSide(color: AppColors.primary),
@@ -2268,6 +2286,80 @@ class _SellerTile extends ConsumerStatefulWidget {
 class _SellerTileState extends ConsumerState<_SellerTile> {
   bool _expanded = false;
 
+  /// This store's own bulk/quantity discount ladder, fetched from their
+  /// `inventory` doc — mirrors web's ProductDetailView, which queries the
+  /// same collection by ownerPhone + productId (or originalProductId) rather
+  /// than trusting availability[], since bulk tiers are never mirrored there.
+  List<BulkDiscountTierModel> _bulkTiers = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBulkTiers();
+  }
+
+  Future<void> _loadBulkTiers() async {
+    final phone = widget.listing.sellerPhone;
+    final productId = widget.catalogId;
+    if (phone.isEmpty || productId.isEmpty) return;
+    try {
+      final db = FirebaseFirestore.instance;
+
+      // Read the seller's own `products` copy, NOT their `inventory` doc.
+      // firestore.rules restricts inventory reads to the owner, so a shopper
+      // querying it is always permission-denied — web's ProductDetailView
+      // reads inventory here and its bulk table therefore never appeared for
+      // a customer either. `products` is `allow read: if true`, and
+      // setDiscount writes the bulk fields to both, so the data is the same.
+      final snaps = await Future.wait([
+        db
+            .collection('products')
+            .where('originalProductId', isEqualTo: productId)
+            .where('ownerPhone', isEqualTo: phone)
+            .limit(1)
+            .get(),
+        db
+            .collection('products')
+            .where('originalProductId', isEqualTo: productId)
+            .where('retailerPhone', isEqualTo: phone)
+            .limit(1)
+            .get(),
+      ]);
+
+      final docs = [
+        for (final s in snaps) ...s.docs.map((d) => d.data()),
+      ];
+
+      // A retailer selling their OWN product has no separate copy — the
+      // canonical doc is theirs, so fall back to it when it belongs to them.
+      if (docs.isEmpty) {
+        final canonical = await db.collection('products').doc(productId).get();
+        final d = canonical.data();
+        if (d != null &&
+            (d['ownerPhone'] == phone || d['retailerPhone'] == phone)) {
+          docs.add(d);
+        }
+      }
+
+      for (final data in docs) {
+        if (data['bulkDiscountEnabled'] == true) {
+          final tiers = (data['bulkDiscountTiers'] as List? ?? [])
+              .whereType<Map>()
+              .map((t) =>
+                  BulkDiscountTierModel.fromMap(Map<String, dynamic>.from(t)))
+              .toList()
+            ..sort((a, b) => a.minQty - b.minQty);
+          if (tiers.isNotEmpty && mounted) {
+            setState(() => _bulkTiers = tiers);
+            return;
+          }
+        }
+      }
+    } catch (_) {
+      // Non-critical - the tile still works without a bulk-savings table.
+    }
+  }
+
   /// This store's list price for the SELECTED size. Falls back to the
   /// listing's own price only for single-size products, where the parent
   /// passes no variantPrice.
@@ -2643,6 +2735,58 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
                       ),
                     ],
 
+                    if (_bulkTiers.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Buy more, save more',
+                              style: AppTextStyles.caption.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ..._bulkTiers.map((t) {
+                              final tierPrice = (_basePrice *
+                                      (1 - t.discountPct / 100))
+                                  .clamp(0.0, _basePrice);
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  children: [
+                                    Text('${t.minQty}+ units',
+                                        style: AppTextStyles.bodySmall),
+                                    const Spacer(),
+                                    Text(
+                                      CurrencyUtils.format(tierPrice),
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF15803D),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text('${t.discountPct.toInt()}% OFF',
+                                        style: AppTextStyles.caption
+                                            .copyWith(color: const Color(0xFF16A34A))),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     // Map + Call live in the always-visible quick-action
                     // strip at the bottom of the card — no duplicate here.
 
@@ -2828,11 +2972,9 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
   }
 
   void _addToCart(BuildContext context) {
+    if (!ensureSignedInForCart(context, ref)) return;
     final listing = widget.listing;
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: widget.catalogId,
             catalogName: widget.catalogName,
             catalogImage: widget.catalogImage.isNotEmpty
@@ -2848,8 +2990,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             variantLabel: widget.variantLabel,
             gstApplicable: widget.gstApplicable,
             gstRate: widget.gstRate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    unawaited(notifier.resolveCommercial(item));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Added ${widget.catalogName} to cart'),
@@ -2865,12 +3009,10 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
 
   /// Buy Now from this specific store: add to cart, then go straight to
   /// checkout (login is enforced by the /checkout route guard).
-  void _buyNow(BuildContext context) {
+  Future<void> _buyNow(BuildContext context) async {
+    if (!ensureSignedInForCart(context, ref)) return;
     final listing = widget.listing;
-    ref
-        .read(cartProvider.notifier)
-        .addItem(
-          CartItemModel(
+    final item = CartItemModel(
             catalogId: widget.catalogId,
             catalogName: widget.catalogName,
             catalogImage: widget.catalogImage.isNotEmpty
@@ -2886,10 +3028,48 @@ class _SellerTileState extends ConsumerState<_SellerTile> {
             variantLabel: widget.variantLabel,
             gstApplicable: widget.gstApplicable,
             gstRate: widget.gstRate,
-          ),
-        );
+          );
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.addItem(item);
+    // Buy Now goes straight to the payment screen, so wait (briefly) for this
+    // store's own GST + delivery settings rather than showing the product-level
+    // guess on the very screen the customer pays from.
+    await notifier.resolveCommercial(item);
+    if (!context.mounted) return;
     context.push('/checkout');
   }
+}
+
+/// Guests can browse the whole catalogue, but ordering needs an account.
+/// Returns true if the user is signed in; otherwise shows a prompt and
+/// returns false. Shared by the sticky Add to Cart / Buy Now bar and the
+/// per-store tiles so every cart entry point is gated in one place.
+bool ensureSignedInForCart(BuildContext context, WidgetRef ref) {
+  if (ref.read(authStateProvider).value != null) return true;
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Sign in to continue'),
+      content: const Text(
+        'Create an account or sign in to add items to your cart and place '
+        'orders. You can keep browsing without one.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            context.push('/login');
+          },
+          child: const Text('Sign in'),
+        ),
+      ],
+    ),
+  );
+  return false;
 }
 
 Widget detailRow(IconData icon, String text) => Padding(

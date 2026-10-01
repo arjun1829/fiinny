@@ -1,10 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
+import type { WeightSlab } from "../../utils/delivery";
 
-export type WeightSlab = {
-  minKg: number;
-  maxKg: number;
-  charge: number;
-};
+export type { WeightSlab };
 
 export type CoverageType = "pan_india" | "states";
 
@@ -13,7 +10,20 @@ export interface DeliverySettings {
   onlineDeliveryEnabled: boolean;
   coverageType: CoverageType;
   states: string[];
+  /**
+   * Slab set used for `states` coverage, and the legacy/fallback set for
+   * pan-India sellers who have not configured separate in/out-of-state slabs.
+   */
   weightSlabs: WeightSlab[];
+  /** Pan-India only: slabs for deliveries within the seller's own state. */
+  inStateSlabs: WeightSlab[];
+  /** Pan-India only: slabs for deliveries outside the seller's state. */
+  outStateSlabs: WeightSlab[];
+  /**
+   * Seller's own state, denormalized from their profile at save time so the
+   * within/outside decision needs no second Firestore read at checkout.
+   */
+  sellerState: string;
   updatedAt?: Timestamp | null;
 }
 

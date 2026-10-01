@@ -6,6 +6,7 @@ import {
   buildReelSlug,
   linkedProductPath,
   reelCssFilter,
+  servableLinkedProductIds,
 } from "../lib/seo/reels-server";
 import ReelsFeedClient from "./ReelsFeedClient";
 import { rankReels } from "./lib/ranking/rank";
@@ -38,11 +39,17 @@ export default async function ReelsPage() {
   // burying them under whoever posted most recently.
   const reels = rankReels(await getAllReels(60));
 
+  // A reel's linkedProductId can point at a product that has no page (deleted,
+  // deactivated, or a per-seller copy). Resolve once for the whole feed so the
+  // "Shop this product" links below are only rendered where they resolve.
+  const servableProductIds = await servableLinkedProductIds(reels);
+
   const feedReels: FeedReel[] = reels.map((r) => ({
     id: r.id,
     slug: buildReelSlug(r.title, r.id),
     videoUrl: r.videoUrl,
     thumbnailUrl: r.thumbnailUrl,
+    linkedProductImageUrl: r.linkedProductImageUrl,
     title: r.title,
     caption: r.caption,
     shopName: r.shopName,
@@ -50,9 +57,13 @@ export default async function ReelsPage() {
     likesCount: r.likesCount,
     commentsCount: r.commentsCount,
     // Canonical /products/[slug] — see the note in app/reels/[slug]/page.tsx.
-    // The feed renders server-side, so these are 60 real crawlable links into
-    // the product catalogue; the SPA deep link they replaced was invisible.
-    productPath: linkedProductPath(r),
+    // The feed renders server-side, so these are real crawlable links into the
+    // product catalogue; the SPA deep link they replaced was invisible. Gated
+    // on servableProductIds so a stale link becomes no link, never a 404.
+    productPath:
+      r.linkedProductId && servableProductIds.has(r.linkedProductId)
+        ? linkedProductPath(r)
+        : null,
     linkedProductName: r.linkedProductName,
     cssFilter: reelCssFilter(r.filterId),
     overlayText: r.overlayText,

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { getDocs, getDoc, doc, query, where, collection } from 'firebase/firestore';
-import { collectionGroup } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
@@ -254,10 +253,10 @@ export default function TeamPerformancePage() {
 
     (async () => {
       try {
-        // 1. Fetch all sales users for this tenant
-        const usersQ = tenantId === 'master'
-          ? collection(db, 'users')
-          : query(collection(db, 'users'), where('tenantId', '==', tenantId), where('role', '==', 'sales'));
+        // 1. Fetch all users for this tenant, then filter for sales client-side.
+        // Always use where('tenantId') so Firestore can verify the query is safe
+        // under the tenant-scoped users rule (unconstrained collection scans are denied).
+        const usersQ = query(collection(db, 'users'), where('tenantId', '==', tenantId));
         const usersSnap = await getDocs(usersQ);
         const salesUsers = usersSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as any))
@@ -310,23 +309,22 @@ export default function TeamPerformancePage() {
           }
         });
 
-        // 6. Fetch all payments via collectionGroup and bucket by retailerId
-        const isMaster = tenantId === 'master';
-        const pmtSnap = await getDocs(collectionGroup(db, 'payments'));
+        // 6. Fetch payments per-retailer (tenant-scoped, no collectionGroup).
+        const allRetailerIds: string[] = allRetailers.map((r: any) => r.id);
+        const pmtSnaps = await Promise.all(
+          allRetailerIds.map((rId: string) =>
+            getDocs(getTenantCollection(db, tenantId, 'retailers', rId, 'payments'))
+          )
+        );
         const retailerCollected: Record<string, number> = {};
-        pmtSnap.docs.forEach(pdoc => {
-          const parts = pdoc.ref.path.split('/');
-          let rId: string | undefined;
-          if (isMaster) {
-            if (parts.length === 4 && parts[0] === 'retailers' && parts[2] === 'payments') rId = parts[1];
-          } else {
-            if (parts.length === 6 && parts[0] === 'tenants' && parts[1] === tenantId && parts[2] === 'retailers' && parts[4] === 'payments') rId = parts[3];
-          }
-          if (!rId) return;
-          const pmtDate: string = pdoc.data().paymentDate || '';
-          if (pmtDate.startsWith(selectedMonth)) {
-            retailerCollected[rId] = (retailerCollected[rId] || 0) + Number(pdoc.data().amount ?? 0);
-          }
+        pmtSnaps.forEach((snap, idx) => {
+          const rId = allRetailerIds[idx];
+          snap.docs.forEach(pdoc => {
+            const pmtDate: string = pdoc.data().paymentDate || '';
+            if (pmtDate.startsWith(selectedMonth)) {
+              retailerCollected[rId] = (retailerCollected[rId] || 0) + Number(pdoc.data().amount ?? 0);
+            }
+          });
         });
 
         // 7. Build exec stats

@@ -1,0 +1,29 @@
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  # Full-bleed square source, corners squared off and drop shadow removed.
+  # Android and iOS each apply their own mask, so a pre-rounded source would be
+  # rounded twice and show shadow fringing along the cut. Generated from the
+  # supplied artwork by tool/prepare_icons.py — edit that, not these outputs.
+  image_path: "assets/icons/app_icon.png"
+  min_sdk_android: 23
+
+  # Adaptive icon (Android 8+): the launcher can crop to any shape and only the
+  # centre ~66% is guaranteed visible, so the foreground is the artwork inset on
+  # a transparent canvas rather than the full-bleed square above.
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  # The foreground is generated full-bleed, so this is the ONLY inset applied.
+  #
+  # 22% (artwork at 56%) is set by measurement, not by taste: a launcher may mask
+  # the 108dp layer to a circle, and this artwork is a SQUARE composition whose
+  # content runs to its edges (the "SALES" band spans the full width). A square
+  # only fits inside a circle at ~71% of the circle's diameter, so anything
+  # shallower clips the band and cuts the "Krishidukan" wordmark mid-letter,
+  # which reads as a broken icon. Deeper than this and the artwork starts
+  # floating small in its own circle. Re-check visually if the artwork changes.
+  adaptive_icon_foreground_inset: 22
+
+  web:
+    generate: false

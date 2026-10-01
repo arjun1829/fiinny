@@ -322,28 +322,32 @@ export default async function ProductPage({ params }: PageProps) {
         {/* Product Videos / Reels */}
         {reels.length > 0 ? (
           <section className="mt-10">
-            {/* VideoObject JSON-LD so each reel's title/description is
-                indexable from this product page too. */}
+            {/* ItemList of links to the reels' watch pages — deliberately NOT
+                VideoObject entries, which is what this used to emit.
+
+                A VideoObject is attributed to the page carrying it. Each of
+                these videos has its own watch page at /reels/[slug], which
+                already declares it with a thumbnailUrl; declaring them again
+                here told Google about videos that are not on a watch page and
+                Search Console rejected them with exactly that reason. Some
+                also shipped without thumbnailUrl (it is required), which fails
+                a second way. This is the same fix already applied to the feed
+                at app/reels/page.tsx — an ItemList says the true thing: these
+                are links to pages, and each of those pages carries one video. */}
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{
-                __html: JSON.stringify(
-                  reels.map((reel) => ({
-                    "@context": "https://schema.org",
-                    "@type": "VideoObject",
-                    name: reel.title || `${product.name} video by ${reel.shopName}`,
-                    description:
-                      reel.caption || reel.title || `${product.name} product video`,
-                    contentUrl: reel.videoUrl,
-                    ...(reel.thumbnailUrl ? { thumbnailUrl: reel.thumbnailUrl } : {}),
+                __html: JSON.stringify({
+                  "@context": "https://schema.org",
+                  "@type": "ItemList",
+                  name: `${product.name} — product videos`,
+                  itemListElement: reels.map((reel, i) => ({
+                    "@type": "ListItem",
+                    position: i + 1,
                     url: `${SITE_URL}/reels/${buildReelSlug(reel.title, reel.id)}`,
-                    interactionStatistic: {
-                      "@type": "InteractionCounter",
-                      interactionType: { "@type": "WatchAction" },
-                      userInteractionCount: reel.viewsCount,
-                    },
+                    name: reel.title || `${product.name} video by ${reel.shopName}`,
                   })),
-                ),
+                }),
               }}
             />
             <div className="mb-3 flex items-center justify-between">

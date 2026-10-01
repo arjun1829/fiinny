@@ -19,6 +19,11 @@ interface ParsedPromo {
   discountPercent: number;
   active: boolean;
   note: string;
+  applicablePlans?: number[];
+  minSeats?: number;
+  maxSeats?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 function validate(body: unknown): { error: string } | ParsedPromo {
@@ -26,8 +31,6 @@ function validate(body: unknown): { error: string } | ParsedPromo {
 
   const code = String(b.code ?? "").trim().toUpperCase();
   if (!code) return { error: "Code is required." };
-  // Firestore doc ids cannot contain "/", and a code with spaces or punctuation
-  // will never match what a seller types.
   if (!/^[A-Z0-9_-]{3,32}$/.test(code)) {
     return {
       error:
@@ -40,11 +43,55 @@ function validate(body: unknown): { error: string } | ParsedPromo {
     return { error: "Discount must be between 1 and 100 percent." };
   }
 
+  let applicablePlans: number[] | undefined;
+  if (Array.isArray(b.applicablePlans) && b.applicablePlans.length > 0) {
+    const plans = (b.applicablePlans as unknown[])
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    if (plans.length > 0) applicablePlans = plans;
+  }
+
+  let minSeats: number | undefined;
+  if (b.minSeats != null && b.minSeats !== "") {
+    const n = Number(b.minSeats);
+    if (!Number.isInteger(n) || n <= 0) return { error: "Minimum seats must be a positive whole number." };
+    minSeats = n;
+  }
+
+  let maxSeats: number | undefined;
+  if (b.maxSeats != null && b.maxSeats !== "") {
+    const n = Number(b.maxSeats);
+    if (!Number.isInteger(n) || n <= 0) return { error: "Maximum seats must be a positive whole number." };
+    maxSeats = n;
+  }
+
+  if (minSeats !== undefined && maxSeats !== undefined && minSeats > maxSeats) {
+    return { error: "Minimum seats cannot be greater than maximum seats." };
+  }
+
+  const isoDate = (v: unknown): string | undefined => {
+    if (typeof v !== "string" || !v.trim()) return undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return undefined;
+    return v.trim();
+  };
+
+  const startDate = isoDate(b.startDate);
+  const endDate   = isoDate(b.endDate);
+
+  if (startDate && endDate && startDate > endDate) {
+    return { error: "Start date cannot be after end date." };
+  }
+
   return {
     code,
     discountPercent,
     active: b.active !== false,
     note: String(b.note ?? "").trim(),
+    ...(applicablePlans ? { applicablePlans } : {}),
+    ...(minSeats !== undefined ? { minSeats } : {}),
+    ...(maxSeats !== undefined ? { maxSeats } : {}),
+    ...(startDate ? { startDate } : {}),
+    ...(endDate ? { endDate } : {}),
   };
 }
 
@@ -63,6 +110,13 @@ export async function GET(request: Request) {
           discountPercent: Number(x.discountPercent ?? 0),
           active: x.active !== false,
           note: String(x.note ?? ""),
+          ...(Array.isArray(x.applicablePlans) && x.applicablePlans.length
+            ? { applicablePlans: x.applicablePlans as number[] }
+            : {}),
+          ...(x.minSeats != null ? { minSeats: Number(x.minSeats) } : {}),
+          ...(x.maxSeats != null ? { maxSeats: Number(x.maxSeats) } : {}),
+          ...(typeof x.startDate === "string" ? { startDate: x.startDate } : {}),
+          ...(typeof x.endDate   === "string" ? { endDate:   x.endDate   } : {}),
         };
       })
       .sort((a, b) => a.code.localeCompare(b.code));

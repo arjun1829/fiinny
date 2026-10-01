@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb, getAdminAuth } from "../../../lib/firebase-admin";
+import { requireAdmin } from "../../../lib/admin-auth";
 import { FieldValue } from "firebase-admin/firestore";
 import { ADMIN_SECTIONS, type AdminSection } from "../../../admin/_context/admin-sections";
 
@@ -13,12 +14,18 @@ import { ADMIN_SECTIONS, type AdminSection } from "../../../admin/_context/admin
 
 export async function POST(req: NextRequest) {
   try {
+    // The caller is whoever holds the verified ID token, never whoever the
+    // request body claims to be. This route previously read `callerUid` from
+    // the body and looked the admin up with it, so anyone who knew an
+    // administrator's uid could mint themselves an admin account.
+    const caller = await requireAdmin(req);
+    if (caller instanceof NextResponse) return caller;
+
     const body = await req.json();
-    const { name, email, password, callerUid, role: rawRole, adminSections: rawSections } = body as {
+    const { name, email, password, role: rawRole, adminSections: rawSections } = body as {
       name?: string;
       email?: string;
       password?: string;
-      callerUid?: string;
       role?: string;
       adminSections?: string[];
     };
@@ -46,25 +53,8 @@ export async function POST(req: NextRequest) {
     if (!email?.trim())  return NextResponse.json({ error: "Email is required." },                       { status: 400 });
     if (!password || password.length < 6)
       return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
-    if (!callerUid)      return NextResponse.json({ error: "Unauthorized." },                            { status: 401 });
-
     const adminDb   = getAdminDb();
     const adminAuth = getAdminAuth();
-
-    // ── Verify caller is admin ────────────────────────────────────────────────
-    const [callerDoc, idxDoc] = await Promise.all([
-      adminDb.collection("users").doc(callerUid).get(),
-      adminDb.collection("uidIndex").doc(callerUid).get(),
-    ]);
-    let isAdmin = callerDoc.exists && callerDoc.data()?.role === "admin";
-    if (!isAdmin && idxDoc.exists) {
-      const callerPhone = idxDoc.data()?.phone;
-      if (callerPhone) {
-        const phoneDoc = await adminDb.collection("users").doc(callerPhone).get();
-        isAdmin = phoneDoc.exists && phoneDoc.data()?.role === "admin";
-      }
-    }
-    if (!isAdmin) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
     // ── Create Firebase Auth user (email + password) ──────────────────────────
     let newUser;
@@ -97,7 +87,7 @@ export async function POST(req: NextRequest) {
       totalSeats: 0,
       productCount: 0,
       ...(role === "team" ? { adminSections } : {}),
-      createdByAdmin: callerUid,
+      createdByAdmin: caller.uid,
       createdAt: now,
       updatedAt: now,
     });
@@ -109,7 +99,7 @@ export async function POST(req: NextRequest) {
         "admin_create_admin_user",
       targetUid: uid,
       targetEmail: email.trim().toLowerCase(),
-      performedBy: callerUid,
+      performedBy: caller.uid,
       ...(role === "team" ? { adminSections } : {}),
       createdAt: now,
     });

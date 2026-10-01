@@ -5,9 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_config.dart';
+import '../../../core/services/places_service.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/loading_overlay.dart';
@@ -46,6 +49,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _secondaryPhoneCtrl = TextEditingController();
   final _businessCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
@@ -53,20 +57,33 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
   final _pincodeCtrl = TextEditingController();
   final _gstinCtrl = TextEditingController();
   final _mapsUrlCtrl = TextEditingController();
+  final _websiteCtrl = TextEditingController();
+  final _instagramCtrl = TextEditingController();
+  final _facebookCtrl = TextEditingController();
+  final _whatsappCtrl = TextEditingController();
+  final _youtubeCtrl = TextEditingController();
 
   bool _saving = false;
   bool _prefilled = false;
+
+  // Set by "Use my current location"; saved as the shop's map pin (`geo`).
+  GeoPoint? _geo;
+  bool _locating = false;
   String? _error;
 
-  // Shop/profile logo — picked file shown immediately, uploaded on Save.
+  // Shop/profile logo + banner — picked files shown immediately, uploaded on Save.
   File? _logoFile;
   String? _existingLogoUrl;
   bool _uploadingLogo = false;
+  File? _bannerFile;
+  String? _existingBannerUrl;
+  bool _uploadingBanner = false;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _secondaryPhoneCtrl.dispose();
     _businessCtrl.dispose();
     _addressCtrl.dispose();
     _cityCtrl.dispose();
@@ -74,6 +91,11 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     _pincodeCtrl.dispose();
     _gstinCtrl.dispose();
     _mapsUrlCtrl.dispose();
+    _websiteCtrl.dispose();
+    _instagramCtrl.dispose();
+    _facebookCtrl.dispose();
+    _whatsappCtrl.dispose();
+    _youtubeCtrl.dispose();
     super.dispose();
   }
 
@@ -101,13 +123,35 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       if (logo != null && logo.isNotEmpty && _existingLogoUrl == null) {
         setState(() => _existingLogoUrl = logo);
       }
+      // secondaryPhone / website / banner / socialLinks live only on the role
+      // doc (and profiles/{phone}) — never mirrored to users/{phone}, so this
+      // is the only place to prefill them from.
+      void fill(TextEditingController c, Object? v) {
+        final s = (v as String?)?.trim() ?? '';
+        if (s.isNotEmpty && c.text.isEmpty) c.text = s;
+      }
+      fill(_secondaryPhoneCtrl, d['secondaryPhone']);
+      fill(_websiteCtrl, d['website']);
+      final social = d['socialLinks'];
+      if (social is Map) {
+        fill(_instagramCtrl, social['instagram']);
+        fill(_facebookCtrl, social['facebook']);
+        fill(_whatsappCtrl, social['whatsapp']);
+        fill(_youtubeCtrl, social['youtube']);
+      }
+      final banner = d['banner'] as String?;
+      if (banner != null && banner.isNotEmpty && _existingBannerUrl == null) {
+        setState(() => _existingBannerUrl = banner);
+      }
     } catch (_) {}
   }
 
   String? _required(String? v) =>
       (v == null || v.trim().isEmpty) ? 'Required' : null;
 
-  Future<void> _pickLogo() async {
+  /// Shared camera/gallery picker with the same 5 MB guard for both the logo
+  /// and the banner. `maxWidth` differs so a wide banner keeps its resolution.
+  Future<File?> _pickImage({required int maxWidth}) async {
     final picker = ImagePicker();
     final source = await showDialog<ImageSource>(
       context: context,
@@ -125,13 +169,13 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         ],
       ),
     );
-    if (source == null) return;
+    if (source == null) return null;
     final xFile = await picker.pickImage(
       source: source,
-      maxWidth: 1024,
+      maxWidth: maxWidth.toDouble(),
       imageQuality: 85,
     );
-    if (xFile == null || !mounted) return;
+    if (xFile == null || !mounted) return null;
     final file = File(xFile.path);
     // Matches storage.rules' 5 MB cap on profile-images/** — fail fast with a
     // clear message instead of letting the upload get rejected server-side.
@@ -142,9 +186,19 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
           const SnackBar(content: Text('Image must be less than 5MB')),
         );
       }
-      return;
+      return null;
     }
-    setState(() => _logoFile = file);
+    return file;
+  }
+
+  Future<void> _pickLogo() async {
+    final f = await _pickImage(maxWidth: 1024);
+    if (f != null) setState(() => _logoFile = f);
+  }
+
+  Future<void> _pickBanner() async {
+    final f = await _pickImage(maxWidth: 1600);
+    if (f != null) setState(() => _bannerFile = f);
   }
 
   Future<void> _save(String role, String phone) async {
@@ -156,16 +210,34 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     });
 
     try {
+      final dashRepo = DashboardRepository();
+
       String? logoUrl = _existingLogoUrl;
       if (_logoFile != null) {
         setState(() => _uploadingLogo = true);
         try {
-          logoUrl =
-              await DashboardRepository().uploadProfileLogo(_logoFile!, phone);
+          logoUrl = await dashRepo.uploadProfileLogo(_logoFile!, phone);
         } finally {
           if (mounted) setState(() => _uploadingLogo = false);
         }
       }
+
+      String? bannerUrl = _existingBannerUrl;
+      if (_bannerFile != null) {
+        setState(() => _uploadingBanner = true);
+        try {
+          bannerUrl = await dashRepo.uploadProfileBanner(_bannerFile!, phone);
+        } finally {
+          if (mounted) setState(() => _uploadingBanner = false);
+        }
+      }
+
+      final social = <String, String>{
+        'instagram': _instagramCtrl.text.trim(),
+        'facebook': _facebookCtrl.text.trim(),
+        'whatsapp': _whatsappCtrl.text.trim(),
+        'youtube': _youtubeCtrl.text.trim(),
+      };
 
       await _repo.saveProfile(
         phone: phone,
@@ -180,6 +252,16 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         gstin: _gstinCtrl.text.trim().toUpperCase(),
         googleMapsUrl: _mapsUrlCtrl.text.trim(),
         logoUrl: logoUrl,
+        secondaryPhone: _secondaryPhoneCtrl.text.trim(),
+        website: _websiteCtrl.text.trim(),
+        bannerUrl: bannerUrl,
+        // Only send the map for sellers, and only when at least one link is set,
+        // so a non-seller save never writes an empty socialLinks map.
+        socialLinks: (role == 'retailer' || role == 'manufacturer') &&
+                social.values.any((v) => v.isNotEmpty)
+            ? social
+            : null,
+        geo: _geo,
       );
 
       ref.invalidate(currentUserProvider);
@@ -283,11 +365,17 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                         ),
                       ),
 
-                    // Shop/profile logo — sellers only, same field
-                    // (retailers/manufacturers/{phone}.logo, mirrored to
-                    // profiles/{phone}.logo) the web dashboard's logo
-                    // uploader sets.
+                    // Shop banner + logo — sellers only, same fields
+                    // (retailers/manufacturers/{phone}.banner/.logo, mirrored
+                    // to profiles/{phone}) the web dashboard's uploaders set.
                     if (isSeller) ...[
+                      _BannerPicker(
+                        file: _bannerFile,
+                        existingUrl: _existingBannerUrl,
+                        uploading: _uploadingBanner,
+                        onTap: _pickBanner,
+                      ),
+                      const SizedBox(height: 12),
                       Center(child: _LogoPicker(
                         file: _logoFile,
                         existingUrl: _existingLogoUrl,
@@ -299,11 +387,30 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
 
                     Text('Your Details', style: AppTextStyles.heading3),
                     const SizedBox(height: 12),
-                    _field(_nameCtrl, 'Full Name', Icons.person_outline,
+                    _field(_nameCtrl,
+                        isSeller ? 'Owner name' : 'Full Name',
+                        Icons.person_outline,
                         validator: _required, highlightIfEmpty: true),
                     const SizedBox(height: 12),
                     _field(_emailCtrl, 'Email (optional)', Icons.email_outlined,
                         keyboardType: TextInputType.emailAddress),
+                    if (isSeller) ...[
+                      const SizedBox(height: 12),
+                      _field(_secondaryPhoneCtrl,
+                          'Secondary mobile (optional)', Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.length == 10
+                                ? null
+                                : 'Enter exactly 10 digits';
+                          }),
+                    ],
 
                     if (isSeller) ...[
                       const SizedBox(height: 24),
@@ -312,6 +419,10 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                       _field(_businessCtrl, 'Shop / Business Name',
                           Icons.storefront_outlined,
                           validator: _required, highlightIfEmpty: true),
+                      const SizedBox(height: 12),
+                      _locationButton(
+                          hint: 'Tap while you are at your shop — it also '
+                              'pins your shop on the store map.'),
                       const SizedBox(height: 12),
                       _field(_addressCtrl, 'Address', Icons.home_outlined,
                           maxLines: 2,
@@ -342,7 +453,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                           ]),
                       const SizedBox(height: 12),
                       // Printed on invoices (web + mobile). 15-char GSTIN.
-                      _field(_gstinCtrl, 'GSTIN (optional)',
+                      // Required to switch on Online Delivery — the toggle in
+                      // Settings enforces it, matching web/admin.
+                      _field(_gstinCtrl, 'GSTIN (required for Online Delivery)',
                           Icons.receipt_long_outlined,
                           inputFormatters: [
                             LengthLimitingTextInputFormatter(15),
@@ -384,10 +497,39 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                               .copyWith(color: AppColors.onSurfaceVariant),
                         ),
                       ),
+
+                      const SizedBox(height: 24),
+                      Text('Website & Social', style: AppTextStyles.heading3),
+                      const SizedBox(height: 12),
+                      _field(_websiteCtrl, 'Website (optional)',
+                          Icons.language_outlined,
+                          keyboardType: TextInputType.url,
+                          validator: (v) {
+                            final s = v?.trim() ?? '';
+                            if (s.isEmpty) return null;
+                            return s.startsWith('http')
+                                ? null
+                                : 'Start with https://';
+                          }),
+                      const SizedBox(height: 12),
+                      _field(_instagramCtrl, 'Instagram (optional)',
+                          Icons.camera_alt_outlined),
+                      const SizedBox(height: 12),
+                      _field(_facebookCtrl, 'Facebook (optional)',
+                          Icons.facebook_outlined),
+                      const SizedBox(height: 12),
+                      _field(_whatsappCtrl, 'WhatsApp (optional)',
+                          Icons.chat_outlined,
+                          keyboardType: TextInputType.phone),
+                      const SizedBox(height: 12),
+                      _field(_youtubeCtrl, 'YouTube (optional)',
+                          Icons.play_circle_outline),
                     ] else ...[
                       const SizedBox(height: 24),
                       Text('Delivery Address (optional)',
                           style: AppTextStyles.heading3),
+                      const SizedBox(height: 12),
+                      _locationButton(),
                       const SizedBox(height: 12),
                       _field(_addressCtrl, 'Address', Icons.home_outlined,
                           maxLines: 2),
@@ -480,6 +622,112 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     }
     if (_pincodeCtrl.text.trim().isEmpty) missing.add('Pincode');
     return missing;
+  }
+
+  /// "Use my current location": GPS fix → Google reverse geocode → fills
+  /// address, city, state and pincode (the same fill the web profile's
+  /// button does), and keeps the coordinates for the shop's map pin.
+  Future<void> _useCurrentLocation() async {
+    final messenger = ScaffoldMessenger.of(context);
+    void say(String msg, {SnackBarAction? action}) => messenger.showSnackBar(
+        SnackBar(content: Text(msg), action: action));
+
+    setState(() => _locating = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        say('Location is turned off on your phone.',
+            action: SnackBarAction(
+                label: 'Turn on', onPressed: Geolocator.openLocationSettings));
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        say('Location permission is blocked for KrishiDukan.',
+            action: SnackBarAction(
+                label: 'Settings', onPressed: Geolocator.openAppSettings));
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        say('Allow location access to fill your address automatically.');
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      final place = await PlacesService.reverseGeocode(
+          pos.latitude, pos.longitude, AppConfig.googleMapsApiKey);
+      if (!mounted) return;
+
+      setState(() {
+        _geo = GeoPoint(pos.latitude, pos.longitude);
+        if (place == null) return;
+        String clean(String? v) => (v ?? '').trim();
+        // Drop the trailing country — every address here is in India.
+        final line = clean(place.formattedAddress)
+            .replaceFirst(RegExp(r',\s*India$'), '');
+        if (line.isNotEmpty) _addressCtrl.text = line;
+        if (clean(place.city).isNotEmpty) _cityCtrl.text = clean(place.city);
+        if (clean(place.state).isNotEmpty) _stateCtrl.text = clean(place.state);
+        final pin = clean(place.pincode).replaceAll(RegExp(r'\D'), '');
+        if (pin.length == 6) _pincodeCtrl.text = pin;
+      });
+      say(place == null
+          ? 'Location found, but the address could not be read. Please type it.'
+          : 'Address filled from your location. Check it before saving.');
+    } catch (_) {
+      if (mounted) {
+        say('Could not get your location. Try again outside or near a window.');
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  Widget _locationButton({String? hint}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _locating ? null : _useCurrentLocation,
+            icon: _locating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(_geo != null ? Icons.check_circle : Icons.my_location,
+                    size: 18),
+            label: Text(_locating
+                ? 'Finding your location…'
+                : _geo != null
+                    ? 'Location added — tap to refresh'
+                    : 'Use my current location'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        if (hint != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(hint,
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.onSurfaceVariant)),
+          ),
+      ],
+    );
   }
 
   Widget _field(
@@ -646,6 +894,83 @@ class _LogoPicker extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Wide tappable banner strip — freshly-picked file, else existing URL, else a
+/// dashed "add a banner" placeholder. Upload happens on Save, same as the logo.
+class _BannerPicker extends StatelessWidget {
+  final File? file;
+  final String? existingUrl;
+  final bool uploading;
+  final VoidCallback onTap;
+  const _BannerPicker({
+    required this.file,
+    required this.existingUrl,
+    required this.uploading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasExisting = existingUrl != null && existingUrl!.isNotEmpty;
+
+    return GestureDetector(
+      onTap: uploading ? null : onTap,
+      child: Container(
+        height: 120,
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: AppColors.primaryContainer,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.divider),
+          image: file != null
+              ? DecorationImage(image: FileImage(file!), fit: BoxFit.cover)
+              : hasExisting
+                  ? DecorationImage(
+                      image: CachedNetworkImageProvider(existingUrl!),
+                      fit: BoxFit.cover)
+                  : null,
+        ),
+        child: uploading
+            ? const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                ),
+              )
+            : (file == null && !hasExisting)
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.add_photo_alternate_outlined,
+                            color: AppColors.primary),
+                        const SizedBox(height: 4),
+                        Text('Add a shop banner (optional)',
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.onSurfaceVariant)),
+                      ],
+                    ),
+                  )
+                : Align(
+                    alignment: Alignment.bottomRight,
+                    child: Container(
+                      margin: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.camera_alt,
+                          size: 16, color: Colors.white),
+                    ),
+                  ),
       ),
     );
   }

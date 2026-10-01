@@ -244,17 +244,13 @@ export default function SupplierLedgerDetailPage() {
   const [editMode, setEditMode] = useState(false);
 
   // Account Statement / Purchase Orders / Payments / Supplier Invoices / Price List / Reminders — single tabbed view.
-  const [activeTab, setActiveTab] = useState<'account' | 'purchaseOrders' | 'payments' | 'invoices' | 'priceList' | 'reminders'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'purchaseOrders' | 'payments' | 'invoices' | 'priceList' | 'reminders' | 'tasks' | 'notes'>('account');
   const [stmtDir, setStmtDir] = useState<'asc' | 'desc'>('desc'); // newest first by default
 
   // Supplier Purchase Invoices (read-only list; created/edited via SupplierInvoicePage).
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
   const [invToDelete, setInvToDelete] = useState<SupplierInvoice | null>(null);
   const [deletingInv, setDeletingInv] = useState(false);
-
-  // Section toggles (Comments / Tasks remain independent accordions)
-  const [cmtsOpen, setCmtsOpen] = useState(true);
-  const [tasksOpen, setTasksOpen] = useState(true);
 
   // Filters
   const [poSearch, setPoSearch] = useState('');
@@ -279,6 +275,8 @@ export default function SupplierLedgerDetailPage() {
   const [newComment, setNewComment] = useState('');
   const [cmtSaving, setCmtSaving] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [cmtToDelete, setCmtToDelete] = useState<Comment | null>(null);
+  const [deletingCmt, setDeletingCmt] = useState(false);
 
   // Tasks
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -412,13 +410,13 @@ export default function SupplierLedgerDetailPage() {
 
   // Lock body scroll while any inline portal modal is open (PO/Payment modals handle their own lock)
   useEffect(() => {
-    const isOpen = !!remForm || !!invToDelete || !!reminderToComplete;
+    const isOpen = !!remForm || !!invToDelete || !!reminderToComplete || !!cmtToDelete;
     if (isOpen) {
       const prev = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = prev; };
     }
-  }, [remForm, invToDelete, reminderToComplete]);
+  }, [remForm, invToDelete, reminderToComplete, cmtToDelete]);
 
   // Scroll highlighted reminder into view once reminders are loaded
   useEffect(() => {
@@ -677,6 +675,17 @@ export default function SupplierLedgerDetailPage() {
       load();
     } catch (e: any) { console.error(e); }
     setCmtSaving(false);
+  };
+
+  const handleDeleteComment = async (cmt: Comment) => {
+    if (!tenantId) return;
+    setDeletingCmt(true);
+    try {
+      await deleteDoc(getTenantDoc(db, tenantId, 'supplierComments', cmt.id));
+      setComments(prev => prev.filter(c => c.id !== cmt.id));
+      setCmtToDelete(null);
+    } catch (e: any) { alert(e.message); }
+    finally { setDeletingCmt(false); }
   };
 
   const toggleListen = () => {
@@ -1093,6 +1102,8 @@ export default function SupplierLedgerDetailPage() {
           { key: 'invoices', label: 'Supplier Invoices', icon: <Receipt size={15} />, count: invoices.length },
           { key: 'priceList', label: 'Price List', icon: <Tag size={15} />, count: priceList.length },
           { key: 'reminders', label: 'Payment Reminders', icon: <Bell size={15} />, count: reminders.length },
+          { key: 'tasks', label: 'Follow-up Tasks', icon: <CheckSquare size={15} />, count: tasks.filter(t => t.status !== 'done').length },
+          { key: 'notes', label: 'Notes & Comments', icon: <MessageSquare size={15} />, count: comments.length },
         ] as const).map((t, idx, arr) => {
           const active = activeTab === t.key;
           return (
@@ -1615,105 +1626,102 @@ export default function SupplierLedgerDetailPage() {
       )}
 
       {/* Follow-up Tasks */}
-      {card(
+      {activeTab === 'tasks' && card(
         <div>
-          <button onClick={() => setTasksOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: 0, color: 'var(--text-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
             <span style={{ color: 'var(--primary-light)' }}><CheckSquare size={16} /></span>
             <span style={{ fontWeight: 700, fontSize: '1rem' }}>Follow-up Tasks</span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({tasks.filter(t => t.status !== 'done').length} open)</span>
-            <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)' }}>{tasksOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-          </button>
-          {tasksOpen && (
-            <div style={{ marginTop: '1rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                <input className="input-field" placeholder="e.g. Pay ₹1,00,000 by month-end" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} style={{ flex: '1 1 240px', margin: 0 }} />
-                <input className="input-field" type="date" value={newTaskDue} onChange={e => setNewTaskDue(e.target.value)} title="Due date" style={{ width: '160px', margin: 0 }} />
-                <button className="btn btn-primary" onClick={handleAddTask} disabled={taskSaving || !newTaskTitle.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                  {taskSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {tasks.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>No follow-up tasks.</div>}
-                {tasks.map(t => {
-                  const done = t.status === 'done';
-                  const overdue = !done && t.dueDate && new Date(t.dueDate) < new Date(today());
-                  return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.65rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)' }}>
-                      <button onClick={() => toggleTask(t)} title={done ? 'Mark open' : 'Mark done'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: done ? '#10b981' : 'var(--text-tertiary)', display: 'flex', padding: 0 }}>
-                        {done ? <CheckSquare size={18} /> : <Square size={18} />}
-                      </button>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.88rem', fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--text-tertiary)' : 'var(--text-primary)' }}>{t.title}</div>
-                        {t.dueDate && (
-                          <div style={{ fontSize: '0.72rem', color: overdue ? '#ff4d4f' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
-                            <CalendarDays size={11} /> Due {fmtDate(t.dueDate)}{overdue ? ' · overdue' : ''}
-                          </div>
-                        )}
-                      </div>
-                      {iconBtn(<Trash2 size={14} />, () => deleteTask(t), 'Delete task', '#ff4d4f')}
-                    </div>
-                  );
-                })}
-              </div>
+          </div>
+          <div style={{ marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+              <input className="input-field" placeholder="e.g. Pay ₹1,00,000 by month-end" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} style={{ flex: '1 1 240px', margin: 0 }} />
+              <input className="input-field" type="date" value={newTaskDue} onChange={e => setNewTaskDue(e.target.value)} title="Due date" style={{ width: '160px', margin: 0 }} />
+              <button className="btn btn-primary" onClick={handleAddTask} disabled={taskSaving || !newTaskTitle.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+                {taskSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
+              </button>
             </div>
-          )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {tasks.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>No follow-up tasks.</div>}
+              {tasks.map(t => {
+                const done = t.status === 'done';
+                const overdue = !done && t.dueDate && new Date(t.dueDate) < new Date(today());
+                return (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.65rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)' }}>
+                    <button onClick={() => toggleTask(t)} title={done ? 'Mark open' : 'Mark done'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: done ? '#10b981' : 'var(--text-tertiary)', display: 'flex', padding: 0 }}>
+                      {done ? <CheckSquare size={18} /> : <Square size={18} />}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--text-tertiary)' : 'var(--text-primary)' }}>{t.title}</div>
+                      {t.dueDate && (
+                        <div style={{ fontSize: '0.72rem', color: overdue ? '#ff4d4f' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.1rem' }}>
+                          <CalendarDays size={11} /> Due {fmtDate(t.dueDate)}{overdue ? ' · overdue' : ''}
+                        </div>
+                      )}
+                    </div>
+                    {iconBtn(<Trash2 size={14} />, () => deleteTask(t), 'Delete task', '#ff4d4f')}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
       {/* Comments */}
-      {card(
+      {activeTab === 'notes' && card(
         <div>
-          <button onClick={() => setCmtsOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: 0, color: 'var(--text-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
             <span style={{ color: 'var(--primary-light)' }}><MessageSquare size={16} /></span>
             <span style={{ fontWeight: 700, fontSize: '1rem' }}>Notes & Comments</span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>({comments.length})</span>
-            <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)' }}>{cmtsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
-          </button>
-          {cmtsOpen && (
-            <div style={{ marginTop: '1rem' }}>
-              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <textarea
-                    className="input-field"
-                    placeholder="Add a note, remark or follow-up… (or tap the mic to dictate)"
-                    value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    rows={2}
-                    style={{ width: '100%', resize: 'vertical', minHeight: '60px', paddingRight: '3rem' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={toggleListen}
-                    title="Voice typing"
-                    style={{
-                      position: 'absolute', right: '0.6rem', bottom: '0.6rem',
-                      background: isListening ? '#ff4d4f' : 'var(--surface-raised)',
-                      color: isListening ? '#fff' : 'var(--text-tertiary)',
-                      border: 'none', borderRadius: '50%', width: '34px', height: '34px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                      boxShadow: isListening ? '0 0 10px #ff4d4f' : 'none',
-                    }}
-                  >
-                    <Mic size={16} className={isListening ? 'animate-pulse' : ''} />
-                  </button>
-                </div>
-                <button className="btn btn-primary" onClick={handleAddComment} disabled={cmtSaving || !newComment.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', alignSelf: 'flex-end', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                  {cmtSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
+          </div>
+          <div style={{ marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ flex: 1, position: 'relative' }}>
+                <textarea
+                  className="input-field"
+                  placeholder="Add a note, remark or follow-up… (or tap the mic to dictate)"
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  rows={2}
+                  style={{ width: '100%', resize: 'vertical', minHeight: '60px', paddingRight: '3rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={toggleListen}
+                  title="Voice typing"
+                  style={{
+                    position: 'absolute', right: '0.6rem', bottom: '0.6rem',
+                    background: isListening ? '#ff4d4f' : 'var(--surface-raised)',
+                    color: isListening ? '#fff' : 'var(--text-tertiary)',
+                    border: 'none', borderRadius: '50%', width: '34px', height: '34px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    boxShadow: isListening ? '0 0 10px #ff4d4f' : 'none',
+                  }}
+                >
+                  <Mic size={16} className={isListening ? 'animate-pulse' : ''} />
                 </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {comments.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>No notes yet.</div>}
-                {comments.map(c => (
-                  <div key={c.id} style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)', borderLeft: '3px solid var(--primary-light)' }}>
+              <button className="btn btn-primary" onClick={handleAddComment} disabled={cmtSaving || !newComment.trim()} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', alignSelf: 'flex-end', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+                {cmtSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {comments.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>No notes yet.</div>}
+              {comments.map(c => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', padding: '0.75rem 1rem', borderRadius: '8px', background: 'var(--surface-raised)', borderLeft: '3px solid var(--primary-light)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '0.875rem' }}>{c.text}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '0.3rem' }}>
                       {c.author} · {c.createdAt ? fmtDate(c.createdAt) : '—'}
                     </div>
                   </div>
-                ))}
-              </div>
+                  {iconBtn(<Trash2 size={14} />, () => setCmtToDelete(c), 'Delete note', '#ff4d4f')}
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -1924,6 +1932,36 @@ export default function SupplierLedgerDetailPage() {
             <button className="btn btn-secondary" onClick={() => setInvToDelete(null)} disabled={deletingInv}>Cancel</button>
             <button className="btn" onClick={() => handleDeleteInvoice(invToDelete!)} disabled={deletingInv} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ff4d4f', color: '#fff', border: 'none' }}>
               {deletingInv ? <><Loader2 size={15} className="animate-spin" /> Deleting…</> : <><Trash2 size={15} /> Delete Invoice</>}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Delete Note confirmation */}
+    {cmtToDelete && createPortal(
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', background: 'hsla(220, 30%, 4%, 0.72)', backdropFilter: 'blur(4px)', animation: 'fadeIn 0.18s ease-out' }}>
+        <div className="glass-panel animate-slide-up" style={{ width: '100%', maxWidth: '440px', padding: '1.75rem', position: 'relative', borderRadius: '16px' }}>
+          <button onClick={() => !deletingCmt && setCmtToDelete(null)} className="btn-icon" aria-label="Close" style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={20} /></button>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ff4d4f' }}>
+            <AlertCircle size={20} /> Delete Note?
+          </h2>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.7 }}>
+            <div style={{ padding: '0.6rem 0.75rem', background: 'var(--surface-raised)', borderRadius: '8px', fontStyle: 'italic', color: 'var(--text-primary)' }}>
+              "{cmtToDelete.text}"
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              {cmtToDelete.author} · {cmtToDelete.createdAt ? fmtDate(cmtToDelete.createdAt) : '—'}
+            </div>
+          </div>
+          <div style={{ padding: '0.7rem 0.85rem', background: 'hsla(0,100%,50%,0.1)', color: '#ff4d4f', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '1.25rem' }}>
+            This will permanently delete this note. This action cannot be undone.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button className="btn btn-secondary" onClick={() => setCmtToDelete(null)} disabled={deletingCmt}>Cancel</button>
+            <button className="btn" onClick={() => handleDeleteComment(cmtToDelete!)} disabled={deletingCmt} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ff4d4f', color: '#fff', border: 'none' }}>
+              {deletingCmt ? <><Loader2 size={15} className="animate-spin" /> Deleting…</> : <><Trash2 size={15} /> Delete Note</>}
             </button>
           </div>
         </div>

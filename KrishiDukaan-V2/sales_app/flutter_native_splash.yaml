@@ -1,0 +1,13 @@
+flutter_native_splash:
+  # Deep brand green so the native splash matches SplashScreen's background and
+  # the app opens without a white flash between the two. Mirrors mobile/, except
+  # this app uses AppColors.primary rather than the customer app's lighter green.
+  color: "#0F391B"
+  color_dark: "#082712"
+
+  android_12:
+    color: "#0F391B"
+    color_dark: "#082712"
+
+  web: false
+  ios: true

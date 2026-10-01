@@ -24,7 +24,8 @@
  * scheduled job re-checking held transfers would be a second source of truth
  * that can drift, double-release, or silently stop running.
  *
- * REVERSALS ARE OUT OF SCOPE by decision — this only ever releases.
+ * REVERSALS ARE OUT OF SCOPE by decision — this only ever releases, and it
+ * never releases a transfer that has been reversed.
  */
 import * as admin from "firebase-admin";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
@@ -81,6 +82,7 @@ async function releaseEnabled(): Promise<boolean> {
 interface RazorpayTransfer {
   id: string;
   on_hold: boolean;
+  amount_reversed?: number;
   on_hold_until: number | null;
   amount: number;
   recipient: string;
@@ -188,17 +190,49 @@ export const releaseTransferOnDelivery = onDocumentWritten(
         return;
       }
 
-      const match =
-        transfers.find((t) => t.notes?.sellerKey === sellerKey) ??
-        // One-seller orders are unambiguous even without the note — this covers
-        // any transfer created before the note existed.
-        (transfers.length === 1 ? transfers[0] : undefined);
+      // A REASSIGNED order must never fall back to "the only transfer on the
+      // payment": that is the original seller's transfer, so delivery by the
+      // new seller would release money to the seller who rejected it. For
+      // those, match only the transfer the order recorded (routeTransfer.id),
+      // or one tagged for the CURRENT seller. No match → no release; the new
+      // seller is then paid by the manual payout run, which checks Razorpay.
+      //
+      // Every other order keeps exactly the matching it always had, so this
+      // change cannot alter a release for a normal order.
+      const recordedId = String(after.routeTransfer?.id ?? "").trim();
+      let match: RazorpayTransfer | undefined;
+      if (recordedId) {
+        match = transfers.find((t) => t.id === recordedId);
+      } else if (after.reassignment) {
+        const key = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+        const ids = [String(after.sellerPhone ?? ""), String(after.sellerId ?? "")].filter(Boolean);
+        match = transfers.find((t) => {
+          const note = String(t.notes?.sellerKey ?? "").trim();
+          return Boolean(note) && (ids.includes(note) || ids.some((i) => key(i).length === 10 && key(i) === key(note)));
+        });
+      } else {
+        match =
+          transfers.find((t) => t.notes?.sellerKey === sellerKey) ??
+          // One-seller orders are unambiguous even without the note — this covers
+          // any transfer created before the note existed.
+          (transfers.length === 1 ? transfers[0] : undefined);
+      }
 
       if (!match) {
         logger.error("[route-release] no transfer matches this order's seller", {
           orderId,
           sellerKey,
           transferCount: transfers.length,
+        });
+        return;
+      }
+
+      // A reversed transfer is the rejecting seller's money already pulled
+      // back — releasing it would be a no-op at best.
+      if ((match.amount_reversed ?? 0) >= match.amount) {
+        logger.warn("[route-release] matched transfer is fully reversed, not releasing", {
+          orderId,
+          transferId: match.id,
         });
         return;
       }

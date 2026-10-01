@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee } from "lucide-react";
+import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, Zap, ShieldAlert, Contact, GalleryHorizontal, Link2 } from "lucide-react";
 import { cn } from "../../dashboard/_lib/cn";
 import { useAdminAuth, hasSection, type AdminSection } from "../_context/admin-auth-context";
 
@@ -10,16 +10,25 @@ const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, section: "overview" as AdminSection },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, section: "analytics" as AdminSection },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, section: "orders" as AdminSection },
+  { href: "/admin/payments", label: "Payments", icon: ReceiptText, section: "payments" as AdminSection },
   { href: "/admin/users", label: "Users & Roles", icon: Users, section: "users" as AdminSection },
+  { href: "/admin/sales-team", label: "Sales Team", icon: Contact, section: "salesTeam" as AdminSection },
+  { href: "/admin/referrals", label: "Referrals", icon: Link2, section: "referrals" as AdminSection },
   { href: "/admin/subscriptions", label: "Subscriptions", icon: CreditCard, section: "subscriptions" as AdminSection },
+  { href: "/admin/payouts", label: "Seller Payouts", icon: Banknote, section: "payouts" as AdminSection },
+  { href: "/admin/route-payouts", label: "Route Payouts", icon: Zap, section: "routePayouts" as AdminSection },
   { href: "/admin/pricing", label: "Pricing & Promos", icon: IndianRupee, section: "pricing" as AdminSection },
   { href: "/admin/products", label: "Products", icon: Box, section: "products" as AdminSection },
   { href: "/admin/reels", label: "Reels", icon: Video, section: "reels" as AdminSection },
+  // Apple Guideline 1.2 requires reports on user-generated content to reach a
+  // human who can act within 24 hours — this is that queue.
+  { href: "/admin/moderation", label: "Moderation", icon: ShieldAlert, section: "moderation" as AdminSection },
   { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, section: "whatsapp" as AdminSection },
   { href: "/admin/messages", label: "Messages", icon: MessageSquare, section: "messages" as AdminSection },
   { href: "/admin/discounts", label: "Discounts", icon: Tag, section: "discounts" as AdminSection },
   { href: "/admin/companies", label: "Company Pages", icon: Building2, section: "companies" as AdminSection },
   { href: "/admin/hubs", label: "Hubs", icon: Layers, section: "hubs" as AdminSection },
+  { href: "/admin/banners", label: "Banners", icon: GalleryHorizontal, section: "banners" as AdminSection },
   { href: "/admin/reports", label: "Reports", icon: Mail, section: "reports" as AdminSection },
   { href: "/admin/inventory", label: "Inventory", icon: Package, section: "inventory" as AdminSection },
   { href: "/admin/blog", label: "Blog", icon: BookOpen, section: "blog" as AdminSection },

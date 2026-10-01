@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
-import { unlink, stat } from "fs/promises";
+import { unlink, stat, copyFile } from "fs/promises";
 import ffmpegPath from "ffmpeg-static";
 
 /**
@@ -44,7 +44,7 @@ const SOURCE_NAME = "video.mp4";
 const OUTPUT_NAME = "video_optimized.mp4";
 const THUMB_NAME = "thumb.jpg";
 
-function run(bin: string, args: string[]): Promise<void> {
+export function run(bin: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, args);
     let stderr = "";
@@ -61,11 +61,105 @@ function run(bin: string, args: string[]): Promise<void> {
   });
 }
 
+/** Like [run], but resolves with ffmpeg's stderr — needed to read filter
+ *  metadata (signalstats prints its numbers there). */
+function runCapture(bin: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(bin, args);
+    let stderr = "";
+    proc.stderr.on("data", (c) => {
+      stderr += c.toString();
+      if (stderr.length > 200_000) stderr = stderr.slice(-200_000);
+    });
+    proc.on("error", reject);
+    proc.on("close", (code) =>
+      code === 0 ? resolve(stderr) : reject(new Error(`${bin} exited ${code}: ${stderr.slice(-1500)}`)),
+    );
+  });
+}
+
+/**
+ * Mean luma (0–255) of an image, via ffmpeg's signalstats — the only image
+ * tooling available in this runtime. Used to reject a poster that is just a
+ * black frame.
+ */
+export async function meanLuma(bin: string, imagePath: string): Promise<number> {
+  const err = await runCapture(bin, [
+    "-i", imagePath,
+    "-vf", "signalstats,metadata=print",
+    "-f", "null", "-",
+  ]);
+  const m = err.match(/lavfi\.signalstats\.YAVG=([\d.]+)/);
+  return m ? Number(m[1]) : 255; // unmeasurable → assume fine rather than loop
+}
+
+/** Below this mean luma a frame is a black card, not a picture. */
+const BLACK_LUMA = 24;
+
+/**
+ * Writes a poster frame for [videoPath] to [outPath].
+ *
+ * The first version took the frame at exactly 00:00:01. A lot of reels open
+ * on a black fade-in, so that produced a solid-black poster — the live
+ * homepage showed four in a row. Two changes:
+ *
+ *  1. ffmpeg's `thumbnail` filter picks the most REPRESENTATIVE frame out of
+ *     a window of consecutive frames (closest to the window's average
+ *     histogram), which naturally skips fades and title cards.
+ *  2. The result is measured; if it is still black the window moves later
+ *     into the clip and tries again. Returns the brightest candidate if every
+ *     attempt is dark, so a genuinely dark video still gets its best frame.
+ */
+export async function extractPoster(
+  bin: string,
+  videoPath: string,
+  outPath: string,
+  width: number,
+): Promise<void> {
+  // Seconds into the clip to start each window. Reels are capped at 90s and
+  // most are far shorter, so later offsets fall off the end for short clips —
+  // ffmpeg then yields nothing and the attempt is skipped, not fatal.
+  const offsets = [1, 4, 8, 15, 25];
+  let best: { luma: number; path: string } | null = null;
+  const scratch: string[] = [];
+
+  try {
+  for (const [i, ss] of offsets.entries()) {
+    const candidate = i === 0 ? outPath : `${outPath}.${i}.jpg`;
+    if (candidate !== outPath) scratch.push(candidate);
+    try {
+      await run(bin, [
+        "-ss", String(ss),
+        "-i", videoPath,
+        "-t", "5", // 5s window for the thumbnail filter to choose from
+        "-vf", `thumbnail=60,scale=${width}:-2`,
+        "-frames:v", "1",
+        "-q:v", "5",
+        "-y", candidate,
+      ]);
+    } catch {
+      continue; // window past end of clip, or decode hiccup — try the next
+    }
+    const luma = await meanLuma(bin, candidate).catch(() => 255);
+    if (luma >= BLACK_LUMA) {
+      if (candidate !== outPath) await copyFile(candidate, outPath);
+      return;
+    }
+    if (!best || luma > best.luma) best = { luma, path: candidate };
+  }
+
+  if (best && best.path !== outPath) await copyFile(best.path, outPath);
+  if (!best) throw new Error("could not extract any poster frame");
+  } finally {
+    await Promise.all(scratch.map((f) => unlink(f).catch(() => undefined)));
+  }
+}
+
 /**
  * Builds the tokenised download URL format the clients already store in
  * `reels/{id}.videoUrl`, so nothing downstream has to learn a second URL shape.
  */
-function downloadUrl(bucket: string, objectPath: string, token: string): string {
+export function downloadUrl(bucket: string, objectPath: string, token: string): string {
   return (
     `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/` +
     `${encodeURIComponent(objectPath)}?alt=media&token=${token}`
@@ -170,14 +264,7 @@ export const transcodeReel = onObjectFinalized(
 
       if (!hasThumb) {
         try {
-          await run(ffmpegPath, [
-            "-i", localOut,
-            "-ss", "00:00:01",
-            "-vframes", "1",
-            "-vf", `scale=${MAX_WIDTH}:-2`,
-            "-q:v", "5",
-            "-y", localThumb,
-          ]);
+          await extractPoster(ffmpegPath, localOut, localThumb, MAX_WIDTH);
           const thumbToken = randomUUID();
           const thumbPath = `reels/${reelId}/${THUMB_NAME}`;
           await bucket.upload(localThumb, {

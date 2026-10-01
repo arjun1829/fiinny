@@ -8,6 +8,7 @@ import {
   extractReelIdFromSlug,
   linkedProductPath,
   reelCssFilter,
+  servableLinkedProductIds,
 } from "../../lib/seo/reels-server";
 import ReelOverlay from "../components/ReelOverlay";
 
@@ -72,7 +73,16 @@ export default async function ReelPage({ params }: PageProps) {
   // page with zero outbound product links and the reel → product → seller chain
   // was a dead end. The canonical product page carries the price, sellers and
   // its own Buy CTA into the store view, so humans lose nothing.
-  const productPath = linkedProductPath(reel);
+  //
+  // Gated on the product actually having a page: linkedProductId is stamped at
+  // upload and never revalidated, so it can outlive the product or name a
+  // per-seller copy. An unresolvable link is dropped rather than shipped as a
+  // "Shop this product" CTA that 404s.
+  const servableProductIds = await servableLinkedProductIds([reel]);
+  const productPath =
+    reel.linkedProductId && servableProductIds.has(reel.linkedProductId)
+      ? linkedProductPath(reel)
+      : null;
   const canonical = `${SITE_URL}/reels/${buildReelSlug(reel.title, reel.id)}`;
 
   // More reels for the "watch next" rail (excluding this one).

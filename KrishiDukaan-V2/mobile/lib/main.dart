@@ -12,11 +12,22 @@ import 'core/services/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Portrait lock on phones only. Android 16 ignores orientation locks on
+  // large screens (tablets, foldables — shortest side >= 600dp) anyway, and
+  // Play flags apps that set them there; letting those devices rotate keeps
+  // the app's behaviour the same before and after Android 16.
   if (!kIsWeb) {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    final views = PlatformDispatcher.instance.views;
+    final view = views.isEmpty ? null : views.first;
+    final shortestSide = view == null
+        ? 0.0
+        : view.physicalSize.shortestSide / view.devicePixelRatio;
+    if (shortestSide < 600) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    }
   }
 
   await Firebase.initializeApp(

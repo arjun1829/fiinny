@@ -102,20 +102,38 @@ export async function fetchDashboardUserRole(uid: string): Promise<DashboardProf
 function parseGeo(data: Record<string, unknown>): GeoPoint | null {
   const g = data.geo;
   if (g instanceof GeoPoint) return g;
-  const loc = data.location as { latitude?: number; longitude?: number } | undefined;
-  if (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number") {
-    return new GeoPoint(loc.latitude, loc.longitude);
+  // Restore the pin from every shape a saved location can take: a GeoPoint
+  // (handled above), a plain `geo`/`location` { latitude, longitude } map, or
+  // top-level latitude/longitude fields.
+  const candidates: Array<{ latitude?: unknown; longitude?: unknown } | undefined> = [
+    g as { latitude?: unknown; longitude?: unknown } | undefined,
+    data.location as { latitude?: unknown; longitude?: unknown } | undefined,
+    { latitude: data.latitude, longitude: data.longitude },
+  ];
+  for (const c of candidates) {
+    if (c && typeof c.latitude === "number" && typeof c.longitude === "number") {
+      return new GeoPoint(c.latitude, c.longitude);
+    }
   }
   return null;
 }
 
 function addressFromDoc(data: Record<string, unknown>) {
-  const a = data.address as Record<string, unknown> | undefined;
+  // Two schemas write these docs. The web dashboard + manufacturer-created
+  // retailers store a nested `address: { line1, city, state, pincode }` object.
+  // The mobile app (AuthRepository.saveProfile) stores `address` as a plain
+  // string alongside top-level `city`/`state`/`pincode`. Read both so a profile
+  // last saved from mobile still populates the web Edit Profile Location fields
+  // instead of showing blank. (The admin edit panel already does this fallback.)
+  const raw = data.address;
+  const nested =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined;
+  const line1 = nested ? nested.line1 : raw;
   return {
-    line1: String(a?.line1 ?? ""),
-    city:  String(a?.city  ?? ""),
-    state: String(a?.state ?? ""),
-    pincode: String(a?.pincode ?? ""),
+    line1:   String(line1 ?? ""),
+    city:    String(nested?.city    ?? data.city    ?? ""),
+    state:   String(nested?.state   ?? data.state   ?? ""),
+    pincode: String(nested?.pincode ?? data.pincode ?? ""),
   };
 }
 

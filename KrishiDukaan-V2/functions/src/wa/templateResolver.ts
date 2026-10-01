@@ -1,5 +1,20 @@
 import type { WaTemplate, WaPayload, WaTemplateComponent, WaTextParam } from "./types";
 
+/**
+ * Returns the BCP-47 language code for a given template as registered in Meta
+ * Business Manager. Must match exactly — mismatches produce error 132001.
+ * Defaults to "mr" (Marathi) for all existing templates; override per-template
+ * only when a template is approved under a different language.
+ */
+export function resolveTemplateLanguage(template: WaTemplate): string {
+  switch (template) {
+    case "reel_promo_hindi":
+      return "hi";
+    default:
+      return "mr";
+  }
+}
+
 function t(text: string): WaTextParam {
   return { type: "text", text };
 }
@@ -51,6 +66,27 @@ export function resolveTemplateComponents(
       // Static Orders Dashboard URL button in the template — no button component needed.
       return [body(p("shopName") || p("businessName") || "Retailer")];
 
+    case "enquiry_notification":
+      // Sent to every seller offering a product whose checkout was abandoned.
+      // {{1}} = shopName → businessName → "Retailer"
+      // {{2}} = customerName
+      // {{3}} = product (first item, "+N more" when the basket had several)
+      // Static URL button in the template: https://krishidukan.com/dashboard/enquiry
+      // — static, so no button component is sent from here.
+      return [
+        body(
+          p("shopName") || p("businessName") || "Retailer",
+          p("customerName"),
+          p("product"),
+        ),
+      ];
+
+    case "order_reassign_offer":
+      // Sent to every seller offered an order another seller rejected.
+      // {{1}} = product ("X +N more"), {{2}} = delivery area (city pincode)
+      // Static URL button: https://krishidukan.com/dashboard/orders?tab=requests
+      return [body(p("product"), p("area") || "your area")];
+
     case "order_confirmation_customer":
       // Sent to the CUSTOMER immediately after order placement.
       // Body:   {{1}} = customerName
@@ -60,6 +96,24 @@ export function resolveTemplateComponents(
       return [
         body(p("customerName")),
         { type: "button", sub_type: "url", index: 0, parameters: [t(p("orderId"))] },
+      ];
+
+    case "order_accept_pending":
+      // Sent to the SELLER (retailer) when an online delivery order has been
+      // waiting for accept/reject for ≥24h. Marathi (mr — the resolver default).
+      // Body:
+      //   {{1}} = retailerName — retailer's business name, falling back to their
+      //           real (owner) name; never the customer's name.
+      //   {{2}} = productName   (first ordered item, "+N more" when several)
+      //   {{3}} = pendingDays   (whole days the order has been pending)
+      // CTA is a static URL button (https://krishidukan.com/dashboard/orders) —
+      // static, so no button component is sent from here.
+      return [
+        body(
+          p("retailerName") || "व्यापारी",
+          p("productName"),
+          p("pendingDays"),
+        ),
       ];
 
     case "product_assignment_onboarded":
@@ -90,10 +144,82 @@ export function resolveTemplateComponents(
 
     case "payment_failed_app_update":
       // Marathi Utility template (Meta ID 2083284825612732).
-      // Body is fully static — no variable placeholders.
+      // Body {{1}} = ownerName → businessName → shopName → "User"
       // Buttons are static CTAs: "ॲप अपडेट करा" and "पुन्हा पेमेंट करा".
-      // No component parameters are needed; the Cloud API sends the template as-is.
-      return [];
+      return [body(name())];
+
+    case "retailer_seat_promotion": {
+      // Manual admin campaign — never triggered automatically.
+      // Header: static IMAGE (must be passed explicitly — Meta requires it even for static headers).
+      // Body {{1}} = businessName → shopName → name → "Business"
+      // Button: static URL — no component needed.
+      // Image media ID: upload once via WhatsApp Media API; refresh if it expires (~30d unused).
+      // Stored in WA_SEAT_PROMO_HEADER_ID env var; falls back to the upload from 2026-09-02.
+      const headerImageId =
+        process.env.WA_SEAT_PROMO_HEADER_ID || "2252388985496002";
+      return [
+        { type: "header", parameters: [{ type: "image", image: { id: headerImageId } }] },
+        body(p("businessName") || p("shopName") || p("name") || "Business"),
+      ];
+    }
+
+    case "new_product_reminder":
+      // Manual admin Marketing campaign (Marathi) — never triggered automatically.
+      // Sent to active-subscribed retailers who still have vacant/unused product seats.
+      // {{1}} = ownerName → businessName → shopName → "User" (retailer/owner name)
+      // {{2}} = vacantSeats (number of unused product seats)
+      // Both CTAs are static URL buttons (video + inventory) — no button components sent.
+      return [body(name(), p("vacantSeats"))];
+
+    case "kyc_pending": {
+      // Manual admin campaign — never triggered automatically.
+      // Sent to subscribed retailers/manufacturers whose payout KYC is not yet
+      // verified (payoutAccounts.status !== "verified", or no account at all).
+      // Body has exactly ONE variable: {{1}} = businessName → shopName → ownerName → "User".
+      // Only this single body parameter is sent — no header or button components.
+      const displayName = p("businessName") || p("shopName") || p("ownerName") || "User";
+      return [body(displayName)];
+    }
+
+    case "kyc_success": {
+      // Manual admin campaign — never triggered automatically.
+      // Sent to direct retailers whose payout KYC is verified
+      // (payoutAccounts.status === "verified").
+      // Body has exactly ONE variable: {{1}} = businessName → shopName → ownerName → "User".
+      // CTA is a static URL button (https://krishidukan.com/dashboard/payouts) —
+      // no button component is sent.
+      const displayName = p("businessName") || p("shopName") || p("ownerName") || "User";
+      return [body(displayName)];
+    }
+
+    case "app_update": {
+      // Manual admin Marketing campaign — never triggered automatically.
+      // Sent to retailers / manufacturers / customers to prompt an app update.
+      // Body has exactly ONE variable: {{1}} = businessName → shopName → ownerName → "User".
+      // CTA is a static URL button (Play Store listing) — no button component is sent.
+      const displayName = p("businessName") || p("shopName") || p("ownerName") || "User";
+      return [body(displayName)];
+    }
+
+    case "reel_promo_hindi": {
+      // Manual admin Marketing campaign (Hindi) — never triggered automatically.
+      // Header: static IMAGE — Meta requires the header component even for static images.
+      // Body: ZERO variables — do NOT send a body component or Meta returns error 132000.
+      // Button: static URL (https://krishidukan.com/reels/karan-veer-power-plus-xObUVDXHFtyluo3xCqQt)
+      //   — static, so no button component is sent.
+      // Image media ID injected via WA_REEL_PROMO_HEADER_ID secret (Secret Manager).
+      // Must be declared in wa-dispatch.ts secrets[] — if undefined here the function
+      // was not deployed with the secret, not a resolver bug.
+      const headerImageId = process.env.WA_REEL_PROMO_HEADER_ID;
+      if (!headerImageId) {
+        throw new Error(
+          "WA_REEL_PROMO_HEADER_ID is not set — add it to the function secrets[] in wa-dispatch.ts and redeploy"
+        );
+      }
+      return [
+        { type: "header", parameters: [{ type: "image", image: { id: headerImageId } }] },
+      ];
+    }
 
     case "generic":
     default:

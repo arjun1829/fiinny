@@ -27,6 +27,66 @@ class _CommentSheetNotifier extends Notifier<bool> {
   void setOpen(bool open) => state = open;
 }
 
+/// Phones the current user has blocked. Every reel/comment list in this
+/// feature reads this to filter what it shows — the single source of truth
+/// for "should this viewer see content from this shopOwnerId/userId".
+///
+/// block()/unblock() update [state] immediately, before the Firestore write
+/// resolves — Apple's Guideline 1.2 requires blocked content to disappear
+/// from the blocker's feed "instantly", and waiting on a round trip here
+/// would mean the blocked user's reel is still visible for however long that
+/// takes. Reverted if the write actually fails.
+final blockedUserIdsProvider =
+    AsyncNotifierProvider<BlockedUserIdsNotifier, Set<String>>(
+  BlockedUserIdsNotifier.new,
+);
+
+class BlockedUserIdsNotifier extends AsyncNotifier<Set<String>> {
+  @override
+  Future<Set<String>> build() async {
+    final phone = ref.watch(currentUserProvider).value?.phone;
+    if (phone == null || phone.isEmpty) return const {};
+    return _repo.fetchBlockedUserIds(phone);
+  }
+
+  Future<void> block({
+    required String blockerId,
+    required String blockedId,
+    String? reelId,
+    String? commentId,
+    String? contentSnippet,
+  }) async {
+    final previous = state.value ?? const <String>{};
+    state = AsyncData({...previous, blockedId});
+    try {
+      await _repo.blockUser(
+        blockerId: blockerId,
+        blockedId: blockedId,
+        reelId: reelId,
+        commentId: commentId,
+        contentSnippet: contentSnippet,
+      );
+    } catch (_) {
+      state = AsyncData(previous);
+      rethrow;
+    }
+  }
+
+  Future<void> unblock({
+    required String blockerId,
+    required String blockedId,
+  }) async {
+    final previous = state.value ?? const <String>{};
+    state = AsyncData({...previous}..remove(blockedId));
+    try {
+      await _repo.unblockUser(blockerId: blockerId, blockedId: blockedId);
+    } catch (_) {
+      state = AsyncData(previous);
+      rethrow;
+    }
+  }
+}
+
 /// Ranked feed, replacing the old shuffle-newest-50. See
 /// domain/reel_ranker.dart for why: geography and commercial intent matter
 /// more here than raw engagement. The scoring logic itself lives entirely

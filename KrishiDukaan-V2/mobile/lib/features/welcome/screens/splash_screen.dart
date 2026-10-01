@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 
 const kWelcomeSeenPref = 'welcome_seen_v1';
@@ -50,7 +51,11 @@ class _SplashScreenState extends State<SplashScreen>
     final prefs = results.first as SharedPreferences;
     if (!mounted) return;
     final seenWelcome = prefs.getBool(kWelcomeSeenPref) ?? false;
-    context.go(seenWelcome ? '/' : '/welcome');
+    final router = GoRouter.of(context);
+    router.go(seenWelcome ? '/' : '/welcome');
+    // Only now is it safe to open a notification that launched the app —
+    // pushed any earlier, the go() above would have discarded it.
+    NotificationService.onLaunchSettled(router);
   }
 
   @override

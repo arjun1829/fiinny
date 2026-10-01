@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "../../../lib/admin-auth";
 import { createTransport } from "../../../lib/email/mailer";
 
 // GET /api/email/test?to=you@example.com
 // Verifies SMTP credentials and optionally sends a test email.
 export async function GET(request: Request) {
+  // Admin only: this echoes SMTP configuration back to the caller and will
+  // mail whatever address the query string names.
+  const caller = await requireAdmin(request);
+  if (caller instanceof NextResponse) return caller;
+
   const { searchParams } = new URL(request.url);
   const to = searchParams.get("to");
 

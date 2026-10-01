@@ -106,6 +106,7 @@ function staticEntries(newest: {
     // No version constant tracks the privacy policy, so it carries no lastmod.
     { url: `${SITE_URL}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/terms`, ...(legal ? { lastModified: legal } : {}), changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE_URL}/return-policy`, ...(legal ? { lastModified: legal } : {}), changeFrequency: "yearly", priority: 0.4 },
     // Indexed deliberately, and at a higher priority than the other two legal
     // pages: this is the document a manufacturer is pointed at when told that
     // KrishiDukan has no company-specific agreements, so it has to be findable.

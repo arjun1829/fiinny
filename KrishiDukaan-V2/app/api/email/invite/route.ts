@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
+import { requireAuthed } from "../../../lib/admin-auth";
 import { sendEmail } from "../../../lib/email/mailer";
 import { buildInviteEmail } from "../../../lib/email/templates";
 import { buildSignupInviteUrl } from "../../../lib/invite/invite-utils";
 
 export async function POST(request: Request) {
+  // The recipient comes from the request body, so an unauthenticated caller
+  // could send mail from this platform's identity to any address. A verified
+  // token is the minimum bar.
+  const caller = await requireAuthed(request);
+  if (caller instanceof NextResponse) return caller;
+
   try {
     const body = await request.json() as {
       retailerEmail?: string;

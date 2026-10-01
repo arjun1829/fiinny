@@ -17,9 +17,11 @@ export interface WaSendResult {
   waId: string;
 }
 
+export type WaTemplateComponent = Record<string, unknown>;
+
 export interface WaProvider {
   sendTextMessage(to: string, text: string): Promise<WaSendResult>;
-  sendTemplateMessage(to: string, templateName: string, languageCode: string): Promise<WaSendResult>;
+  sendTemplateMessage(to: string, templateName: string, languageCode: string, components?: WaTemplateComponent[]): Promise<WaSendResult>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ function buildTextBody(to: string, text: string): Record<string, unknown> {
   };
 }
 
-function buildTemplateBody(to: string, templateName: string, languageCode: string): Record<string, unknown> {
+function buildTemplateBody(to: string, templateName: string, languageCode: string, components?: WaTemplateComponent[]): Record<string, unknown> {
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -53,6 +55,7 @@ function buildTemplateBody(to: string, templateName: string, languageCode: strin
     template: {
       name: templateName,
       language: { code: languageCode },
+      ...(components && components.length > 0 ? { components } : {}),
     },
   };
 }
@@ -114,9 +117,9 @@ function getMockProvider(): WaProvider {
       console.log("[WA:mock] payload:\n" + JSON.stringify(payload, null, 2));
       return { metaMessageId: `mock-text-${Date.now()}`, waId: to };
     },
-    async sendTemplateMessage(phone, templateName, languageCode) {
+    async sendTemplateMessage(phone, templateName, languageCode, components) {
       const to = toE164(phone);
-      const payload = buildTemplateBody(to, templateName, languageCode);
+      const payload = buildTemplateBody(to, templateName, languageCode, components);
       console.log("[WA:mock] ── pre-send diagnostics ──────────────────────────");
       console.log("[WA:mock]  provider      : mock (no API call will be made)");
       console.log(`[WA:mock]  to            : ${to}`);
@@ -170,7 +173,7 @@ function getTestProvider(): WaProvider {
 
       return graphPost(phoneNumberId, accessToken, buildTextBody(to, text), "test");
     },
-    async sendTemplateMessage(phone, templateName, languageCode) {
+    async sendTemplateMessage(phone, templateName, languageCode, components) {
       const { accessToken, phoneNumberId, verifiedRecipients } = getTestConfig();
       const to = toE164(phone);
 
@@ -180,7 +183,7 @@ function getTestProvider(): WaProvider {
         );
       }
 
-      return graphPost(phoneNumberId, accessToken, buildTemplateBody(to, templateName, languageCode), "test");
+      return graphPost(phoneNumberId, accessToken, buildTemplateBody(to, templateName, languageCode, components), "test");
     },
   };
 }
@@ -203,9 +206,9 @@ function getProductionProvider(): WaProvider {
       const to = toE164(phone);
       return graphPost(phoneNumberId, accessToken, buildTextBody(to, text), "production");
     },
-    async sendTemplateMessage(phone, templateName, languageCode) {
+    async sendTemplateMessage(phone, templateName, languageCode, components) {
       const to = toE164(phone);
-      return graphPost(phoneNumberId, accessToken, buildTemplateBody(to, templateName, languageCode), "production");
+      return graphPost(phoneNumberId, accessToken, buildTemplateBody(to, templateName, languageCode, components), "production");
     },
   };
 }

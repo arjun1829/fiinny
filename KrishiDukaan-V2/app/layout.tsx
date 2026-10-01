@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+import { OpenAIPixel } from "../components/shared/openai-pixel";
 import { I18nProvider } from "./i18n/I18nContext";
 
 // Self-hosted via next/font (replaces the render-blocking CSS @import in
@@ -151,6 +152,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <OpenAIPixel />
       <body className={`${jakarta.variable} font-sans`}>
         <script
           type="application/ld+json"

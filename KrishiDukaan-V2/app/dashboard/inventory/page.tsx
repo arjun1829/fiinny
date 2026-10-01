@@ -29,7 +29,7 @@ import {
 import type { InventoryRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { CheckCircle2, KeyRound, Loader2, Plus, PlusCircle, Search, X, Zap } from "lucide-react";
+import { CheckCircle2, Download, KeyRound, Loader2, Plus, PlusCircle, Search, X, Zap } from "lucide-react";
 import Link from "next/link";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
 import { useI18n } from "../../i18n/I18nContext";
@@ -51,6 +51,45 @@ function computeHealth(rows: InventoryRow[]) {
   const label =
     outOfStock === 0 && lowStock === 0 ? "healthyLabel" : score >= 70 ? "goodLabel" : "attentionNeeded";
   return { inStock, lowStock, outOfStock, score, label };
+}
+
+// ─── Catalog CSV export ─────────────────────────────────────────────────────────
+// Exports ONLY: Product Name, Category, Variants and their Price.
+// Deliberately excludes Source, Status, Last Updated, and Actions.
+
+function csvCell(value: string): string {
+  // Quote when the value contains a comma, quote, or newline; escape quotes by doubling.
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function formatVariants(row: InventoryRow): string {
+  const list =
+    row.variants && row.variants.length > 0
+      ? row.variants
+      : [{ unit: row.unit, price: row.sellingPrice }];
+  return list
+    .map((v) => `${v.unit}: ₹${Number(v.price ?? 0).toLocaleString("en-IN")}`)
+    .join("; ");
+}
+
+function exportCatalogCsv(rows: InventoryRow[]) {
+  const header = ["Product Name", "Category", "Variants & Price"];
+  const lines = [
+    header.join(","),
+    ...rows.map((r) =>
+      [csvCell(r.productName), csvCell(r.category), csvCell(formatVariants(r))].join(","),
+    ),
+  ];
+  // Prepend a BOM so Excel opens the ₹ sign and UTF-8 text correctly.
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `product-catalog-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ─── Seat info card ───────────────────────────────────────────────────────────
@@ -360,6 +399,11 @@ export default function InventoryPage() {
 
   const health = useMemo(() => computeHealth(rows), [rows]);
 
+  const visibleRows = useMemo(
+    () => rows.filter((r) => !search || r.productName.toLowerCase().includes(search.toLowerCase())),
+    [rows, search],
+  );
+
   const refresh = useCallback(async () => {
     if (userId) {
       const p = await getUserProfile(userId);
@@ -478,9 +522,21 @@ export default function InventoryPage() {
       {/* ── Product list ────────────────────────────────────────────────────── */}
       <section aria-label="Inventory list">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h2 className="text-base font-semibold text-on-surface">
-            {isManufacturer ? t('yourCatalogue') : t('yourInventory')}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-on-surface">
+              {isManufacturer ? t('yourCatalogue') : t('yourInventory')}
+            </h2>
+            {/* Export — Product Name, Category, Variants & Price only */}
+            <button
+              type="button"
+              onClick={() => exportCatalogCsv(visibleRows)}
+              disabled={visibleRows.length === 0}
+              title="Export product name, category, and variant prices as CSV"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all disabled:opacity-50 disabled:pointer-events-none"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+          </div>
           {/* Search */}
           <div className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 w-full sm:w-64">
             <Search className="h-4 w-4 text-outline shrink-0" />
@@ -508,9 +564,7 @@ export default function InventoryPage() {
             role={role}
             userId={userId}
             accountDeliveryEnabled={accountDeliveryEnabled}
-            rows={rows.filter(r =>
-              !search || r.productName.toLowerCase().includes(search.toLowerCase())
-            )}
+            rows={visibleRows}
             onUpdated={refresh}
             onToggleActive={handleToggleActive}
             onDelete={handleDelete}

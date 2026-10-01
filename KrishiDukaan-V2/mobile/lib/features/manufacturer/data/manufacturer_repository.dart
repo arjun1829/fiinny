@@ -151,9 +151,11 @@ class ManufacturerRepository {
     required String ownerName,
     required String retailerPhone,
     String? email,
+    String? line1,
     String? city,
     String? state,
     String? pincode,
+    GeoPoint? geo,
   }) async {
     final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final code = _generateInviteCode();
@@ -170,7 +172,7 @@ class ManufacturerRepository {
       'ownerName': ownerName.trim(),
       'email': email?.trim().toLowerCase() ?? '',
       'address': {
-        'line1': '',
+        'line1': line1?.trim() ?? '',
         'city': city?.trim() ?? '',
         'state': state?.trim() ?? '',
         'pincode': pincode?.trim() ?? '',
@@ -186,6 +188,7 @@ class ManufacturerRepository {
       'subscriptionStatus': 'free',
       'createdAt': now,
       'updatedAt': now,
+      if (geo != null) 'geo': geo,
     };
     batch.set(retailerRef, retailerPayload, SetOptions(merge: true));
 
@@ -210,11 +213,12 @@ class ManufacturerRepository {
       'createdBy': manufacturerId,
       'addedAt': now,
       'address': {
-        'line1': '',
+        'line1': line1?.trim() ?? '',
         'city': city?.trim() ?? '',
         'state': state?.trim() ?? '',
         'pincode': pincode?.trim() ?? '',
       },
+      if (geo != null) 'geo': geo,
     };
     batch.set(inviteRef, invitePayload);
 
@@ -231,6 +235,7 @@ class ManufacturerRepository {
       'onboardingStatus': 'pending',
       'addedAt': now,
       'updatedAt': now,
+      if (geo != null) 'geo': geo,
     };
     batch.set(mirrorRef, mirrorPayload, SetOptions(merge: true));
 
@@ -274,6 +279,7 @@ class ManufacturerRepository {
     String? city,
     String? state,
     String? pincode,
+    GeoPoint? geo,
   }) async {
     final now = FieldValue.serverTimestamp();
     final normalizedPhone = PhoneUtils.normalize(phone);
@@ -293,6 +299,7 @@ class ManufacturerRepository {
       'retailerDocId': normalizedPhone,
       'retailerEmail': email.trim().toLowerCase(),
       if (hasAddress) 'address': address,
+      if (geo != null) 'geo': geo,
       'updatedAt': now,
     });
 
@@ -304,6 +311,7 @@ class ManufacturerRepository {
         'ownerName': ownerName.trim(),
         'email': email.trim().toLowerCase(),
         if (hasAddress) 'address': address,
+        if (geo != null) 'geo': geo,
         'updatedAt': now,
       }, SetOptions(merge: true));
     } catch (_) {
@@ -320,6 +328,8 @@ class ManufacturerRepository {
         'manufacturerPhone': manufacturerPhone,
         'shopName': shopName.trim(),
         'ownerName': ownerName.trim(),
+        if (hasAddress) 'address': address,
+        if (geo != null) 'geo': geo,
         'updatedAt': now,
       }, SetOptions(merge: true));
     }
@@ -668,10 +678,26 @@ class ManufacturerRepository {
     String sellMode = 'online_delivery',
     bool gstApplicable = false,
     double gstRate = 18.0,
+    // Web-parity product detail fields (see product_form_sections.dart) —
+    // this screen wrote products with none of these until now, so a
+    // manufacturer's catalog entry always lacked the structured detail a
+    // web-created one had.
+    Map<String, dynamic>? categoryInfo,
+    List<Map<String, String>>? composition,
+    List<Map<String, String>>? customFields,
+    String? videoUrl,
   }) async {
     final nameSearch = _buildNameSearch(name);
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    await _db.collection('catalog').add({
+    // `products` — NOT `catalog`. This used to write to `catalog`, which the
+    // entire website never reads: not the seller dashboard, not admin, not
+    // the marketplace (see app/dashboard/_lib/inventory-firestore.ts, which
+    // queries `products` only). A manufacturer adding a product from the app
+    // therefore created something only the app's own catalog screen could
+    // see — invisible to their own web dashboard, to admin, and to every
+    // customer. `products` is the single source of truth for a listing; see
+    // mobile/CLAUDE.md, which already said so.
+    await _db.collection('products').add({
       'name': name,
       'nameSearch': nameSearch,
       'category': category,
@@ -683,11 +709,25 @@ class ManufacturerRepository {
       if (nitrogen != null) 'nitrogen': nitrogen,
       if (phosphorus != null) 'phosphorus': phosphorus,
       if (potassium != null) 'potassium': potassium,
+      if (categoryInfo != null && categoryInfo.isNotEmpty) 'categoryInfo': categoryInfo,
+      if (composition != null && composition.isNotEmpty) 'composition': composition,
+      if (customFields != null && customFields.isNotEmpty) 'customFields': customFields,
+      if (videoUrl != null && videoUrl.isNotEmpty) 'videoUrl': videoUrl,
       'createdByPhone': manufacturerPhone,
       'manufacturerPhone': manufacturerPhone,
+      'manufacturerId': uid,
       'ownerId': uid,
+      // ownerPhone so the phone-keyed reader path resolves too — web queries
+      // ownerId by BOTH uid and phone (fetchProductsByOwner).
+      'ownerPhone': manufacturerPhone,
       'ownerType': 'manufacturer',
+      'sellerType': 'manufacturer',
       'source': 'manufacturer_inventory',
+      // Marketplace card requirements: fetchMarketplaceProducts drops any
+      // product without a name, an image and a finite price.
+      'isOnline': sellMode != 'offline_store_only',
+      'stock': 'In Stock',
+      'store': '',
       'variants': variants.map((v) => v.toMap()).toList(),
       'isActive': isActive,
       'sellMode': sellMode,
@@ -905,6 +945,124 @@ class ManufacturerRepository {
       productName: catalogName,
       manufacturerPhone: manufacturerPhone,
     );
+  }
+
+  /// Removes a product assignment — the reverse of [assignProductToRetailer].
+  ///
+  /// Mirrors web's `removeProductAssignment` step for step:
+  /// 1. Release the seat listing. This MUST succeed regardless of anything
+  ///    else below — it's what frees the seat for reassignment, and a
+  ///    retailer who already deleted their copy of the product must not be
+  ///    able to leave a seat stuck as permanently consumed.
+  /// 2. Deactivate the retailer's product copy and inventory record, if they
+  ///    still exist — best-effort, since the retailer may have already
+  ///    removed them from their own inventory.
+  /// 3. Drop the retailer's entry from the manufacturer's canonical product's
+  ///    `availability[]`, so the marketplace stops offering it from a store
+  ///    that no longer stocks it.
+  /// 4. If that was the retailer's last active assignment, clear
+  ///    `assignedSeat` on their `manufacturerRetailers` doc — otherwise the
+  ///    retailer list keeps showing them as seat-consuming with nothing
+  ///    assigned.
+  Future<void> removeProductAssignment(String seatListingId) async {
+    final listingRef = _db.collection('retailerSeatListings').doc(seatListingId);
+    final listingSnap = await listingRef.get();
+    if (!listingSnap.exists) {
+      throw Exception('Seat listing not found.');
+    }
+    final data = listingSnap.data()!;
+    final now = FieldValue.serverTimestamp();
+
+    final retailerProductId = data['productId'] as String? ?? '';
+    final manufacturerProductId = data['manufacturerProductId'] as String? ?? '';
+    final retailerDocId = data['retailerDocId'] as String? ?? '';
+    final manufacturerId = data['ownerId'] as String? ?? '';
+
+    // ── 1 & 2: release the seat, deactivate the copy — one batch ──────────
+    final batch = _db.batch();
+    batch.update(listingRef, {
+      'status': 'released',
+      'releasedAt': now,
+      'updatedAt': now,
+    });
+
+    if (retailerProductId.isNotEmpty) {
+      try {
+        final copySnap =
+            await _db.collection('products').doc(retailerProductId).get();
+        if (copySnap.exists) {
+          batch.update(copySnap.reference, {'isActive': false, 'updatedAt': now});
+        }
+        final invSnap = await _db
+            .collection('inventory')
+            .where('productId', isEqualTo: retailerProductId)
+            .get();
+        for (final d in invSnap.docs) {
+          batch.update(d.reference, {'isAvailable': false, 'updatedAt': now});
+        }
+      } catch (_) {
+        // Product/inventory already gone — seat release must still proceed.
+      }
+    }
+
+    await batch.commit();
+
+    // ── 3: drop this retailer from the canonical product's availability[] ──
+    if (manufacturerProductId.isNotEmpty && retailerDocId.isNotEmpty) {
+      try {
+        final mfgRef = _db.collection('products').doc(manufacturerProductId);
+        final mfgSnap = await mfgRef.get();
+        if (mfgSnap.exists) {
+          final raw = mfgSnap.data()?['availability'];
+          if (raw is List) {
+            final entry = raw.cast<dynamic>().firstWhere(
+                  (e) => e is Map && e['storeId'] == retailerDocId,
+                  orElse: () => null,
+                );
+            if (entry != null) {
+              await mfgRef.update({
+                'availability': FieldValue.arrayRemove([entry]),
+              });
+            }
+          }
+        }
+      } catch (_) {
+        // Non-critical — the marketplace read path already treats a missing
+        // product/copy as unavailable.
+      }
+    }
+
+    // ── 4: clear assignedSeat if that was the retailer's last active seat ──
+    if (manufacturerId.isNotEmpty && retailerDocId.isNotEmpty) {
+      try {
+        final remaining = await _db
+            .collection('retailerSeatListings')
+            .where('ownerId', isEqualTo: manufacturerId)
+            .where('retailerDocId', isEqualTo: retailerDocId)
+            .where('listingType', isEqualTo: 'assigned')
+            .where('status', isEqualTo: 'active')
+            .limit(1)
+            .get();
+        if (remaining.docs.isEmpty) {
+          final retailerDocs = await _db
+              .collection('manufacturerRetailers')
+              .where('manufacturerId', isEqualTo: manufacturerId)
+              .where('retailerDocId', isEqualTo: retailerDocId)
+              .get();
+          final clearBatch = _db.batch();
+          for (final d in retailerDocs.docs) {
+            if (d.data()['status'] == 'revoked') continue;
+            clearBatch.update(d.reference, {
+              'assignedSeat': false,
+              'updatedAt': now,
+            });
+          }
+          await clearBatch.commit();
+        }
+      } catch (_) {
+        // Non-critical — seat awareness will self-correct on next read.
+      }
+    }
   }
 
   Future<void> _sendProductAssignedNotification({

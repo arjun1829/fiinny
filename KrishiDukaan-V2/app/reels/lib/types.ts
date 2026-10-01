@@ -12,6 +12,10 @@ export interface FeedReel {
   slug: string;
   videoUrl: string;
   thumbnailUrl?: string;
+  /** Poster fallback. Reels uploaded before server-side thumbnail generation
+   *  shipped have no thumbnailUrl, and a <video> with no src renders its
+   *  poster only — so without this they show as a black tile. */
+  linkedProductImageUrl?: string;
   title: string;
   caption: string;
   shopName: string;

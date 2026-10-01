@@ -34,6 +34,59 @@ export async function PATCH(request: Request, { params }: Ctx) {
     if (body.active !== undefined) update.active = Boolean(body.active);
     if (body.note !== undefined) update.note = String(body.note ?? "").trim();
 
+    if (body.applicablePlans !== undefined) {
+      if (Array.isArray(body.applicablePlans) && body.applicablePlans.length > 0) {
+        const plans = (body.applicablePlans as unknown[])
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n > 0);
+        update.applicablePlans = plans.length ? plans : FieldValue.delete();
+      } else {
+        update.applicablePlans = FieldValue.delete();
+      }
+    }
+
+    if ("minSeats" in body) {
+      if (body.minSeats != null && body.minSeats !== "") {
+        const n = Number(body.minSeats);
+        if (!Number.isInteger(n) || n <= 0) {
+          return NextResponse.json({ error: "Minimum seats must be a positive whole number." }, { status: 400 });
+        }
+        update.minSeats = n;
+      } else {
+        update.minSeats = FieldValue.delete();
+      }
+    }
+
+    if ("maxSeats" in body) {
+      if (body.maxSeats != null && body.maxSeats !== "") {
+        const n = Number(body.maxSeats);
+        if (!Number.isInteger(n) || n <= 0) {
+          return NextResponse.json({ error: "Maximum seats must be a positive whole number." }, { status: 400 });
+        }
+        update.maxSeats = n;
+      } else {
+        update.maxSeats = FieldValue.delete();
+      }
+    }
+
+    if ("startDate" in body) {
+      const v = body.startDate;
+      if (typeof v === "string" && v.trim() && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) {
+        update.startDate = v.trim();
+      } else {
+        update.startDate = FieldValue.delete();
+      }
+    }
+
+    if ("endDate" in body) {
+      const v = body.endDate;
+      if (typeof v === "string" && v.trim() && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) {
+        update.endDate = v.trim();
+      } else {
+        update.endDate = FieldValue.delete();
+      }
+    }
+
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
@@ -46,6 +99,16 @@ export async function PATCH(request: Request, { params }: Ctx) {
     }
 
     const now = FieldValue.serverTimestamp();
+
+    // FieldValue.delete() is a Firestore write sentinel — valid in the document
+    // being modified but not as a stored value in adminLogs. Replace sentinels
+    // with null so the audit record is plain serialisable data.
+    const logAfter = Object.fromEntries(
+      Object.entries(update).map(([k, v]) =>
+        [k, v instanceof FieldValue ? null : v],
+      ),
+    );
+
     const batch = adminDb.batch();
     batch.set(docRef, { ...update, updatedBy: caller.uid, updatedAt: now }, { merge: true });
     batch.set(adminDb.collection("adminLogs").doc(), {
@@ -53,7 +116,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
       performedBy: caller.uid,
       targetId: id,
       before: snap.data() ?? null,
-      after: update,
+      after: logAfter,
       createdAt: now,
     });
     await batch.commit();

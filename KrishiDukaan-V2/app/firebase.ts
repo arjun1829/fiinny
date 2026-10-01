@@ -5,6 +5,7 @@ import {
   arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getCountFromServer,
@@ -144,7 +145,7 @@ export type RetailerProfile = {
 import { MarketplaceProduct } from '../types/product';
 import type { CartItem, OrderDoc, OrderItem, OrderStatus, SellerType, StatusHistoryEntry } from '../types/order';
 import { generateAndStoreInvoice } from './utils/invoice-storage';
-import { getActiveDiscountPct } from './utils/discount';
+import { buildRatingAgg, mapMarketplaceDoc, mergeMarketplaceProducts } from './lib/marketplace-merge';
 
 export async function saveRetailerApplication(payload: RetailerApplication) {
   const products = payload.products
@@ -301,402 +302,23 @@ export async function fetchMarketplaceProducts(): Promise<MarketplaceProduct[]> 
       getDocs(collection(db, 'productReviews')).catch(() => null),
     ]);
 
-    // Compute ratings straight from the review documents (source of truth), keyed by catalogId.
-    // This avoids depending on aggregate fields being kept in sync on product/catalog docs.
-    const ratingAgg = new Map<string, { sum: number; count: number }>();
-    if (reviewsSnap) {
-      for (const d of reviewsSnap.docs) {
-        const rd = d.data();
-        const id = String(rd.catalogId || '');
-        const rating = Number(rd.rating || 0);
-        if (!id || !(rating > 0)) continue;
-        const cur = ratingAgg.get(id) ?? { sum: 0, count: 0 };
-        cur.sum += rating;
-        cur.count += 1;
-        ratingAgg.set(id, cur);
-      }
-    }
-    // Track every source product id merged under each dedup key, so a review on any
-    // variant (manufacturer/retailer copy) still contributes to the merged card's rating.
-    const idsByKey = new Map<string, string[]>();
+    // Ratings computed straight from the review documents (source of truth), keyed
+    // by catalogId — avoids depending on aggregate fields being kept in sync.
+    const ratingAgg = buildRatingAgg(
+      (reviewsSnap?.docs ?? []).map((d) => ({
+        catalogId: String(d.data().catalogId || ''),
+        rating: Number(d.data().rating || 0),
+      })),
+    );
 
     const allMapped = snapshot.docs
       .filter((item) => item.data().isActive !== false)
-      .map((item) => {
-      const data = item.data();
-      console.log("[fetchMarketplaceProducts] doc read:", {
-        id: item.id,
-        name: String(data.name || ''),
-        source: String(data.source || ''),
-        ownerId: String(data.ownerId || ''),
-        ownerType: String(data.ownerType || ''),
-        isOnline: data.isOnline,
-        sellMode: data.sellMode,
-      });
-      return {
-        id: item.id,
-        name: String(data.name || ''),
-        fullName: data.fullName ? String(data.fullName) : undefined,
-        price: Number(data.price || 0),
-        oldPrice: data.oldPrice ? Number(data.oldPrice) : undefined,
-        category: String(data.category || 'general'),
-        description: String(data.description || ''),
-        image: String(data.image || ''),
-        stock: String(data.stock || 'In Stock'),
-        store: String(data.store || 'Local Store'),
-        distance: String(data.distance || 'Nearby'),
-        retailerId: data.retailerId ? String(data.retailerId) : undefined,
-        retailerPhone: data.retailerPhone ? String(data.retailerPhone) : undefined,
-        ownerId: data.ownerId ? String(data.ownerId) : undefined,
-        manufacturerId: data.manufacturerId ? String(data.manufacturerId) : undefined,
-        manufacturerPhone: data.manufacturerPhone ? String(data.manufacturerPhone) : undefined,
-        sellMode: data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
-        isOnline: data.sellMode !== "offline_store_only",
-        availability: data.availability || undefined,
-        source: data.source ? String(data.source) : undefined,
-        gstApplicable: data.gstApplicable === true,
-        gstRate: [0, 5, 12, 18, 28].includes(Number(data.gstRate))
-          ? (Number(data.gstRate) as 0 | 5 | 12 | 18 | 28)
-          : undefined,
-        averageRating: typeof data.averageRating === 'number' ? data.averageRating : undefined,
-        totalReviews: typeof data.totalReviews === 'number' ? data.totalReviews : undefined,
-        categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
-          ? data.categoryInfo as Record<string, string | string[]>
-          : undefined,
-        // Legacy fertilizer flat fields — kept for backward compat
-        nitrogen: data.nitrogen ? String(data.nitrogen) : undefined,
-        phosphorus: data.phosphorus ? String(data.phosphorus) : undefined,
-        potassium: data.potassium ? String(data.potassium) : undefined,
-        applicationDesc: data.applicationDesc ? String(data.applicationDesc) : undefined,
-        dosage: data.dosage ? String(data.dosage) : undefined,
-        bestForCrops: Array.isArray(data.bestForCrops) ? data.bestForCrops : undefined,
-        // Discount fields — written by updateDiscountRecord when a seller sets a discount.
-        // `effectiveDiscountPct`/`maxDiscountPct` are snapshots taken once at save time and
-        // never re-evaluated afterward, so once a discount's end date passes (or it's
-        // disabled) the stored number stays frozen at the old %, showing a phantom offer
-        // on marketplace cards after checkout/detail pages correctly show none. Recompute
-        // liveness from the raw discountEnabled/discountPct/date fields (same helper the
-        // dashboard uses) whenever they're present, instead of trusting the stale snapshot.
-        effectiveDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
-          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
-          : (typeof data.effectiveDiscountPct === 'number' ? data.effectiveDiscountPct : 0),
-        maxDiscountPct: (data.discountPct !== undefined || data.discountEnabled !== undefined)
-          ? getActiveDiscountPct(data as { discountEnabled?: boolean; discountType?: 'percentage' | 'fixed_amount'; discountPct?: number; discountStartDate?: { toMillis(): number } | null; discountEndDate?: { toMillis(): number } | null })
-          : (typeof data.maxDiscountPct === 'number' ? data.maxDiscountPct : 0),
-        variants: Array.isArray(data.variants) ? data.variants : undefined,
-        images: Array.isArray(data.images) ? data.images : undefined,
-        videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
-        composition: Array.isArray(data.composition) ? data.composition : undefined,
-        customFields: Array.isArray(data.customFields) ? data.customFields : undefined,
-      } as MarketplaceProduct;
-    });
+      .map((item) => mapMarketplaceDoc(item.id, item.data()));
 
-    // Retailer copies hold each store's selling price — collect separately before filtering.
-    // admin_assigned copies are also per-seller and must NOT contribute to the canonical
-    // raw dedup pool — they carry a stale isOnline inherited from the original at creation
-    // time and would permanently keep anyOnlineByKey=true even after the original goes offline.
-    const COPY_SOURCES = new Set(['retailer_inventory_copy', 'manufacturer_assigned', 'admin_assigned']);
-    const retailerCopies = allMapped.filter((p) => COPY_SOURCES.has(p.source ?? ''));
-
-    const raw = allMapped.filter(
-      (product) =>
-        product.name &&
-        product.image &&
-        Number.isFinite(product.price) &&
-        !COPY_SOURCES.has(product.source ?? ''),
-    );
-
-    // Per-seller discount map: nameKey → { sellerUidOrPhone: discountPct }
-    const sellerDiscountsByKey = new Map<string, Record<string, number>>();
-    const recordSellerDiscount = (key: string, uid: string | undefined, phone: string | undefined, pct: number) => {
-      if (!pct || pct <= 0) return;
-      const map = sellerDiscountsByKey.get(key) ?? {};
-      if (uid) map[uid] = pct;
-      if (phone) map[phone] = pct;
-      sellerDiscountsByKey.set(key, map);
-    };
-
-    /**
-     * Union of package sizes across the canonical product and a seller's copy.
-     *
-     * The PACKAGE SIZE chips read the merged card's own `variants`, which used
-     * to come from the canonical doc alone. A retailer who adds a size to their
-     * copy (5L on a catalogue product that only lists 1L) could never surface
-     * it — the chip was missing, so the size was unselectable and the stock
-     * invisible, no matter what their inventory said.
-     *
-     * Sizes are appended, never reordered: baseVariantIdx locates the base by
-     * matching product.price, and existing entries keep their index. Only
-     * {unit, price} is carried — per-store stock and pricing live on that
-     * store's availability entry, which resolveStoreVariant reads separately.
-     */
-    const unionVariants = (
-      base: MarketplaceProduct['variants'],
-      extra: MarketplaceProduct['variants'],
-    ): MarketplaceProduct['variants'] => {
-      if (!Array.isArray(extra) || extra.length === 0) return base;
-      const out = Array.isArray(base) ? [...base] : [];
-      const seen = new Set(out.map((v) => String(v.unit ?? '').trim().toLowerCase()));
-      for (const v of extra) {
-        const unit = String(v?.unit ?? '').trim();
-        if (!unit || seen.has(unit.toLowerCase())) continue;
-        seen.add(unit.toLowerCase());
-        out.push({ unit, price: Number(v.price) || 0 });
-      }
-      return out.length > 0 ? out : base;
-    };
-
-    // Per-key tracker: is ANY seller listing online for this product?
-    // Used to compute the merged card's sellMode/isOnline without letting one
-    // offline listing contaminate all sellers.
-    const anyOnlineByKey = new Map<string, boolean>();
-    const markOnline = (key: string, isOnline: boolean) => {
-      if (isOnline) anyOnlineByKey.set(key, true);
-    };
-
-    // Deduplicate by name: if two products share the same name (case-insensitive),
-    // keep the manufacturer_inventory card as canonical and merge the retailer's
-    // store info into its availability array so farmers see one card with all sources.
-    const byName = new Map<string, MarketplaceProduct>();
-    for (const p of raw) {
-      const key = p.name.toLowerCase().trim();
-      recordSellerDiscount(key, (p as any).ownerId, p.retailerPhone, p.effectiveDiscountPct ?? 0);
-      markOnline(key, p.isOnline === true);
-      const ids = idsByKey.get(key) ?? [];
-      ids.push(p.id);
-      idsByKey.set(key, ids);
-      const existing = byName.get(key);
-      if (!existing) {
-        byName.set(key, { ...p, availability: p.availability ? [...p.availability] : [] });
-        continue;
-      }
-
-      const existingIsManufacturer = existing.source === 'manufacturer_inventory';
-      const pIsManufacturer = p.source === 'manufacturer_inventory';
-      const canonical = (!existingIsManufacturer && pIsManufacturer) ? { ...p, availability: p.availability ? [...p.availability] : [] } : existing;
-      const secondary = (!existingIsManufacturer && pIsManufacturer) ? existing : p;
-
-      // Merge secondary's own availability entries into canonical
-      const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
-      for (const entry of (secondary.availability ?? [])) {
-        const dup = av.some(
-          (a) => a.storeId === entry.storeId ||
-                 (entry.storePhone && a.storePhone === entry.storePhone),
-        );
-        if (!dup) av.push(entry);
-      }
-
-      // Register the secondary product itself as an availability source,
-      // carrying its per-seller isOnline so ProductDetailView can check it.
-      const secondaryStoreId = (secondary as any).ownerId || secondary.retailerId || '';
-      const secondaryPhone = secondary.retailerPhone;
-      const alreadyPresent = av.some(
-        (a) => (secondaryStoreId && a.storeId === secondaryStoreId) ||
-               (secondaryPhone && a.storePhone === secondaryPhone),
-      );
-      if (!alreadyPresent && (secondaryStoreId || secondaryPhone)) {
-        const secondaryDiscountPct = secondary.effectiveDiscountPct ?? 0;
-        av.push({
-          storeId: secondaryStoreId,
-          storePhone: secondaryPhone,
-          storeName: secondary.store || undefined,
-          stockLevel: secondary.stock || 'In Stock',
-          sellingPrice: secondary.price,
-          isOnline: secondary.isOnline,
-          discountPct: secondaryDiscountPct > 0 ? secondaryDiscountPct : undefined,
-          // Carry this store's own per-package-size prices so the detail view can
-          // resolve the correct price per selected variant (not just the base price).
-          variants: Array.isArray(secondary.variants) ? secondary.variants : undefined,
-        });
-      }
-
-      const mergedMaxDiscount = Math.max(
-        canonical.maxDiscountPct ?? canonical.effectiveDiscountPct ?? 0,
-        secondary.maxDiscountPct ?? secondary.effectiveDiscountPct ?? 0,
-      );
-      byName.set(key, {
-        ...canonical,
-        availability: av.length > 0 ? av : undefined,
-        variants: unionVariants(canonical.variants, secondary.variants),
-        maxDiscountPct: mergedMaxDiscount,
-        effectiveDiscountPct: mergedMaxDiscount,
-      });
-    }
-
-    // Merge each retailer copy's price into the canonical product's availability
-    for (const copy of retailerCopies) {
-      if (!copy.name || !copy.price) continue;
-      const key = copy.name.toLowerCase().trim();
-      const canonical = byName.get(key);
-      if (!canonical) continue;
-
-      const copyIds = idsByKey.get(key) ?? [];
-      if (!copyIds.includes(copy.id)) { copyIds.push(copy.id); idsByKey.set(key, copyIds); }
-
-      const copyStoreId = (copy as any).ownerId || copy.retailerId || '';
-      const copyPhone = copy.retailerPhone;
-      if (!copyStoreId && !copyPhone) continue;
-
-      markOnline(key, copy.isOnline === true);
-
-      const av: NonNullable<MarketplaceProduct['availability']> = [...(canonical.availability ?? [])];
-      const existing = av.find(
-        (a) =>
-          (copyStoreId && a.storeId === copyStoreId) ||
-          (copyPhone && a.storePhone === copyPhone),
-      );
-      const copyDiscountPct = copy.effectiveDiscountPct ?? 0;
-      recordSellerDiscount(key, copyStoreId, copyPhone, copyDiscountPct);
-
-      if (existing) {
-        // Prefer the sellingPrice already synced by updateInventoryRecord →
-        // syncAvailabilityPriceStock. copy.price is the stale assignment-time
-        // price and is never updated when a retailer changes their inventory price.
-        // Only fall back to copy.price when no price has been synced yet (0/undefined).
-        if (!existing.sellingPrice || existing.sellingPrice === 0) {
-          existing.sellingPrice = copy.price;
-        }
-        // Carry the copy's isOnline into the existing entry so ProductDetailView
-        // can use it for per-seller ordering eligibility.
-        if (copy.isOnline !== undefined) existing.isOnline = copy.isOnline;
-        // Mirror this store's own per-package-size prices onto the entry.
-        if (Array.isArray(copy.variants)) existing.variants = copy.variants;
-        // Always carry the copy's live discount into the entry so lowestFinalPrice
-        // is computed correctly on the marketplace card.
-        if (copyDiscountPct > 0) existing.discountPct = copyDiscountPct;
-      } else {
-        av.push({
-          storeId: copyStoreId,
-          storePhone: copyPhone,
-          storeName: copy.store || undefined,
-          stockLevel: copy.stock || 'In Stock',
-          sellingPrice: copy.price,
-          isOnline: copy.isOnline,
-          discountPct: copyDiscountPct > 0 ? copyDiscountPct : undefined,
-          // Carry this store's own per-package-size prices so the detail view can
-          // resolve the correct price per selected variant (not just the base price).
-          variants: Array.isArray(copy.variants) ? copy.variants : undefined,
-        });
-      }
-      const newMax = Math.max(canonical.maxDiscountPct ?? 0, copyDiscountPct);
-      byName.set(key, {
-        ...canonical,
-        availability: av,
-        variants: unionVariants(canonical.variants, copy.variants),
-        maxDiscountPct: newMax,
-      });
-    }
-
-    // Compute lowestPrice + ratings + corrected sellMode across all merged sources.
-    // CRITICAL: sellMode/isOnline on the merged card reflects ANY seller being online.
-    // A single offline listing must never suppress the Order button for online sellers.
-    return Array.from(byName.entries()).map(([key, p]) => {
-      const prices = (p.availability ?? [])
-        .map((a) => a.sellingPrice)
-        .filter((v): v is number => typeof v === 'number' && v > 0);
-      const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
-
-      // Lowest price a buyer would actually pay — each seller's sellingPrice after their
-      // own discountPct is applied. lowestPrice and maxDiscountPct belong to potentially
-      // different sellers; mixing them (calcDiscount(lowestPrice, maxPct)) produces a
-      // fictional price that no seller actually charges.
-      const finalPrices = (p.availability ?? []).flatMap((a) => {
-        const sp = a.sellingPrice;
-        if (typeof sp !== 'number' || sp <= 0) return [];
-        const pct = typeof a.discountPct === 'number' ? a.discountPct : 0;
-        return [Math.round(sp * (1 - pct / 100) * 100) / 100];
-      });
-      // When availability[] is empty (e.g. manufacturer with no retailer copies), the
-      // canonical product IS the only seller — include its own price + discount so
-      // lowestFinalPrice reflects any discount set via the admin/dashboard panel.
-      if (finalPrices.length === 0 && typeof p.price === 'number' && p.price > 0) {
-        const pct = p.effectiveDiscountPct ?? 0;
-        finalPrices.push(Math.round(p.price * (1 - pct / 100) * 100) / 100);
-      }
-      const lowestFinalPrice = finalPrices.length > 0 ? Math.min(...finalPrices) : undefined;
-
-      let sum = 0, count = 0;
-      for (const id of (idsByKey.get(key) ?? [p.id])) {
-        const agg = ratingAgg.get(id);
-        if (agg) { sum += agg.sum; count += agg.count; }
-      }
-      const averageRating = count > 0 ? sum / count : p.averageRating;
-      const totalReviews = count > 0 ? count : p.totalReviews;
-
-      const sellerDiscounts = sellerDiscountsByKey.get(key) ?? {};
-
-      // Recompute isOnline/sellMode: true if ANY seller listing is online.
-      const mergedOnline = anyOnlineByKey.get(key) ?? false;
-      const mergedSellMode: "online_delivery" | "offline_store_only" =
-        mergedOnline ? "online_delivery" : "offline_store_only";
-
-      // Ensure the canonical product's own seller always has an availability entry.
-      // Without this, ProductDetailView finds availEntry=undefined and falls back to
-      // account-level alone — the product-level isOnline toggle has no effect for
-      // single-seller products or manufacturer products with no retailer copies.
-      const canonOwnerId = (p as any).ownerId as string | undefined;
-      const canonPhone = ((p as any).manufacturerPhone as string | undefined) || p.retailerPhone;
-      const currentAv = p.availability ?? [];
-      const hasCanonEntry =
-        !canonOwnerId && !canonPhone
-          ? true
-          : currentAv.some(
-              (a) =>
-                (canonOwnerId && (a.storeId === canonOwnerId || a.storePhone === canonOwnerId)) ||
-                (canonPhone && (a.storePhone === canonPhone || a.storeId === canonPhone)),
-            );
-      const finalAvailability: NonNullable<MarketplaceProduct['availability']> = hasCanonEntry
-        ? currentAv
-        : [
-            ...currentAv,
-            {
-              storeId: canonOwnerId || '',
-              storePhone: canonPhone,
-              storeName: p.store || undefined,
-              stockLevel: p.stock || 'In Stock',
-              sellingPrice: p.price,
-              // Use the canonical's own isOnline (before merged OR correction),
-              // so ProductDetailView shows the correct per-seller Order button.
-              isOnline: p.isOnline,
-              // Carry the owner's OWN per-package-size prices so the detail view can
-              // resolve the correct price per selected variant and keep the store
-              // visible for every configured size — not just the base. Without this,
-              // resolveStoreVariant() finds an availability entry with no variants[]
-              // and falls back to the legacy single-(base)-size path, hiding the
-              // owner store for any non-base variant (e.g. 2L) it actually stocks.
-              variants: Array.isArray(p.variants) ? p.variants : undefined,
-            },
-          ];
-
-      console.log("[fetchMarketplaceProducts]", {
-        name: p.name,
-        id: p.id,
-        source: p.source,
-        ownerId: canonOwnerId,
-        rawIsOnline: p.isOnline,
-        mergedOnline,
-        mergedSellMode,
-        availabilityIsOnline: finalAvailability.map((a) => ({ storeId: a.storeId, storePhone: a.storePhone, isOnline: a.isOnline })),
-      });
-
-      return {
-        ...p,
-        isOnline: mergedOnline,
-        sellMode: mergedSellMode,
-        availability: finalAvailability.length > 0 ? finalAvailability : undefined,
-        lowestPrice,
-        lowestFinalPrice,
-        averageRating,
-        totalReviews,
-        sellerDiscounts,
-        // Every underlying doc id (manufacturer canonical + retailer/admin copies)
-        // that merged into this one card. Lets consumers resolve a deep-link to a
-        // secondary id back to this merged product, and find reels linked to ANY
-        // of those ids — a reel is linked to whichever copy the seller owns, not
-        // necessarily the canonical `id`.
-        mergedProductIds: Array.from(new Set(idsByKey.get(key) ?? [p.id])),
-      };
-    });
+    // Dedup by name + merge copies + finalize price/ratings/sellMode.
+    // Shared with the paginated /api/marketplace/products route so both produce
+    // identical merged cards.
+    return mergeMarketplaceProducts(allMapped, ratingAgg);
   } catch (error) {
     console.error('Error fetching products from Firestore:', error);
     throw error;
@@ -953,6 +575,160 @@ export async function fetchStores(): Promise<Store[]> {
   }
 }
 
+/** One seller of a product. Identity + the seller's own denormalized price/variants
+ *  (carried so pricing survives even when the product's availability[] is incomplete). */
+export type ProductSellerKey = {
+  storeId?: string;
+  storePhone?: string;
+  storeName?: string;
+  sellingPrice?: number;
+  variants?: { unit: string; price: number; stock?: number }[];
+  isOnline?: boolean;
+};
+
+function sellerFromCopyDoc(d: Record<string, any>): ProductSellerKey {
+  return {
+    storeId: d.ownerId || d.retailerId || undefined,
+    storePhone: d.ownerPhone || d.retailerPhone || undefined,
+    storeName: d.store || undefined,
+    sellingPrice: typeof d.price === 'number' ? d.price : undefined,
+    variants: Array.isArray(d.variants) ? d.variants : undefined,
+    isOnline: d.isOnline === true || d.sellMode === 'online_delivery',
+  };
+}
+
+/**
+ * Fetch EVERY seller that stocks `rootProductId` — scoped to this product only,
+ * never the whole retailer/product universe. No limit(), no startAfter(): the
+ * caller needs the complete set so it can distance-sort it and truly put the
+ * nearest retailer first (a paged query ordered by document id cannot do that,
+ * because distance isn't a stored/orderable field — see the audit).
+ *
+ * Seller copies link to the canonical product through TWO fields depending on how
+ * they were created — `manufacturerProductId` (manufacturer-assigned) and
+ * `originalProductId` (admin-assigned / retailer copies) — so we run one query per
+ * field (the same two-field lookup as inventory-firestore.recomputeMaxDiscount()),
+ * plus the in-memory owner listing. Each sub-query is a single equality filter, so
+ * NO composite index is required; `isActive` is filtered client-side to keep it so.
+ */
+export async function fetchAllProductSellers(
+  rootProductId: string,
+  ownerSeed: ProductSellerKey | null,
+): Promise<ProductSellerKey[]> {
+  const sellers: ProductSellerKey[] = [];
+
+  // Owner's own listing (manufacturer or self-listing retailer) — known from the
+  // in-memory product, so it needs no query.
+  if (ownerSeed && (ownerSeed.storeId || ownerSeed.storePhone)) sellers.push(ownerSeed);
+
+  const runAll = async (field: 'manufacturerProductId' | 'originalProductId') => {
+    const snap = await getDocs(
+      query(collection(db, 'products'), where(field, '==', rootProductId)),
+    );
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, any>;
+      if (data.isActive === false) continue;
+      sellers.push(sellerFromCopyDoc(data));
+    }
+  };
+
+  await Promise.all([runAll('manufacturerProductId'), runAll('originalProductId')]);
+  return sellers;
+}
+
+/**
+ * Fetch the store profiles for a SPECIFIC set of product sellers — the on-demand,
+ * per-product counterpart to fetchStores(). Product Detail uses this to load only
+ * the retailers that actually stock the open product, one page (~20) at a time,
+ * instead of reading the entire /retailers collection.
+ *
+ * Reads are bounded and targeted:
+ *   • Each seller → at most a few getDoc()s (retailers/ → manufacturers/ → profiles/,
+ *     tried by phone then by id, first hit wins). A seller with no profile doc still
+ *     returns a usable Store built from its denormalized availability data.
+ *   • Ratings → ONE storeReviews query per ≤30 phones (chunked `in`), so reviews are
+ *     fetched only for THIS page's stores, never the whole review collection.
+ */
+export async function fetchStoresForSellers(sellers: ProductSellerKey[]): Promise<Store[]> {
+  const isPhone = (s?: string) => !!s && /^\+?\d{10,13}$/.test(s);
+
+  const stores = await Promise.all(
+    sellers.map(async (seller) => {
+      const keys = Array.from(
+        new Set([seller.storePhone, seller.storeId].filter((k): k is string => !!k)),
+      );
+      let data: Record<string, any> | null = null;
+      let docId = keys[0] ?? '';
+      outer: for (const key of keys) {
+        for (const col of ['retailers', 'manufacturers', 'profiles'] as const) {
+          const snap = await getDoc(doc(db, col, key)).catch(() => null);
+          if (snap?.exists()) { data = snap.data() as Record<string, any>; docId = snap.id; break outer; }
+        }
+      }
+      const d = data ?? {};
+      const addr = d.address;
+      const addrIsMap = addr && typeof addr === 'object';
+      const phone =
+        d.phone || (isPhone(docId) ? docId : undefined) || seller.storePhone || undefined;
+      return {
+        id: docId || seller.storeId || seller.storePhone || '',
+        retailerId: d.retailerId,
+        userId: d.uid || d.userId || undefined,
+        name: d.shopName || d.businessName || d.ownerName || d.name || seller.storeName || 'Retailer',
+        ownerName: d.ownerName,
+        phone,
+        logo: d.logo || undefined,
+        address: addrIsMap ? (addr.line1 ?? addr.address) : addr,
+        city: (addrIsMap ? addr.city : undefined) ?? d.city,
+        state: (addrIsMap ? addr.state : undefined) ?? d.state,
+        pincode: (addrIsMap ? addr.pincode : undefined) ?? d.pincode,
+        onlineDelivery: d.onlineDelivery === true,
+        distance: 'Nearby',
+        status: d.status || 'Active',
+        stock: [],
+        location: {
+          lat: d.geo?.latitude ?? d.geo?.lat ?? d.location?.latitude ?? d.location?.lat ?? 0,
+          lng: d.geo?.longitude ?? d.geo?.lng ?? d.location?.longitude ?? d.location?.lng ?? 0,
+        },
+        averageRating: typeof d.averageRating === 'number' ? d.averageRating : undefined,
+        totalReviews: typeof d.totalReviews === 'number' ? d.totalReviews : undefined,
+        // The seller's OWN denormalized price/variants from its product copy —
+        // used by resolveStoreVariant when the product's availability[] has no
+        // matching entry, so pricing survives regardless of merge completeness.
+        sellingPrice: typeof seller.sellingPrice === 'number' ? seller.sellingPrice : undefined,
+        variants: seller.variants,
+      } as Store & { retailerId?: string; userId?: string; city?: string; state?: string; pincode?: string; sellingPrice?: number; variants?: unknown };
+    }),
+  );
+
+  // Ratings for exactly these stores — chunked `in` queries on storePhone.
+  const phones = Array.from(
+    new Set(stores.map((s) => s.phone).filter((p): p is string => !!p)),
+  );
+  if (phones.length > 0) {
+    const agg = new Map<string, { sum: number; count: number }>();
+    for (let i = 0; i < phones.length; i += 30) {
+      const chunk = phones.slice(i, i + 30);
+      const snap = await getDocs(
+        query(collection(db, 'storeReviews'), where('storePhone', 'in', chunk)),
+      ).catch(() => null);
+      for (const rd of snap?.docs ?? []) {
+        const p = String(rd.data().storePhone || '');
+        const rating = Number(rd.data().rating || 0);
+        if (!p || !(rating > 0)) continue;
+        const cur = agg.get(p) ?? { sum: 0, count: 0 };
+        cur.sum += rating; cur.count += 1; agg.set(p, cur);
+      }
+    }
+    for (const s of stores) {
+      const a = s.phone ? agg.get(s.phone) : undefined;
+      if (a && a.count > 0) { s.averageRating = a.sum / a.count; s.totalReviews = a.count; }
+    }
+  }
+
+  return stores;
+}
+
 function toE164(rawPhone: string): string {
   const digits = rawPhone.replace(/\D/g, '');
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
@@ -1088,8 +864,35 @@ export async function updateSubscriptionStatus(
    * that was not.
    */
   termsAcceptance?: TermsAcceptance,
+  /**
+   * The promo code this subscription was purchased with, as returned by
+   * /api/payment/verify (which reads it from the Razorpay order notes, stamped
+   * server-side at create-order time). Persisted on the subscription doc so
+   * "which users bought with promo X" is answerable by querying subscriptions.
+   * Omitted / empty when no promo was used. Never sourced from the checkout
+   * input field — only the gateway-verified value flows through here.
+   */
+  promoCode?: string | null,
+  /**
+   * Which plan was bought — from verify/, which reads it off the Razorpay
+   * order's notes (stamped by create-order), so it is the plan actually
+   * charged, not whatever the checkout screen currently has selected.
+   * Snapshotted on the subscription so a later edit or delete of the ladder
+   * row never changes what this subscription says it was.
+   */
+  plan?: {
+    planId?: string | null;
+    planTier?: string | null;
+    planName?: string | null;
+    /** Referral code from the order notes (validated by create-order). */
+    referralCode?: string | null;
+  } | null,
 ): Promise<{ profileUpdated: true; paymentLogged: boolean; paymentLogError?: string }> {
   const timestamp = serverTimestamp();
+  const normalizedPromo = String(promoCode ?? '').trim().toUpperCase();
+  const planTier = plan?.planTier === 'standard' ? 'standard' : 'custom';
+  const planName = String(plan?.planName ?? '').trim() ||
+    (planTier === 'standard' ? 'Standard' : 'Custom');
 
   // Resolve uid → phone. Try uidIndex first; then scan users/{uid} directly (works for
   // admin-created / email-based accounts that have no uidIndex entry).
@@ -1118,11 +921,17 @@ export async function updateSubscriptionStatus(
   const currentSeats = Number(userData.totalSeats) || 0;
   const seatsToAdd = Number(seatCount) || 1;
 
+  const referralCode = String(plan?.referralCode ?? '').trim().toUpperCase();
+  // A customer buying seats becomes a retailer, as in the mobile app — they
+  // can reach checkout through a sales referral link.
+  const upgradeRole = status === 'paid' && (userData.role === 'customer' || userData.role === 'consumer');
+
   await setDoc(userDocRef, {
     isPaid: status === 'paid',
     subscriptionStatus: status,
     paymentDetails: paymentDetails || null,
     totalSeats: status === 'paid' ? currentSeats + seatsToAdd : currentSeats,
+    ...(upgradeRole ? { role: 'retailer' } : {}),
     updatedAt: timestamp,
   }, { merge: true });
 
@@ -1146,6 +955,9 @@ export async function updateSubscriptionStatus(
         amount: totalAmount,
         seatCount: seatsToAdd,
         durationMonths,
+        planName,
+        planTier,
+        ...(referralCode ? { referralCode } : {}),
         currency: 'INR',
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
@@ -1164,7 +976,9 @@ export async function updateSubscriptionStatus(
         ownerId: uid,
         ownerPhone: phone ?? uid,
         ownerType: role,
-        planName: 'Standard',
+        planName,
+        planTier,
+        ...(plan?.planId ? { planId: String(plan.planId) } : {}),
         seatsPurchased: seatsToAdd,
         durationMonths,
         amountPaid: totalAmount,
@@ -1172,6 +986,11 @@ export async function updateSubscriptionStatus(
         razorpayOrderId: paymentDetails?.orderId ?? null,
         razorpayPaymentId: paymentDetails?.paymentId ?? null,
         subscriptionStatus: 'active',
+        // Promo attribution — written only when a gateway-verified code was
+        // used. Absent field = no promo, so usage queries filter on presence.
+        ...(normalizedPromo ? { promoCode: normalizedPromo } : {}),
+        // Sales attribution — only when a validated code was used at checkout.
+        ...(referralCode ? { referralCode } : {}),
         startDate: Timestamp.fromDate(now),
         expiryDate: Timestamp.fromDate(expiry),
         createdAt: timestamp,
@@ -1520,6 +1339,8 @@ export async function fetchRetailerInventory(retailerId: string): Promise<any[]>
 }
 
 import { parseVariantWeightKg } from "./utils/weight";
+import { computeLinePricing } from "./utils/gst";
+import { resolveDeliverySlabs, chargeFromSlabs } from "./utils/delivery";
 
 async function fetchSellerGstin(
   sellerId: string,
@@ -1558,7 +1379,14 @@ async function fetchSellerDeliveryCharge(
   sellerId: string,
   totalWeightKg: number,
   directPhone?: string,
-): Promise<number> {
+  customerState?: string,
+): Promise<{ charge: number; deliveryType: "in_state" | "out_state" | "default" }> {
+  // No chargeable weight (every item free, or a pack size with no parseable
+  // weight) → no slab. The cart estimate and the server (lib/cart-pricing)
+  // already do this; without it the order write picked up the LOWEST slab for a
+  // zero-weight shipment, so the persisted delivery charge could exceed the
+  // one the customer saw and paid.
+  if (!(totalWeightKg > 0)) return { charge: 0, deliveryType: "default" };
   try {
     // Resolve seller phone using the three-path strategy
     let phone: string | null = directPhone || null;
@@ -1573,25 +1401,35 @@ async function fetchSellerDeliveryCharge(
       phone = sellerId;
     }
 
-    if (!phone) return 0;
+    if (!phone) return { charge: 0, deliveryType: "default" };
 
     const settingsSnap = await getDoc(doc(db, "deliverySettings", phone));
-    if (!settingsSnap.exists()) return 0;
+    if (!settingsSnap.exists()) return { charge: 0, deliveryType: "default" };
 
-    const slabs = settingsSnap.data().weightSlabs as
-      | { minKg: number; maxKg: number; charge: number }[]
-      | undefined;
-    if (!slabs?.length) return 0;
-
-    const sorted = [...slabs].sort((a, b) => a.minKg - b.minKg);
-    for (const slab of sorted) {
-      if (totalWeightKg >= slab.minKg && totalWeightKg < slab.maxKg) return slab.charge;
-    }
-    // Open-ended last slab (covers weights above all configured maxKg values)
-    const last = sorted[sorted.length - 1];
-    if (last && totalWeightKg >= last.minKg) return last.charge;
+    // State-aware: pan-India sellers resolve in/out-of-state slabs from the
+    // customer's delivery state vs their own; legacy docs fall back to weightSlabs.
+    const { slabs, deliveryType } = resolveDeliverySlabs(settingsSnap.data(), customerState);
+    if (!slabs.length) return { charge: 0, deliveryType };
+    return { charge: chargeFromSlabs(totalWeightKg, slabs), deliveryType };
   } catch { /* silent */ }
-  return 0;
+  return { charge: 0, deliveryType: "default" };
+}
+
+/** One seller's pricing as computed by lib/cart-pricing on the server. */
+export type ServerSellerBreakdown = {
+  sellerKey: string;
+  subtotal: number;
+  gstTotal: number;
+  gstAdded: number;
+  deliveryCharge: number;
+  delivery: { slab: number; extra: number; free: boolean; waived: number; deliveryType: "in_state" | "out_state" | "default" };
+  total: number;
+};
+
+/** Last 10 digits — seller keys appear as "+91…" and bare in different places. */
+function phoneTail(v: string): string {
+  const d = String(v ?? "").replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : "";
 }
 
 export async function createOrdersFromCart(params: {
@@ -1599,6 +1437,16 @@ export async function createOrdersFromCart(params: {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  /** Finalized delivery-address state — decides in/out-of-state delivery slabs. */
+  customerDeliveryState?: string;
+  /**
+   * The server's own per-seller pricing, returned by /api/payment/create-cart-order
+   * (`sellerBreakdown`). When it names a seller, THAT seller's order takes the
+   * server's subtotal, added GST, delivery and total — the figures actually
+   * charged — instead of the browser's re-derivation, so an order can never say
+   * more or less than was paid. Absent (or no match) → the calculation below.
+   */
+  serverBreakdown?: ServerSellerBreakdown[];
   items: CartItem[];
   payment?: {
     razorpayOrderId: string;
@@ -1609,7 +1457,7 @@ export async function createOrdersFromCart(params: {
     paidAt: string;
   };
 }): Promise<string[]> {
-  const { customerId, customerName, customerPhone, customerAddress, items, payment } = params;
+  const { customerId, customerName, customerPhone, customerAddress, customerDeliveryState, serverBreakdown, items, payment } = params;
   if (!items.length) return [];
 
   const groups = new Map<string, CartItem[]>();
@@ -1627,17 +1475,29 @@ export async function createOrdersFromCart(params: {
     const [sellerType, sellerId] = key.split(":") as [SellerType, string];
 
     const normalizedItems = groupItems.map((item) => {
-      const lineTotal = Number((item.price * item.qty).toFixed(2));
-      const gstApplicable = item.gstApplicable === true && !!item.gstRate;
-      const gstAmount = gstApplicable ? Number((item.price * (item.gstRate as number) / 100).toFixed(2)) : 0;
+      // Authoritative pricing — item.price is the post-discount unit price, so GST
+      // is computed on the discounted price. Inclusive backs the component out;
+      // exclusive adds it on top. Same helper the Cart and invoice use.
+      const pricing = computeLinePricing({
+        unitPrice: item.price,
+        qty: item.qty,
+        gstApplicable: item.gstApplicable,
+        gstRate: item.gstRate,
+        gstIncluded: item.gstIncluded,
+      });
+      // `lineTotal` persisted here is the NET (pre-added-GST) value; subtotal sums
+      // these and added GST is tracked separately via totalGstAdded (see below), so
+      // the invoice can reconstruct exactly what was charged.
       const base: Record<string, unknown> = {
         productId: item.productId,
         name: item.name,
         price: item.price,
         qty: item.qty,
-        lineTotal,
+        lineTotal: pricing.net,
         ...(item.variantUnit ? { variantUnit: item.variantUnit } : {}),
-        ...(gstApplicable ? { gstApplicable: true, gstRate: item.gstRate, gstAmount } : {}),
+        ...(pricing.applicable
+          ? { gstApplicable: true, gstRate: item.gstRate, gstAmount: pricing.gstPerUnit, gstIncluded: pricing.included }
+          : {}),
       };
       if (item.discountPct && item.discountPct > 0 && item.originalPrice) {
         base.originalPrice = item.originalPrice;
@@ -1661,8 +1521,19 @@ export async function createOrdersFromCart(params: {
         return sum + (item.originalPrice - item.price) * item.qty;
       }, 0).toFixed(2)
     );
+    // Total GST for the invoice / reporting (both included and excluded lines).
     const totalGst = Number(
       normalizedItems.reduce((sum, row) => {
+        const gstAmt = (row.gstAmount as number | undefined) ?? 0;
+        return sum + gstAmt * (row.qty as number);
+      }, 0).toFixed(2)
+    );
+    // Only EXCLUDED GST is added to the payable total; included GST is already in
+    // the price. For all-inclusive orders (the default) this is 0 — grand total
+    // stays subtotal + delivery.
+    const totalGstAdded = Number(
+      normalizedItems.reduce((sum, row) => {
+        if (row.gstIncluded !== false) return sum; // included → not added
         const gstAmt = (row.gstAmount as number | undefined) ?? 0;
         return sum + gstAmt * (row.qty as number);
       }, 0).toFixed(2)
@@ -1674,17 +1545,87 @@ export async function createOrdersFromCart(params: {
         .toFixed(3),
     );
 
+    // Free-delivery products contribute NO weight and NO charge to the delivery fee.
+    const chargeableItems = groupItems.filter((item) => !item.freeDelivery);
+    const chargeableWeightKg = Number(
+      chargeableItems
+        .reduce((sum, item) => sum + item.qty * parseVariantWeightKg(item.variantUnit), 0)
+        .toFixed(3),
+    );
+
     // Use the phone stored on CartItems (avoids UID→phone round-trip that fails
     // when the seller's document ID is already their phone).
     const sellerPhoneHint = groupItems[0]?.sellerPhone;
 
-    const [deliveryCharge, sellerGstNumber] = await Promise.all([
-      fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint),
+    const [deliveryResult, sellerGstNumber] = await Promise.all([
+      fetchSellerDeliveryCharge(sellerId, chargeableWeightKg, sellerPhoneHint, customerDeliveryState),
       fetchSellerGstin(sellerId, sellerType, sellerPhoneHint),
     ]);
+    const slabDeliveryCharge = deliveryResult.charge;
+    const deliveryType = deliveryResult.deliveryType;
 
-    const grandTotal = Number((subtotal + deliveryCharge + totalGst).toFixed(2));
+    // Per-product surcharge, added once per (non-free) line item on top of the weight-slab charge.
+    const extraDeliveryCharge = Number(
+      chargeableItems.reduce(
+        (sum, item) => sum + (item.extraDeliveryCharge && item.extraDeliveryCharge > 0 ? item.extraDeliveryCharge : 0),
+        0,
+      ).toFixed(2),
+    );
+
+    // Free Delivery overrides the slab + extra when EVERY item ships free. We still
+    // record what would have been charged (waived) so the invoice can show
+    // "Rs.220 FREE" rather than hiding the concession.
+    const isFreeDeliveryOrder = groupItems.length > 0 && chargeableItems.length === 0;
+    let deliveryWaived = 0;
+    if (isFreeDeliveryOrder) {
+      const { charge: slabOnFullWeight } = await fetchSellerDeliveryCharge(sellerId, totalWeightKg, sellerPhoneHint, customerDeliveryState);
+      const extraAll = Number(
+        groupItems.reduce(
+          (sum, item) => sum + (item.extraDeliveryCharge && item.extraDeliveryCharge > 0 ? item.extraDeliveryCharge : 0),
+          0,
+        ).toFixed(2),
+      );
+      deliveryWaived = Number((slabOnFullWeight + extraAll).toFixed(2));
+    }
+
+    const deliveryCharge = isFreeDeliveryOrder
+      ? 0
+      : Number((slabDeliveryCharge + extraDeliveryCharge).toFixed(2));
+
+    // Persisted delivery breakdown — the invoice renders straight from these actual
+    // figures and never recomputes from current slab settings.
+    const deliveryBreakdown = {
+      slab: isFreeDeliveryOrder ? 0 : slabDeliveryCharge,
+      extra: isFreeDeliveryOrder ? 0 : extraDeliveryCharge,
+      free: isFreeDeliveryOrder,
+      waived: deliveryWaived,
+      // Which slab set applied (in/out-of-state) and the state that decided it.
+      // "default" = legacy single-slab seller or state undetermined.
+      deliveryType,
+      ...(customerDeliveryState ? { customerDeliveryState } : {}),
+    };
+
+    // Included GST is already inside the price; only EXCLUDED GST is added here.
+    const clientGrandTotal = Number((subtotal + deliveryCharge + totalGstAdded).toFixed(2));
     const sellerName = groupItems[0]?.sellerName ?? "";
+
+    // The server's figures for this seller, when it sent them. The customer PAID
+    // the server's total, so the order records that — not the browser's estimate.
+    const serverKey = String(sellerPhoneHint || sellerId);
+    const sb = serverBreakdown?.find((b) => b.sellerKey === serverKey)
+      ?? serverBreakdown?.find((b) => phoneTail(b.sellerKey) !== "" && phoneTail(b.sellerKey) === phoneTail(serverKey));
+    if (sb && Math.abs(sb.total - clientGrandTotal) > 0.5) {
+      console.warn("[createOrdersFromCart] browser and server totals differ — recording the server's", {
+        seller: serverKey, browser: clientGrandTotal, server: sb.total,
+      });
+    }
+    const orderSubtotal = sb ? sb.subtotal : subtotal;
+    const orderDeliveryCharge = sb ? sb.deliveryCharge : deliveryCharge;
+    const orderGstAdded = sb ? sb.gstAdded : totalGstAdded;
+    const orderDeliveryBreakdown = sb
+      ? { ...sb.delivery, ...(customerDeliveryState ? { customerDeliveryState } : {}) }
+      : deliveryBreakdown;
+    const grandTotal = sb ? sb.total : clientGrandTotal;
 
     // Derive invoiceNumber from the document ref ID (generated before addDoc)
     const orderRef = doc(collection(db, "orders"));
@@ -1695,6 +1636,7 @@ export async function createOrdersFromCart(params: {
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       customerAddress: customerAddress.trim(),
+      ...(customerDeliveryState ? { customerDeliveryState } : {}),
       sellerId,
       sellerType,
       ...(sellerPhoneHint ? { sellerPhone: sellerPhoneHint } : {}),
@@ -1702,10 +1644,12 @@ export async function createOrdersFromCart(params: {
       ...(sellerGstNumber ? { sellerGstNumber } : {}),
       items: normalizedItems,
       mrpSubtotal,
-      subtotal,
+      subtotal: orderSubtotal,
       ...(totalSavings > 0 ? { totalSavings } : {}),
       ...(totalGst > 0 ? { totalGst } : {}),
-      deliveryCharge,
+      ...(orderGstAdded > 0 ? { totalGstAdded: orderGstAdded } : {}),
+      deliveryCharge: orderDeliveryCharge,
+      deliveryBreakdown: orderDeliveryBreakdown,
       grandTotal,
       totalWeightKg,
       invoiceNumber,
@@ -1732,9 +1676,11 @@ export async function createOrdersFromCart(params: {
         ...(sellerGstNumber ? { sellerGstNumber } : {}),
         items: normalizedItems as OrderItem[],
         mrpSubtotal,
-        subtotal,
+        subtotal: orderSubtotal,
         ...(totalGst > 0 ? { totalGst } : {}),
-        deliveryCharge,
+        ...(orderGstAdded > 0 ? { totalGstAdded: orderGstAdded } : {}),
+        deliveryCharge: orderDeliveryCharge,
+        deliveryBreakdown: orderDeliveryBreakdown,
         grandTotal,
         totalWeightKg,
         invoiceNumber,
@@ -2010,77 +1956,23 @@ import { Hub, INITIAL_HUBS } from './initialHubs';
 
 export type { Hub };
 
-export async function syncInitialData(products: any[], stores: any[], inventory: any[] = []) {
-  // Sync products
-  try {
-    const productsSnap = await getDocs(collection(db, 'products'));
-    if (productsSnap.empty) {
-      console.log('Firebase: Syncing initial products...');
-      for (const product of products) {
-        await addDoc(collection(db, 'products'), {
-          ...product,
-          createdAt: serverTimestamp(),
-          source: 'initial_sync'
-        });
-      }
-    }
-  } catch (error) {
-    console.warn('Firebase: Syncing initial products failed:', error);
-  }
+// syncInitialData() was removed here: it wrote the hardcoded demo catalogue
+// (constants.ts PRODUCTS/STORES/INVENTORY) into production Firestore from the
+// browser whenever a read came back empty. Seeding is a server-side task with
+// admin credentials, never something a visitor's session should be able to do.
 
-  // Sync stores
-  try {
-    const storesSnap = await getDocs(collection(db, 'stores'));
-    if (storesSnap.empty) {
-      console.log('Firebase: Syncing initial stores...');
-      for (const store of stores) {
-        await addDoc(collection(db, 'stores'), {
-          ...store,
-          createdAt: serverTimestamp(),
-          source: 'initial_sync'
-        });
-      }
-    }
-  } catch (error) {
-    console.warn('Firebase: Syncing initial stores failed:', error);
-  }
 
-  // Sync inventory
-  try {
-    const inventorySnap = await getDocs(collection(db, 'inventory'));
-    if (inventorySnap.empty && inventory.length > 0) {
-      console.log('Firebase: Syncing initial inventory...');
-      for (const item of inventory) {
-        await addDoc(collection(db, 'inventory'), {
-          ...item,
-          createdAt: serverTimestamp(),
-          source: 'initial_sync'
-        });
-      }
-    }
-  } catch (error) {
-    console.warn('Firebase: Syncing initial inventory failed:', error);
-  }
-
-  // Sync hubs
-  try {
-    const hubsSnap = await getDocs(collection(db, 'hubs'));
-    if (hubsSnap.empty) {
-      console.log('Firebase: Syncing initial hubs...');
-      for (const hub of INITIAL_HUBS) {
-        const { id, ...hubData } = hub;
-        await setDoc(doc(db, 'hubs', id), {
-          ...hubData,
-          createdAt: serverTimestamp(),
-          source: 'initial_sync'
-        });
-      }
-    }
-  } catch (error) {
-    console.warn('Firebase: Syncing initial hubs failed:', error);
-  }
+/** Detects the device category from the browser UA string. Returns 'web' (desktop),
+ *  'mobile' (phone), or 'tablet'. Used to bucket DAU by platform. */
+function detectPlatform(): 'web' | 'mobile' | 'tablet' {
+  if (typeof navigator === 'undefined') return 'web';
+  const ua = navigator.userAgent;
+  if (/iPad/i.test(ua)) return 'tablet';
+  // Android tablets omit the "Mobile" token; Android phones include it.
+  if (/Android/i.test(ua) && !/Mobile/i.test(ua)) return 'tablet';
+  if (/Mobi|Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return 'mobile';
+  return 'web';
 }
-
 
 function getLocalDayKey(date: Date = new Date()): string {
   const year = date.getFullYear();
@@ -2100,6 +1992,77 @@ export async function trackPageView(page: string = 'home') {
     }, { merge: true });
   } catch {
     // silent fail
+  }
+}
+
+/**
+ * Records that a logged-in user was active today (DAU/MAU/retention signal).
+ *
+ * The ONLY client write in the whole activity pipeline. It is throttled to at
+ * most one write per user per calendar day via localStorage — the same user
+ * opening ten screens still writes zero extra times. The presence doc ID is the
+ * user's stable phone, so a re-write on the same day is an idempotent overwrite;
+ * the aggregation Cloud Function keys off create-only, so a user is never
+ * double-counted (see functions/src/analytics/activity.ts).
+ *
+ * `userId` must be the users/{id} document key (normalized phone for phone
+ * accounts, uid for legacy email accounts) so it matches the identity used
+ * everywhere else and dedupes correctly across sessions.
+ */
+export async function trackUserActivity(opts: {
+  userId: string;
+  role?: string | null;
+  registeredAt?: Timestamp | Date | string | null;
+}) {
+  try {
+    const userId = String(opts.userId ?? '').trim();
+    if (!userId) return;
+
+    const dayKey = getLocalDayKey();
+    const throttleKey = `kd_active_${userId}`;
+    if (typeof window !== 'undefined') {
+      // Cheap client-side throttle — no Firestore read needed to decide.
+      if (window.localStorage.getItem(throttleKey) === dayKey) return;
+    }
+
+    // Registration day drives the retention cohort; carry it on the presence
+    // doc so the Cloud Function needs no extra read.
+    let registeredDayKey: string | null = null;
+    const reg = opts.registeredAt;
+    if (reg) {
+      if (typeof reg === 'string') registeredDayKey = reg.slice(0, 10);
+      else if (reg instanceof Date) registeredDayKey = getLocalDayKey(reg);
+      else if (typeof (reg as Timestamp).toDate === 'function') {
+        registeredDayKey = getLocalDayKey((reg as Timestamp).toDate());
+      }
+    }
+
+    await setDoc(
+      doc(db, 'activeUsers', dayKey, 'presence', userId),
+      {
+        role: opts.role ?? null,
+        registeredDayKey,
+        platform: detectPlatform(),
+        at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    // Best-effort per-user last-active field. Same throttle window, so at most
+    // one write/user/day here too.
+    await setDoc(
+      doc(db, 'users', userId),
+      { lastActiveAt: serverTimestamp() },
+      { merge: true },
+    );
+
+    // Only mark done AFTER a successful write, so a transient failure retries
+    // on the next app open rather than silently skipping the day.
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(throttleKey, dayKey);
+    }
+  } catch {
+    // silent fail — analytics must never break the app
   }
 }
 
@@ -2200,15 +2163,47 @@ export async function fetchAllUsers(): Promise<any[]> {
 }
 
 /** One page of the users list, newest first — for admin "browse mode" instead of a full collection scan. */
+export type UserRoleFilter = 'all' | 'retailer' | 'manufacturer' | 'admin' | 'customer';
+
+/**
+ * One page of users, optionally narrowed to a role by Firestore itself.
+ *
+ * The role argument is what keeps the admin Users tab cheap. Without it the page
+ * had to download the ENTIRE users collection to filter in the browser, so
+ * picking "Retailer" read ~1,300 docs to show 139 — the actual cause of that tab
+ * being slow and read-heavy.
+ *
+ * 'customer' is deliberately NOT pushed into the query. A customer is a user
+ * whose role is 'customer' OR who has no role field at all, and Firestore cannot
+ * express "field missing OR equals" in a single query — a where('role','==','customer')
+ * would silently drop every legacy user that predates the field. So that one case
+ * pages through unfiltered and is narrowed by the caller, which is still
+ * paginated and still far cheaper than loading everything.
+ */
 export async function fetchUsersPage(
   pageSize: number,
   cursor?: QueryDocumentSnapshot<DocumentData> | null,
+  role: UserRoleFilter = 'all',
 ): Promise<{ users: any[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> {
-  const base = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(pageSize));
-  const q = cursor ? query(collection(db, 'users'), orderBy('createdAt', 'desc'), startAfter(cursor), limit(pageSize)) : base;
-  const snap = await getDocs(q);
+  const serverFilterable = role === 'retailer' || role === 'manufacturer' || role === 'admin';
+
+  const constraints = [
+    ...(serverFilterable ? [where('role', '==', role)] : []),
+    orderBy('createdAt', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const snap = await getDocs(query(collection(db, 'users'), ...constraints));
+
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+  const users = role === 'customer'
+    ? all.filter(u => !u.role || u.role === 'customer')
+    : all;
+
   return {
-    users: snap.docs.map(d => ({ id: d.id, ...d.data() })),
+    users,
+    // Cursor tracks the RAW page, not the filtered rows — paging must continue
+    // from where Firestore left off even when this page filtered everything out.
     lastDoc: snap.docs.length ? snap.docs[snap.docs.length - 1] : null,
     hasMore: snap.docs.length === pageSize,
   };
@@ -3280,6 +3275,99 @@ export async function importHubs(hubsList: Hub[]): Promise<void> {
   }
 }
 
+// ─── Homepage Banners ─────────────────────────────────────────────────────────
+// Collection: banners/{bannerId}
+//
+// Drives the homepage hero carousel (app/views/HomeView.tsx). The schema is
+// deliberately wider than what the current UI renders — badge/ctaButtons/
+// countdown/video/schedule/analytics are reserved for future carousel
+// features so they can be added without a document shape migration. Only
+// `enabled && status === 'published'` banners render on the public site,
+// sorted by `order` ascending.
+export type BannerCtaLink = {
+  /** 'internal' -> a Next.js route (e.g. /market); 'external' -> full URL, opened as-is. */
+  type: 'internal' | 'external';
+  value: string;
+};
+
+export type Banner = {
+  id: string;
+  title: string;
+  subtitle: string;
+  bgImg: string;
+  /** Optional mobile-specific background; falls back to bgImg when unset. */
+  bgImgMobile?: string;
+  /** Optional foreground/product image shown beside the text block. */
+  imgUrl?: string;
+  /** Tailwind gradient classes applied over bgImg, e.g. "from-emerald-950 via-emerald-900/85 to-emerald-700/10". */
+  bgClass: string;
+  ctaLabel: string;
+  ctaEnabled: boolean;
+  ctaLink: BannerCtaLink;
+  enabled: boolean;
+  status: 'draft' | 'published';
+  order: number;
+  createdAt?: any;
+  updatedAt?: any;
+  // Reserved for future features — intentionally unused by the current UI.
+  badge?: { label: string; color?: string };
+  ctaButtons?: { label: string; link: BannerCtaLink }[];
+  countdown?: { endsAt: any };
+  video?: { url: string; poster?: string };
+  schedule?: { startsAt?: any; endsAt?: any };
+  analytics?: { impressions?: number; clicks?: number };
+};
+
+export async function fetchBanners(): Promise<Banner[]> {
+  const snapshot = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc')));
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Banner));
+}
+
+// Firestore's addDoc/setDoc reject a literal `undefined` field value outright
+// (throws "Unsupported field value: undefined") rather than treating it as
+// "omit this field" the way object spreads elsewhere in this file assume.
+// Optional Banner fields (bgImgMobile, imgUrl) are built with `|| undefined`
+// to mean "not set" — saveBanner (fresh doc) uses the shared stripUndefined()
+// below since there's nothing to clear. updateBanner is a merge write onto an
+// existing doc, where simply dropping the key would leave any previously
+// saved value untouched (e.g. clearing "Mobile Background Image" back to
+// empty would silently keep showing the old image), so it maps undefined to
+// deleteField() instead, which actually removes the field from the document.
+function undefinedToDeleteField(obj: Record<string, any>): Record<string, any> {
+  const out = { ...obj };
+  for (const key of Object.keys(out)) {
+    if (out[key] === undefined) out[key] = deleteField();
+  }
+  return out;
+}
+
+export async function saveBanner(banner: Omit<Banner, 'id'>): Promise<string> {
+  const ref = await addDoc(collection(db, 'banners'), stripUndefined({
+    ...banner,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  return ref.id;
+}
+
+export async function updateBanner(bannerId: string, banner: Partial<Omit<Banner, 'id'>>): Promise<void> {
+  await setDoc(doc(db, 'banners', bannerId), undefinedToDeleteField({ ...banner, updatedAt: serverTimestamp() }), { merge: true });
+}
+
+export async function deleteBanner(bannerId: string): Promise<void> {
+  await deleteDoc(doc(db, 'banners', bannerId));
+}
+
+export async function duplicateBanner(banner: Banner): Promise<string> {
+  const { id, createdAt, updatedAt, ...rest } = banner;
+  return saveBanner({
+    ...rest,
+    title: banner.title ? `${banner.title} (Copy)` : '',
+    status: 'draft',
+    order: banner.order + 1,
+  });
+}
+
 // ─── Company Pages (Brand Pages) ──────────────────────────────────────────────
 // Collection: companyPages/{companyId}
 // Products:   companyProducts/{productId}  (field: companyId)
@@ -3816,6 +3904,11 @@ export async function logFailedPayment(
     const resolvedPhone = phone || null;
 
     await addDoc(collection(db, 'failedPayments'), {
+      // This collection backs Admin -> Subscriptions -> Failed Payments, where
+      // every row offers "Activate Subscription". Only subscription attempts
+      // belong here; a failed product order goes to paymentAttempts instead
+      // (Admin -> Payments), which also records what was in the basket.
+      kind: 'subscription',
       userId: uid,
       // Write both uid and phone so admin panel matching works whether the
       // subscription record was keyed by uid or phone.
@@ -3847,6 +3940,12 @@ export async function fetchFailedPayments(): Promise<any[]> {
   const snapshot = await getDocs(collection(db, 'failedPayments'));
   return snapshot.docs
     .map(d => ({ id: d.id, ...d.data() }))
+    // Product-order failures belong in Admin -> Payments, not here: every row
+    // in this tab offers "Activate Subscription", which is meaningless for a
+    // cart order. Mobile used to write both kinds into this one collection.
+    // Rows predating the `kind` field are left visible rather than hidden,
+    // since an untagged row cannot be proven to be an order.
+    .filter((r: any) => r.kind !== 'cart')
     .sort((a: any, b: any) => {
       const ta = a.timestamp?.toMillis?.() ?? a.timestamp?.seconds ?? 0;
       const tb = b.timestamp?.toMillis?.() ?? b.timestamp?.seconds ?? 0;

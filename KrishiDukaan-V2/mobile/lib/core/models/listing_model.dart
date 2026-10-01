@@ -20,6 +20,12 @@ class ListingModel {
 
   final List<VariantModel> variants;
   final DiscountModel? discount;
+
+  /// Quantity-based discount ladder — independent of [discount]: a product
+  /// can have bulk tiers with or without a base discount also active. Mirrors
+  /// web's `bulkDiscountEnabled` / `bulkDiscountTiers` fields exactly.
+  final bool bulkDiscountEnabled;
+  final List<BulkDiscountTierModel> bulkDiscountTiers;
   final String? assignedByManufacturerPhone;
   final String? productName;
   final String? category;
@@ -30,6 +36,15 @@ class ListingModel {
   final String? sellMode;
   final bool? gstApplicable;
   final double? gstRate;
+
+  /// Whether [gstRate] is already inside the price (default true).
+  final bool gstIncluded;
+
+  /// Per-product delivery surcharge (₹) on top of the seller's slab charge.
+  final double extraDeliveryCharge;
+
+  /// This product ships free: no weight and no delivery charge.
+  final bool freeDelivery;
   final DateTime? updatedAt;
 
   /// Product-detail-page view count, bumped by `ProductDetailScreen` (and by
@@ -67,6 +82,8 @@ class ListingModel {
     this.lowStockThreshold,
     required this.variants,
     this.discount,
+    this.bulkDiscountEnabled = false,
+    this.bulkDiscountTiers = const [],
     this.assignedByManufacturerPhone,
     this.productName,
     this.category,
@@ -77,6 +94,9 @@ class ListingModel {
     this.sellMode,
     this.gstApplicable,
     this.gstRate,
+    this.gstIncluded = true,
+    this.extraDeliveryCharge = 0,
+    this.freeDelivery = false,
     this.updatedAt,
     this.distanceKm,
     this.clicks = 0,
@@ -93,6 +113,20 @@ class ListingModel {
       return (price - discount!.discountAmount(price)).clamp(0.0, double.infinity);
     }
     return price;
+  }
+
+  /// The best-matching bulk tier for buying [quantity] units, or null if bulk
+  /// discounts are off, empty, or no tier's minimum is met. Higher tiers
+  /// override lower ones — matches web's `getBulkDiscountPct`.
+  BulkDiscountTierModel? bulkTierFor(int quantity) {
+    if (!bulkDiscountEnabled || bulkDiscountTiers.isEmpty) return null;
+    BulkDiscountTierModel? best;
+    for (final t in bulkDiscountTiers) {
+      if (quantity >= t.minQty && (best == null || t.minQty > best.minQty)) {
+        best = t;
+      }
+    }
+    return best;
   }
 
   factory ListingModel.fromFirestore(DocumentSnapshot doc) {
@@ -143,6 +177,11 @@ class ListingModel {
           .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
           .toList(),
       discount: DiscountModel.fromProductData(d),
+      bulkDiscountEnabled: d['bulkDiscountEnabled'] as bool? ?? false,
+      bulkDiscountTiers: (d['bulkDiscountTiers'] as List? ?? [])
+          .whereType<Map>()
+          .map((t) => BulkDiscountTierModel.fromMap(Map<String, dynamic>.from(t)))
+          .toList(),
       assignedByManufacturerPhone:
           d['assignedByManufacturerPhone'] as String?,
       productName: d['name'] as String? ?? d['fullName'] as String?,
@@ -154,6 +193,12 @@ class ListingModel {
       sellMode: d['sellMode'] as String?,
       gstApplicable: d['gstApplicable'] as bool?,
       gstRate: (d['gstRate'] as num?)?.toDouble(),
+      gstIncluded: d['gstIncluded'] != false,
+      extraDeliveryCharge: () {
+        final n = (d['extraDeliveryCharge'] as num?)?.toDouble() ?? 0;
+        return n > 0 ? n : 0.0;
+      }(),
+      freeDelivery: d['freeDelivery'] == true,
       updatedAt: updatedAt,
       clicks: (d['clicks'] as num?)?.toInt() ?? 0,
       impressions: (d['impressions'] as num?)?.toInt() ?? 0,
@@ -218,6 +263,26 @@ class VariantModel {
         'price': price,
         'stock': stock,
       };
+}
+
+/// One rung of a bulk/quantity-discount ladder — matches web's
+/// `BulkDiscountTier` (`app/dashboard/_types/inventory.ts`) field for field.
+class BulkDiscountTierModel {
+  /// Minimum quantity to trigger this tier.
+  final int minQty;
+
+  /// Percentage off at this tier, 1-99.
+  final double discountPct;
+
+  const BulkDiscountTierModel({required this.minQty, required this.discountPct});
+
+  factory BulkDiscountTierModel.fromMap(Map<String, dynamic> m) =>
+      BulkDiscountTierModel(
+        minQty: (m['minQty'] as num?)?.toInt() ?? 1,
+        discountPct: (m['discountPct'] as num?)?.toDouble() ?? 0.0,
+      );
+
+  Map<String, dynamic> toMap() => {'minQty': minQty, 'discountPct': discountPct};
 }
 
 class DiscountModel {

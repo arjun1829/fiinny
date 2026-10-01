@@ -49,6 +49,18 @@ List<DashboardNavItem> buildDashboardNavItems({
         Icons.video_collection_outlined, 'Reels', '/dashboard/reels'),
     const DashboardNavItem(
         Icons.receipt_long_outlined, 'Orders', '/dashboard/orders'),
+    if (isSeller)
+      // Customers who started an order for this seller's products but never
+      // paid. Sits under Orders because it is the same question one step
+      // earlier: the orders that didn't happen, and who to call about them.
+      const DashboardNavItem(
+          Icons.phone_in_talk_outlined, 'Enquiries', '/dashboard/enquiry'),
+    if (isSeller)
+      // Earnings + the bank account they are sent to. Sits next to Orders
+      // because "what am I owed" is the question a seller asks straight after
+      // looking at their orders.
+      const DashboardNavItem(
+          Icons.account_balance_wallet_outlined, 'Payouts', '/dashboard/payouts'),
     const DashboardNavItem(Icons.local_shipping_outlined, 'Delivery Settings',
         '/dashboard/delivery'),
     const DashboardNavItem(

@@ -40,6 +40,8 @@ interface PosOrder {
     paymentMethod?: string;
     paymentStatus?: string;
     creditAmount?: number;
+    amountPaid?: number;
+    paidAmount?: number;
     lineItems?: { productName: string; quantity: number; unit: string; amount: number }[];
     createdAt?: any;
 }
@@ -82,9 +84,17 @@ function fmtDateTime(ts: any): string {
     return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
+// Digits-only phone, matching the normaliser used in POS/Digital Khata/B2B invoice.
+const phoneKey = (v: unknown): string => String(v ?? '').replace(/\D/g, '');
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Tab = 'overview' | 'purchases' | 'payments' | 'notes';
+
+// Temporarily hidden on this page only — flip back to true to restore.
+// Underlying payment recording (recordPayment, the payments subcollection,
+// the modal) is untouched; Record Payment elsewhere in the app is unaffected.
+const SHOW_RECORD_PAYMENT = false;
 
 export default function CustomerProfilePage() {
     const { id } = useParams<{ id: string }>();
@@ -139,26 +149,45 @@ export default function CustomerProfilePage() {
         }).catch(() => setLoading(false));
     }, [tenantId, id]);
 
-    // Live purchases — query by retailerId (set on orders when retailer doc exists)
-    // Fallback: also match by phoneNumber for older orders
+    // Live purchases.
+    //
+    // B2B retailers: match by retailerId only, excluding soft-deleted docs —
+    // the exact same filter WorklistDetailsPage (Retailer Details) uses, so
+    // this page's Total Sales/Outstanding agree with Partner Worklist.
+    //
+    // B2C walk-in customers: retailerId is often unset on Khata-originated
+    // bills, so match the way Digital Khata itself rolls bills up to a
+    // customer — by normalized name first, falling back to digits-only phone
+    // — and exclude cancelled bills too (Khata excludes those; a stray exact
+    // string match on `phoneNumber` here previously missed/duplicated bills
+    // and let cancelled ones still count).
     useEffect(() => {
         if (!tenantId || !id || !customer) return;
-        const phone = customer.number;
+        const isB2B = customer.channel !== 'pos';
+        const nameKey = (customer.name || '').trim().toLowerCase();
+        const phoneDigits = phoneKey(customer.number);
         const q = query(
             getTenantCollection(db, tenantId, 'salesOrders'),
             orderBy('createdAt', 'desc'),
         );
         const unsub = onSnapshot(q, snap => {
-            const docs = snap.docs
-                .map(d => ({ id: d.id, ...d.data() } as PosOrder & { retailerId?: string; phoneNumber?: string }))
-                .filter(o =>
-                    (o as any).retailerId === id ||
-                    (phone && (o as any).phoneNumber === phone)
-                );
+            const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as PosOrder & {
+                retailerId?: string; phoneNumber?: string; customerName?: string; retailerName?: string;
+                customerPhone?: string; invoiceType?: string; deleted?: boolean; status?: string;
+            }));
+            const docs = isB2B
+                ? all.filter(o => o.retailerId === id && !o.deleted)
+                : all.filter(o => {
+                    if (o.invoiceType === 'B2B_GST' || o.deleted) return false;
+                    if (String(o.status || '').toLowerCase() === 'cancelled') return false;
+                    const oName = String(o.customerName || o.retailerName || '').trim().toLowerCase();
+                    const oPhone = phoneKey(o.customerPhone || o.phoneNumber);
+                    return nameKey ? oName === nameKey : (phoneDigits ? oPhone.slice(-10) === phoneDigits.slice(-10) : false);
+                });
             setOrders(docs);
         });
         return () => unsub();
-    }, [tenantId, id, customer?.number]);
+    }, [tenantId, id, customer?.number, customer?.name, customer?.channel]);
 
     // Payments subcollection
     useEffect(() => {
@@ -180,12 +209,45 @@ export default function CustomerProfilePage() {
         return () => unsub();
     }, [tenantId, id]);
 
-    const stats = useMemo(() => ({
-        totalOrders: orders.length,
-        totalSpend:  orders.reduce((s, o) => s + (o.grandTotal ?? 0), 0),
-        outstanding: customer?.outstandingAmount ?? 0,
-        lastOrder:   orders[0]?.invoiceDate || orders[0]?.createdAt,
-    }), [orders, customer]);
+    // Outstanding mirrors whichever screen is the source of truth for this
+    // customer type, instead of the `retailers.outstandingAmount` cache —
+    // that field is a best-effort counter that Digital Khata's manual-entry
+    // and payment flows never write to (see DigitalKhataPage), so it drifts
+    // from the live Khata/Worklist balance for exactly the customers who use
+    // those flows.
+    //
+    // B2B: Total Sales − sum(payments subcollection), same as WorklistDetailsPage.
+    //      Total Paid = that same payments-subcollection sum.
+    // B2C: sum of each bill's own (total − paid), same as Digital Khata.
+    //      Total Paid = Total Spent − Outstanding (Khata defines each bill's
+    //      paid amount as total − outstanding, so the same holds summed).
+    const stats = useMemo(() => {
+        const totalSpend = orders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+        const isB2B = customer?.channel !== 'pos';
+        let outstanding: number;
+        let totalPaid: number;
+        if (isB2B) {
+            totalPaid = payments.reduce((s, p) => s + (p.amount ?? 0), 0);
+            outstanding = Math.max(0, totalSpend - totalPaid);
+        } else {
+            outstanding = orders.reduce((s, o) => {
+                const total = Number(o.grandTotal ?? 0);
+                const rawPaid = o.amountPaid ?? o.paidAmount;
+                const paid = rawPaid !== undefined && rawPaid !== null
+                    ? Number(rawPaid) || 0
+                    : (String(o.paymentStatus || '').toLowerCase() === 'paid' ? total : 0);
+                return s + Math.max(0, total - paid);
+            }, 0);
+            totalPaid = totalSpend - outstanding;
+        }
+        return {
+            totalOrders: orders.length,
+            totalSpend,
+            outstanding,
+            totalPaid,
+            lastOrder: orders[0]?.invoiceDate || orders[0]?.createdAt,
+        };
+    }, [orders, payments, customer?.channel]);
 
     // ── Handlers ──
 
@@ -280,54 +342,58 @@ export default function CustomerProfilePage() {
         win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Customer Profile — ${customer.name || 'Customer'}</title>
 <style>
-  @page { size: A5; margin: 12mm 14mm; }
+  @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 10pt; line-height: 1.5; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #1a1a1a; padding-bottom: 10px; margin-bottom: 18px; }
-  .biz-name { font-size: 14pt; font-weight: 700; }
-  .doc-title { font-size: 10pt; color: #555; margin-top: 2px; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e1e1e; font-size: 9.5pt; line-height: 1.5; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .biz-name { font-size: 16pt; font-weight: 700; color: rgb(28,120,60); text-transform: uppercase; }
+  .doc-sub { font-size: 8.5pt; color: #505050; margin-top: 5px; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 8pt; font-weight: 700; border: 1px solid ${isB2B ? '#8b5cf6' : '#0ea5e9'}; color: ${isB2B ? '#8b5cf6' : '#0ea5e9'}; margin-top: 6px; }
-  .cust-name { font-size: 20pt; font-weight: 800; margin: 0 0 4px; }
-  .section { margin-bottom: 18px; }
-  .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #666; border-bottom: 1px solid #e5e5e5; padding-bottom: 4px; margin-bottom: 10px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
-  .field label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; display: block; margin-bottom: 2px; }
-  .field span { font-size: 10pt; font-weight: 500; color: #1a1a1a; }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 4px; }
-  .stat { background: #f5f5f5; border-radius: 6px; padding: 8px 12px; text-align: center; }
-  .stat-label { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: #888; }
-  .stat-val { font-size: 13pt; font-weight: 800; color: #1a1a1a; margin-top: 2px; }
-  .stat-val.red { color: #dc2626; }
-  .footer { border-top: 1px solid #e5e5e5; margin-top: 24px; padding-top: 8px; font-size: 7.5pt; color: #999; display: flex; justify-content: space-between; }
+  .doc-title { font-size: 13pt; font-weight: 700; color: #1e1e1e; text-align: right; }
+  .doc-meta { font-size: 8pt; color: #646464; margin-top: 5px; text-align: right; }
+  .divider { border: none; border-top: 1px solid #c8c8c8; margin: 6px 0 10px; }
+  .cust-name { font-size: 17pt; font-weight: 800; margin: 2px 0 6px; }
+  .section { margin-bottom: 16px; }
+  .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #646464; border-bottom: 1px solid #c8c8c8; padding-bottom: 4px; margin-bottom: 10px; }
+  table.fields { width: 100%; border-collapse: collapse; }
+  table.fields td { padding: 6px 4px; vertical-align: top; border-bottom: 1px solid #e5e5e5; width: 50%; }
+  table.fields td label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; display: block; margin-bottom: 2px; }
+  table.fields td span { font-size: 10pt; font-weight: 500; color: #1e1e1e; word-break: break-word; }
+  .footer { border-top: 1px solid #c8c8c8; margin-top: 24px; padding-top: 8px; font-size: 7.5pt; color: #969696; display: flex; justify-content: space-between; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head><body>
 <div class="header">
   <div>
-    <div class="biz-name">Customer Profile</div>
-    <div class="doc-title">Generated ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+    <div class="biz-name">${customer.name || 'Unnamed Customer'}</div>
+    <div class="doc-sub">Customer Profile</div>
+    <div class="badge">${isB2B ? 'B2B Retailer' : 'Walk-in Customer'}</div>
   </div>
-  <div style="text-align:right">
-    <div class="doc-title">Customer since ${fmtDate(customer.createdAt)}</div>
-    <div class="doc-title">Ref: ${id?.slice(-8).toUpperCase()}</div>
+  <div>
+    <div class="doc-title">CUSTOMER PROFILE</div>
+    <div class="doc-meta">Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+    <div class="doc-meta">Customer since: ${fmtDate(customer.createdAt)}</div>
+    <div class="doc-meta">Ref: ${id?.slice(-8).toUpperCase()}</div>
   </div>
 </div>
-
-<div class="section">
-  <div class="cust-name">${customer.name || 'Unnamed Customer'}</div>
-  <div class="badge">${isB2B ? 'B2B Retailer' : 'Walk-in Customer'}</div>
-</div>
+<hr class="divider" />
 
 <div class="section">
   <div class="section-title">Contact & Address</div>
-  <div class="grid">
-    <div class="field"><label>Phone Number</label><span>${customer.number || '—'}</span></div>
-    <div class="field"><label>PIN Code</label><span>${customer.pin || '—'}</span></div>
-    <div class="field"><label>Village / At Post</label><span>${customer.atPost || '—'}</span></div>
-    <div class="field"><label>Taluka</label><span>${customer.taluka || '—'}</span></div>
-    <div class="field"><label>District</label><span>${customer.district || '—'}</span></div>
-    <div class="field"><label>Full Address</label><span>${address || '—'}</span></div>
-  </div>
+  <table class="fields">
+    <tr>
+      <td><label>Phone Number</label><span>${customer.number || '—'}</span></td>
+      <td><label>PIN Code</label><span>${customer.pin || '—'}</span></td>
+    </tr>
+    <tr>
+      <td><label>Village / At Post</label><span>${customer.atPost || '—'}</span></td>
+      <td><label>Taluka</label><span>${customer.taluka || '—'}</span></td>
+    </tr>
+    <tr>
+      <td><label>District</label><span>${customer.district || '—'}</span></td>
+      <td><label>Full Address</label><span>${address || '—'}</span></td>
+    </tr>
+  </table>
 </div>
 
 <div class="footer">
@@ -347,7 +413,7 @@ export default function CustomerProfilePage() {
     if (loading) return <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading…</div>;
     if (!customer) return <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--danger)' }}>Customer not found.</div>;
 
-    const outstanding = customer.outstandingAmount ?? 0;
+    const outstanding = stats.outstanding;
 
     const TAB_STYLES = (t: Tab): React.CSSProperties => ({
         display: 'flex', alignItems: 'center', gap: '0.45rem',
@@ -447,7 +513,7 @@ export default function CustomerProfilePage() {
                                 </div>
                             )}
                         </div>
-                        {outstanding > 0 && (
+                        {SHOW_RECORD_PAYMENT && outstanding > 0 && (
                             <button className="btn btn-primary" onClick={() => setShowPayModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
                                 <IndianRupee size={15} /> Record Payment
                             </button>
@@ -463,6 +529,7 @@ export default function CustomerProfilePage() {
                     {[
                         { label: 'Total Purchases', value: String(stats.totalOrders), color: '#0ea5e9', Icon: ShoppingCart },
                         { label: 'Total Spent', value: fmtINR(stats.totalSpend), color: '#10b981', Icon: IndianRupee },
+                        { label: 'Total Paid', value: fmtINR(stats.totalPaid), color: '#10b981', Icon: IndianRupee },
                         { label: 'Outstanding', value: outstanding > 0 ? fmtINR(outstanding) : '—', color: outstanding > 0 ? '#ef4444' : '#10b981', Icon: outstanding > 0 ? AlertCircle : CheckCircle2 },
                         { label: 'Last Purchase', value: fmtDate(customer.lastOrderedAt), color: '#8b5cf6', Icon: Clock },
                     ].map(k => (
@@ -563,11 +630,13 @@ export default function CustomerProfilePage() {
             {/* ── Payments tab ── */}
             {activeTab === 'payments' && (
                 <div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                        <button onClick={() => setShowPayModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <Plus size={15} /> Record Payment
-                        </button>
-                    </div>
+                    {SHOW_RECORD_PAYMENT && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                            <button onClick={() => setShowPayModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <Plus size={15} /> Record Payment
+                            </button>
+                        </div>
+                    )}
                     <div className="glass-panel" style={{ overflow: 'hidden' }}>
                         {payments.length === 0 ? (
                             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-tertiary)' }}>No payments recorded yet.</div>

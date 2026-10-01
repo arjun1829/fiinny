@@ -19,7 +19,7 @@ import {
   query,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../firebase-client-server";
-import { buildProductSlug } from "./products-server";
+import { buildProductSlug, filterServableProductIds } from "./products-server";
 
 export interface SeoReel {
   id: string;
@@ -143,6 +143,27 @@ export function linkedProductPath(reel: SeoReel): string | null {
     reel.linkedProductName ?? "",
     reel.linkedProductId,
   )}`;
+}
+
+/**
+ * Which of these reels' linked products actually have a product page.
+ *
+ * linkedProductId is written at upload time and never revalidated, so a reel
+ * can outlive the product it points at, or point at a per-seller copy that has
+ * no page. Callers pair this with linkedProductPath() and drop the link when
+ * the id is absent from the returned set, so a reel surface never ships a
+ * "Shop this product" button that 404s.
+ *
+ * One batched read per page render; fails open (see filterServableProductIds).
+ */
+export async function servableLinkedProductIds(
+  reels: SeoReel[],
+): Promise<Set<string>> {
+  return filterServableProductIds(
+    reels
+      .map((r) => r.linkedProductId)
+      .filter((id): id is string => Boolean(id)),
+  );
 }
 
 // ─── Fetchers ────────────────────────────────────────────────────────────────

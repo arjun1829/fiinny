@@ -444,17 +444,140 @@ class ReelsRepository {
   /// `moderationStatus`, running with the admin SDK so it isn't bound by the
   /// same rules a client is. See firestore.rules for why clients (including
   /// the reel's own owner) cannot set `moderationStatus` themselves.
+  ///
+  /// ALSO writes to `contentReports` — `reel_reports` only ever fed the
+  /// auto-hide-after-3-reports counter and was never visible to a human.
+  /// `contentReports` is what Admin -> Moderation reads, so a single report
+  /// reaches a person who can act on it, not just a counter.
   Future<void> reportReel({
     required String reelId,
     required String reporterId,
     required String reason,
+    String? reportedUserId,
+    String? contentSnippet,
   }) async {
-    await _db.collection('reel_reports').add({
+    final batch = _db.batch();
+    batch.set(_db.collection('reel_reports').doc(), {
       'reelId': reelId,
       'reporterId': reporterId,
       'reason': reason,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    batch.set(_db.collection('contentReports').doc(), {
+      'type': 'reel',
+      'reelId': reelId,
+      'reportedUserId': reportedUserId,
+      'reporterId': reporterId,
+      'reason': reason,
+      'contentSnippet': contentSnippet,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
+  /// Files a report against one comment. There is no per-comment analogue
+  /// of `reel_reports`' auto-hide counter — a comment is short-lived enough
+  /// that a single report going straight to a human reviewer (Admin ->
+  /// Moderation) is the right bar, not a threshold.
+  Future<void> reportComment({
+    required String reelId,
+    required String commentId,
+    required String reporterId,
+    required String reportedUserId,
+    required String reason,
+    String? contentSnippet,
+  }) async {
+    await _db.collection('contentReports').add({
+      'type': 'comment',
+      'reelId': reelId,
+      'commentId': commentId,
+      'reportedUserId': reportedUserId,
+      'reporterId': reporterId,
+      'reason': reason,
+      'contentSnippet': contentSnippet,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Deletes one of the caller's own comments — mirrors [addComment]'s
+  /// batched counter update so `commentsCount` never drifts from the actual
+  /// number of comments left on the reel.
+  Future<void> deleteComment(String reelId, String commentId) async {
+    final batch = _db.batch();
+    batch.delete(_db
+        .collection('reels')
+        .doc(reelId)
+        .collection('reel_comments')
+        .doc(commentId));
+    batch.update(_db.collection('reels').doc(reelId), {
+      'commentsCount': FieldValue.increment(-1),
+    });
+    await batch.commit();
+  }
+
+  // ── Blocking ─────────────────────────────────────────────────────────────
+  //
+  // Guideline 1.2 (Apple App Store Review) requires a way to block an
+  // abusive user, with the block (a) removing their content from the
+  // blocker's feed instantly and (b) notifying the developer of whatever
+  // content triggered it. (a) is client-side filtering — see
+  // blockedUserIdsProvider in reels_provider.dart, which every feed/comment
+  // list here reads from. (b) is the contentReports write below.
+
+  /// Every phone this [blockerId] has blocked. Read once per session by
+  /// [BlockedUserIdsNotifier] and kept in memory from then on — filtering
+  /// happens client-side, exactly like moderationStatus filtering elsewhere
+  /// in this file, so it never needs its own composite index.
+  Future<Set<String>> fetchBlockedUserIds(String blockerId) async {
+    final snap = await _db
+        .collection('blockedUsers')
+        .where('blockerId', isEqualTo: blockerId)
+        .get();
+    return snap.docs
+        .map((d) => d.data()['blockedId'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet();
+  }
+
+  /// Blocks [blockedId]. The pair doc id (`{blockerId}_{blockedId}`) makes a
+  /// duplicate block a harmless overwrite rather than a growing list.
+  Future<void> blockUser({
+    required String blockerId,
+    required String blockedId,
+    String? reelId,
+    String? commentId,
+    String? contentSnippet,
+  }) async {
+    final batch = _db.batch();
+    batch.set(_db.collection('blockedUsers').doc('${blockerId}_$blockedId'), {
+      'blockerId': blockerId,
+      'blockedId': blockedId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(_db.collection('contentReports').doc(), {
+      'type': 'block',
+      'reelId': reelId,
+      'commentId': commentId,
+      'reportedUserId': blockedId,
+      'reporterId': blockerId,
+      'reason': 'User blocked — see content for context',
+      'contentSnippet': contentSnippet,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
+  Future<void> unblockUser({
+    required String blockerId,
+    required String blockedId,
+  }) async {
+    await _db
+        .collection('blockedUsers')
+        .doc('${blockerId}_$blockedId')
+        .delete();
   }
 
   // ── CRUD ──────────────────────────────────────────────────────────────────

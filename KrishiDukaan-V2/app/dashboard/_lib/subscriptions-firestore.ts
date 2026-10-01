@@ -12,6 +12,8 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { authedJsonHeaders } from "../../lib/authed-fetch";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 import type {
   RetailerSeatListing,
   SeatStats,
@@ -36,7 +38,7 @@ export function isSubscriptionActive(sub: Subscription): boolean {
   return sub.expiryDate.toMillis() > Date.now();
 }
 
-export function isExpiringSoon(sub: Subscription, withinDays = 5): boolean {
+export function isExpiringSoon(sub: Subscription, withinDays = 30): boolean {
   if (!isSubscriptionActive(sub)) return false;
   const cutoff = Date.now() + withinDays * 24 * 60 * 60 * 1000;
   return sub.expiryDate.toMillis() <= cutoff;
@@ -63,7 +65,7 @@ function mapSubscriptionDoc(id: string, data: Record<string, unknown>): Subscrip
     id,
     ownerId: String(data.ownerId ?? ""),
     ownerType: data.ownerType === "retailer" ? "retailer" : "manufacturer",
-    planName: String(data.planName ?? "Standard"),
+    planName: subscriptionPlanLabel(data),
     seatsPurchased: typeof data.seatsPurchased === "number" ? data.seatsPurchased : 0,
     startDate: data.startDate as Timestamp,
     expiryDate: data.expiryDate as Timestamp,
@@ -156,7 +158,7 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
     if (userData?.email) {
       fetch("/api/email/subscription-confirmation", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authedJsonHeaders(),
         body: JSON.stringify({
           userEmail: userData.email,
           userName: (userData.name as string) || "",
@@ -316,7 +318,11 @@ export function computeSeatStats(
   const totalPurchased = activeSubs.reduce((sum, s) => sum + s.seatsPurchased, 0);
   const activeUsed = getUsedSeats(listings);
   const available = Math.max(0, totalPurchased - activeUsed);
-  const expiringSoon = activeSubs.filter((s) => isExpiringSoon(s, 5)).length;
+  // The "Expiring soon" tile is labelled "Subscriptions in 30 days"
+  // (subsIn30Days) and the per-card badge on this same page already checks
+  // isExpiringSoon(sub, 30) - this used to pass 5, so the tile almost always
+  // showed 0 even when a subscription was, say, 10-29 days from expiry.
+  const expiringSoon = activeSubs.filter((s) => isExpiringSoon(s, 30)).length;
   return { totalPurchased, activeUsed, available, expiringSoon };
 }
 

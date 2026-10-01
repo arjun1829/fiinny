@@ -16,23 +16,27 @@ import {
   Download,
   RefreshCw,
 } from "lucide-react";
-import { fetchOrdersForCustomer } from "../../firebase";
+import { auth, fetchOrdersForCustomer } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
-import type { OrderDoc, OrderStatus } from "../../../types/order";
+import { ORDER_STATUS_FLOW, orderGrandTotal, type OrderDoc, type OrderStatus } from "../../../types/order";
 import { openInvoice } from "../../utils/invoice-generator";
 
-// Visible progress steps (same as customer view)
-const STATUS_FLOW = ["placed", "out_for_delivery", "delivered"] as const;
+// Visible progress steps — shared with the seller view and the public customer
+// view so all three timelines show the same stages.
+const STATUS_FLOW = ORDER_STATUS_FLOW;
 
 const STATUS_CONFIG: Record<
   OrderStatus,
   { label: string; color: string; bg: string; icon: typeof Clock }
 > = {
   placed:           { label: "Order Placed",     color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   icon: Clock },
-  accepted:         { label: "Processing",       color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
+  accepted:         { label: "Accepted",         color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
+  dispatched:       { label: "Dispatched",       color: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Package },
   out_for_delivery: { label: "Out for Delivery", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
   delivered:        { label: "Delivered",        color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
   rejected:         { label: "Rejected",         color: "text-red-700",   bg: "bg-red-50 border-red-200",       icon: XCircle },
+  cancelled:        { label: "Cancelled",        color: "text-red-700",   bg: "bg-red-50 border-red-200",       icon: XCircle },
+  reassigning:      { label: "Finding another seller", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", icon: Clock },
 };
 
 function formatDate(createdAt: unknown): string {
@@ -51,23 +55,28 @@ function formatDate(createdAt: unknown): string {
 }
 
 function OrderProgressBar({ status }: { status: OrderStatus }) {
-  if (status === "rejected") {
+  if (status === "rejected" || status === "cancelled") {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-4 py-2.5 text-red-600">
         <XCircle className="w-4 h-4" />
-        <span className="text-xs font-black uppercase tracking-widest">Order Rejected</span>
+        <span className="text-xs font-black uppercase tracking-widest">
+          {status === "rejected" ? "Order Rejected" : "Order Cancelled"}
+        </span>
       </div>
     );
   }
 
-  const resolved = status === "accepted" ? "out_for_delivery" : status;
-  const currentIdx = STATUS_FLOW.indexOf(resolved as (typeof STATUS_FLOW)[number]);
+  // "accepted" is a real step in the flow now, so it is no longer remapped onto
+  // out_for_delivery — doing that would show the parcel as further along than it is.
+  // While another seller is being found the order is still just "placed" as
+  // far as delivery progress goes — the banner above explains why.
+  const currentIdx = STATUS_FLOW.indexOf(status === "reassigning" ? "placed" : status);
 
   return (
     <div className="flex items-center gap-0 w-full">
       {STATUS_FLOW.map((step, idx) => {
         const isReached = currentIdx >= idx;
-        const isCurrent = (status === "accepted" ? "out_for_delivery" : status) === step;
+        const isCurrent = status === step;
         const config = STATUS_CONFIG[step as OrderStatus];
         const isLast = idx === STATUS_FLOW.length - 1;
         return (
@@ -136,10 +145,13 @@ type FilterTab = "all" | OrderStatus;
 
 const FILTER_LABELS: { key: FilterTab; label: string; color: string }[] = [
   { key: "all",              label: "All",           color: "bg-surface-container text-on-surface" },
-  { key: "placed",           label: "Placed",        color: "bg-amber-100 text-amber-800" },
-  { key: "out_for_delivery", label: "Dispatched",    color: "bg-purple-100 text-purple-800" },
+  { key: "placed",           label: "Placed",           color: "bg-amber-100 text-amber-800" },
+  { key: "accepted",         label: "Accepted",         color: "bg-blue-100 text-blue-800" },
+  { key: "dispatched",       label: "Dispatched",       color: "bg-indigo-100 text-indigo-800" },
+  { key: "out_for_delivery", label: "Out for Delivery", color: "bg-purple-100 text-purple-800" },
   { key: "delivered",        label: "Delivered",     color: "bg-green-100 text-green-800" },
   { key: "rejected",         label: "Rejected",      color: "bg-red-100 text-red-800" },
+  { key: "cancelled",        label: "Cancelled",     color: "bg-red-100 text-red-800" },
 ];
 
 export default function MyOrdersPage() {
@@ -149,6 +161,8 @@ export default function MyOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [uid, setUid] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const loadOrders = async (userId: string) => {
     setLoading(true);
@@ -169,6 +183,35 @@ export default function MyOrdersPage() {
     setUid(effectiveUid);
     loadOrders(effectiveUid);
   }, [effectiveUid]);
+
+  // Self-service cancel is only offered before the seller has physically
+  // dispatched the parcel — matches the reject window on the seller side
+  // (app/dashboard/orders/page.tsx) and the check the server route enforces
+  // (app/api/orders/cancel), so a customer never sees a button that would
+  // just 409 when pressed.
+  const cancelOrder = async (orderId: string) => {
+    const reason = window.prompt("Tell us why you're cancelling (optional):") ?? "";
+    if (!window.confirm("Cancel this order? If you paid online, you'll be refunded automatically.")) {
+      return;
+    }
+    setCancellingId(orderId);
+    setCancelError(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/orders/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+        body: JSON.stringify({ orderId, reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not cancel the order.");
+      if (uid) await loadOrders(uid);
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Could not cancel the order.");
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   const filteredOrders =
     activeFilter === "all"
@@ -224,6 +267,11 @@ export default function MyOrdersPage() {
         </div>
       ) : (
         <div className="space-y-5">
+          {cancelError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {cancelError}
+            </div>
+          )}
           {/* Summary strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-2xl bg-primary/5 border border-primary/10 p-4">
@@ -322,7 +370,7 @@ export default function MyOrdersPage() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-black text-secondary text-xl">
-                            ₹{Number(order.grandTotal ?? order.subtotal ?? 0).toFixed(0)}
+                            ₹{orderGrandTotal(order).toFixed(0)}
                           </p>
                           {(order.deliveryCharge ?? 0) > 0 && (
                             <p className="text-[10px] text-on-surface-variant">
@@ -377,11 +425,30 @@ export default function MyOrdersPage() {
                         </div>
                       )}
 
+                      {order.status === "reassigning" && (
+                        <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs text-orange-800">
+                          The original seller couldn&apos;t fulfil this order, so we&apos;re asking other
+                          sellers who stock it. If nobody takes it within 24 hours, you&apos;ll be refunded
+                          automatically — or cancel now for an immediate refund.
+                        </div>
+                      )}
+
                       {/* Progress bar */}
                       <OrderProgressBar status={order.status} />
 
-                      {/* Download invoice */}
-                      <div className="flex justify-end pt-1">
+                      {/* Cancel + download invoice */}
+                      <div className="flex justify-end gap-2 pt-1">
+                        {(order.status === "placed" || order.status === "accepted" || order.status === "reassigning") && (
+                          <button
+                            type="button"
+                            disabled={cancellingId === order.id}
+                            onClick={() => void cancelOrder(order.id)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border border-red-200 bg-white text-red-700 hover:bg-red-50 transition-all disabled:opacity-50"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            {cancellingId === order.id ? "Cancelling…" : "Cancel Order"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => openInvoice(order)}

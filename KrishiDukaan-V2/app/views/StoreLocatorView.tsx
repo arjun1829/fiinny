@@ -17,6 +17,9 @@ interface StoreLocatorViewProps {
   selectedStoreId?: string | null;
   onStoreSelect?: (storeId: string) => void;
   stores?: any[];
+  /** True while the store list is being lazily fetched (first open). Shows a
+   *  spinner instead of the "no stores nearby" empty state during that window. */
+  loading?: boolean;
   location?: string;
   onLocationChange?: (location: string, coordinates?: { lat: number, lng: number }) => void;
   userCoords?: { lat: number, lng: number };
@@ -46,6 +49,7 @@ export default function StoreLocatorView({
   selectedStoreId,
   onStoreSelect,
   stores = [],
+  loading = false,
   location = 'Pune, Maharashtra',
   onLocationChange,
   userCoords = { lat: 18.5204, lng: 73.8567 },
@@ -222,6 +226,17 @@ export default function StoreLocatorView({
   };
 
   if (stores.length === 0) {
+    // While the store list is still being fetched (lazy, on first open), show a
+    // spinner rather than the "no stores nearby" message — otherwise the empty
+    // state flashes for the duration of the fetch.
+    if (loading) {
+      return (
+        <div className="p-20 text-center">
+          <div className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="font-bold text-primary">{t('connectingFirebase')}</p>
+        </div>
+      );
+    }
     return (
       <div className="p-20 text-center">
         <div className="flex flex-col items-center gap-4">

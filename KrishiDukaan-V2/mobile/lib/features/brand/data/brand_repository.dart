@@ -26,9 +26,19 @@ class BrandRepository {
   }
 
   Future<BrandModel?> fetchBrandByPhone(String phone) async {
-    final mfrDoc = await _db.collection('manufacturers').doc(phone).get();
+    // manufacturers/{phone} and brandPages/{phone} share the same doc ID
+    // here (unlike the slug/uid lookups below, which must find the
+    // manufacturer doc first to learn its ID) — fetching both in parallel
+    // instead of sequentially cuts a full round trip off every brand page
+    // open.
+    final results = await Future.wait([
+      _db.collection('manufacturers').doc(phone).get(),
+      _db.collection('brandPages').doc(phone).get(),
+    ]);
+    final mfrDoc = results[0];
     if (!mfrDoc.exists) return null;
-    return _buildBrand(mfrDoc);
+    final brandDoc = results[1];
+    return BrandModel.fromFirestore(mfrDoc, brandDoc.exists ? brandDoc : null);
   }
 
   Future<BrandModel> _buildBrand(DocumentSnapshot<Map<String, dynamic>> mfrDoc) async {
@@ -90,28 +100,36 @@ class BrandRepository {
     return products;
   }
 
-  /// Reads from the global `manufacturerRetailers` collection — the single
-  /// source of truth written by both web admin and mobile. The mirror
-  /// subcollection (manufacturers/{phone}/retailers) is only written by the
-  /// mobile flows and is empty for web-created retailers, so it can't be used
-  /// as the primary source here.
+  /// Reads from the `manufacturers/{phone}/retailers` mirror subcollection —
+  /// the exact source (and doc-ID-as-retailer-phone shape) web's public brand
+  /// page reads (app/brand/[slug]/page.tsx: "Fetch ALL linked retailer mirror
+  /// docs — no limit"). Mobile used to read the top-level
+  /// `manufacturerRetailers` collection with a hard limit(50) and a
+  /// status-whereIn(['active','invited']) filter, which is why a manufacturer
+  /// with 65 dealers on web showed only 50 here — both the cap and the
+  /// stricter filter dropped real dealers. Web's filter is the opposite
+  /// shape (exclude only revoked/removed/inactive, default-include everything
+  /// else including missing status), reproduced identically below so both
+  /// platforms count the same dealers.
   Future<List<BrandRetailerModel>> fetchBrandRetailers(
       String manufacturerPhone) async {
     final snap = await _db
-        .collection('manufacturerRetailers')
-        .where('manufacturerPhone', isEqualTo: manufacturerPhone)
-        .where('status', whereIn: ['active', 'invited'])
-        .limit(50)
+        .collection('manufacturers')
+        .doc(manufacturerPhone)
+        .collection('retailers')
         .get();
-    return snap.docs.map((d) {
+    final active = snap.docs.where((d) {
       final data = d.data();
-      // retailerPhone is the canonical phone; fall back to retailerDocId or doc ID
-      final phone = (data['retailerPhone'] as String?)?.isNotEmpty == true
-          ? data['retailerPhone'] as String
-          : ((data['retailerDocId'] as String?)?.isNotEmpty == true
-              ? data['retailerDocId'] as String
-              : d.id);
-      return BrandRetailerModel.fromMirror(phone, data);
-    }).toList();
+      final status = (data['status'] as String?) ?? 'invited';
+      final onboarding = (data['onboardingStatus'] as String?) ?? 'active';
+      return status != 'revoked' &&
+          onboarding != 'removed' &&
+          onboarding != 'inactive';
+    });
+    // The mirror's doc ID is the retailer's phone (manufacturers/{mPhone}/
+    // retailers/{retailerPhone}), same as web's `phone: d.id`.
+    return active
+        .map((d) => BrandRetailerModel.fromMirror(d.id, d.data()))
+        .toList();
   }
 }

@@ -11,7 +11,7 @@ import {
   where,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../../lib/firebase-client-server";
-import { buildProductSlug } from "../../lib/seo/products-server";
+import { buildProductSlug, isListable } from "../../lib/seo/products-server";
 import BrandView from "../../views/BrandView";
 import type {
   ManufacturerBrandData,
@@ -101,9 +101,12 @@ async function fetchPageData(manufacturerPhone: string): Promise<{
       .filter((d) => {
         if (seen.has(d.id)) return false;
         seen.add(d.id);
-        const r = d.data() as Record<string, unknown>;
-        // exclude inactive and retailer-assigned copies
-        return r.isActive !== false && r.source !== "manufacturer_assigned";
+        // isListable() is the same predicate /products/[slug] and the sitemap
+        // use, so every card below links to a page that actually renders. The
+        // hand-rolled rule this replaces excluded only `manufacturer_assigned`
+        // and skipped the image check, so admin_assigned copies and image-less
+        // docs became product links that 404'd.
+        return isListable(d.data() as Record<string, unknown>);
       })
       .map((d) => {
         const r = d.data() as Record<string, unknown>;

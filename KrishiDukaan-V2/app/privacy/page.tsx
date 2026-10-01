@@ -1,4 +1,5 @@
 import { 
+  Briefcase,
   ShieldCheck, 
   Lock, 
   User, 
@@ -39,7 +40,7 @@ export default function PrivacyPage() {
           </p>
           <div className="mt-6 inline-flex items-center space-x-2 text-sm text-gray-500 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100">
             <Clock className="w-4 h-4" />
-            <span>Last updated: <strong className="text-gray-700">17 May 2026</strong></span>
+            <span>Last updated: <strong className="text-gray-700">1 September 2026</strong></span>
           </div>
         </div>
 
@@ -67,7 +68,7 @@ export default function PrivacyPage() {
                 </div>
                 <div className="ml-3">
                   <strong className="text-gray-900 block">Location Data</strong>
-                  With your permission, we access your approximate or precise location to show nearby agri-input stores and products. Location access is optional and can be denied without losing core browsing features.
+                  With your permission, we access your approximate or precise location to show nearby agri-input stores and products. In the KrishiDukan marketplace app and website, location access is optional and can be denied without losing core browsing features. Different rules apply to our field sales staff — see section 4.
                 </div>
               </div>
               <div className="flex items-start">
@@ -121,10 +122,74 @@ export default function PrivacyPage() {
             </div>
           </Section>
 
+          {/* Field sales staff — the KrishiDukan Sales app is a separate,
+              login-gated app for employees, and its location handling is the
+              opposite of the marketplace app's (mandatory, not optional), so it
+              needs its own disclosure rather than a footnote above. */}
+          <Section
+            icon={<Briefcase className="w-6 h-6 text-amber-600" />}
+            title="4. Field Sales Staff (KrishiDukan Sales App)"
+            bgColor="bg-amber-50"
+          >
+            <div className="space-y-4 text-gray-600 leading-relaxed">
+              <p>
+                <strong className="text-gray-900">This section applies only to KrishiDukan Sales</strong>, a separate app used by our authorised field sales executives. It does not apply to customers, retailers or manufacturers using the KrishiDukan marketplace. Access requires an account issued by a KrishiDukan administrator.
+              </p>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">Location is required, not optional</strong>
+                  The purpose of the app is to record where field work took place, so a sales executive cannot start or end a working day, log a dealer visit, or mark attendance without granting location access. We record precise coordinates at each of those moments, and the road route and distance travelled between them.
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">We do not track location in the background</strong>
+                  Location is read only at the moment the executive performs one of those actions, and only while the app is open. The app does not request background location permission and does not follow a device continuously, outside working hours, or when it is closed.
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">Work records</strong>
+                  We store attendance status, working hours, visit purpose and notes, and expense claims including the amount, category and any photograph of a bill uploaded for reimbursement.
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">Business contact details entered by staff</strong>
+                  Executives record the shop name, owner name, phone number, address and location of the dealers, distributors and manufacturers they visit. This is business contact information used to manage our trade relationships. If you are a listed business and want your details corrected or removed, contact us using section 9.
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">Why we collect it and who can see it</strong>
+                  This data is processed for employment purposes: verifying field activity, approving expense reimbursements, and planning territory coverage. A sales executive can see only their own records. KrishiDukan administrators can see the records of the whole field team. It is never sold, used for advertising, or shared with other customers or sellers.
+                </div>
+              </div>
+
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mt-1"><div className="w-2 h-2 bg-amber-500 rounded-full"></div></div>
+                <div className="ml-3">
+                  <strong className="text-gray-900 block">Retention</strong>
+                  Field activity and expense records are retained as business and accounting records for as long as required by law, and therefore may outlast an executive&apos;s employment. Questions about your own records can be raised with your administrator or at the address in section 9.
+                </div>
+              </div>
+            </div>
+          </Section>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <Section 
               icon={<Trash2 className="w-6 h-6 text-red-500" />}
-              title="4. Data Retention & Deletion"
+              title="5. Data Retention & Deletion"
               bgColor="bg-red-50"
             >
               <p className="text-gray-600 leading-relaxed">
@@ -134,7 +199,7 @@ export default function PrivacyPage() {
 
             <Section 
               icon={<Lock className="w-6 h-6 text-indigo-500" />}
-              title="5. Security"
+              title="6. Security"
               bgColor="bg-indigo-50"
             >
               <p className="text-gray-600 leading-relaxed">
@@ -145,7 +210,7 @@ export default function PrivacyPage() {
 
           <Section 
             icon={<User className="w-6 h-6 text-orange-500" />}
-            title="6. Children's Privacy"
+            title="7. Children's Privacy"
             bgColor="bg-orange-50"
           >
             <p className="text-gray-600 leading-relaxed">
@@ -155,7 +220,7 @@ export default function PrivacyPage() {
 
           <Section 
             icon={<ShieldCheck className="w-6 h-6 text-teal-500" />}
-            title="7. Your Rights & Policy Changes"
+            title="8. Your Rights & Policy Changes"
             bgColor="bg-teal-50"
           >
             <div className="space-y-4 text-gray-600 leading-relaxed">
@@ -170,7 +235,7 @@ export default function PrivacyPage() {
 
           <Section 
             icon={<Mail className="w-6 h-6 text-gray-700" />}
-            title="8. Contact Us"
+            title="9. Contact Us"
             bgColor="bg-gray-100"
           >
             <p className="text-gray-600 mb-4">

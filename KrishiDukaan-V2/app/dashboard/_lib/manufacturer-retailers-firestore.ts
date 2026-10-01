@@ -17,6 +17,7 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { authedJsonHeaders } from "../../lib/authed-fetch";
 import type {
   ManufacturerRetailerDoc,
   ManufacturerRetailerRow,
@@ -967,7 +968,7 @@ export async function linkExistingRetailerToNetwork(input: {
     if (!emailToNotify) return;
     fetch("/api/email/invite", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authedJsonHeaders(),
       body: JSON.stringify({
         retailerEmail: emailToNotify,
         shopName: input.shopName.trim(),

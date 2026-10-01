@@ -138,6 +138,10 @@ class CatalogModel {
   final String? sellMode;
   final bool? gstApplicable;
   final double? gstRate;
+
+  /// Whether [gstRate] is already inside the price. Defaults to true — only an
+  /// explicit false is exclusive (GST added at checkout).
+  final bool gstIncluded;
   final List<AvailabilityEntry>? availability;
   final double? lowestPrice;
   final double? nearestStoreDistanceKm;
@@ -192,6 +196,7 @@ class CatalogModel {
     this.sellMode,
     this.gstApplicable,
     this.gstRate,
+    this.gstIncluded = true,
     this.availability,
     this.lowestPrice,
     this.nearestStoreDistanceKm,
@@ -249,6 +254,7 @@ class CatalogModel {
     String? sellMode,
     bool? gstApplicable,
     double? gstRate,
+    bool? gstIncluded,
     List<AvailabilityEntry>? availability,
     double? lowestPrice,
     double? nearestStoreDistanceKm,
@@ -295,6 +301,7 @@ class CatalogModel {
       sellMode: sellMode ?? this.sellMode,
       gstApplicable: gstApplicable ?? this.gstApplicable,
       gstRate: gstRate ?? this.gstRate,
+      gstIncluded: gstIncluded ?? this.gstIncluded,
       availability: availability ?? this.availability,
       lowestPrice: lowestPrice ?? this.lowestPrice,
       nearestStoreDistanceKm:
@@ -482,6 +489,7 @@ class CatalogModel {
       sellMode: sellMode,
       gstApplicable: gstApplicable,
       gstRate: gstRate,
+      gstIncluded: d['gstIncluded'] != false,
       availability: availability,
       nearestStoreDistanceKm: (d['nearestStoreDistanceKm'] as num?)?.toDouble(),
     );

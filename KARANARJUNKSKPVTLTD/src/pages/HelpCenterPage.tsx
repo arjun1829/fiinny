@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, BookOpen, Users, BarChart3, ShieldAlert, HelpCircle, FileText, ChevronRight, X } from 'lucide-react';
+import { Search, BookOpen, Users, BarChart3, ShieldAlert, HelpCircle, FileText, ChevronRight, X, LifeBuoy } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { HELP_ARTICLES, SECTIONS, searchArticles, type HelpSection, type HelpArticle } from '../data/helpArticles';
 
@@ -212,6 +212,28 @@ export default function HelpCenterPage() {
           Find guides, step-by-step instructions, and answers for every module.
         </p>
       </div>
+
+      {/* Support Tickets CTA — raise & track an issue with the Fiinny team */}
+      <Link
+        to="/support"
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.875rem',
+          padding: '1rem 1.25rem', marginBottom: '1.5rem',
+          borderRadius: '14px', textDecoration: 'none',
+          background: 'hsla(152,60%,40%,0.08)', border: '1px solid hsla(152,60%,40%,0.25)',
+        }}
+      >
+        <span style={{ color: 'var(--primary-light)', flexShrink: 0 }}><LifeBuoy size={24} /></span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: 'block', fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)' }}>
+            Support Tickets
+          </span>
+          <span style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
+            Can't find an answer? Raise a ticket and track its progress with our team.
+          </span>
+        </span>
+        <ChevronRight size={18} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+      </Link>
 
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: '2rem' }}>

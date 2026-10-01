@@ -273,7 +273,25 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  // Same guest-browsing escape hatch as the welcome screen —
+                  // someone who lands here straight from a deep link (never
+                  // saw welcome_screen.dart) still needs a way to browse
+                  // without signing in. Ordering still asks for sign-in when
+                  // they actually try (see product_detail_screen's cart guard).
+                  Center(
+                    child: TextButton(
+                      onPressed: _isLoading ? null : () => context.go('/'),
+                      child: Text(
+                        'Continue without login',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   // These two documents are now real pages, and this line is
                   // the acceptance notice for them — so it links to them. It
                   // used to be flat text pointing at a "Terms of Service" that

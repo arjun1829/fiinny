@@ -13,10 +13,11 @@
 import Link from "next/link";
 import { COMPANY, LEGAL_EFFECTIVE_DATE, LEGAL_ROUTES } from "../../app/lib/legal";
 
-/** The three-document set, for the cross-link strip. */
+/** The document set, for the cross-link strip. */
 const DOCS: { href: string; label: string }[] = [
   { href: LEGAL_ROUTES.terms, label: "Terms & Conditions" },
   { href: LEGAL_ROUTES.privacy, label: "Privacy Policy" },
+  { href: LEGAL_ROUTES.returns, label: "Return & Exchange Policy" },
   { href: LEGAL_ROUTES.sellerTerms, label: "Seller & Manufacturer Subscription Terms" },
 ];
 

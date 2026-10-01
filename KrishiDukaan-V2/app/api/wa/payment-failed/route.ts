@@ -67,7 +67,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
 
       try {
-        const result = await provider.sendTemplateMessage(normalized, TEMPLATE_NAME, TEMPLATE_LANG);
+        const recipientName = (await lookupName(db, normalized)) || "User";
+        const components = [
+          {
+            type: "body",
+            parameters: [{ type: "text", text: recipientName }],
+          },
+        ];
+        const result = await provider.sendTemplateMessage(normalized, TEMPLATE_NAME, TEMPLATE_LANG, components);
 
         // Record in waConversations so the WA inbox shows outgoing templates
         await db

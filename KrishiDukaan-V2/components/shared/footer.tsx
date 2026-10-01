@@ -210,7 +210,7 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
 
         {/* Bottom bar */}
         <div className="mt-10 pt-6 border-t border-surface-container flex flex-col md:flex-row items-center justify-between gap-3 text-[11px] text-outline">
-          <p>© {new Date().getFullYear()} KrishiDukan. {t('footerRights')}</p>
+          <p>© {new Date().getFullYear()} KrishiDukan. {t('footerRights')} KrishiDukan is a product by Fiinny.</p>
           {/* Real anchors. These were <button>s with no onClick and no href —
               rendered, styled and hoverable, but they went nowhere, while the
               mobile sign-up screen was already telling users they had agreed to
@@ -223,6 +223,9 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
             </Link>
             <Link href={LEGAL_ROUTES.terms} className="hover:text-on-surface transition-colors font-semibold">
               {t('footerTerms')}
+            </Link>
+            <Link href={LEGAL_ROUTES.returns} className="hover:text-on-surface transition-colors font-semibold">
+              Returns
             </Link>
             <Link href={LEGAL_ROUTES.sellerTerms} className="hover:text-on-surface transition-colors font-semibold">
               {t('footerSellerTerms')}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Razorpay from 'razorpay';
 import { getAdminAuth } from '../../../lib/firebase-admin';
+import { markAttemptPaid } from '../../../lib/payment-attempts';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -68,6 +69,12 @@ export async function POST(request: Request) {
     // no separate capture step for this endpoint to trigger.
     const captured = payments.find((p) => p.status === 'captured');
     if (captured) {
+      // The late-UPI path: the SDK already told the client "failed", so without
+      // this the attempt would sit recorded as a failure despite the money
+      // having been captured. markAttemptPaid also clears any error already
+      // written by the client's failure callback.
+      await markAttemptPaid(razorpay_order_id, captured.id);
+
       return NextResponse.json({
         status: 'captured',
         orderId: razorpay_order_id,

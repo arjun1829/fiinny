@@ -28,7 +28,7 @@ import {
   limit,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../firebase-client-server";
-import { buildProductSlug } from "./products-server";
+import { buildProductSlug, filterServableProductIds } from "./products-server";
 
 export interface SeoStore {
   /** Firestore doc id — a phone number for most records. */
@@ -574,9 +574,17 @@ export async function getStoreProducts(
       }
     }
 
-    return Array.from(byCanonicalId.values())
+    const candidates = Array.from(byCanonicalId.values())
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, max);
+
+    // Each card links to /products/{slug}, but the doc scanned above is the
+    // SELLER's copy — the canonicalId it points at is a different document and
+    // may not have a product page (inactive, or itself a copy). Checking the
+    // ids we are about to link keeps this grid free of 404s; it fails open, so
+    // a Firestore hiccup shows the products rather than an empty store page.
+    const servable = await filterServableProductIds(candidates.map((p) => p.id));
+    return candidates.filter((p) => servable.has(p.id));
   } catch (err) {
     console.warn("[stores-server] getStoreProducts failed:", err);
     return [];

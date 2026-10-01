@@ -2,9 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 import '../data/dashboard_repository.dart';
+import '../data/order_offers_repository.dart';
 import '../data/store_analytics.dart';
 import '../../../core/data/product_schema_repository.dart';
 import '../../../core/models/subscription_model.dart';
+import '../../../core/models/payout_account_model.dart';
+import '../data/payout_repository.dart';
+import '../data/seller_earnings.dart';
+import '../../orders/data/order_repository.dart';
 
 final _repo = DashboardRepository();
 
@@ -23,6 +28,14 @@ final sellerOrdersProvider =
   return _repo.watchSellerOrders(phone);
 });
 
+final orderOffersRepoProvider = Provider((_) => OrderOffersRepository());
+
+/// Orders other sellers rejected, open for this seller to take (Requests tab).
+final openOrderOffersProvider =
+    StreamProvider.family<List<OrderOfferModel>, String>((ref, phone) {
+  return ref.watch(orderOffersRepoProvider).watchOpenOffers(phone);
+});
+
 final deliverySettingsProvider =
     FutureProvider.family<Map<String, dynamic>?, String>((ref, phone) {
   return _repo.fetchDeliverySettings(phone);
@@ -32,13 +45,15 @@ final dashboardRepoProvider = Provider((_) => _repo);
 
 final _storeAnalyticsRepo = StoreAnalyticsRepository();
 
-/// Reach/engagement stats behind the Analytics screen, scoped to a period.
-/// Keyed by "<phone>|<periodKey>" so switching period refetches rather than
-/// reusing the previous window's numbers.
-final storeAnalyticsProvider =
-    FutureProvider.family<StoreAnalytics, ({String phone, AnalyticsPeriod period})>(
+/// Reach/engagement stats behind the Analytics screen, scoped to a period —
+/// or to [customRange] when the Custom Date Range filter is active, which
+/// overrides [period]. The record type itself is the cache key, so picking a
+/// new range (or period) always refetches rather than reusing stale numbers.
+final storeAnalyticsProvider = FutureProvider.family<StoreAnalytics,
+    ({String phone, AnalyticsPeriod period, AnalyticsRange? customRange})>(
         (ref, arg) {
-  return _storeAnalyticsRepo.fetch(arg.phone, arg.period);
+  return _storeAnalyticsRepo.fetch(arg.phone, arg.period,
+      customRange: arg.customRange);
 });
 
 /// Real seat stats from subscriptions + retailerSeatListings.
@@ -66,4 +81,30 @@ final subscriptionHistoryProvider =
 final activeSeatListingsProvider =
     FutureProvider.family<List<SeatListingModel>, String>((ref, phone) {
   return _repo.fetchActiveSeatListings(phone);
+});
+
+// ─── Payouts ────────────────────────────────────────────────────────────────
+
+final payoutRepoProvider = Provider((_) => PayoutRepository());
+
+/// The seller's saved bank account, or null if they have not set one up.
+final payoutAccountProvider = FutureProvider<PayoutAccountModel?>((ref) {
+  return ref.watch(payoutRepoProvider).fetch();
+});
+
+/// Live orders where the current user is the seller — the raw input to the
+/// earnings math.
+final sellerPayoutOrdersProvider = StreamProvider<List<OrderModel>>((ref) {
+  return OrderRepository().watchSellerOrders();
+});
+
+/// What the seller is owed, on hold, awaiting delivery, and already paid.
+///
+/// Derived from the same order documents the seller already sees, using the
+/// exact rules the web dashboard and the payout run use, so the app can never
+/// quote a different figure than the money that actually moves.
+final sellerEarningsProvider = Provider<AsyncValue<SellerEarnings>>((ref) {
+  return ref
+      .watch(sellerPayoutOrdersProvider)
+      .whenData((orders) => computeSellerEarnings(orders));
 });

@@ -18,44 +18,61 @@ import {
   IndianRupee,
   Download,
   Lock,
+  RefreshCw,
 } from "lucide-react";
 import { auth, fetchIncomingOrdersForSeller, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
-import { formatCustomerAddress, normalizeOrderItems } from "../../../types/order";
-import type { OrderDoc, OrderStatus } from "../../../types/order";
+import { formatCustomerAddress, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
+import { ORDER_STATUS_FLOW, type OrderDoc, type OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
 import { openInvoice } from "../../utils/invoice-generator";
+import { OrderRequestsPanel } from "../_components/order-requests-panel";
+import { fetchOpenOffers } from "../_lib/order-offers";
 
-// Visible progress flow — "accepted" is kept in the type for backward compat but removed from the UI
-const STATUS_FLOW: OrderStatus[] = ["placed", "out_for_delivery", "delivered"];
+// Progression shown to the seller. Imported rather than redeclared so the
+// seller view, the customer view and the "can advance to" checks cannot drift.
+const STATUS_FLOW: OrderStatus[] = ORDER_STATUS_FLOW;
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string; icon: typeof Clock }> = {
   placed:           { label: "Order Placed",     color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   icon: Clock },
-  accepted:         { label: "Processing",       color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
+  accepted:         { label: "Accepted",         color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
+  dispatched:       { label: "Dispatched",       color: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Package },
   out_for_delivery: { label: "Out for Delivery", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
   delivered:        { label: "Delivered",         color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
   rejected:         { label: "Rejected",         color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
+  cancelled:        { label: "Cancelled",        color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
+  reassigning:      { label: "Offered to other sellers", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", icon: RefreshCw },
 };
 
+// One step forward at a time, so the customer's tracking timeline reflects what
+// actually happened rather than jumping stages. Reject stays available until the
+// goods have left the seller: once dispatched, a cancellation is a refund, not a
+// status flip, and is handled through the refund flow instead.
 const NEXT_ACTIONS: Record<OrderStatus, { next: OrderStatus; label: string; color: string }[]> = {
-  // Placed → dispatch directly (no manual accept step for prepaid orders)
   placed: [
-    { next: "out_for_delivery", label: "Mark Ready & Dispatch", color: "bg-purple-600 hover:bg-purple-700 text-white" },
-    { next: "rejected",         label: "Reject",               color: "bg-red-100 hover:bg-red-200 text-red-700 border border-red-200" },
+    { next: "accepted", label: "Accept Order", color: "bg-blue-600 hover:bg-blue-700 text-white" },
+    { next: "rejected", label: "Reject",       color: "bg-red-100 hover:bg-red-200 text-red-700 border border-red-200" },
   ],
-  // Legacy "accepted" orders: still allow advancing to dispatch
   accepted: [
-    { next: "out_for_delivery", label: "Mark Dispatched", color: "bg-purple-600 hover:bg-purple-700 text-white" },
+    { next: "dispatched", label: "Mark Dispatched", color: "bg-indigo-600 hover:bg-indigo-700 text-white" },
+    { next: "rejected",   label: "Reject",          color: "bg-red-100 hover:bg-red-200 text-red-700 border border-red-200" },
+  ],
+  dispatched: [
+    { next: "out_for_delivery", label: "Out for Delivery", color: "bg-purple-600 hover:bg-purple-700 text-white" },
   ],
   out_for_delivery: [
     { next: "delivered", label: "Mark Delivered", color: "bg-green-600 hover:bg-green-700 text-white" },
   ],
   delivered: [],
   rejected:  [],
+  cancelled: [],
+  // Out of this seller's hands: it's being offered to others for 24h, and
+  // firestore.rules refuses any seller write to it until someone accepts.
+  reassigning: [],
 };
 
-type FilterTab = "all" | "placed" | "accepted" | "out_for_delivery" | "delivered" | "rejected";
-type ViewTab = "orders" | "payments";
+type FilterTab = "all" | "placed" | "accepted" | "dispatched" | "out_for_delivery" | "delivered" | "rejected" | "cancelled";
+type ViewTab = "orders" | "payments" | "requests";
 
 function formatDate(createdAt: unknown): string {
   try {
@@ -97,7 +114,7 @@ function PayoutBreakdown({ order }: { order: OrderDoc }) {
   const payment = (order as any).payment as
     | { razorpayPaymentId?: string; gatewayFee?: number }
     | undefined;
-  const gross = Number(order.grandTotal ?? order.subtotal ?? 0);
+  const gross = orderGrandTotal(order);
 
   useEffect(() => {
     let cancelled = false;
@@ -351,6 +368,9 @@ export default function OrdersPage() {
   const [sellerType, setSellerType] = useState<"retailer" | "manufacturer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState<boolean | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionInfo, setActionInfo] = useState<string | null>(null);
+  const [requestCount, setRequestCount] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
   const [sellerInfo, setSellerInfo] = useState<{ name: string; phone: string; gstin: string } | null>(null);
@@ -374,6 +394,20 @@ export default function OrdersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "requests") {
+      setActiveViewTab("requests");
+    }
+  }, []);
+
+  // Badge count before the tab is opened.
+  useEffect(() => {
+    if (!sellerInfo?.phone) return;
+    fetchOpenOffers(sellerInfo.phone)
+      .then((rows) => setRequestCount(rows.length))
+      .catch(() => undefined);
+  }, [sellerInfo?.phone]);
 
   useEffect(() => {
     if (!effectiveUid || !effectiveProfile) return;
@@ -405,6 +439,45 @@ export default function OrdersPage() {
   }, [effectiveUid, effectiveProfile]);
 
   const onAdvance = async (orderId: string, status: OrderStatus) => {
+    // Reject goes through a server route, not a bare status write: a paid
+    // order needs its Razorpay refund issued (and the seller's Route
+    // transfer reversed, if one already went out) as part of the SAME
+    // action, so there's no way to reject a paid order and forget the
+    // refund. See app/api/orders/reject and app/lib/order-refund.ts.
+    if (status === "rejected") {
+      const reason = window.prompt("Why are you rejecting this order? (shown to the customer)");
+      if (reason === null) return; // cancelled the prompt
+      if (!reason.trim()) {
+        setActionError("A reason is required to reject an order.");
+        return;
+      }
+      setUpdatingId(orderId);
+      setActionError(null);
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch("/api/orders/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+          body: JSON.stringify({ orderId, reason }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Could not reject the order.");
+        setActionInfo(
+          json.reassigning
+            ? `Order offered to ${json.candidates} other seller${json.candidates === 1 ? "" : "s"} who sell this online. If none accepts within 24 hours, the customer is refunded automatically.`
+            : json.refunded
+              ? "Order rejected and the customer refunded."
+              : "Order rejected.",
+        );
+        if (uid && sellerType) await load(uid, sellerType, sellerProfile);
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "Could not reject the order.");
+      } finally {
+        setUpdatingId(null);
+      }
+      return;
+    }
+
     setUpdatingId(orderId);
     try {
       await updateOrderStatus(orderId, status);
@@ -430,12 +503,13 @@ export default function OrdersPage() {
 
   const FILTER_TABS: { key: FilterTab; label: string; color: string }[] = [
     { key: "all",              label: `All (${orders.length})`,                                        color: "bg-surface-container text-on-surface" },
-    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                          color: "bg-amber-100 text-amber-800" },
-    { key: "out_for_delivery", label: `Dispatched (${statusCounts["out_for_delivery"] || 0})`,         color: "bg-purple-100 text-purple-800" },
-    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,                 color: "bg-green-100 text-green-800" },
-    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,                   color: "bg-red-100 text-red-800" },
-    // Legacy tab — only show if there are orders with accepted status
-    ...(statusCounts["accepted"] ? [{ key: "accepted" as FilterTab, label: `Processing (${statusCounts["accepted"]})`, color: "bg-blue-100 text-blue-800" }] : []),
+    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                              color: "bg-amber-100 text-amber-800" },
+    { key: "accepted",         label: `Accepted (${statusCounts["accepted"] || 0})`,                        color: "bg-blue-100 text-blue-800" },
+    { key: "dispatched",       label: `Dispatched (${statusCounts["dispatched"] || 0})`,                    color: "bg-indigo-100 text-indigo-800" },
+    { key: "out_for_delivery", label: `Out for Delivery (${statusCounts["out_for_delivery"] || 0})`,        color: "bg-purple-100 text-purple-800" },
+    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,                      color: "bg-green-100 text-green-800" },
+    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,                        color: "bg-red-100 text-red-800" },
+    { key: "cancelled",        label: `Cancelled (${statusCounts["cancelled"] || 0})`,                      color: "bg-red-100 text-red-800" },
   ];
 
   return (
@@ -445,6 +519,17 @@ export default function OrdersPage() {
         description={t('ordersDesc')}
         helperKey="dashOrders"
       />
+
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+      {actionInfo && (
+        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {actionInfo}
+        </div>
+      )}
 
       {!uid || !sellerType ? (
         <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
@@ -511,9 +596,33 @@ export default function OrdersPage() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveViewTab("requests")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                activeViewTab === "requests"
+                  ? "bg-white text-on-surface shadow-sm"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <RefreshCw className="w-4 h-4" />
+              Requests
+              {requestCount > 0 && (
+                <span className="ml-1 bg-orange-100 text-orange-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                  {requestCount}
+                </span>
+              )}
+            </button>
           </div>
 
-          {activeViewTab === "payments" ? (
+          {activeViewTab === "requests" ? (
+            <OrderRequestsPanel
+              sellerPhone={sellerInfo?.phone ?? ""}
+              onCountChange={setRequestCount}
+              onAccepted={() => {
+                if (uid && sellerType) void load(uid, sellerType, sellerProfile);
+              }}
+            />
+          ) : activeViewTab === "payments" ? (
             /* ── PAYMENTS TAB ── */
             <div className="space-y-4">
               {/* Summary cards */}
@@ -613,7 +722,7 @@ export default function OrdersPage() {
                             )}
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="font-black text-secondary text-xl">₹{Number(order.grandTotal ?? order.subtotal ?? 0).toFixed(0)}</p>
+                            <p className="font-black text-secondary text-xl">₹{orderGrandTotal(order).toFixed(0)}</p>
                             {(order.deliveryCharge ?? 0) > 0 && (
                               <p className="text-[10px] text-on-surface-variant">incl. ₹{order.deliveryCharge} delivery</p>
                             )}

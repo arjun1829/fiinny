@@ -10,6 +10,7 @@ import { recordEngagement } from "./notifications/engagement";
 export { sendWaNotification, retryWaNotifications, webhookReceiver } from "./wa-dispatch";
 export { transcodeReel } from "./reels/media/transcodeReel";
 export { backfillReelTranscodes } from "./reels/media/backfillReelTranscodes";
+export { backfillReelThumbnails } from "./reels/media/backfillReelThumbnails";
 export { releaseTransferOnDelivery } from "./route-release";
 export {
   notifyOwnerOnReelRepost,
@@ -21,16 +22,25 @@ export {
   notifyLowStock,
 } from "./notifications/inventory";
 export { sendStoreAnalyticsDigest } from "./notifications/digest";
+export { raiseAbandonedCheckoutEnquiries } from "./notifications/enquiries";
+export { notifySellerOfOrderOffer, expireOrderReassignments } from "./notifications/reassignment";
+export { generateInvoiceForNewOrder, sweepMissingInvoices } from "./orders/invoices";
 export {
   remindIncompleteProfiles,
+  remindIncompletePayoutDetails,
   remindSubscriptionRenewal,
 } from "./notifications/reminders";
+export {
+  remindPendingOrderAcceptance,
+  testOrderAcceptPendingReminder,
+} from "./notifications/order-accept-reminder";
 export {
   provisionErpTenantOnSubscription,
   provisionErpTenantByAdmin,
   createErpHandoffCode,
   redeemErpHandoffCode,
 } from "./erp-bridge";
+export { onActiveUserPresence } from "./analytics/activity";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -782,7 +792,10 @@ export const notifySellerOnOrder = onDocumentCreated(
     });
 
     const customer = String(d.customerName ?? "A customer");
-    const total = typeof d.total === "number" ? d.total : null;
+    // Canonical final total is `grandTotal` (web) / `total` (mobile) — read both
+    // so the notification shows an amount regardless of which flow placed the order.
+    const totalRaw = d.grandTotal ?? d.total;
+    const total = typeof totalRaw === "number" ? totalRaw : null;
     const items = Array.isArray(d.items)
       ? (d.items as Record<string, unknown>[])
       : [];
@@ -869,6 +882,10 @@ export const notifyCustomerOnOrderStatus = onDocumentWritten(
         "Order accepted 👍",
         `${store} accepted your order for ${itemSummary}`,
       ],
+      dispatched: [
+        "Order dispatched 📦",
+        `${store} has dispatched your order for ${itemSummary}`,
+      ],
       out_for_delivery: [
         "Out for delivery 🚚",
         `Your order for ${itemSummary} is on its way`,
@@ -877,9 +894,17 @@ export const notifyCustomerOnOrderStatus = onDocumentWritten(
         "Order delivered 🎉",
         `Your order for ${itemSummary} was delivered`,
       ],
+      reassigning: [
+        "Finding another seller 🔄",
+        `${store} couldn't fulfil your order for ${itemSummary}. We're asking other sellers now — if nobody takes it within 24 hours, you'll be refunded automatically.`,
+      ],
       rejected: [
         "Order declined ❌",
-        `${store} couldn't fulfil your order for ${itemSummary}`,
+        `${store} couldn't fulfil your order for ${itemSummary}. If you paid online, it's been refunded automatically.`,
+      ],
+      cancelled: [
+        "Order cancelled",
+        `Your order for ${itemSummary} was cancelled. If you paid online, it's been refunded automatically.`,
       ],
     };
     const msg = messages[status];

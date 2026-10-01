@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "832154675525",
+    "project_id": "karanarjun-pvt-ltd",
+    "storage_bucket": "karanarjun-pvt-ltd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:832154675525:android:06735042698d161385362c",
+        "android_client_info": {
+          "package_name": "com.krishidukan.erp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "832154675525-70skb4ptf7if4rk0fj5dqs31tqnf6brg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.krishidukan.erp",
+            "certificate_hash": "87c171340ac96b7adf7134f93f5f0ea2f70eb95c"
+          }
+        },
+        {
+          "client_id": "832154675525-gdap2aaemhjscm2n75u85dt9jitd6cp5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.krishidukan.erp",
+            "certificate_hash": "e11074f084576598b8eaee7be616fb043d267319"
+          }
+        },
+        {
+          "client_id": "832154675525-4hio310ldeiqm9m4iqavipcgna8m1bli.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA506IGfzmABsAOLUXoNfbX3qsC7iK_B1Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "832154675525-4hio310ldeiqm9m4iqavipcgna8m1bli.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

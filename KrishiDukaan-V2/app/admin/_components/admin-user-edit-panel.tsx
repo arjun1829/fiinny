@@ -26,6 +26,7 @@ import {
 import { useAdminAuth } from "../_context/admin-auth-context";
 import { isValidGstinFormat } from "../../dashboard/_lib/profile-persistence";
 import { compressImage } from "../../utils/compressImage";
+import { subscriptionPlanLabel } from "../../lib/pricing";
 
 declare global { interface Window { google?: any } }
 
@@ -368,10 +369,14 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
 
       // Delete Firebase Auth account via server route if uid is known
       if (uid) {
+        const idToken = await auth.currentUser?.getIdToken();
         await fetch("/api/admin/delete-user", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targetUid: uid, callerUid }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({ targetUid: uid }),
         });
       }
 
@@ -886,7 +891,7 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
                         {/* Plan */}
                         <div className="px-4 py-3">
                           <p className="text-xs text-on-surface-variant">Plan</p>
-                          <p className="text-sm font-medium text-on-surface mt-0.5">{activeSub.planName || "Standard"}</p>
+                          <p className="text-sm font-medium text-on-surface mt-0.5">{subscriptionPlanLabel(activeSub)}</p>
                         </div>
 
                         {/* Extend */}

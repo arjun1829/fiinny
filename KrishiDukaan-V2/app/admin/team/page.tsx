@@ -28,8 +28,12 @@ const SECTION_LABELS: Record<AdminSection, string> = {
   overview: "Overview",
   analytics: "Analytics",
   orders: "Orders",
+  payments: "Payments",
   users: "Users & Roles",
   subscriptions: "Subscriptions",
+  payouts: "Seller Payouts",
+  routePayouts: "Route Payouts",
+  moderation: "Moderation",
   pricing: "Pricing & Promos",
   products: "Products",
   reels: "Reels",
@@ -37,11 +41,14 @@ const SECTION_LABELS: Record<AdminSection, string> = {
   inventory: "Inventory",
   companies: "Company Pages",
   hubs: "Hubs",
+  banners: "Banners",
   reports: "Reports",
   messages: "Messages",
   whatsapp: "WhatsApp",
   blog: "Blog",
   team: "Team",
+  salesTeam: "Sales Team",
+  referrals: "Referrals",
 };
 
 const inputCls =
@@ -107,15 +114,17 @@ function CreateTeamMemberForm({ onCreated }: { onCreated: () => void }) {
     }
     setSaving(true);
     try {
-      const callerUid = auth.currentUser?.uid;
+      const idToken = await auth.currentUser?.getIdToken();
       const res = await fetch("/api/admin/create-user", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           name: name.trim(),
           email: email.trim(),
           password,
-          callerUid,
           role: "team",
           adminSections: Array.from(sections),
         }),
@@ -301,11 +310,14 @@ export default function AdminTeamPage() {
     if (!confirm("Remove this team member? They will no longer be able to log in.")) return;
     setDeleting(uid);
     try {
-      const callerUid = auth.currentUser?.uid;
+      const idToken = await auth.currentUser?.getIdToken();
       await fetch("/api/admin/delete-user", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUid: uid, callerUid }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ targetUid: uid }),
       });
       await load(true);
     } finally {

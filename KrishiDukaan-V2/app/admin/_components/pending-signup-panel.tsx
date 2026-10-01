@@ -115,6 +115,16 @@ function SendReminderModal({
   const [sentCount, setSentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const sendingRef = useRef(false);
+  const masterCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = masterCheckboxRef.current;
+    if (!el) return;
+    const all = retailers.length > 0 && selectedDocIds.size >= retailers.length;
+    const none = selectedDocIds.size === 0;
+    el.checked = all;
+    el.indeterminate = !all && !none;
+  }, [selectedDocIds, retailers]);
 
   const selectedProduct = products.find((p) => p.id === selectedProductId);
   const selectedRetailers = retailers.filter((r) => selectedDocIds.has(r.docId));
@@ -308,27 +318,22 @@ function SendReminderModal({
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <input
+                    ref={masterCheckboxRef}
+                    type="checkbox"
+                    onChange={(e) =>
+                      setSelectedDocIds(
+                        e.target.checked
+                          ? new Set(retailers.map((r) => r.docId))
+                          : new Set(),
+                      )
+                    }
+                    className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary/30 cursor-pointer shrink-0"
+                  />
                   <label className="text-sm font-medium text-on-surface">
                     Select Recipients ({selectedDocIds.size}/{retailers.length})
                   </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocIds(new Set(retailers.map((r) => r.docId)))}
-                      className="text-xs font-semibold text-primary hover:underline"
-                    >
-                      All
-                    </button>
-                    <span className="text-xs text-on-surface-variant">·</span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDocIds(new Set())}
-                      className="text-xs font-semibold text-on-surface-variant hover:underline"
-                    >
-                      None
-                    </button>
-                  </div>
                 </div>
                 <div className="max-h-52 overflow-y-auto rounded-xl border border-outline-variant/30 divide-y divide-outline-variant/10">
                   {retailers.map((r) => {

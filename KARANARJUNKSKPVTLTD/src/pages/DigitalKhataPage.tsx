@@ -46,6 +46,9 @@ interface KhataEntry {
     pin?: string;
     status?: string;
     items?: any[];
+    // Cumulative ₹ returned against this bill via B2C Sales Returns (additive
+    // linkage written by ReturnsPage; nets the bill's outstanding down).
+    returnTotal?: number;
     // Set on entries created directly from this page (not via POS) — gates the
     // Edit/Delete actions so POS-origin bills (inventory postings, invoice
     // numbering) are never touched by them.
@@ -171,7 +174,11 @@ export default function DigitalKhataPage({ fullWidth = false }: { fullWidth?: bo
     // Compute per-entry outstanding. Cancelled bills (superseded by a corrected
     // re-issue from POS) must not count towards anyone's dues.
     const enriched = useMemo(() => entries.filter(e => String(e.status || '').toLowerCase() !== 'cancelled').map(e => {
-        const total = Number(e.grandTotal || e.netAmount || e.totalAmount || e.amount || 0);
+        // Net the bill down by any B2C sales returns booked against it (additive
+        // returnTotal linkage on the original salesOrder; 0/absent for bills with
+        // no return, so this leaves them unchanged and never mutates grandTotal).
+        const totalBase = Number(e.grandTotal || e.netAmount || e.totalAmount || e.amount || 0);
+        const total = Math.max(0, totalBase - Number(e.returnTotal || 0));
         // POS writes amountPaid; other writers used paidAmount. Reading only the
         // latter made every settled cash bill look like unpaid udhari.
         const rawPaid = e.amountPaid ?? e.paidAmount;
@@ -663,7 +670,7 @@ export default function DigitalKhataPage({ fullWidth = false }: { fullWidth?: bo
         const rows = [...c.bills].sort((a, b) => a.ts.getTime() - b.ts.getTime()).map(b => {
             bal += b.total - b.paid;
             return `<tr>
-                <td>${b.ts.toLocaleDateString('en-IN')}</td>
+                <td>${b.ts.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                 <td>${billNo(b)}</td>
                 <td class="num">${b.total.toFixed(2)}</td>
                 <td class="num">${b.paid.toFixed(2)}</td>
@@ -675,26 +682,54 @@ export default function DigitalKhataPage({ fullWidth = false }: { fullWidth?: bo
         win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Khata Statement - ${c.name}</title>
 <style>
-  @page { size: A4; margin: 12mm; }
-  body { font-family: 'Times New Roman', Georgia, serif; color: #000; }
-  h1 { font-size: 16pt; margin: 0 0 2px; }
-  .meta { font-size: 10pt; color: #333; margin-bottom: 12px; }
-  table { border-collapse: collapse; width: 100%; font-size: 10pt; }
-  th, td { border: 1px solid #000; padding: 4px 6px; }
-  th { background: #f0f0f0; text-align: left; }
-  td.num, th.num { text-align: right; }
-  tfoot td { font-weight: 700; }
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e1e1e; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .cust-name { font-size: 16pt; font-weight: 700; color: rgb(28,120,60); text-transform: uppercase; }
+  .doc-sub { font-size: 8.5pt; color: #505050; margin-top: 5px; }
+  .doc-title { font-size: 13pt; font-weight: 700; color: #1e1e1e; text-align: right; }
+  .doc-meta { font-size: 8pt; color: #646464; margin-top: 5px; text-align: right; }
+  .divider { border: none; border-top: 1px solid #c8c8c8; margin: 6px 0 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.5pt; }
+  thead th { background: rgb(28,120,60); color: #fff; font-weight: 700; text-align: left; padding: 6px 8px; }
+  th.num, td.num { text-align: right; }
+  tbody td { padding: 5px 8px; border-bottom: 1px solid #e5e5e5; }
+  tbody tr:nth-child(even) { background: #f6f8f6; }
+  tfoot td { padding: 7px 8px; font-weight: 700; border-top: 1.5px solid #1e1e1e; }
+  .summary { display: flex; gap: 48px; margin-top: 14px; font-size: 8.5pt; }
+  .summary .label { color: #646464; }
+  .summary .value { font-weight: 700; color: #1e1e1e; margin-top: 3px; }
+  .summary .value.outstanding { color: ${c.outstanding > 0 ? '#c81e1e' : '#1c8c46'}; }
+  .footer { border-top: 1px solid #c8c8c8; margin-top: 24px; padding-top: 8px; font-size: 7.5pt; color: #969696; display: flex; justify-content: space-between; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style></head><body>
-<h1>Khata Statement</h1>
-<div class="meta">
-  <strong>${c.name}</strong>${c.phone ? ` &middot; ${c.phone}` : ''}${c.address ? `<br>${c.address}` : ''}
-  <br>Generated ${new Date().toLocaleDateString('en-IN')} &middot; ${c.bills.length} bill(s)
+<div class="header">
+  <div>
+    <div class="cust-name">${c.name}</div>
+    <div class="doc-sub">${[c.phone, c.address].filter(Boolean).join(' &middot; ')}</div>
+  </div>
+  <div>
+    <div class="doc-title">KHATA STATEMENT</div>
+    <div class="doc-meta">Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+    <div class="doc-meta">${c.bills.length} bill(s)</div>
+  </div>
 </div>
+<hr class="divider" />
 <table>
   <thead><tr><th>Date</th><th>Bill No</th><th class="num">Bill Amt</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr><td colspan="2">Total</td><td class="num">${c.total.toFixed(2)}</td><td class="num">${c.paid.toFixed(2)}</td><td class="num">${c.outstanding.toFixed(2)}</td></tr></tfoot>
 </table>
+<div class="summary">
+  <div><div class="label">Total Billed</div><div class="value">Rs. ${c.total.toFixed(2)}</div></div>
+  <div><div class="label">Total Paid</div><div class="value">Rs. ${c.paid.toFixed(2)}</div></div>
+  <div><div class="label">Outstanding</div><div class="value outstanding">Rs. ${c.outstanding.toFixed(2)}</div></div>
+</div>
+<div class="footer">
+  <span>Fiinny ERP — Khata Statement</span>
+  <span>To save as PDF: File → Print → Save as PDF</span>
+</div>
 </body></html>`);
         win.document.close();
         win.focus();

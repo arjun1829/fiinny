@@ -87,12 +87,16 @@ const daysUntil = (dateStr: string) => {
   return Math.floor((d.getTime() - Date.now()) / 86_400_000);
 };
 
-// CSV columns — single source of truth for template, export, and import
+// CSV columns — single source of truth for template, export, and import.
+// Order mirrors the table's default column order (# / Photo are not
+// data fields so they're excluded; Batch No. and Stock are included so the
+// table's own columns fully round-trip through export → template → upload).
 const CSV_COLS = [
   { field: 'productNumber', header: 'SKU', num: false },
   { field: 'name', header: 'Product Name', num: false },
   { field: 'type', header: 'Category', num: false },
   { field: 'mfgCompany', header: 'Manufacturer', num: false },
+  { field: 'batchNumber', header: 'Batch No.', num: false },
   { field: 'unitSize', header: 'Unit Size', num: true },
   { field: 'unitMeasure', header: 'Unit Measure', num: false },
   { field: 'baseUnit', header: 'Base Unit', num: false },
@@ -101,7 +105,20 @@ const CSV_COLS = [
   { field: 'retailerPrice', header: 'Retailer Price', num: true },
   { field: 'purchasePrice', header: 'Purchase Rate', num: true },
   { field: 'sellingPrice', header: 'Sales Rate', num: true },
+  // Stock is a derived/computed value in the table (batch-aggregate, falling
+  // back to the product doc's own loosePieces/quantity*boxCapacity — see
+  // rowStock()/totalStock() below), not a single stored field, so it can't
+  // use the generic `field` lookup the other columns use. It's handled with
+  // explicit special-case logic in handleExport/handleDownloadTemplate/
+  // handleFileUpload below, writing/reading the product doc's `loosePieces`
+  // field — the same field the Add/Edit modal's Stock Quantity input uses
+  // (see `loosePieces: formData.stockQty` in handleSubmit).
+  { field: 'stock', header: 'Stock', num: true } as const,
 ] as const;
+
+// CSV_COLS entries handled generically (simple 1:1 field read/write). 'stock'
+// is excluded — see the comment above on its CSV_COLS entry.
+const CSV_DATA_COLS = CSV_COLS.filter(c => c.field !== 'stock');
 
 const UNIT_MEASURES = ['pcs', 'ml', 'ltr', 'g', 'kg'] as const;
 const GST_OPTIONS = [0, 5, 12, 18, 28];
@@ -145,8 +162,9 @@ type PMColKey =
 // Order: # → Photo → Product Name → Category → Manufacturer → Batch No. → Size →
 // Unit → GST % → MRP → Purch Rate → Retail Price → Sales Rate → Stock → Actions.
 // Batch No. (a single reference string on the product master) sits after
-// Manufacturer. The old "Batches" count column (an aggregate over the separate
-// inventoryBatches collection) was removed to avoid conflating the two concepts.
+// Manufacturer. This is distinct from the per-batch quantity ledger in the
+// separate inventoryBatches collection (see InventoryBatchPage), which is not
+// rendered as a table column here.
 const PM_ALL_KEYS: PMColKey[] = [
   'sr', 'photo', 'name', 'category', 'mfg', 'batchNumber', 'size', 'unit',
   'gst', 'mrp', 'purchase', 'retail', 'sales', 'stock', 'actions',
@@ -616,7 +634,11 @@ export default function RateSheetPage() {
   const handleExport = () => {
     const rows = visibleProducts.map(p => {
       const row: Record<string, unknown> = {};
-      CSV_COLS.forEach(c => { row[c.header] = (p as unknown as Record<string, unknown>)[c.field] ?? ''; });
+      CSV_DATA_COLS.forEach(c => { row[c.header] = (p as unknown as Record<string, unknown>)[c.field] ?? ''; });
+      // Stock is derived (batch-aggregate, falling back to the product doc's
+      // own fields) — same value the table's Stock column and its filter/sort
+      // use, so export matches exactly what's on screen.
+      row['Stock'] = rowStock(p);
       return row;
     });
     downloadCsv(rows, `product_master_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -626,8 +648,9 @@ export default function RateSheetPage() {
     const row: Record<string, unknown> = {};
     CSV_COLS.forEach(c => { row[c.header] = c.num ? 0 : ''; });
     row['SKU'] = 'KA-001'; row['Product Name'] = 'Sample Product'; row['Category'] = 'Insecticide';
-    row['Manufacturer'] = 'Sample Agro Ltd'; row['Unit Size'] = 500; row['Unit Measure'] = 'ml';
-    row['GST %'] = 18; row['MRP'] = 120; row['Sales Rate'] = 100;
+    row['Manufacturer'] = 'Sample Agro Ltd'; row['Batch No.'] = 'B2024-01';
+    row['Unit Size'] = 500; row['Unit Measure'] = 'ml';
+    row['GST %'] = 18; row['MRP'] = 120; row['Sales Rate'] = 100; row['Stock'] = 0;
     downloadCsv([row], 'product_master_template.csv');
   };
 
@@ -646,13 +669,23 @@ export default function RateSheetPage() {
             const mfgCompany = (raw['Manufacturer'] ?? '').trim();
 
             const productData: Record<string, unknown> = {};
-            for (const c of CSV_COLS) {
+            for (const c of CSV_DATA_COLS) {
               const cell = (raw[c.header] ?? '').trim();
               if (cell === '') continue;
               productData[c.field] = c.num ? (Number.isFinite(Number(cell)) ? Number(cell) : undefined) : cell;
             }
             productData.name = name;
             productData.updatedAt = serverTimestamp();
+
+            // Stock: same field the Add/Edit modal's Stock Quantity input
+            // writes (see `loosePieces: formData.stockQty` in handleSubmit).
+            // Only overwrite on upload when the Stock cell is actually
+            // present and non-empty, so a template row left blank doesn't
+            // zero out an existing product's stock on update.
+            const stockCell = (raw['Stock'] ?? '').trim();
+            if (stockCell !== '' && Number.isFinite(Number(stockCell))) {
+              productData.loosePieces = Math.max(0, Number(stockCell));
+            }
 
             // Dedup: match by name + manufacturer
             const existing = products.find(p =>

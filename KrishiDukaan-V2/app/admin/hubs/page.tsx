@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Layers, Plus, Pencil, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Layers, Plus, Pencil, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon, Upload, Loader2 } from "lucide-react";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { storage } from "../../firebase";
+import { compressImage } from "../../utils/compressImage";
 import { fetchHubs, saveHub, updateHub, deleteHub, importHubs } from "../../firebase";
 import type { Hub } from "../../firebase";
 import { INITIAL_HUBS } from "../../initialHubs";
@@ -40,6 +43,93 @@ const EMPTY_FORM: HubForm = {
 };
 
 const ICON_OPTIONS = ["Sprout", "Water", "Science", "Check"];
+
+function uploadToStorage(file: File, path: string, onProgress: (p: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const storageRef = ref(storage, path);
+    const task = uploadBytesResumable(storageRef, file);
+    task.on("state_changed",
+      snap => onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
+/**
+ * Image field with a URL input (unchanged behavior) plus an Upload button
+ * that pushes a file to Firebase Storage and fills the same URL string —
+ * mirrors the ImageField in app/admin/banners/page.tsx so the upload UX is
+ * consistent across the admin panel. No schema change: onChange always
+ * receives a plain URL string, same as typing one in by hand.
+ */
+function ImageField({
+  label, value, onChange, aspect = "h-28", compact = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (url: string) => void;
+  aspect?: string;
+  compact?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setProgress(0);
+    try {
+      const toUpload = await compressImage(file);
+      const path = `hub-images/${Date.now()}-${file.name}`;
+      const url = await uploadToStorage(toUpload, path, setProgress);
+      onChange(url);
+    } catch (err) {
+      console.error(err);
+      alert("Image upload failed. Check console.");
+    } finally {
+      setUploading(false);
+      setProgress(0);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <div>
+      {label && (
+        <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">{label}</label>
+      )}
+      <div className="flex gap-2 items-center">
+        <input
+          type="text" value={value} placeholder="https://... or upload below"
+          onChange={e => onChange(e.target.value)}
+          className={compact
+            ? "flex-1 min-w-0 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
+            : "flex-1 min-w-0 rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className={compact
+            ? "shrink-0 flex items-center gap-1.5 border border-outline-variant bg-surface-container-low text-on-surface-variant text-xs font-bold px-3 py-2 rounded-xl hover:bg-surface-container transition-colors disabled:opacity-50"
+            : "shrink-0 flex items-center gap-1.5 border border-outline-variant bg-surface-container-low text-on-surface-variant text-xs font-bold px-3 py-3 rounded-2xl hover:bg-surface-container transition-colors disabled:opacity-50"}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {uploading ? `${progress}%` : "Upload"}
+        </button>
+        <input ref={inputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+      </div>
+      {value && (
+        <div className={`mt-2 rounded-xl overflow-hidden ${aspect} bg-surface-container`}>
+          <img src={value} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formToHub(f: HubForm): Omit<Hub, "id"> {
   return {
@@ -463,28 +553,8 @@ export default function AdminHubsPage() {
                     placeholder="One-line description of the hub" required
                     className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
                 </div>
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Hero Image URL</label>
-                  <input value={f.heroImage} onChange={e => setF(p => ({ ...p, heroImage: e.target.value }))}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                  {f.heroImage && (
-                    <div className="mt-2 rounded-xl overflow-hidden h-28">
-                      <img src={f.heroImage} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Crop Icon URL (Home Page)</label>
-                  <input value={f.iconImage} onChange={e => setF(p => ({ ...p, iconImage: e.target.value }))}
-                    placeholder="https://..."
-                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                  {f.iconImage && (
-                    <div className="mt-2 rounded-xl overflow-hidden w-16 h-16 border border-surface-container">
-                      <img src={f.iconImage} alt="icon preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    </div>
-                  )}
-                </div>
+                <ImageField label="Hero Image URL" value={f.heroImage} onChange={url => setF(p => ({ ...p, heroImage: url }))} />
+                <ImageField label="Crop Icon URL (Home Page)" value={f.iconImage} onChange={url => setF(p => ({ ...p, iconImage: url }))} aspect="h-16 w-16" />
 
                 {/* Profile Stats */}
                 <div className="grid grid-cols-2 gap-4 pt-2">
@@ -544,19 +614,13 @@ export default function AdminHubsPage() {
                           <X className="h-4 w-4" />
                         </button>
                       </div>
-                      {/* Row 2: image URL full-width + preview */}
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="text" value={seed.img} placeholder="Image URL (https://...)"
-                          onChange={e => { const s = [...f.seeds]; s[i] = { ...s[i], img: e.target.value }; setF(p => ({ ...p, seeds: s })); }}
-                          className="flex-1 min-w-0 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20" />
-                        {seed.img && (
-                          <div className="w-10 h-10 rounded-xl overflow-hidden border border-surface-container shrink-0">
-                            <img src={seed.img} alt={seed.name} className="w-full h-full object-cover"
-                              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                          </div>
-                        )}
-                      </div>
+                      {/* Row 2: image URL/upload */}
+                      <ImageField
+                        label="" compact
+                        value={seed.img}
+                        onChange={url => { const s = [...f.seeds]; s[i] = { ...s[i], img: url }; setF(p => ({ ...p, seeds: s })); }}
+                        aspect="h-20 w-20"
+                      />
                     </div>
                   ))}
                   {f.seeds.length === 0 && (
@@ -585,15 +649,7 @@ export default function AdminHubsPage() {
               <div className="border-t border-surface-container pt-5">
                 <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-4">Irrigation</h3>
                 <div className="mb-4">
-                  <label className="block text-xs font-black uppercase tracking-widest text-on-surface-variant mb-1">Section Image URL</label>
-                  <input value={f.irrigationImage} onChange={e => setF(p => ({ ...p, irrigationImage: e.target.value }))}
-                    placeholder="https://..."
-                    className="w-full rounded-2xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm focus:border-primary focus:outline-none" />
-                  {f.irrigationImage && (
-                    <div className="mt-2 rounded-xl overflow-hidden h-20">
-                      <img src={f.irrigationImage} alt="preview" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    </div>
-                  )}
+                  <ImageField label="Section Image URL" value={f.irrigationImage} onChange={url => setF(p => ({ ...p, irrigationImage: url }))} aspect="h-20" />
                 </div>
                 <ArrayField
                   label="Irrigation Products"
@@ -737,20 +793,12 @@ export default function AdminHubsPage() {
                           onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], url: e.target.value }; setF(p => ({ ...p, videos: v })); }}
                           className="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Thumbnail URL</label>
-                        <div className="flex gap-2 items-center">
-                          <input type="text" value={video.thumbnail} placeholder="https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg"
-                            onChange={e => { const v = [...f.videos]; v[i] = { ...v[i], thumbnail: e.target.value }; setF(p => ({ ...p, videos: v })); }}
-                            className="flex-1 min-w-0 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none" />
-                          {video.thumbnail && (
-                            <div className="w-16 h-10 rounded-xl overflow-hidden border border-surface-container shrink-0">
-                              <img src={video.thumbnail} alt="thumb" className="w-full h-full object-cover"
-                                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      <ImageField
+                        label="Thumbnail URL" compact
+                        value={video.thumbnail}
+                        onChange={url => { const v = [...f.videos]; v[i] = { ...v[i], thumbnail: url }; setF(p => ({ ...p, videos: v })); }}
+                        aspect="h-24 w-40"
+                      />
                       <div>
                         <label className="block text-[10px] font-black uppercase text-on-surface-variant mb-1">Description</label>
                         <textarea value={video.description} placeholder="Brief description of what this video covers…" rows={2}

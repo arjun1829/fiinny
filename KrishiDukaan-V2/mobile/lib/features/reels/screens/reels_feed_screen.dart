@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/models/reel_comment_model.dart';
 import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/web_links.dart';
@@ -199,6 +200,10 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(reelsFeedProvider);
     final currentUser = ref.watch(currentUserProvider).value;
+    // Watched, not read once: blocking someone mid-scroll updates this
+    // synchronously (see BlockedUserIdsNotifier), so the filter below
+    // rebuilds this screen the instant a block is confirmed.
+    final blockedIds = ref.watch(blockedUserIdsProvider).value ?? const {};
 
     ref.listen<int>(activeShellIndexProvider, (_, tabIndex) {
       const reelsTab = 4;
@@ -288,7 +293,12 @@ class _ReelsFeedScreenState extends ConsumerState<ReelsFeedScreen>
               ],
             ),
           ),
-          data: (reels) {
+          data: (rankedReels) {
+            final reels = blockedIds.isEmpty
+                ? rankedReels
+                : rankedReels
+                    .where((r) => !blockedIds.contains(r.shopOwnerId))
+                    .toList(growable: false);
             if (reels.isEmpty) {
               return Center(
                 child: Column(
@@ -659,6 +669,12 @@ class _ReelPageState extends ConsumerState<_ReelPage>
               _commentsCount++;
             });
         },
+        onCommentDeleted: () {
+          if (mounted)
+            setState(() {
+              _commentsCount = _commentsCount > 0 ? _commentsCount - 1 : 0;
+            });
+        },
       ),
     ).whenComplete(() {
       if (mounted)
@@ -883,6 +899,8 @@ class _ReelPageState extends ConsumerState<_ReelPage>
             reelId: widget.reel.id,
             reporterId: widget.currentUserId!,
             reason: reason,
+            reportedUserId: widget.reel.shopOwnerId,
+            contentSnippet: widget.reel.caption,
           );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -892,6 +910,57 @@ class _ReelPageState extends ConsumerState<_ReelPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not submit report: $e')),
+      );
+    }
+  }
+
+  /// Blocks the reel's owner — confirms first since it's a standing
+  /// decision, not a one-tap action like Report. Once confirmed, every reel
+  /// and comment from this shopOwnerId disappears from the current user's
+  /// view immediately (see blockedUserIdsProvider), and the platform is
+  /// notified via the same contentReports queue Report writes to.
+  Future<void> _blockUser() async {
+    if (widget.currentUserId == null) {
+      _showLoginPrompt();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Block ${widget.reel.shopName}?'),
+        content: const Text(
+          "You won't see reels or comments from this account again. "
+          "We'll also review the content that led to this block.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(blockedUserIdsProvider.notifier).block(
+            blockerId: widget.currentUserId!,
+            blockedId: widget.reel.shopOwnerId,
+            reelId: widget.reel.id,
+            contentSnippet: widget.reel.caption,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Blocked ${widget.reel.shopName}.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not block: $e')),
       );
     }
   }
@@ -1096,6 +1165,13 @@ class _ReelPageState extends ConsumerState<_ReelPage>
                     iconColor: Colors.white70,
                     label: 'Report',
                     onTap: _reportReel,
+                  ),
+                  const SizedBox(height: 20),
+                  _ActionButton(
+                    icon: Icons.block,
+                    iconColor: Colors.white70,
+                    label: 'Block',
+                    onTap: _blockUser,
                   ),
                 ],
               ],
@@ -1411,12 +1487,14 @@ class _CommentsSheet extends ConsumerStatefulWidget {
   final String? currentUserId;
   final String currentUserName;
   final VoidCallback onCommentAdded;
+  final VoidCallback onCommentDeleted;
 
   const _CommentsSheet({
     required this.reelId,
     this.currentUserId,
     required this.currentUserName,
     required this.onCommentAdded,
+    required this.onCommentDeleted,
   });
 
   @override
@@ -1543,6 +1621,110 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     }
   }
 
+  Future<void> _reportComment(ReelCommentModel c) async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _ReportReasonSheet(title: 'Report this comment'),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await ref.read(reelsRepoProvider).reportComment(
+            reelId: widget.reelId,
+            commentId: c.id,
+            reporterId: widget.currentUserId!,
+            reportedUserId: c.userId,
+            reason: reason,
+            contentSnippet: c.text,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reported — thanks for flagging this.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not submit report: $e')),
+      );
+    }
+  }
+
+  Future<void> _blockCommentAuthor(ReelCommentModel c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Block ${c.userName}?'),
+        content: const Text(
+          "You won't see reels or comments from this account again. "
+          "We'll also review the content that led to this block.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(blockedUserIdsProvider.notifier).block(
+            blockerId: widget.currentUserId!,
+            blockedId: c.userId,
+            reelId: widget.reelId,
+            commentId: c.id,
+            contentSnippet: c.text,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Blocked ${c.userName}.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not block: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteComment(ReelCommentModel c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this comment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(reelsRepoProvider).deleteComment(widget.reelId, c.id);
+      widget.onCommentDeleted();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final commentsAsync = ref.watch(reelCommentsProvider(widget.reelId));
@@ -1571,7 +1753,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (_, _) =>
                   const Center(child: Text('Could not load comments.')),
-              data: (comments) {
+              data: (allComments) {
+                final blockedIds =
+                    ref.watch(blockedUserIdsProvider).value ?? const {};
+                final comments = blockedIds.isEmpty
+                    ? allComments
+                    : allComments
+                        .where((c) => !blockedIds.contains(c.userId))
+                        .toList(growable: false);
                 if (comments.isEmpty) {
                   return Center(
                     child: Column(
@@ -1648,6 +1837,17 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                               ],
                             ),
                           ),
+                          // Every comment gets a moderation entry point — own
+                          // comments can be deleted, everyone else's can be
+                          // reported or blocked. Comments previously had NO
+                          // way to act on abusive text at all.
+                          if (widget.currentUserId != null)
+                            _CommentMenuButton(
+                              isOwnComment: c.userId == widget.currentUserId,
+                              onReport: () => _reportComment(c),
+                              onBlock: () => _blockCommentAuthor(c),
+                              onDelete: () => _deleteComment(c),
+                            ),
                         ],
                       ),
                     );
@@ -2146,8 +2346,52 @@ class _ReelGridTile extends StatelessWidget {
 
 // ── Report reason sheet ───────────────────────────────────────────────────────
 
+/// The "..." next to a comment. Shows Delete for the viewer's own comment,
+/// Report + Block for anyone else's — a comment previously had no
+/// moderation entry point at all, matching the reel-level one this mirrors.
+class _CommentMenuButton extends StatelessWidget {
+  final bool isOwnComment;
+  final VoidCallback onReport;
+  final VoidCallback onBlock;
+  final VoidCallback onDelete;
+
+  const _CommentMenuButton({
+    required this.isOwnComment,
+    required this.onReport,
+    required this.onBlock,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.more_vert, size: 18, color: Colors.black45),
+      onSelected: (value) {
+        switch (value) {
+          case 'report':
+            onReport();
+          case 'block':
+            onBlock();
+          case 'delete':
+            onDelete();
+        }
+      },
+      itemBuilder: (context) => [
+        if (isOwnComment)
+          const PopupMenuItem(value: 'delete', child: Text('Delete'))
+        else ...[
+          const PopupMenuItem(value: 'report', child: Text('Report')),
+          const PopupMenuItem(value: 'block', child: Text('Block user')),
+        ],
+      ],
+    );
+  }
+}
+
 class _ReportReasonSheet extends StatelessWidget {
-  const _ReportReasonSheet();
+  final String title;
+  const _ReportReasonSheet({this.title = 'Report this reel'});
 
   static const _reasons = [
     'Misleading product or price claim',
@@ -2173,7 +2417,7 @@ class _ReportReasonSheet extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text('Report this reel', style: AppTextStyles.heading3),
+            child: Text(title, style: AppTextStyles.heading3),
           ),
           for (final reason in _reasons)
             ListTile(

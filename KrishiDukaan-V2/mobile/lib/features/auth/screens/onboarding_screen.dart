@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/loading_overlay.dart';
 import '../../../core/widgets/app_brand_icon.dart';
+import '../../../core/utils/phone_utils.dart';
 import '../data/auth_repository.dart';
 import '../../manufacturer/data/manufacturer_repository.dart';
 
@@ -129,9 +130,41 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
+  /// Signs out and returns to the phone number screen — for someone who
+  /// verified the wrong number and needs to start over, since a phone number
+  /// is immutable once a profile exists (retailer/manufacturer phones back
+  /// seat listings, orders, payouts — see PhoneUtils usage elsewhere) and
+  /// this onboarding step is the last point before that number is locked in.
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'You\'ll need to verify a phone number again to sign back in. Use '
+          'this if you verified the wrong number just now.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Log out', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await FirebaseAuth.instance.signOut();
+    if (mounted) context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     final showInviteBanner = widget.inviteCode != null && widget.inviteCode!.trim().isNotEmpty;
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
     final manufacturerName = _inviteDetails?['manufacturerName'] as String? ?? 'Manufacturer';
 
     return LoadingOverlay(
@@ -159,6 +192,59 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                           'Let\'s set up your profile',
                           style: AppTextStyles.body
                               .copyWith(color: AppColors.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 12),
+                        // Confirms which number just got verified, right next
+                        // to the way out — the phone number becomes
+                        // unchangeable after this screen, so this is the last
+                        // chance to fix a wrong-number OTP without contacting
+                        // support.
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          children: [
+                            if (phone != null && phone.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceVariant,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.phone_android,
+                                        size: 14, color: AppColors.onSurfaceVariant),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      PhoneUtils.toDisplay(phone),
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: AppColors.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            TextButton(
+                              onPressed: _isLoading ? null : _logout,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(
+                                'Not you? Log out',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.error,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

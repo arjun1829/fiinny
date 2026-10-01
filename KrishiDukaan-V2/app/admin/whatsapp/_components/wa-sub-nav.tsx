@@ -13,7 +13,7 @@ const TABS = [
     icon: MessageSquare,
   },
   {
-    href: "/admin/whatsapp/payment-failed",
+    href: "/admin/whatsapp/templates",
     label: "Send Messages",
     description: "Send approved WhatsApp templates",
     icon: Send,

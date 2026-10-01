@@ -37,8 +37,11 @@ const TAB_PERM: Partial<Record<InventoryTab, string>> = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-    const [activeTab, setActiveTab] = useHashTab<InventoryTab>(VALID_TABS, 'products', 'fiinny-tab-inventory');
     const can = useFeaturePermissions();
+    const [activeTab, setActiveTab] = useHashTab<InventoryTab>(VALID_TABS, 'products', 'fiinny-tab-inventory', (tab) => {
+        const perm = TAB_PERM[tab];
+        return perm ? can(perm) : true;
+    });
 
     // Only show sub-tabs the current role is permitted to view.
     const visibleTabs = INVENTORY_TABS.filter(tab => {
