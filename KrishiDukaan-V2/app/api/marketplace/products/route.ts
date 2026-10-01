@@ -52,6 +52,47 @@ const SEARCH_MAX_CHUNKS = 40;
 // Firestore `in` supports up to 30 values per query.
 const IN_CHUNK = 30;
 
+// A page of this feed is identical for every visitor — distance ordering happens
+// in the browser — so one computation can serve everyone for a short window.
+// That matters here because emitting ~13 merged cards costs up to
+// CHUNK * MAX_CHUNKS (480) raw doc reads across that many SEQUENTIAL Firestore
+// round-trips; measured at 13s warm and 33s cold against production. The route
+// previously sent `no-store`, so every visitor paid that in full.
+const CACHE_TTL_MS = 60_000;
+// Bounded so distinct search terms cannot grow this without limit.
+const CACHE_MAX_ENTRIES = 200;
+
+type CachedEntry = { body: unknown; at: number };
+const responseCache = new Map<string, CachedEntry>();
+
+function cacheGet(key: string): unknown | null {
+  const hit = responseCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    responseCache.delete(key);
+    return null;
+  }
+  // Re-insert so the Map's insertion order doubles as LRU order.
+  responseCache.delete(key);
+  responseCache.set(key, hit);
+  return hit.body;
+}
+
+function cacheSet(key: string, body: unknown): void {
+  if (responseCache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest !== undefined) responseCache.delete(oldest);
+  }
+  responseCache.set(key, { body, at: Date.now() });
+}
+
+// Lets Firebase Hosting's CDN serve repeat requests without waking the SSR
+// function at all; stale-while-revalidate keeps the feed instant for a further
+// 5 minutes while a fresh copy is computed in the background.
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+} as const;
+
 function encodeCursor(c: GroupCursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
 }
@@ -83,6 +124,20 @@ export async function GET(request: Request) {
   // merge/dedup, but skip the productReviews read since suggestions don't show
   // ratings. Keeps a keystroke suggestion cheap (one small products scan only).
   const suggest = searchParams.get("suggest") === "1";
+
+  // Keyed on every input that changes the result, including the raw cursor.
+  const cacheKey = [
+    pageSize,
+    category,
+    search,
+    searchParams.get("cursor") ?? "",
+    suggest ? "1" : "0",
+  ].join("|");
+
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, { headers: CACHE_HEADERS });
+  }
 
   try {
     const db = getAdminDb();
@@ -165,10 +220,9 @@ export async function GET(request: Request) {
 
     const products = mergeMarketplaceProducts(mapped, ratingAgg);
 
-    // TEMP diagnostics — remove after pagination is verified. `rawDocsRead` vs
-    // `mergedCardsReturned` distinguishes "true end of the name-ordered universe"
-    // (dedup collapsing many raw docs into few cards) from an actual early stop.
-    const debug = {
+    // Kept as a server-side log only. These counters were previously returned
+    // in the response body, which shipped internal read volumes to every client.
+    console.debug("[api/marketplace/products]", {
       cursorIn: cursor,
       rawDocsRead,
       groupsSeen,
@@ -178,18 +232,18 @@ export async function GET(request: Request) {
       hasMore,
       category: category || "all",
       search: search || null,
-    };
-    console.debug("[api/marketplace/products]", debug);
+    });
 
-    return NextResponse.json(
-      {
-        products,
-        nextCursor: nextGroupCursor ? encodeCursor(nextGroupCursor) : null,
-        hasMore,
-        debug,
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    const body = {
+      products,
+      nextCursor: nextGroupCursor ? encodeCursor(nextGroupCursor) : null,
+      hasMore,
+    };
+    // Only successful payloads are cached; the error path below stays uncached
+    // so a transient Firestore failure cannot be pinned for the whole TTL.
+    cacheSet(cacheKey, body);
+
+    return NextResponse.json(body, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error("[api/marketplace/products] failed:", err);
     return NextResponse.json(

@@ -260,7 +260,6 @@ export default function MarketView({
         products: MarketplaceProduct[];
         nextCursor: string | null;
         hasMore: boolean;
-        debug?: unknown;
       };
 
       // A newer search/category reset happened while this was in flight — discard
@@ -282,7 +281,6 @@ export default function MarketView({
         hasMore: json.hasMore,
         totalPagesRequested: pagesRequestedRef.current,
         totalCardsLoaded: cardsLoadedRef.current,
-        server: json.debug,
       });
 
       setFeed((prev) => {
