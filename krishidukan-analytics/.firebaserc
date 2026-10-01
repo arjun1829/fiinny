@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "finny-erp-uat"
+  },
+  "targets": {
+    "finny-erp-uat": {
+      "hosting": {
+        "analytics": [
+          "finny-erp-uat-analytics"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

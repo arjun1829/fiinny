@@ -1,0 +1,44 @@
+{
+  "//": "Hosting-ONLY config. This app intentionally does NOT declare firestore/functions/storage so that `firebase deploy` from this folder can never overwrite the shared finny-erp-uat Firestore rules, indexes or Cloud Functions owned by KARANARJUNKSKPVTLTD. Firestore rules for the analytics namespace are maintained in KARANARJUNKSKPVTLTD/firestore.rules and deployed from there.",
+  "hosting": [
+    {
+      "target": "analytics",
+      "public": "dist",
+      "cleanUrls": true,
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            },
+            {
+              "key": "X-Frame-Options",
+              "value": "DENY"
+            },
+            {
+              "key": "X-XSS-Protection",
+              "value": "1; mode=block"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
