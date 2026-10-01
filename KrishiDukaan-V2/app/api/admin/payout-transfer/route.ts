@@ -300,10 +300,14 @@ export async function POST(req: NextRequest) {
         // can't leave some orders looking unpaid and payable again.
         const batch = db.batch();
         const transferredAt = new Date().toISOString();
-        for (const orderId of orderIds) {
-          batch.update(db.collection("orders").doc(orderId), {
+        for (const row of dueRows) {
+          batch.update(db.collection("orders").doc(row.orderId), {
             "payment.transferId": transfer.id,
             "payment.transferredAt": transferredAt,
+            // This order's own share of a transfer that may cover several of
+            // the seller's orders. A refund must reverse exactly this, not the
+            // order's gross — see app/lib/order-refund.ts.
+            "payment.transferredNet": row.net,
           });
         }
         await batch.commit();

@@ -136,6 +136,24 @@ export function payableGrossFor(order: OrderLike): number {
   return Math.max(0, grossFor(order) - refunded);
 }
 
+/** Fees deducted before the seller is paid. The gateway fee is only known
+ *  once /api/payment/fee has fetched it from Razorpay; unknown is treated as 0
+ *  rather than guessing a rate, so the figure is never a fabricated deduction. */
+export function feesFor(order: OrderLike): { gatewayFee: number; platformFee: number } {
+  return {
+    gatewayFee: (order.payment?.gatewayFee ?? 0) + (order.payment?.gatewayTax ?? 0),
+    platformFee: order.payment?.platformFee ?? 0,
+  };
+}
+
+/** What actually reaches the seller for this one order. This is the amount a
+ *  Route payout transfers, and therefore the amount a refund has to reverse —
+ *  exported so the payout run and the reversal cannot drift apart. */
+export function netFor(order: OrderLike): number {
+  const { gatewayFee, platformFee } = feesFor(order);
+  return Math.max(0, payableGrossFor(order) - gatewayFee - platformFee);
+}
+
 /** When the order was marked delivered, from its own status history. */
 export function deliveredAtFor(order: OrderLike): Date | null {
   if (!Array.isArray(order.statusHistory)) return null;
@@ -206,15 +224,10 @@ export function computeSellerEarnings(
     if (state === "not_payable") continue;
 
     const gross = payableGrossFor(order);
-    // Gateway fee is only known once /api/payment/fee has fetched it from
-    // Razorpay; treat unknown as 0 rather than guessing a rate, so the number
-    // shown is never a fabricated deduction.
-    const gatewayFee =
-      (order.payment?.gatewayFee ?? 0) + (order.payment?.gatewayTax ?? 0);
     // Deducted here as well as displayed: if "You receive" did not subtract it,
     // the seller would be shown a figure larger than what reaches their bank.
-    const platformFee = order.payment?.platformFee ?? 0;
-    const net = Math.max(0, gross - gatewayFee - platformFee);
+    const { gatewayFee, platformFee } = feesFor(order);
+    const net = netFor(order);
 
     rows.push({ orderId: order.id, gross, gatewayFee, platformFee, net, state, deliveredAt, releaseOn });
     gatewayFees += gatewayFee;

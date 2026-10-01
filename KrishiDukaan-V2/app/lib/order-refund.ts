@@ -1,6 +1,6 @@
 import Razorpay from "razorpay";
 import { getAdminDb } from "./firebase-admin";
-import { grossFor, type OrderLike } from "../dashboard/_lib/seller-earnings";
+import { grossFor, netFor, type OrderLike } from "../dashboard/_lib/seller-earnings";
 import { reverseOrderSellerTransfer } from "./route-transfers";
 
 /**
@@ -61,6 +61,7 @@ export async function refundOrder(params: {
     razorpayPaymentId?: string;
     transferId?: string;
     refundId?: string;
+    transferredNet?: number;
   };
 
   if (payment.refundId) {
@@ -70,7 +71,8 @@ export async function refundOrder(params: {
     return { ok: false, status: 400, error: "This order has no Razorpay payment to refund." };
   }
 
-  const orderTotal = grossFor({ id: orderId, ...(order as object) } as OrderLike);
+  const orderLike = { id: orderId, ...(order as object) } as OrderLike;
+  const orderTotal = grossFor(orderLike);
   const refundAmount =
     typeof amount === "number" && amount > 0
       ? Math.round(Math.min(amount, orderTotal) * 100) / 100
@@ -110,23 +112,43 @@ export async function refundOrder(params: {
     }
     reversalId = route.reversalId;
   } else {
-    try {
-      const reversal = (await razorpay.transfers.reverse(payment.transferId, {
-        amount: Math.round(refundAmount * 100),
-      } as never)) as { id: string };
-      reversalId = reversal.id;
-    } catch (e) {
-      // Deliberately NOT falling through to the refund: refunding while the
-      // seller still holds the money would leave the platform short by the
-      // full amount, with no automated way to recover it.
-      return {
-        ok: false,
-        status: 502,
-        error:
-          "Could not reverse the seller transfer, so no refund was issued. " +
-          (e instanceof Error ? e.message : "Reversal failed.") +
-          " Resolve this in the Razorpay Dashboard before retrying.",
-      };
+    // A balance payout transfers the seller's NET (gross less gateway and
+    // platform fees), and one transfer can settle SEVERAL of that seller's
+    // orders at once. Reversing this order's gross would therefore ask for
+    // more than the order contributed — Razorpay rejects the reversal, this
+    // function returns early by design, and the customer gets no refund at
+    // all. Reverse this order's own share instead, scaled down pro rata for a
+    // partial refund. `transferredNet` is what the payout actually sent for
+    // this order; netFor() recomputes it for orders transferred before that
+    // field existed.
+    const transferredNet =
+      typeof payment.transferredNet === "number"
+        ? payment.transferredNet
+        : netFor(orderLike);
+    const share = orderTotal > 0 ? Math.min(1, refundAmount / orderTotal) : 1;
+    const reverseAmount = Math.round(transferredNet * share * 100);
+
+    // Fees can consume a small order entirely, leaving nothing transferred to
+    // claw back. Reversing 0 would error, so go straight to the refund.
+    if (reverseAmount > 0) {
+      try {
+        const reversal = (await razorpay.transfers.reverse(payment.transferId, {
+          amount: reverseAmount,
+        } as never)) as { id: string };
+        reversalId = reversal.id;
+      } catch (e) {
+        // Deliberately NOT falling through to the refund: refunding while the
+        // seller still holds the money would leave the platform short by the
+        // full amount, with no automated way to recover it.
+        return {
+          ok: false,
+          status: 502,
+          error:
+            "Could not reverse the seller transfer, so no refund was issued. " +
+            (e instanceof Error ? e.message : "Reversal failed.") +
+            " Resolve this in the Razorpay Dashboard before retrying.",
+        };
+      }
     }
   }
 
