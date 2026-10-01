@@ -93,6 +93,99 @@ const CACHE_HEADERS = {
   "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
 } as const;
 
+// ── Full-catalogue cache, used by SEARCH only ─────────────────────────────
+//
+// Firestore cannot do substring matching, so search previously walked the
+// name-ordered collection in chunks and filtered in JS. That is wrong as well
+// as slow: the scan is bounded, so it gives up after CHUNK * SEARCH_MAX_CHUNKS
+// docs and returns an EMPTY page for any term that sorts late in the alphabet.
+// Searching "urea" against production returned 0 products in 29s while the
+// products plainly exist.
+//
+// The merged marketplace is only a few hundred cards (see
+// app/admin/_lib/marketplace-count.ts), so the whole raw collection fits in
+// memory comfortably. Load it once per TTL and let search filter the lot: every
+// match is found wherever it sorts, and the scan costs nothing per request.
+const CATALOGUE_TTL_MS = 5 * 60_000;
+// Firestore page size while loading the catalogue.
+const CATALOGUE_PAGE = 500;
+// Hard ceiling so unexpected growth cannot turn this into an unbounded read.
+const CATALOGUE_MAX = 20_000;
+
+type RawDoc = { id: string; name: string; data: Record<string, any> };
+
+let catalogue: { docs: RawDoc[]; at: number } | null = null;
+// Single-flight: concurrent searches during a rebuild share one scan rather
+// than each starting their own.
+let cataloguePromise: Promise<RawDoc[]> | null = null;
+
+async function loadCatalogue(
+  db: FirebaseFirestore.Firestore,
+  category: string,
+): Promise<RawDoc[]> {
+  const fresh = catalogue && Date.now() - catalogue.at < CATALOGUE_TTL_MS;
+  if (!fresh && !cataloguePromise) {
+    cataloguePromise = (async () => {
+      const out: RawDoc[] = [];
+      let after: GroupCursor | null = null;
+      for (;;) {
+        let q = db
+          .collection("products")
+          .orderBy("name")
+          .orderBy(FieldPath.documentId())
+          .limit(CATALOGUE_PAGE);
+        if (after) q = q.startAfter(after.name, after.id);
+        const snap = await q.get();
+        if (snap.empty) break;
+        for (const d of snap.docs) {
+          const data = d.data();
+          out.push({ id: d.id, name: String(data.name || ""), data });
+        }
+        const lastDoc = snap.docs[snap.docs.length - 1];
+        after = { name: String(lastDoc.data().name || ""), id: lastDoc.id };
+        if (snap.size < CATALOGUE_PAGE || out.length >= CATALOGUE_MAX) break;
+      }
+      catalogue = { docs: out, at: Date.now() };
+      return out;
+    })();
+    try {
+      await cataloguePromise;
+    } finally {
+      cataloguePromise = null;
+    }
+  } else if (!fresh && cataloguePromise) {
+    await cataloguePromise;
+  }
+
+  const all = catalogue?.docs ?? [];
+  // The category filter is applied to the cached copy rather than re-queried,
+  // so one cached scan serves every category and the unfiltered feed alike.
+  return category ? all.filter((d) => d.data.category === category) : all;
+}
+
+/** Serves collectMatchingNameGroups from the in-memory catalogue, keeping the
+ *  exact (name, __name__) ordering and cursor semantics of the Firestore path. */
+function memoryChunkReader(pool: RawDoc[]) {
+  return async (after: GroupCursor | null, limit: number): Promise<RawDoc[]> => {
+    let from = 0;
+    if (after) {
+      // Match the cursor document by id so this never depends on JS string
+      // comparison agreeing with Firestore's collation.
+      const idx = pool.findIndex((d) => d.id === after.id);
+      from =
+        idx >= 0
+          ? idx + 1
+          : Math.max(
+              0,
+              pool.findIndex(
+                (d) => d.name > after.name || (d.name === after.name && d.id > after.id),
+              ),
+            );
+    }
+    return pool.slice(from, from + limit);
+  };
+}
+
 function encodeCursor(c: GroupCursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
 }
@@ -177,12 +270,17 @@ export async function GET(request: Request) {
       lastConsumedCursor,
       groupsSeen,
     } = search
-      ? await collectMatchingNameGroups(fetchChunk, matchesQuery, {
-          pageSize,
-          chunk: CHUNK,
-          maxChunks: SEARCH_MAX_CHUNKS,
-          startCursor: cursor,
-        })
+      ? await (async () => {
+          // Search reads the cached catalogue, not Firestore, so the budget can
+          // cover every product instead of stopping partway down the alphabet.
+          const pool = await loadCatalogue(db, category);
+          return collectMatchingNameGroups(memoryChunkReader(pool), matchesQuery, {
+            pageSize,
+            chunk: CHUNK,
+            maxChunks: Math.ceil(pool.length / CHUNK) + 1,
+            startCursor: cursor,
+          });
+        })()
       : await collectNameGroups(fetchChunk, {
           pageSize,
           chunk: CHUNK,
