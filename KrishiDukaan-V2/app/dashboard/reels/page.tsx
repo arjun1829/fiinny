@@ -7,32 +7,47 @@ import { useEffectiveUser } from "../_context/effective-user-context";
 import { PageHeader } from "../_components/page-header";
 import { ReelFormModal } from "../_components/reel-form-modal";
 import { fetchMyReels, deleteReel, type ReelDoc } from "../_lib/reels-firestore";
+import { auth } from "../../firebase";
 
 export default function SellerReelsPage() {
   const { profile } = useEffectiveUser();
-  const phone: string | undefined = profile?.phone;
+  // The shop's phone keys its reels (reels.shopOwnerId). Fall back to the
+  // signed-in phone when the profile has none, so the page never waits forever.
+  const phone: string | undefined = profile?.phone || auth.currentUser?.phoneNumber || undefined;
   const shopName: string = profile?.shopName || profile?.businessName || profile?.name || phone || "";
   const profilePic: string | undefined = profile?.profilePic;
 
   const [reels, setReels] = useState<ReelDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editReel, setEditReel] = useState<ReelDoc | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReelDoc | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = () => {
-    if (!phone) return;
+    if (!phone) {
+      // No shop phone yet (profile still loading or missing): stop the spinner
+      // rather than spin forever; the effect re-runs once a phone arrives.
+      setLoading(!profile);
+      return;
+    }
     setLoading(true);
+    setLoadError(false);
     fetchMyReels(phone)
       .then(setReels)
+      .catch((err) => {
+        // Used to fail silently and show "No reels yet" as if there were none.
+        console.error("[dashboard/reels] could not load reels", err);
+        setLoadError(true);
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phone]);
+  }, [phone, profile]);
 
   const performDelete = async (r: ReelDoc) => {
     setDeleting(r.id);
@@ -64,6 +79,22 @@ export default function SellerReelsPage() {
       {loading ? (
         <div className="flex h-60 items-center justify-center">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-outline-variant/40 py-16 text-center">
+          <p className="text-sm font-semibold text-on-surface">Couldn&apos;t load your reels</p>
+          <p className="text-xs text-on-surface-variant max-w-xs">Check your internet connection and try again.</p>
+          <button
+            onClick={load}
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-primary-container"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !phone ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-outline-variant/40 py-16 text-center">
+          <p className="text-sm font-semibold text-on-surface">Your shop phone number is missing</p>
+          <p className="text-xs text-on-surface-variant max-w-xs">Add it in your profile to see and upload reels.</p>
         </div>
       ) : reels.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-outline-variant/40 py-16 text-center">

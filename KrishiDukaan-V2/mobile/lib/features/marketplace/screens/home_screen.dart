@@ -161,11 +161,41 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Find the best agri products near you',
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.onSurfaceVariant,
+                  const SizedBox(height: 12),
+                  // Search bar right under the greeting: tapping it opens the
+                  // marketplace with the search field focused (same as the
+                  // top-bar search icon).
+                  Semantics(
+                    button: true,
+                    label: 'Search products',
+                    child: Material(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => _openSearch(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppColors.divider),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.search, color: AppColors.onSurfaceVariant, size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Find the best agri products near you',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.body.copyWith(color: AppColors.onSurfaceVariant),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
