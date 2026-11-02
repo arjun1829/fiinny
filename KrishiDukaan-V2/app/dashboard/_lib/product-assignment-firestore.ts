@@ -369,6 +369,8 @@ export type BulkAssignInput = {
   retailerId?: string;
   /** Array of manufacturer product IDs to assign. Already-assigned ones are skipped. */
   productIds: string[];
+  /** The manufacturer set this retailer to in-store sales only (manufacturerRetailers.onlineSalesBlocked). */
+  onlineLocked?: boolean;
 };
 
 export type BulkAssignResult = {
@@ -522,6 +524,9 @@ export async function bulkAssignProductsToRetailer(
       // themselves from Inventory → Online Delivery.
       sellMode: "offline_store_only",
       isOnline: false,
+      // Retailer set to in-store only by this manufacturer: the copy can't go
+      // online (mirrors the manufacturerRetailers link checkout enforces).
+      ...(input.onlineLocked ? { onlineLockedByManufacturer: true } : {}),
 
       createdAt: now,
       updatedAt: now,

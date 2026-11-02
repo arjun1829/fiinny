@@ -288,6 +288,17 @@ export type PaymentInfo = {
   /** Rupees refunded to the customer on this order. */
   refundedAmount?: number;
   refundId?: string;
+  /** ISO — when the refund was issued. */
+  refundedAt?: string;
+  refundReason?: string;
+  /** Razorpay's refund state: sent to the bank ("processed") or not yet. */
+  refundStatus?: "pending" | "processed" | "failed";
+  /** ISO — when Razorpay reported it processed (sent to the bank). */
+  refundProcessedAt?: string;
+  /** Bank reference (ARN / RRN / UTR) the customer can trace the credit with. */
+  refundArn?: string;
+  /** ISO — last time the status was read from Razorpay. */
+  refundCheckedAt?: string;
 };
 
 export type InvoiceMetadata = {
@@ -412,6 +423,14 @@ export type OrderDoc = {
    * another before acceptance. Server-written only.
    */
   adminReassignment?: AdminReassignmentInfo;
+  /**
+   * Seller reassignment after a rejection (app/lib/order-reassignment.ts):
+   * the order is offered to other sellers until `expiresAt` (a Firestore
+   * Timestamp), then refunded. Server-written; only what the buyer sees here.
+   */
+  reassignment?: { status?: "open" | "accepted" | "refunding" | "closed"; expiresAt?: unknown };
+  rejectionReason?: string;
+  cancellationReason?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 };

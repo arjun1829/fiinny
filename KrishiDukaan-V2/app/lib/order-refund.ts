@@ -2,6 +2,7 @@ import Razorpay from "razorpay";
 import { getAdminDb } from "./firebase-admin";
 import { grossFor, netFor, type OrderLike } from "../dashboard/_lib/seller-earnings";
 import { reverseOrderSellerTransfer } from "./route-transfers";
+import { refundFields, type RazorpayRefundEntity } from "./refund-sync";
 
 /**
  * Shared core for every refund path — admin's manual refund, a seller/admin
@@ -154,12 +155,14 @@ export async function refundOrder(params: {
 
   // ── 2. Refund the customer ────────────────────────────────────────────
   let refundId: string;
+  let refundEntity: RazorpayRefundEntity;
   try {
     const refund = (await razorpay.payments.refund(payment.razorpayPaymentId, {
       amount: Math.round(refundAmount * 100),
       notes: { orderId, reason },
-    } as never)) as { id: string };
+    } as never)) as RazorpayRefundEntity & { id: string };
     refundId = refund.id;
+    refundEntity = refund;
   } catch (e) {
     // The seller leg already reversed. Surfaced explicitly because the money
     // is now back with the platform but the customer has not been refunded —
@@ -184,6 +187,9 @@ export async function refundOrder(params: {
     "payment.refundedAmount": refundAmount,
     "payment.refundedAt": now,
     "payment.refundReason": reason,
+    // Where the money is (pending / processed + bank reference), shown to the
+    // customer; kept current by the refund.* webhook (lib/refund-sync.ts).
+    ...refundFields(refundEntity),
     // A partial refund leaves payment.status as "paid" — money is still with
     // the platform for the rest of the order, which is not what "refunded"
     // should mean on this field.

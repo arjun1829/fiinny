@@ -25,6 +25,7 @@ import '../widgets/reel_filters.dart';
 import '../../../core/widgets/back_or_home_button.dart';
 import '../../brand/widgets/brand_poster.dart';
 import '../widgets/reel_caption.dart';
+import '../widgets/reel_share_sheet.dart';
 
 class ShopProfileScreen extends ConsumerStatefulWidget {
   final String shopPhone;
@@ -1090,6 +1091,14 @@ class _ReelMenu extends ConsumerWidget {
             details.globalPosition.dy,
           ),
           items: [
+            const PopupMenuItem(
+              value: 'share',
+              child: Row(children: [
+                Icon(Icons.share_rounded, size: 18, color: AppColors.primary),
+                SizedBox(width: 10),
+                Text('Share'),
+              ]),
+            ),
             if (!isRepost)
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(
@@ -1102,7 +1111,9 @@ class _ReelMenu extends ConsumerWidget {
           ],
         );
         if (!context.mounted) return;
-        if (result == 'edit') {
+        if (result == 'share') {
+          showReelShareSheet(context, reel);
+        } else if (result == 'edit') {
           _showEditSheet(context, ref);
         } else if (result == 'delete') {
           _confirmDelete(context, ref, isRepost);

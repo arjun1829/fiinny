@@ -25,6 +25,8 @@ import '../../dashboard/data/dashboard_repository.dart';
 import '../../marketplace/data/catalog_repository.dart';
 import '../data/manufacturer_repository.dart';
 import '../providers/manufacturer_provider.dart';
+import '../widgets/product_licence_section.dart';
+import '../../../core/models/product_licence.dart';
 
 class ManufacturerCatalogScreen extends ConsumerWidget {
   // Set when arriving via the Profile screen's "Add Product" shortcut
@@ -354,6 +356,24 @@ class _CatalogTile extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      // No full selling licence yet: it can't be switched online.
+                      if (!(product.license?.isComplete ?? false)) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Licence missing',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.warning,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Row(
                         children: [
@@ -603,6 +623,9 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
   // opt-in, nothing — the moment a manufacturer tapped Add.
   String _sellMode = 'online_delivery';
 
+  /// Selling licence: states + document. Needed to switch the product online.
+  ProductLicence? _licence;
+
   // Account-level "Online Delivery" flag (users/{phone}.onlineDelivery,
   // toggled from Settings, gated there behind a GST number). null while
   // loading. The GST/Sell Mode section below only renders once this is
@@ -664,6 +687,7 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
     // — the same as web's edit modal — so a legacy listing doesn't silently
     // go offline just because the field was never written.
     _sellMode = p == null ? 'offline_store_only' : (p.sellMode ?? 'online_delivery');
+    _licence = p?.license;
     if (p?.categoryInfo != null) _categoryInfo.addAll(p!.categoryInfo!);
     _composition = p?.composition
             ?.map((c) => {'name': c.name, 'value': c.value})
@@ -1338,6 +1362,14 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
                 ] else if (_accountDeliveryEnabled == false)
                   OnlineDeliveryPrompt(onReturned: _refreshAccountDelivery),
                 const SizedBox(height: 16),
+                ProductLicenceSection(
+                  value: _licence,
+                  onChanged: (v) => setState(() => _licence = v),
+                  manufacturerPhone: widget.manufacturerPhone,
+                  wantsOnline: _accountDeliveryEnabled != false && _sellMode == 'online_delivery',
+                  enabled: !_saving,
+                ),
+                const SizedBox(height: 16),
 
                 const SizedBox(height: 80),
               ],
@@ -1492,6 +1524,19 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
           accountGateOpen ? _sellMode : 'offline_store_only';
       final effectiveGstApplicable = accountGateOpen && _gstApplicable;
 
+      // A manufacturer sells online only where the product's licence allows:
+      // switching a product online needs a complete licence. Products already
+      // online from before licences existed keep selling (with a reminder).
+      final wasOnline = widget.product != null && (widget.product!.sellMode ?? 'online_delivery') == 'online_delivery';
+      if (effectiveSellMode == 'online_delivery' && !wasOnline && !(_licence?.isComplete ?? false)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('To sell this product online, add its licence photo and the licensed states — or choose Offline Store Only.'),
+          ));
+        }
+        return;
+      }
+
       final data = <String, dynamic>{
         'name': name,
         'category': _category,
@@ -1524,6 +1569,8 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
         'composition': _composition,
         'customFields': _customFields,
         'videoUrl': _videoUrl,
+        if (_licence != widget.product?.license)
+          'license': _licence == null || _licence!.isEmpty ? null : _licence!.toMap(),
       };
 
       if (widget.product != null) {
@@ -1558,6 +1605,7 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
           composition: _composition,
           customFields: _customFields,
           videoUrl: _videoUrl,
+          license: _licence,
         );
       }
       if (mounted) Navigator.pop(context);

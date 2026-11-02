@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../../core/constants/indian_states.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -1280,6 +1281,35 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          // The manufacturer's selling licence limits online delivery.
+          if (catalog.licenseStates.isNotEmpty &&
+              catalog.licenseStates.length < kIndianStates.length) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.local_shipping_outlined, size: 18, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Online delivery only in ${_describeStates(catalog.licenseStates)}. '
+                      'The manufacturer is licensed to sell this product there; '
+                      'in-store purchase is available anywhere it is stocked.',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           listingsAsync.when(
             loading: () => const Center(
               child: Padding(
@@ -3425,4 +3455,14 @@ class _ProductDemonstrationPlayerState
       ),
     );
   }
+}
+
+
+/// "Maharashtra", "Maharashtra and Goa", "Maharashtra, Goa and 3 more" —
+/// same wording as web's describeStates (app/lib/sell-area.ts).
+String _describeStates(List<String> s) {
+  if (s.length <= 1) return s.isEmpty ? '' : s.first;
+  if (s.length == 2) return '${s[0]} and ${s[1]}';
+  if (s.length == 3) return '${s[0]}, ${s[1]} and ${s[2]}';
+  return '${s[0]}, ${s[1]} and ${s.length - 2} more';
 }

@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -15,6 +16,7 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 import { db, storage } from "../../firebase";
+import { sharePhone } from "../../lib/share-links";
 
 export type ReelDoc = {
   id: string;
@@ -64,10 +66,35 @@ function mapReel(id: string, data: Record<string, unknown>): ReelDoc {
   };
 }
 
+/**
+ * The seller's phone (+91…), which reels are keyed by (shopOwnerId).
+ * getUserProfile() returns users/{phone} WITHOUT its doc id, so many
+ * profiles have no `phone` field — uidIndex is the reliable map. A helper
+ * managing a shop passes the owner's phone directly.
+ */
+export async function resolveReelsPhone(
+  uid: string | null,
+  profilePhone?: unknown,
+  ownerPhone?: string | null,
+): Promise<string | null> {
+  const direct = sharePhone(ownerPhone) ?? sharePhone(String(profilePhone ?? ""));
+  if (direct) return direct;
+  if (!uid) return null;
+  try {
+    const idx = await getDoc(doc(db, "uidIndex", uid));
+    return sharePhone(String(idx.data()?.phone ?? ""));
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMyReels(phone: string): Promise<ReelDoc[]> {
+  // Older reels may carry the bare 10-digit number; match both forms in one query.
+  const e164 = sharePhone(phone) ?? phone;
+  const ids = Array.from(new Set([e164, e164.replace(/^\+91/, ""), phone].filter(Boolean)));
   const q = query(
     collection(db, "reels"),
-    where("shopOwnerId", "==", phone),
+    where("shopOwnerId", "in", ids),
     orderBy("createdAt", "desc"),
   );
   const snap = await getDocs(q);

@@ -16,6 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
+import { parseLicence } from "../../lib/product-licence";
 import { db } from "../../firebase";
 import { getDocsByIds } from "../../lib/firestore-by-ids";
 import { updateOwnAvailabilityEntries } from "./own-availability-entries";
@@ -107,6 +108,8 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     sellMode:
       data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
     isOnline: data.sellMode !== "offline_store_only",
+    onlineLockedByManufacturer: data.onlineLockedByManufacturer === true,
+    license: parseLicence(data.license),
 
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
@@ -450,6 +453,8 @@ export async function fetchRetailerInventoryRows(
         status,
         isActive: p.isActive,
         sellMode: p.sellMode ?? "online_delivery",
+        onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
         gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -564,6 +569,8 @@ export async function fetchManufacturerCatalogueRows(
       status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
       sellMode: p.sellMode ?? "online_delivery",
+      onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
       gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -1107,6 +1114,15 @@ export async function updateProductSellMode(
 
   console.log("[updateProductSellMode]", { productId, sellMode, isOnline });
 
+  // A manufacturer can make a network retailer sell their products in-store
+  // only (POST /api/manufacturer/network-online); such a copy can't go online.
+  if (isOnline) {
+    const own = await getDoc(doc(db, "products", productId));
+    if (own.data()?.onlineLockedByManufacturer === true) {
+      throw new Error("The manufacturer has set this product to in-store sale only for your shop.");
+    }
+  }
+
   // Update the primary product document
   await updateDoc(doc(db, "products", productId), patch);
 
@@ -1123,7 +1139,10 @@ export async function updateProductSellMode(
   if (copiesSnap.docs.length > 0) {
     console.log("[updateProductSellMode] cascading to", copiesSnap.docs.length, "manufacturer_assigned copies");
     const batch = writeBatch(db);
-    copiesSnap.docs.forEach((d) => batch.update(d.ref, patch));
+    // Retailers the manufacturer set to in-store only stay offline.
+    copiesSnap.docs
+      .filter((d) => !(isOnline && d.data().onlineLockedByManufacturer === true))
+      .forEach((d) => batch.update(d.ref, patch));
     await batch.commit();
   }
 }

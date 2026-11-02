@@ -287,6 +287,10 @@ async function uploadRow(
   const stock = row.stockQuantity; // already resolved (uploaded value OR DEFAULT_STOCK)
 
   if (role === "manufacturer") {
+    // A manufacturer's product sells online only once its licence (states +
+    // document) is added, so bulk-created products start in-store only; the
+    // manufacturer adds each licence from Edit product, then switches online.
+    sellMode = "offline_store_only";
     await createManufacturerProduct(userId, {
       name: row.name,
       category: row.category,

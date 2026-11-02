@@ -144,6 +144,23 @@ function BrandPageRedirect({ phone }: { phone: string }) {
   );
 }
 
+/** "Ramesh Kumar Patil" -> first "Ramesh Kumar", last "Patil"; prefers explicit fields. */
+function splitPersonName(profile: { name?: string; firstName?: string; lastName?: string }): {
+  customerFirstName: string;
+  customerLastName: string;
+} {
+  const first = String(profile.firstName ?? "").trim();
+  const last = String(profile.lastName ?? "").trim();
+  if (first || last) return { customerFirstName: first, customerLastName: last };
+  const parts = String(profile.name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { customerFirstName: parts[0] ?? "", customerLastName: "" };
+  return { customerFirstName: parts.slice(0, -1).join(" "), customerLastName: parts[parts.length - 1] };
+}
+
+function fullCustomerName(info: { customerFirstName: string; customerLastName: string }): string {
+  return `${info.customerFirstName.trim()} ${info.customerLastName.trim()}`.trim();
+}
+
 export default function App() {
   const { t } = useI18n();
   const [currentView, setCurrentView] = useState<View>('home');
@@ -192,7 +209,10 @@ export default function App() {
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState({
-    customerName: "",
+    // Two compulsory fields (surname included); joined into customerName
+    // wherever an order, Razorpay or a message needs the full name.
+    customerFirstName: "",
+    customerLastName: "",
     customerPhone: "",
     addressArea: "",
     addressCity: "",
@@ -764,7 +784,7 @@ export default function App() {
             productCount: profileData.productCount || 0
           });
           setCheckoutInfo({
-            customerName: profileData.name || "",
+            ...splitPersonName(profileData),
             customerPhone: profileData.phone || "",
             addressArea: (profileData as any).addressArea || "",
             addressCity: (profileData as any).addressCity || "",
@@ -836,7 +856,8 @@ export default function App() {
         }
         hadUserRef.current = false;
         setCheckoutInfo({
-          customerName: '',
+          customerFirstName: '',
+          customerLastName: '',
           customerPhone: '',
           addressArea: '',
           addressCity: '',
@@ -1289,7 +1310,7 @@ export default function App() {
 
     const orderIds = await createOrdersFromCart({
       customerId: user!.uid,
-      customerName: checkoutInfo.customerName,
+      customerName: fullCustomerName(checkoutInfo),
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
       // The finalized delivery-address state — decides in/out-of-state slabs so
@@ -1324,8 +1345,16 @@ export default function App() {
       setCheckoutMessage("Your cart is empty.");
       return;
     }
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim()) {
-      setCheckoutMessage("Please fill your name and phone number.");
+    if (!checkoutInfo.customerFirstName.trim()) {
+      setCheckoutMessage("Please enter your first name.");
+      return;
+    }
+    if (!checkoutInfo.customerLastName.trim()) {
+      setCheckoutMessage("Please enter your last name (surname).");
+      return;
+    }
+    if (!checkoutInfo.customerPhone.trim()) {
+      setCheckoutMessage("Please enter your phone number.");
       return;
     }
     if (!customerAddress.trim()) {
@@ -1408,7 +1437,7 @@ export default function App() {
           // Sent BEFORE payment so the server already holds everything needed
           // to rebuild this order if the post-payment write below never runs
           // (closed tab, dropped network). See app/lib/order-recovery.ts.
-          customerName:    checkoutInfo.customerName.trim(),
+          customerName:    fullCustomerName(checkoutInfo),
           customerPhone:   checkoutInfo.customerPhone.trim(),
           customerAddress,
         }),
@@ -1452,7 +1481,7 @@ export default function App() {
         name: "KrishiDukan",
         description: `Order (${readyItems.length} item${readyItems.length > 1 ? "s" : ""})`,
         prefill: {
-          name: checkoutInfo.customerName,
+          name: fullCustomerName(checkoutInfo),
           contact: checkoutInfo.customerPhone,
         },
         theme: { color: "#1a6b2a" },
@@ -1859,7 +1888,8 @@ export default function App() {
             items={cartItems}
             isLoggedIn={Boolean(user)}
             isCustomer={userRole === "customer"}
-            customerName={checkoutInfo.customerName}
+            customerFirstName={checkoutInfo.customerFirstName}
+            customerLastName={checkoutInfo.customerLastName}
             customerPhone={checkoutInfo.customerPhone}
             addressArea={checkoutInfo.addressArea}
             addressCity={checkoutInfo.addressCity}

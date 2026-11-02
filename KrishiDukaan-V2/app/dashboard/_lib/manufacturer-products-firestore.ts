@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { licenceForSave, type ProductLicence } from "../../lib/product-licence";
 import { CARDS_COLLECTION } from "../../lib/marketplace-cards";
 import type { RetailerSeatListing } from "../_types/subscriptions";
 import {
@@ -55,6 +56,11 @@ export type ManufacturerProductInput = {
   freeDelivery?: boolean;
   /** Whether this product is available for online home delivery. Defaults to online_delivery. */
   sellMode?: "online_delivery" | "offline_store_only";
+  /**
+   * Selling licence: the states this product may be delivered to, plus the
+   * document (lib/product-licence.ts). null clears it on update.
+   */
+  license?: ProductLicence | null;
   /** Optional YouTube video URL for product demonstration. Stored as-is; never upload to Storage. */
   videoUrl?: string;
   /** Ingredient / nutrient composition (Fertilizers, Pesticides, Herbicides, Bio-Stimulants). */
@@ -121,6 +127,7 @@ export async function createManufacturerProduct(
     isActive: true,
     sellMode: input.sellMode ?? "offline_store_only",
     isOnline: (input.sellMode ?? "offline_store_only") === "online_delivery",
+    ...(input.license ? { license: licenceForSave(input.license) } : {}),
     ownerId: manufacturerId,
     ownerPhone: manufacturerPhone ?? null,
     ownerType: "manufacturer",
@@ -299,6 +306,9 @@ export async function updateManufacturerProduct(
   }
   if (input.freeDelivery !== undefined) {
     patch.freeDelivery = input.freeDelivery;
+  }
+  if (input.license !== undefined) {
+    patch.license = input.license ? licenceForSave(input.license) : null;
   }
   // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   await updateDoc(ref, patch);

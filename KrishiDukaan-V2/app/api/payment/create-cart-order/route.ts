@@ -6,6 +6,8 @@ import { allocateShares, assertTransfersFit, computeSellerSplit, type SellerSpli
 import { loadRouteConfig, resolveSellerAccount } from '../../../lib/route-server';
 import { parseVariantWeightKg } from '../../../utils/weight';
 import type { DeliverySettingsLike } from '../../../utils/delivery';
+import { licenceLoader, networkLockLoader, sellAreaBlockFor, sellAreaContext, type SellAreaContext } from '../../../lib/sell-area-server';
+import { sellAreaMessage, type SellAreaBlock } from '../../../lib/sell-area';
 import {
   commercialOf,
   computeSellerPricing,
@@ -170,6 +172,9 @@ export async function POST(request: Request) {
     // sequential loop made the Pay button wait roughly one round trip per
     // cart line. Results are folded back in the original item order below, so
     // totals (including floating-point summation order) are unchanged.
+    // Manufacturer licences, read once per product for the whole cart.
+    const licence = licenceLoader(db);
+    const networkLock = networkLockLoader(db);
     const itemResults = await Promise.all(items.map(async (item) => {
       const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
       // `let`: resolved from the product doc below when the cart item carries
@@ -370,7 +375,16 @@ export async function POST(request: Request) {
       // the seller's phone (for the account-level onlineDelivery read) and this
       // listing's own isOnline flag (only an explicit false blocks).
       const listingOnline = avEntry ? (avEntry as Record<string, unknown>).isOnline !== false : true;
-      return { lineTotal, priced, sellerKey, line, validation, sellerPhone: copyPhone || sellerKey, listingOnline };
+      // Licence / network lock that applies to this line (lib/sell-area-server.ts).
+      const sellArea: SellAreaContext = await sellAreaContext({
+        productId: item.productId,
+        prodData: prodData as Record<string, unknown> | null,
+        copyData: (copyDoc?.data() as Record<string, unknown> | undefined) ?? null,
+        matchesSeller,
+        licence,
+        networkLock,
+      });
+      return { lineTotal, priced, sellerKey, line, validation, sellerPhone: copyPhone || sellerKey, listingOnline, sellArea };
     }));
 
     // ── Reject BEFORE charging: variant / price / stock ───────────────────────
@@ -438,6 +452,47 @@ export async function POST(request: Request) {
     // instead of after. Both were sequential waits before Razorpay was called.
     const routePrefetch = prefetchRouteContext(Array.from(subtotalBySeller.keys()));
     const settingsBySeller = await loadDeliverySettings(db, pricingLines);
+
+    // ── Reject BEFORE charging: where this product / store may sell ──────────
+    // Manufacturer licence states, a manufacturer's in-store-only lock on a
+    // network retailer, and a retailer's own "selected states" coverage —
+    // lib/sell-area.ts. The cart runs the same check (/api/cart/availability)
+    // as soon as the address is known, so this is normally just the backstop.
+    if (!String(customerDeliveryState ?? '').trim()) {
+      console.warn('[create-cart-order] no delivery state sent — licence/coverage states not checked');
+    }
+    const areaBlocks: { productId: string; name: string; variantUnit: string; block: SellAreaBlock }[] = [];
+    for (const r of itemResults) {
+      if (!r.sellerKey) continue;
+      const block = sellAreaBlockFor(r.sellArea, settingsBySeller.get(r.sellerKey) ?? null, customerDeliveryState);
+      if (block) {
+        areaBlocks.push({
+          productId: r.priced.productId,
+          name: r.priced.name,
+          variantUnit: (r.priced as { variantUnit?: string }).variantUnit ?? '',
+          block,
+        });
+      }
+    }
+    if (areaBlocks.length > 0) {
+      const first = areaBlocks[0]!;
+      console.warn('[create-cart-order] rejected before payment (sell area):', areaBlocks);
+      return NextResponse.json(
+        {
+          error: `${first.name}: ${sellAreaMessage(first.block)}` +
+            (areaBlocks.length > 1 ? ` (and ${areaBlocks.length - 1} more)` : ''),
+          code: 'sell_area',
+          items: areaBlocks.map((a) => ({
+            productId: a.productId,
+            name: a.name,
+            variantUnit: a.variantUnit,
+            code: a.block.code,
+            message: sellAreaMessage(a.block),
+          })),
+        },
+        { status: 422 },
+      );
+    }
     const linesBySeller = new Map<string, ServerLine[]>();
     for (const l of pricingLines) {
       const list = linesBySeller.get(l.sellerKey) ?? [];

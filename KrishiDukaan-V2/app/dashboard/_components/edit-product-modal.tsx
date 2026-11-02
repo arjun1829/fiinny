@@ -24,6 +24,8 @@ import {
 } from "../_lib/category-info";
 import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
 import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
+import { ProductLicenceSection } from "./product-licence-section";
+import { licenceComplete, type ProductLicence } from "../../lib/product-licence";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -464,7 +466,14 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
 
   // Seller's global weight-slab delivery settings — used to preview the delivery
   // charge for each pack size. Fetched once from deliverySettings/{phone}.
-  const { profile: effectiveProfile } = useEffectiveUser();
+  const { profile: effectiveProfile, uid: effectiveUid } = useEffectiveUser();
+
+  // Manufacturer's own product: its selling licence. A network retailer's copy
+  // may instead be locked to in-store sale by the manufacturer.
+  const isManufacturerOwn = row.source === "manufacturer_inventory";
+  const onlineLocked = row.onlineLocked === true;
+  const [licence, setLicence] = useState<ProductLicence | null>(row.license ?? null);
+  const licenceTouched = JSON.stringify(licence) !== JSON.stringify(row.license ?? null);
   const [deliverySlabs, setDeliverySlabs] = useState<WeightSlab[] | null>(null);
   useEffect(() => {
     const phone = String((effectiveProfile as any)?.phone ?? "").trim();
@@ -589,7 +598,21 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
 
     // Both delivery and GST are gated on the same account-level flag.
     const effectiveSellMode: "online_delivery" | "offline_store_only" =
-      accountDeliveryEnabled !== false ? sellMode : "offline_store_only";
+      accountDeliveryEnabled !== false && !onlineLocked ? sellMode : "offline_store_only";
+    // Turning a manufacturer's product online needs its licence. Products that
+    // were already online before licences existed keep selling (with a warning).
+    if (
+      isManufacturerOwn &&
+      effectiveSellMode === "online_delivery" &&
+      row.sellMode !== "online_delivery" &&
+      !licenceComplete(licence)
+    ) {
+      setMessage({
+        type: "err",
+        text: "To sell this product online, upload its licence and choose the licensed states — or keep Online Delivery at No.",
+      });
+      return;
+    }
     const effectiveGstApplicable = accountDeliveryEnabled !== false ? gstApplicable : false;
     // Free delivery / extra charge only apply to online-delivery products.
     const deliveryConfigurable = accountDeliveryEnabled !== false && effectiveSellMode === "online_delivery";
@@ -631,6 +654,9 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         gstIncluded: effectiveGstApplicable ? gstIncluded : false,
         extraDeliveryCharge: parsedExtraDelivery,
         freeDelivery: effectiveFreeDelivery,
+        ...(isManufacturerOwn && licenceTouched
+          ? { license: licence && (licence.states.length > 0 || licence.file) ? licence : null }
+          : {}),
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
@@ -967,6 +993,18 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
             </label>
           </div>
 
+          {/* ── Selling licence — the manufacturer's own products ───────────── */}
+          {isManufacturerOwn && (
+            <ProductLicenceSection
+              value={licence}
+              onChange={setLicence}
+              ownerUid={effectiveUid}
+              profilePhone={effectiveProfile?.phone}
+              disabled={saving}
+              wantsOnline={accountDeliveryEnabled !== false && sellMode === "online_delivery"}
+            />
+          )}
+
           {/* ── Online Delivery + GST — both shown only when account-level delivery is ON ── */}
           {accountDeliveryEnabled !== false && (
             <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
@@ -982,7 +1020,8 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
                 <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
                   {(["online_delivery", "offline_store_only"] as const).map((mode) => (
-                    <button key={mode} type="button" disabled={saving}
+                    <button key={mode} type="button" disabled={saving || (onlineLocked && mode === "online_delivery")}
+                      title={onlineLocked && mode === "online_delivery" ? "The manufacturer allows your shop to sell this product in-store only." : undefined}
                       onClick={() => setSellMode(mode)}
                       className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
                         sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
@@ -993,6 +1032,12 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                   ))}
                 </div>
               </div>
+
+              {onlineLocked && (
+                <p className="rounded-xl border border-outline-variant/30 bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
+                  The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling.
+                </p>
+              )}
 
               {/* Delivery-charge configuration — only when Online Delivery = Yes */}
               {sellMode === "online_delivery" && (
