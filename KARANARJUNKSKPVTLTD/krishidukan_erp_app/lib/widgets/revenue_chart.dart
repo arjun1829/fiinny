@@ -44,7 +44,7 @@ class RevenueChart extends StatelessWidget {
           maxY: top,
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (_) => AppColors.cardHi,
+              getTooltipColor: (_) => AppColors.surface,
               tooltipBorder: BorderSide(color: AppColors.borderHi),
               tooltipBorderRadius: BorderRadius.all(Radius.circular(10)),
               tooltipPadding:
@@ -85,9 +85,11 @@ class RevenueChart extends StatelessWidget {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 42,
-                getTitlesWidget: (v, _) => Text(
-                  v == 0 ? '' : fmtInrCompact(v),
-                  style: kMicro.copyWith(letterSpacing: 0.2),
+                // Skip 0 and the padded top edge, which would crowd the
+                // nearest gridline label.
+                getTitlesWidget: (v, meta) => Text(
+                  v == 0 || v == meta.max ? '' : fmtInrCompact(v),
+                  style: AppText.small.copyWith(fontSize: 10.5),
                 ),
               ),
             ),
@@ -105,7 +107,8 @@ class RevenueChart extends StatelessWidget {
                   if (i % step != 0) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(fmtDayMonth(shown[i].date), style: kMicro),
+                    child: Text(fmtDayMonth(shown[i].date),
+                        style: AppText.small.copyWith(fontSize: 10.5)),
                   );
                 },
               ),
@@ -118,7 +121,7 @@ class RevenueChart extends StatelessWidget {
                 barRods: [
                   BarChartRodData(
                     toY: shown[i].total,
-                    width: 11,
+                    width: 12,
                     color: Colors.transparent,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(4),
@@ -179,7 +182,7 @@ class ChartLegend extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              Text(label, style: kMicro),
+              Text(label, style: AppText.small),
             ],
           ),
       ],

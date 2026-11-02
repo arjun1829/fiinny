@@ -186,7 +186,7 @@ class PositionSnapshot {
     required this.inventoryValue,
     required this.purchaseFlow,
     required this.paymentFlow,
-    required this.topRetailerDues,
+    required this.customerDues,
   });
 
   final double supplierOutstanding;
@@ -194,7 +194,11 @@ class PositionSnapshot {
   final double inventoryValue;
   final List<DatedAmount> purchaseFlow;
   final List<DatedAmount> paymentFlow;
-  final List<NamedAmount> topRetailerDues;
+
+  /// Every customer with money still owed, largest first.
+  final List<NamedAmount> customerDues;
+
+  List<NamedAmount> get topRetailerDues => customerDues.take(5).toList();
 
   double get purchasesAllTime => purchaseFlow.fold(0, (s, d) => s + d.amount);
   double get paymentsAllTime => paymentFlow.fold(0, (s, d) => s + d.amount);
