@@ -136,7 +136,7 @@ class AnalyticsRepository {
       inventoryValue: inventoryValue,
       purchaseFlow: purchaseFlow,
       paymentFlow: paymentFlow,
-      topRetailerDues: dues.take(5).toList(),
+      customerDues: dues,
     );
   }
 

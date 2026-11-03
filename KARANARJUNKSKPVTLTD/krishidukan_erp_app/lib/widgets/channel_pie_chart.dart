@@ -81,7 +81,7 @@ class _ChannelPieChartState extends State<ChannelPieChart> {
                       titleStyle: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.bg,
+                        color: Colors.white,
                       ),
                       // 2px surface ring separates adjacent wedges.
                       borderSide: BorderSide(color: AppColors.card, width: 2),
@@ -92,7 +92,7 @@ class _ChannelPieChartState extends State<ChannelPieChart> {
           ),
         ),
         const SizedBox(height: 6),
-        Text(fmtInr(total), style: kMicro.copyWith(fontSize: 11)),
+        Text('Total ${fmtInr(total)}', style: AppText.label),
         const SizedBox(height: 12),
         Wrap(
           spacing: 16,
@@ -113,7 +113,7 @@ class _ChannelPieChartState extends State<ChannelPieChart> {
                   ),
                   const SizedBox(width: 6),
                   Text('${channel.label}  ${fmtInrCompact(value)}',
-                      style: kMicro),
+                      style: AppText.small.copyWith(color: AppColors.inkDim)),
                 ],
               ),
           ],
