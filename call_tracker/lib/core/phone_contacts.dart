@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -6,7 +7,7 @@ import 'models.dart';
 /// The phone's own address book: names for incoming numbers, and the place
 /// team-saved names get written to.
 class PhoneContacts {
-  static Future<bool> canRead() => Permission.contacts.isGranted;
+  static Future<bool> canRead() async => !kIsWeb && await Permission.contacts.isGranted;
 
   /// number key -> display name, from every contact on the phone.
   static Future<Map<String, String>> namesByNumber() async {
@@ -27,7 +28,7 @@ class PhoneContacts {
   /// Adds a new contact to the phone. Existing phone contacts are never
   /// renamed: the phone owner's own naming wins.
   static Future<bool> save(String name, String number) async {
-    if (!await Permission.contacts.isGranted) return false;
+    if (kIsWeb || !await Permission.contacts.isGranted) return false;
     final parts = name.trim().split(RegExp(r'\s+'));
     await FlutterContacts.create(Contact(
       name: Name(

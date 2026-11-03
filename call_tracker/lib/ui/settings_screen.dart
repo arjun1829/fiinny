@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -104,7 +105,7 @@ class SettingsScreen extends StatelessWidget {
               leading: const Icon(Icons.battery_charging_full),
               title: const Text('Keep background sync running'),
               subtitle: const Text('Turn off battery optimisation for this app'),
-              onTap: () => Permission.ignoreBatteryOptimizations.request(),
+              onTap: kIsWeb ? null : () => Permission.ignoreBatteryOptimizations.request(),
             ),
             ListTile(
               leading: const Icon(Icons.lock_open),

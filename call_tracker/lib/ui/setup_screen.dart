@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:call_log_reader/call_log_reader.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -28,13 +29,26 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   void initState() {
     super.initState();
-    CallLogReader.deviceModel().then((m) {
-      if (_name.text.isEmpty) setState(() => _name.text = m);
-    });
+    if (kIsWeb) {
+      // Browser testing: no phone to name or permissions to grant.
+      _name.text = 'Browser (test)';
+    } else {
+      CallLogReader.deviceModel().then((m) {
+        if (_name.text.isEmpty) setState(() => _name.text = m);
+      });
+    }
     _refresh();
   }
 
   Future<void> _refresh() async {
+    if (kIsWeb) {
+      setState(() {
+        _callLog = true;
+        _contacts = true;
+        _battery = true;
+      });
+      return;
+    }
     final callLog = await CallLogReader.hasPermission();
     final contacts = await Permission.contacts.isGranted;
     final battery = await Permission.ignoreBatteryOptimizations.isGranted;
@@ -47,6 +61,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _grant() async {
+    if (kIsWeb) return;
     await Permission.phone.request();
     await Permission.contacts.request();
     await PendingNotifier.requestPermission();
@@ -80,7 +95,7 @@ class _SetupScreenState extends State<SetupScreen> {
     });
     await widget.state.setDeviceName(_name.text);
     final report = await widget.state.sync();
-    await scheduleBackgroundSync();
+    if (!kIsWeb) await scheduleBackgroundSync();
     await widget.state.prefs.setSetupDone();
     setState(() => _status = 'Imported ${report.imported} calls'
         '${report.pulled > 0 ? ', ${report.pulled} from other phones' : ''}.');

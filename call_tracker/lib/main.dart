@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
@@ -8,7 +9,7 @@ import 'ui/setup_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = await AppState.create();
-  if (state.prefs.setupDone) {
+  if (state.prefs.setupDone && !kIsWeb) {
     // Re-register in case the phone cleared scheduled work (update, reboot).
     scheduleBackgroundSync();
   }

@@ -1,3 +1,5 @@
+import 'db_factory.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -13,7 +15,8 @@ class LocalDb {
 
   static Future<LocalDb> open() async {
     if (_instance != null) return _instance!;
-    final path = p.join(await getDatabasesPath(), 'call_tracker.db');
+    useBrowserDatabaseIfNeeded();
+    final path = kIsWeb ? 'call_tracker.db' : p.join(await getDatabasesPath(), 'call_tracker.db');
     final db = await openDatabase(
       path,
       version: 1,

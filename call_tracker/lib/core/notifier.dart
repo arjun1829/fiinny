@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// The single "N calls still pending" notification, replaced on each sync.
@@ -16,6 +17,7 @@ class PendingNotifier {
   }
 
   static Future<void> requestPermission() async {
+    if (kIsWeb) return;
     await _init();
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
@@ -23,6 +25,7 @@ class PendingNotifier {
   }
 
   static Future<void> show(int pending, String oldest) async {
+    if (kIsWeb) return;
     await _init();
     if (pending == 0) {
       await _plugin.cancel(id: 1);

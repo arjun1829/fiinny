@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -33,6 +35,17 @@ Future<void> exportCalls(AppState state, List<CallRecord> calls) async {
       s == null ? '' : statusLabel(s.status),
       s?.notes ?? '',
     ].map(_cell).join(','));
+  }
+  final bytes = [0xEF, 0xBB, 0xBF, ...utf8.encode(buf.toString())];
+  final fileName = 'calls_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv';
+  if (kIsWeb) {
+    // Browser: no file system; hand the CSV over directly (download/share).
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile.fromData(Uint8List.fromList(bytes), mimeType: 'text/csv', name: fileName)],
+      fileNameOverrides: [fileName],
+      subject: 'Call Tracker export (${calls.length} calls)',
+    ));
+    return;
   }
   final dir = await getTemporaryDirectory();
   final file = File('${dir.path}/calls_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv');

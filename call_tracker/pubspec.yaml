@@ -24,6 +24,7 @@ dependencies:
   shared_preferences: ^2.5.6
   sqflite: ^2.4.5
   workmanager: ^0.10.10
+  sqflite_common_ffi_web: ^1.2.0
 
 dev_dependencies:
   flutter_test:
