@@ -4,6 +4,7 @@ import '../../../core/constants/firestore_keys.dart';
 import '../../../core/services/directions_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/utils/ist_date.dart';
+import '../../dealers/data/dealer_visit.dart';
 import 'day_session.dart';
 
 class DaySessionRepository {
@@ -84,6 +85,14 @@ class DaySessionRepository {
     return ref.id;
   }
 
+  /// Appends a breadcrumb. arrayUnion keeps it atomic and offline-queued; a
+  /// day is ~50 points at most, far from the document size limit.
+  Future<void> addTrackPoint(String sessionId, TrackPoint p) {
+    return _col.doc(sessionId).update({
+      'trackPoints': FieldValue.arrayUnion([p.toMap()]),
+    });
+  }
+
   /// Closes the day: stamps the end point, computes worked minutes, and stores
   /// the road route over start → each visit in order → end.
   ///
@@ -113,10 +122,44 @@ class DaySessionRepository {
     });
   }
 
-  /// Waypoints for the day, in canonical order: start → visits (sorted) → end.
+  /// Waypoints for the day in the order the rep travelled: start, then visits
+  /// and breadcrumbs merged by time, then end.
+  ///
+  /// Breadcrumbs with poor accuracy are dropped, as are points within
+  /// [minSeparationM] of the previous one — a rep standing at a shop produces
+  /// a cluster of jittery fixes that would otherwise add phantom detours.
+  /// Visits are always kept (they are the verified stops). With no breadcrumbs
+  /// this degrades to the old start → visits → end route.
   static List<LatLngPoint> waypointsFor(
     DaySession session,
-    List<LatLngPoint> visitPoints,
-    LatLngPoint endGeo,
-  ) => [session.startGeo, ...visitPoints, endGeo];
+    List<DealerVisit> orderedVisits,
+    LatLngPoint endGeo, {
+    double maxAccuracyM = 200,
+    double minSeparationM = 150,
+  }) {
+    final items = <({DateTime at, LatLngPoint p, bool keep})>[
+      for (final t in session.trackPoints)
+        if ((t.accuracyM ?? 0) <= maxAccuracyM)
+          (at: t.at, p: t.point, keep: false),
+    ];
+    // Visits without a timestamp yet (pending server write) sort by sequence
+    // after their predecessor, so default them to the previous visit's time.
+    var prev = session.startedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    for (final v in orderedVisits) {
+      if (v.geo == null) continue;
+      final at = v.visitedAt ?? prev;
+      prev = at;
+      items.add((at: at, p: v.geo!, keep: true));
+    }
+    items.sort((a, b) => a.at.compareTo(b.at));
+
+    final out = <LatLngPoint>[session.startGeo];
+    for (final it in items) {
+      final far =
+          DirectionsService.haversineKm(out.last, it.p) * 1000 >= minSeparationM;
+      if (it.keep || far) out.add(it.p);
+    }
+    out.add(endGeo);
+    return out;
+  }
 }

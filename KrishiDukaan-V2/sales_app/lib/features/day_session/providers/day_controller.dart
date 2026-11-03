@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/services/directions_service.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/services/route_tracker.dart';
 import '../../../core/utils/ist_date.dart';
 import '../../attendance/data/attendance.dart';
 import '../../attendance/providers/attendance_providers.dart';
@@ -65,6 +68,7 @@ class DayController extends Notifier<DayState> {
             );
       } catch (_) {}
 
+      unawaited(RouteTracker.ensureRunning(sessionId));
       _refresh();
       state = const DayState();
       return true;
@@ -97,13 +101,14 @@ class DayController extends Notifier<DayState> {
           .read(dealerVisitRepositoryProvider)
           .forDate(uid, session.date);
       final ordered = sortVisits(visits);
-      final visitPoints = [
-        for (final v in ordered)
-          if (v.geo != null) v.geo!,
-      ];
+      // Stop recording before reading the breadcrumbs so the list is final.
+      await RouteTracker.stop();
+      final fresh =
+          await ref.read(daySessionRepositoryProvider).byId(session.id) ??
+          session;
 
-      final route = await DirectionsService.route(
-        DaySessionRepository.waypointsFor(session, visitPoints, endGeo),
+      final route = await DirectionsService.routeLong(
+        DaySessionRepository.waypointsFor(fresh, ordered, endGeo),
       );
 
       state = const DayState(phase: DayPhase.saving);
