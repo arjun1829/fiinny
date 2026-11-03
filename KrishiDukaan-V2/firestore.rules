@@ -1287,6 +1287,35 @@ service cloud.firestore {
       allow read, write: if isAdmin() || teamHas('messages');
     }
 
+    // ─── Support conversations (authenticated users only) ────────────────────
+    // Each user has exactly one conversation doc keyed by their Auth UID.
+    // Users can read/write only their own conversation; admins/support team see all.
+    match /supportConversations/{userId} {
+      allow read: if isAuthed() && request.auth.uid == userId;
+      allow create: if isAuthed() && request.auth.uid == userId
+        && request.resource.data.userId == userId;
+      // Users may update metadata (lastMessage, unreadByAdmin, updatedAt) but
+      // cannot change immutable fields (userId, createdAt) or reduce unreadByAdmin
+      // below what was there before (they can only increment it).
+      allow update: if (isAuthed() && request.auth.uid == userId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt)
+        || isAdmin() || teamHas('support');
+      allow read, write: if isAdmin() || teamHas('support');
+
+      match /messages/{messageId} {
+        allow read: if (isAuthed() && request.auth.uid == userId)
+          || isAdmin() || teamHas('support');
+        // Users can only create messages as themselves with senderRole == 'user'.
+        allow create: if (isAuthed() && request.auth.uid == userId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderRole == 'user')
+          || isAdmin() || teamHas('support');
+        // Only admins/support can update (e.g., mark as read).
+        allow update, delete: if isAdmin() || teamHas('support');
+      }
+    }
+
     // ─── WhatsApp inbox ──────────────────────────────────────────────────────
     // Written by Cloud Functions / webhook (admin SDK, bypasses rules).
     // Read/write from the client restricted to admins and team members

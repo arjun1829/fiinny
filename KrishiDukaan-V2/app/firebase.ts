@@ -13,8 +13,10 @@ import {
   getFirestore,
   increment,
   limit,
+  onSnapshot,
   query,
   orderBy,
+  runTransaction,
   serverTimestamp,
   setDoc,
   startAfter,
@@ -4760,4 +4762,125 @@ export async function fetchReels(limitCount = 10): Promise<any[]> {
     console.error('Error fetching reels:', err);
     return [];
   }
+}
+
+// ─── Support Conversations ────────────────────────────────────────────────
+
+export interface SupportConversation {
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  businessName?: string;
+  lastMessage: string;
+  lastMessageAt: any;
+  unreadByAdmin: number;
+  unreadByUser: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SupportMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'user' | 'admin';
+  message: string;
+  createdAt: any;
+  read: boolean;
+}
+
+export async function sendSupportMessage(
+  conversationUserId: string,
+  senderId: string,
+  senderRole: 'user' | 'admin',
+  message: string,
+  options?: { userName?: string; userEmail?: string; businessName?: string },
+): Promise<void> {
+  const convRef = doc(db, 'supportConversations', conversationUserId);
+  const msgRef = doc(collection(db, 'supportConversations', conversationUserId, 'messages'));
+  const trimmed = message.trim();
+
+  await runTransaction(db, async (transaction) => {
+    const convSnap = await transaction.get(convRef);
+    if (!convSnap.exists()) {
+      transaction.set(convRef, {
+        userId: conversationUserId,
+        userName: options?.userName ?? '',
+        ...(options?.userEmail   ? { userEmail:    options.userEmail }   : {}),
+        ...(options?.businessName ? { businessName: options.businessName } : {}),
+        lastMessage: trimmed,
+        lastMessageAt: serverTimestamp(),
+        unreadByAdmin: senderRole === 'user' ? 1 : 0,
+        unreadByUser: senderRole === 'admin' ? 1 : 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const updatePayload: Record<string, any> = {
+        lastMessage: trimmed,
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        ...(senderRole === 'user'
+          ? { unreadByAdmin: increment(1) }
+          : { unreadByUser: increment(1) }),
+      };
+      // Backfill user metadata on update in case it was missing from the initial create
+      if (options?.userName)    updatePayload.userName    = options.userName;
+      if (options?.userEmail)   updatePayload.userEmail   = options.userEmail;
+      if (options?.businessName) updatePayload.businessName = options.businessName;
+      transaction.update(convRef, updatePayload);
+    }
+    transaction.set(msgRef, {
+      senderId,
+      senderRole,
+      message: trimmed,
+      createdAt: serverTimestamp(),
+      read: false,
+    });
+  });
+}
+
+export async function markSupportConversationReadByAdmin(userId: string): Promise<void> {
+  const convRef = doc(db, 'supportConversations', userId);
+  await updateDoc(convRef, { unreadByAdmin: 0 });
+}
+
+export async function markSupportConversationReadByUser(userId: string): Promise<void> {
+  const convRef = doc(db, 'supportConversations', userId);
+  await updateDoc(convRef, { unreadByUser: 0 });
+}
+
+export function subscribeSupportMessages(
+  userId: string,
+  callback: (messages: SupportMessage[]) => void,
+): () => void {
+  const q = query(
+    collection(db, 'supportConversations', userId, 'messages'),
+    orderBy('createdAt', 'asc'),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SupportMessage));
+  });
+}
+
+export function subscribeSupportConversation(
+  userId: string,
+  callback: (conv: SupportConversation | null) => void,
+): () => void {
+  return onSnapshot(doc(db, 'supportConversations', userId), (snap) => {
+    callback(snap.exists() ? (snap.data() as SupportConversation) : null);
+  });
+}
+
+export function subscribeSupportConversations(
+  callback: (convs: Array<SupportConversation & { id: string }>) => void,
+): () => void {
+  const q = query(
+    collection(db, 'supportConversations'),
+    orderBy('lastMessageAt', 'desc'),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(
+      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SupportConversation & { id: string }),
+    );
+  });
 }

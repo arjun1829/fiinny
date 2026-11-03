@@ -22,6 +22,7 @@ import CartView from './views/CartView';
 import BrandView from './views/BrandView';
 import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
+import SupportInboxView from './views/SupportInboxView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
@@ -50,7 +51,7 @@ import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help' | 'support';
 type UserRole = 'customer' | 'retailer' | 'manufacturer' | 'admin';
 type UserProfile = {
   name: string;
@@ -61,7 +62,7 @@ type UserProfile = {
   productCount?: number;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help', 'support'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 /**
@@ -222,6 +223,8 @@ export default function App() {
       view !== 'login' &&
       view !== 'signup' &&
       view !== 'help' &&
+      view !== 'support' &&
+      view !== 'profile' &&
       // Shop by Category (market) and Shop by Crop (hub) are open to everyone —
       // guests, farmers and unpaid sellers alike — so browsing them is never
       // gated behind a subscription. Other paid surfaces stay gated.
@@ -2200,7 +2203,27 @@ export default function App() {
           />
         );
       case 'about':
-        return <AboutView />;
+        return (
+          <AboutView
+            user={user}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onNavigate={(view) => navigate(view as View)}
+          />
+        );
+      case 'support':
+        if (!user) {
+          navigate('login', { replace: true });
+          return null;
+        }
+        return (
+          <SupportInboxView
+            uid={user.uid}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onBack={() => navigate('profile')}
+          />
+        );
       case 'help':
         return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
@@ -2275,12 +2298,14 @@ export default function App() {
         </motion.div>
       </main>
 
-      <Footer
-        onNavigate={(view) => navigate(view as View)}
-        onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
-        userRole={consumerRole}
-        onUpgradeRole={handleUpgradeRole}
-      />
+      {currentView !== 'profile' && currentView !== 'support' && (
+        <Footer
+          onNavigate={(view) => navigate(view as View)}
+          onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
+          userRole={consumerRole}
+          onUpgradeRole={handleUpgradeRole}
+        />
+      )}
 
       {/* Manufacturer upgrade confirmation modal */}
       {mfgUpgradeModal && (
