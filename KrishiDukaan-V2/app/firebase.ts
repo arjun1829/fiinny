@@ -1826,6 +1826,38 @@ export async function fetchIncomingOrdersForSeller(
   });
 }
 
+/**
+ * Orders that were rerouted AWAY from this seller by an admin.
+ * After rerouting, sellerId/sellerPhone change to the new seller, so the
+ * original seller can no longer see them via fetchIncomingOrdersForSeller.
+ * This query finds them via the audit field adminReassignment.fromSellerPhone.
+ */
+export async function fetchReroutedAwayOrdersForSeller(
+  phones: string[],
+): Promise<OrderDoc[]> {
+  if (phones.length === 0) return [];
+  const orders = collection(db, "orders");
+  const byId = new Map<string, OrderDoc>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < phones.length; i += 30) chunks.push(phones.slice(i, i + 30));
+  await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(orders, where("adminReassignment.fromSellerPhone", "in", chunk)))
+        .then((snap) => {
+          for (const d of snap.docs) {
+            byId.set(d.id, { id: d.id, ...(d.data() as Omit<OrderDoc, "id">) });
+          }
+        })
+        .catch(() => {}),
+    ),
+  );
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+    const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
+}
+
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   await updateDoc(doc(db, "orders", orderId), {
     status,

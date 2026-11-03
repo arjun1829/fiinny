@@ -33,6 +33,7 @@ import {
   sum,
 } from "firebase/firestore";
 import { db } from "../../firebase";
+import { orderGrandTotal } from "../../../types/order";
 
 export type DateRange = { from: Date; to: Date };
 
@@ -245,6 +246,8 @@ export type OrderMetrics = {
   deliveredRate: number;
   rejectionRate: number;
   perDay: { date: string; orders: number; gmv: number }[];
+  /** Sum of order values for rejected + admin-rerouted orders (deduplicated). */
+  lostValue: number;
 };
 
 /**
@@ -252,7 +255,23 @@ export type OrderMetrics = {
  * canonical-total fallback, see getGmvSum).
  */
 export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
-  const days = await getDailyStats(range);
+  const fromTs = Timestamp.fromMillis(range.from.getTime());
+  const toTs = Timestamp.fromMillis(range.to.getTime());
+  const ordersCol = collection(db, "orders");
+
+  const [days, rejectedSnap, reroutedSnap] = await Promise.all([
+    getDailyStats(range),
+    getDocs(query(ordersCol,
+      where("status", "==", "rejected"),
+      where("createdAt", ">=", fromTs),
+      where("createdAt", "<=", toTs),
+    )).catch(() => null),
+    getDocs(query(ordersCol,
+      where("adminReassignment.at", ">", ""),
+      where("createdAt", ">=", fromTs),
+      where("createdAt", "<=", toTs),
+    )).catch(() => null),
+  ]);
 
   const perDayMap = new Map<string, { orders: number; gmv: number }>();
   for (const k of dayKeysInRange(range)) perDayMap.set(k, { orders: 0, gmv: 0 });
@@ -284,6 +303,16 @@ export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
   const delivered = byStatus["delivered"] ?? 0;
   const rejected = byStatus["rejected"] ?? 0;
 
+  // Compute lost value: rejected + rerouted, deduplicated by order id.
+  const lostById = new Map<string, number>();
+  for (const d of rejectedSnap?.docs ?? []) {
+    lostById.set(d.id, orderGrandTotal(d.data() as any));
+  }
+  for (const d of reroutedSnap?.docs ?? []) {
+    if (!lostById.has(d.id)) lostById.set(d.id, orderGrandTotal(d.data() as any));
+  }
+  const lostValue = Array.from(lostById.values()).reduce((s, v) => s + v, 0);
+
   return {
     count,
     gmv,
@@ -294,6 +323,7 @@ export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
     deliveredRate: count > 0 ? delivered / count : 0,
     rejectionRate: count > 0 ? rejected / count : 0,
     perDay: dayKeysInRange(range).map((date) => ({ date, ...perDayMap.get(date)! })),
+    lostValue,
   };
 }
 
